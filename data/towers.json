@@ -11,7 +11,7 @@
       "branches": {
         "a": { "name": "Marksman", "upgrade_cost": 80, "range": 5, "damage": 18, "fire_interval": 0.7,
                "effects": { "crit_chance": 0.2, "crit_multiplier": 2 } },
-        "b": { "name": "Militia", "upgrade_cost": 80, "range": 3.5, "damage": 12, "fire_interval": 0.7,
+        "b": { "name": "Militia", "upgrade_cost": 80, "range": 3.5, "damage": 12, "fire_interval": 0.5,
                "effects": { "shooters": 2 } }
       }
     },

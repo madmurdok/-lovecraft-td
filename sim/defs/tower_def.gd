@@ -34,7 +34,7 @@ static func parse(r: ConfigReader, id: String, obj: Dictionary, path: String) ->
 			var ip := ConfigReader.index(lp, i)
 			var lv: Variant = r.as_object(levels[i], ip)
 			if lv != null:
-				t.levels.append(Level.parse(r, lv, ip, i > 0))
+				t.levels.append(Level.parse(r, lv, ip, i > 0, t.kind))
 
 	var branches: Variant = r.req_object(obj, "branches", path)
 	if branches != null:
@@ -43,7 +43,7 @@ static func parse(r: ConfigReader, id: String, obj: Dictionary, path: String) ->
 		for b in BRANCH_IDS:
 			var bo: Variant = r.req_object(branches, b, bp)
 			if bo != null:
-				t.branches[b] = Level.parse(r, bo, ConfigReader.join(bp, b), true)
+				t.branches[b] = Level.parse(r, bo, ConfigReader.join(bp, b), true, t.kind)
 	return t
 
 
@@ -63,11 +63,21 @@ class Level:
 	var fire_interval: float  ## seconds between shots; required > 0 when damage > 0
 	var sanity_per_cast: float  ## sanity drained per shot/cast
 	var sanity_per_second: float  ## sanity drained per second while active
-	var madness_affected: bool  ## occult: x2 damage and astray shots in madness (GDD §5.4)
-	## Branch/level-specific numeric parameters (String -> float), e.g. "slow", "crit_chance".
+	## x2 damage and astray shots in madness (GDD §5.4). Defaults to kind == "occult";
+	## only occult towers may set it true (Pure Rite sets false).
+	var madness_affected: bool
+	## Known effect parameters (schema, not balance): key -> max value (min is 0).
+	const EFFECTS := {
+		"crit_chance": 1.0, "crit_multiplier": INF, "shooters": INF, "pierce": INF,
+		"bleed_dps": INF, "bleed_seconds": INF, "pull_cells": INF, "slow": 1.0,
+		"damage_taken_multiplier": INF, "strip_armor": INF, "aoe_radius": INF,
+	}
+
+	## Branch/level-specific numeric parameters (String -> float), keys from EFFECTS.
 	var effects: Dictionary = {}
 
-	static func parse(r: ConfigReader, obj: Dictionary, path: String, is_upgrade: bool) -> Level:
+	static func parse(r: ConfigReader, obj: Dictionary, path: String, is_upgrade: bool,
+			kind: String) -> Level:
 		r.check_keys(obj, LEVEL_FIELDS, path)
 		var l := Level.new()
 		l.name = r.opt_string(obj, "name", path)
@@ -87,10 +97,18 @@ class Level:
 			l.fire_interval = r.opt_number(obj, "fire_interval", path, 0.0, 0.0, INF, true)
 		l.sanity_per_cast = r.opt_number(obj, "sanity_per_cast", path, 0.0, 0.0)
 		l.sanity_per_second = r.opt_number(obj, "sanity_per_second", path, 0.0, 0.0)
-		l.madness_affected = r.opt_bool(obj, "madness_affected", path, true)
+		var occult := kind == "occult"
+		l.madness_affected = r.opt_bool(obj, "madness_affected", path, occult)
+		if l.madness_affected and not occult and obj.has("madness_affected"):
+			r.error(ConfigReader.join(path, "madness_affected"),
+				"only occult towers can be affected by madness")
+			l.madness_affected = false
 		var effects: Variant = r.opt_object(obj, "effects", path)
 		if effects != null:
 			var ep := ConfigReader.join(path, "effects")
+			r.check_keys(effects, EFFECTS.keys(), ep)
 			for key: String in effects:
-				l.effects[key] = r.as_number(effects[key], ConfigReader.join(ep, key), 0.0)
+				if EFFECTS.has(key):
+					l.effects[key] = r.as_number(effects[key], ConfigReader.join(ep, key),
+						0.0, EFFECTS[key])
 		return l

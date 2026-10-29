@@ -91,7 +91,64 @@ static func _read_json(dir: String, r: ConfigReader) -> Variant:
 	if typeof(json.data) != TYPE_DICTIONARY:
 		r.error("", "root must be an object, got %s" % ConfigReader.type_name(json.data))
 		return null
+	# JSON.parse keeps the last of duplicate keys, so a duplicate id or field
+	# would silently win; find them in the text instead.
+	for dup_path in find_duplicate_keys(text):
+		r.error(dup_path, "duplicate key")
 	return json.data
+
+
+## Field paths (e.g. "towers.rifleman.cost") of keys that repeat inside one JSON
+## object. Expects text that JSON.parse accepted. Keys are compared as written
+## (escape sequences are not decoded).
+static func find_duplicate_keys(text: String) -> Array[String]:
+	var dups: Array[String] = []
+	# One frame per open object/array: {"obj": bool, "keys": {}, "label": String}.
+	var stack: Array[Dictionary] = []
+	var i := 0
+	var n := text.length()
+	while i < n:
+		var ch := text[i]
+		if ch == "\"":
+			var start := i + 1
+			i += 1
+			while i < n and text[i] != "\"":
+				i += 2 if text[i] == "\\" else 1
+			var s := text.substr(start, i - start)
+			i += 1
+			if not stack.is_empty() and stack[-1]["obj"]:
+				var j := i
+				while j < n and text[j] in " \t\r\n":
+					j += 1
+				if j < n and text[j] == ":":
+					var frame: Dictionary = stack[-1]
+					frame["label"] = s
+					if frame["keys"].has(s):
+						dups.append(_frame_path(stack))
+					frame["keys"][s] = true
+			continue
+		match ch:
+			"{":
+				stack.append({"obj": true, "keys": {}, "label": ""})
+			"[":
+				stack.append({"obj": false, "keys": {}, "label": "0"})
+			"}", "]":
+				stack.pop_back()
+			",":
+				if not stack.is_empty() and not stack[-1]["obj"]:
+					stack[-1]["label"] = str(int(stack[-1]["label"]) + 1)
+		i += 1
+	return dups
+
+
+static func _frame_path(stack: Array[Dictionary]) -> String:
+	var path := ""
+	for frame in stack:
+		if frame["obj"]:
+			path = ConfigReader.join(path, frame["label"])
+		else:
+			path = ConfigReader.index(path, int(frame["label"]))
+	return path
 
 
 ## Root of towers/enemies.json: {"<key>": {"<id>": {...}, ...}}. Returns the id map

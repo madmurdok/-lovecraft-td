@@ -6,6 +6,8 @@ extends RefCounted
 ## error; callers must check `errors` before trusting the result.
 
 const ID_PATTERN := "^[a-z][a-z0-9_]*$"
+## Largest integer a JSON number (a double) holds exactly; also keeps int() from overflowing.
+const MAX_SAFE_INT := 9007199254740992.0
 
 var file: String
 var errors: Array[String] = []
@@ -43,7 +45,7 @@ static func type_name(value: Variant) -> String:
 
 ## Formats a number for messages: whole numbers without ".0".
 static func fmt(v: float) -> String:
-	return str(int(v)) if is_finite(v) and v == floorf(v) and absf(v) < 1e15 else str(v)
+	return str(int(v)) if is_finite(v) and v == floorf(v) and absf(v) <= MAX_SAFE_INT else str(v)
 
 
 func error(path: String, message: String) -> void:
@@ -113,7 +115,8 @@ func as_int(value: Variant, path: String, min_value := -INF, max_value := INF,
 		error(path, "expected integer, got %s" % str(value))
 		return fallback
 	var n := errors.size()
-	var v := as_number(value, path, min_value, max_value, false, float(fallback))
+	var v := as_number(value, path, maxf(min_value, -MAX_SAFE_INT),
+		minf(max_value, MAX_SAFE_INT), false, float(fallback))
 	return fallback if errors.size() > n else int(v)
 
 
