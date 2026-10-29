@@ -1,6 +1,6 @@
 # LT-12 — Hallucinations: fake enemies and misses (design note)
 
-Status: draft for owner review · 2026-10-30 · branch `docs/LT-12-hallucinations-design`
+Status: approved · 2026-10-30 · branch `docs/LT-12-hallucinations-design`
 
 ## 0. What exists today and what this task adds
 
@@ -104,10 +104,10 @@ New `sim/core/hallucination_system.gd` (`class_name HallucinationSystem`, plain
 ## 4. Miss chance (Fraying, Madness)
 
 - `miss = thresholds[key].miss_chance` for the current state (0, 0, 0.15, 0.15).
-- **Which towers:** every tower that fires a `SHOT` (damage > 0): rifleman, harpooner and
-  the Necronomicon (Q3). Elder Sign and searchlight have no shot, so never miss. In
-  Madness an occult tower with `madness_affected` uses LT-13's shot_split *instead of* the
-  miss roll (never both); Pure Rite rolls the normal miss.
+- **Which towers:** mundane towers only (rifleman, harpooner; owner decision Q3). Occult
+  towers never roll a miss: their price is sanity, and in Madness those with
+  `madness_affected` use LT-13's shot_split instead. Elder Sign and searchlight have no
+  shot. Rule in code: roll only when `tower.def.kind == "mundane"` and damage > 0.
 - **Resolution:** after the target is chosen, before damage: if `miss > 0`, one roll
   `rng(COMBAT).randf() < miss`. No roll when `miss == 0`, so Lucid/Whispers runs consume
   COMBAT exactly as today. One roll per shot: a harpoon line misses as a whole; Militia's
@@ -240,3 +240,10 @@ remove the phase check in `fake_candidates` (3).
    never picked as a fake. *Example:* the boss wave's fakes are only its Deep Ones.
    *Consequence:* a fake Dagon (6000 HP soaking all fire) would decide runs by luck.
    **Recommended: exclude bosses** (a trait in Dagon's content task).
+
+**Owner decisions (2026-10-30):** Q1 "Растворяется (Recommended)"; Q2 "Нет, перестают
+(Recommended)"; Q3 "Только обычные башни" (changes §4: occult towers never miss);
+Q4 "Мерцают все враги при Fraying (Recommended)" (GDD §9a edited); Q5 "Оставить, записать
+в GDD (Recommended)" (GDD §11 edited); Q6 "Нет, боссы исключены (Recommended)" (for the
+Dagon content task). Also decided (orchestrator, with LT-11): fakes are slowed by Elder
+Sign auras and hit by Necronomicon blasts like real enemies, so behaviour gives no tell.
