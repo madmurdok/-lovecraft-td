@@ -15,6 +15,7 @@ var paused := false
 var run_seed := 0
 
 var board: Board
+var lighting: Lighting  ## LT-8: darkness, beam, tower lights, sea fog (visual only)
 var hud: Hud
 var picker: TowerPicker
 var sell_panel: SellPanel
@@ -34,6 +35,10 @@ func _ready() -> void:
 	board.game = self
 	add_child(board)
 	board.cell_clicked.connect(_on_cell_clicked)
+	lighting = Lighting.new()
+	lighting.name = "Lighting"
+	lighting.setup(self, self)
+	board.add_child(lighting)
 
 	var ui := CanvasLayer.new()
 	ui.name = "UI"
