@@ -15,6 +15,7 @@ enum CommandResult {
 	OCCUPIED,  ## another tower stands on the cell
 	NOT_ENOUGH_GOLD,
 	NO_SUCH_TOWER,  ## sell: unknown or already sold tower id
+	NOT_BUILD_PHASE,  ## call_wave: not in the build phase (or no WaveDirector)
 }
 
 var state: SimState
@@ -36,9 +37,11 @@ func _init(p_config: GameConfig, run_seed: int) -> void:
 	_ground_route = SimRoute.from_cells(config.map.path)
 
 
-## Without a spawner the run never wins (nothing can be "exhausted").
+## Without a spawner the run never wins (nothing can be "exhausted"). A WaveDirector
+## starts the build phase before wave 1 here (BUILD_STARTED on tick 0).
 func set_spawner(s: SimSpawner) -> void:
 	_spawner = s
+	_spawner.attach(self)
 
 
 func rng(stream: SimRng.Stream) -> RandomNumberGenerator:
@@ -64,8 +67,11 @@ func step() -> void:
 	# 7. Spawning.
 	if _spawner != null:
 		_spawner.tick(self)
-	# 8. Remove dead and leaked enemies.
+	# 8. Remove dead and leaked enemies; then the wave system settles a cleared wave
+	# (its bonus is paid before the outcome check, so the last wave's bonus lands too).
 	_compact()
+	if _spawner != null:
+		_spawner.end_tick(self)
 	# 9. Outcome.
 	_check_outcome()
 
@@ -184,6 +190,24 @@ func sell_tower(tower_id: int) -> CommandResult:
 	return CommandResult.OK
 
 
+## Player command: ends the build phase now; the next wave spawns from the next tick on.
+## Pays economy.early_call_gold_per_second x whole seconds left on the build timer
+## (seconds rounded down from ticks, the product rounded down). Emits WAVE_STARTED
+## {early: true} + GOLD_CHANGED {reason: "early_call"} (none when the bonus is 0).
+func call_wave() -> CommandResult:
+	if state.outcome != SimState.Outcome.NONE:
+		return CommandResult.OUTCOME_REACHED
+	var director := _spawner as WaveDirector
+	if director == null or state.phase != SimState.Phase.BUILD:
+		return CommandResult.NOT_BUILD_PHASE
+	var seconds_left := SimTime.whole_seconds(state.build_ticks_left)
+	var bonus := floori(config.economy.early_call_gold_per_second * seconds_left)
+	state.command_log.append([state.tick, "call_wave"])
+	director.start_wave(self, true)
+	_add_gold(bonus, "early_call", 0)
+	return CommandResult.OK
+
+
 ## Gold a sell of `t` would return now.
 func sell_refund(t: SimTower) -> int:
 	return roundi(t.spent * config.economy.sell_refund_ratio)
@@ -248,6 +272,11 @@ func drain_events() -> Array[SimEvent]:
 	var out := events
 	events = []
 	return out
+
+
+## For sim systems outside this script (the wave director); scenes never call it.
+func emit_event(type: SimEvent.Type, id: int, data: Dictionary) -> void:
+	_emit(type, id, data)
 
 
 func _emit(type: SimEvent.Type, id: int, data: Dictionary) -> void:

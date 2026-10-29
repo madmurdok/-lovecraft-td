@@ -4,8 +4,19 @@ extends RefCounted
 ## LT-5 replaces it with the wave director.
 
 
+## Called once by Simulation.set_spawner(); may initialise wave state and emit events.
+func attach(_sim: Simulation) -> void:
+	pass
+
+
 ## Called once per tick, after movement and leaks; spawns through sim.spawn_enemy().
 func tick(_sim: Simulation) -> void:
+	pass
+
+
+## Called once per tick after dead/leaked enemies are removed (step 8) and before the
+## outcome check (step 9), so a wave's completion is settled before the win is decided.
+func end_tick(_sim: Simulation) -> void:
 	pass
 
 

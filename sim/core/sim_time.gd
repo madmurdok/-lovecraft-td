@@ -16,3 +16,9 @@ static func ticks(seconds: float) -> int:
 ## Speed in cells per second -> distance units per tick (1.6 -> 1600).
 static func units_per_tick(speed_cells_per_s: float) -> int:
 	return roundi(speed_cells_per_s * UNITS_PER_CELL / TICK_RATE)
+
+
+## Whole seconds in `n_ticks`, rounded down (749 ticks -> 24).
+static func whole_seconds(n_ticks: int) -> int:
+	@warning_ignore("integer_division")
+	return n_ticks / TICK_RATE
