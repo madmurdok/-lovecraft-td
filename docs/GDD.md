@@ -179,11 +179,37 @@ Assets needed for the MVP:
 - Animation: cutout (parts + Skeleton2D) by default, so walk/death cycles do not need
   frame-by-frame drawing and work with any art source.
 - Milestones 1–3 use vector/procedural placeholders with the final silhouettes' sizes.
-- Before milestone 4: style test. Draw one enemy, one tower and a map fragment in 2–3
-  styles, drop them into the game under real fog and lighting, pick one.
 - Art source (AI generation + cleanup, freelance artist, asset packs) is decided at the
   style test. AI-generated content must be disclosed on Steam.
 - Already excluded: pixel art, 1920s engraving.
+
+### Candidate styles
+
+| # | Style | Why it fits | Risk |
+|---|---|---|---|
+| 1 | Silhouettes with glowing accents ("shadow theatre"): black shapes, light only from eyes, lanterns, runes, the lighthouse beam | Works with the darkness/light layer for free; cheap to draw; a fake enemy is easy to make indistinguishable; reads well at ×2 | Units of the same size can blur together; needs strong outline shapes per enemy |
+| 2 | Textured dark gouache painting: muted palette, visible brush strokes | Rich atmosphere; suits a hand-painted harbor background | Most drawing work per sprite; detail may turn to mud under fog and distortion |
+| 3 | Stylised 3D pre-render (Blender → sprites) | Consistent lighting and angles; animations re-rendered cheaply | Needs 3D skills; can look generic or "plasticky" without a strong shader pass |
+| 4 | Hybrid: painted background (2) with silhouette units (1) | Atmosphere from the map, readability from the units | Two styles must agree in value range and edge softness |
+
+Current favourite: 1 (or 4). Not a decision; the style test decides.
+
+### Tools
+
+- Krita (painterly, default); Inkscape or Affinity for vector work; Procreate if an iPad is used.
+- Godot Skeleton2D for cutout animation: draw each unit as separate parts (head, torso, limbs).
+- Laigter to generate normal maps, so sprites react to 2D lights.
+
+### Style test (before milestone 4)
+
+- Per style: one Deep One (walk + death), one rifleman tower (L1) and a lighthouse
+  map fragment.
+- Shown in the running game, not as stills: real fog, 2D lighting and sanity shaders.
+- Judged in three sanity states (Lucid, Fraying, Madness) and at game speed ×1 and ×2.
+- Criteria: enemy type readable at a glance; real and fake enemies identical;
+  the tower stands out from the background; the mood holds under the shaders;
+  the cost of producing the full asset list (§9a table).
+- Outcome: the owner picks one style and the art source; record both here.
 
 ## 10. Data layout (proposal)
 
