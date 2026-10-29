@@ -1,0 +1,69 @@
+{
+  "towers": {
+    "rifleman": {
+      "name": "Rifleman",
+      "kind": "mundane",
+      "cost": 50,
+      "levels": [
+        { "range": 3, "damage": 10, "fire_interval": 0.8 },
+        { "upgrade_cost": 40, "range": 3.5, "damage": 14, "fire_interval": 0.7 }
+      ],
+      "branches": {
+        "a": { "name": "Marksman", "upgrade_cost": 80, "range": 5, "damage": 18, "fire_interval": 0.7,
+               "effects": { "crit_chance": 0.2, "crit_multiplier": 2 } },
+        "b": { "name": "Militia", "upgrade_cost": 80, "range": 3.5, "damage": 12, "fire_interval": 0.7,
+               "effects": { "shooters": 2 } }
+      }
+    },
+    "harpooner": {
+      "name": "Harpooner",
+      "kind": "mundane",
+      "cost": 70,
+      "levels": [
+        { "range": 4, "damage": 18, "fire_interval": 1.6, "effects": { "pierce": 1 } },
+        { "upgrade_cost": 55, "range": 4.5, "damage": 24, "fire_interval": 1.5, "effects": { "pierce": 1 } }
+      ],
+      "branches": {
+        "a": { "name": "Barbed", "upgrade_cost": 100, "range": 4.5, "damage": 24, "fire_interval": 1.5,
+               "effects": { "pierce": 1, "bleed_dps": 6, "bleed_seconds": 3 } },
+        "b": { "name": "Chain harpoon", "upgrade_cost": 100, "range": 4.5, "damage": 24, "fire_interval": 1.5,
+               "effects": { "pierce": 1, "pull_cells": 1.5 } }
+      }
+    },
+    "elder_sign": {
+      "name": "Elder Sign",
+      "kind": "occult",
+      "cost": 100,
+      "sanity_cost": 8,
+      "levels": [
+        { "range": 2, "effects": { "slow": 0.3, "damage_taken_multiplier": 1.25 } },
+        { "upgrade_cost": 80, "upgrade_sanity_cost": 8, "range": 2.5,
+          "effects": { "slow": 0.3, "damage_taken_multiplier": 1.25 } }
+      ],
+      "branches": {
+        "a": { "name": "Pure Ward", "upgrade_cost": 140, "upgrade_sanity_cost": 8, "range": 3.5,
+               "effects": { "slow": 0.3, "damage_taken_multiplier": 1.25 } },
+        "b": { "name": "Corrupted Seal", "upgrade_cost": 140, "upgrade_sanity_cost": 8, "range": 2.5,
+               "sanity_per_second": 0.2,
+               "effects": { "slow": 0.3, "damage_taken_multiplier": 1.25, "strip_armor": 1 } }
+      }
+    },
+    "necronomicon_reader": {
+      "name": "Necronomicon Reader",
+      "kind": "occult",
+      "cost": 150,
+      "levels": [
+        { "range": 3, "damage": 40, "fire_interval": 4, "sanity_per_cast": 2,
+          "effects": { "aoe_radius": 1.5 } },
+        { "upgrade_cost": 120, "range": 3.5, "damage": 55, "fire_interval": 4, "sanity_per_cast": 2,
+          "effects": { "aoe_radius": 1.5 } }
+      ],
+      "branches": {
+        "a": { "name": "Pure Rite", "upgrade_cost": 200, "range": 3.5, "damage": 70, "fire_interval": 5,
+               "sanity_per_cast": 2, "madness_affected": false, "effects": { "aoe_radius": 1.5 } },
+        "b": { "name": "Corrupted Rite", "upgrade_cost": 200, "range": 3.5, "damage": 82.5, "fire_interval": 4,
+               "sanity_per_cast": 4, "effects": { "aoe_radius": 1.5 } }
+      }
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "max": 100,
+  "start": 100,
+  "regen": { "between_waves": 12, "mundane_kill": 0.5 },
+  "horror_radius_cells": 3,
+  "thresholds": {
+    "lucid":    { "min": 70, "fake_spawn_interval": 0,  "miss_chance": 0 },
+    "whispers": { "min": 40, "fake_spawn_interval": 15, "miss_chance": 0 },
+    "fraying":  { "min": 1,  "fake_spawn_interval": 6,  "miss_chance": 0.15 },
+    "madness":  { "min": 0,  "fake_spawn_interval": 6,  "miss_chance": 0.15 }
+  },
+  "madness": {
+    "damage_multiplier": 2,
+    "shot_split": { "real": 0.6, "fake": 0.25, "empty": 0.15 },
+    "exit_rule": "permanent",
+    "restore_sanity": 30,
+    "buyout_cost": 150
+  }
+}

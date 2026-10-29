@@ -1,0 +1,7 @@
+{
+  "starting_gold": 200,
+  "wave_bonus": { "base": 50, "per_wave": 10 },
+  "sell_refund_ratio": 0.7,
+  "early_call_gold_per_second": 2,
+  "lighthouse": { "hp": 20 }
+}
