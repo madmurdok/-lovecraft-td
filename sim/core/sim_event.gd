@@ -2,7 +2,8 @@ class_name SimEvent
 extends RefCounted
 ## A one-shot fact the sim reports to scenes and tests (design note LT-4 §2).
 
-enum Type {SPAWNED, LEAKED, DIED, OUTCOME}
+## New types are appended so existing values never change.
+enum Type {SPAWNED, LEAKED, DIED, OUTCOME, TOWER_BUILT, TOWER_SOLD, GOLD_CHANGED, SHOT}
 
 var type: Type
 var tick: int

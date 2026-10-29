@@ -11,3 +11,6 @@ var map: MapDef
 var enemies: Array[SimEnemy] = []  ## id order
 var next_id := 1  ## shared by every entity; never reused
 var command_log: Array = []  ## [tick, command...] entries (LT-5/LT-6 add commands)
+var gold := 0  ## from economy.starting_gold; never negative
+var towers: Array[SimTower] = []  ## id order
+var tower_at: Dictionary[Vector2i, int] = {}  ## occupied cell -> tower id
