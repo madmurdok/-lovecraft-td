@@ -34,6 +34,8 @@ func _init(p_config: GameConfig, run_seed: int) -> void:
 	state.map = config.map
 	state.lighthouse_hp = config.economy.lighthouse_hp
 	state.gold = config.economy.starting_gold
+	state.sanity = clampf(config.sanity.start, 0.0, config.sanity.max_sanity)
+	state.sanity_state = sanity_state_for(state.sanity)  # initial state: no event
 	_ground_route = SimRoute.from_cells(config.map.path)
 
 
@@ -63,7 +65,9 @@ func step() -> void:
 	_leak()
 	# 5. Towers fire / damage: LT-6 (mundane); LT-11, LT-13 add theirs.
 	_fire_towers()
-	# 6. Sanity: LT-10.
+	# 6. Sanity (LT-10): horror drain. Kill regen is paid in slot 5 (_on_enemy_killed),
+	# between-waves regen in slot 8 (wave system), each through _add_sanity.
+	_horror_drain()
 	# 7. Spawning.
 	if _spawner != null:
 		_spawner.tick(self)
@@ -228,6 +232,29 @@ func award_wave_bonus(wave_number: int) -> int:
 	return bonus
 
 
+## Between-waves sanity regen (sanity.json regen.between_waves), paid once per cleared wave
+## by the wave system right after award_wave_bonus, so also for the last wave in the tick
+## WON is set. Returns the sanity actually added (0 at the cap or once the outcome is set).
+func award_wave_sanity() -> float:
+	if state.outcome != SimState.Outcome.NONE:
+		return 0.0
+	return _add_sanity(config.sanity.regen_between_waves, "between_waves", 0)
+
+
+## Threshold state for a sanity value (GDD §5.3, §5.4): MADNESS iff s <= 0 ("triggered when
+## sanity hits 0"); otherwise the highest state whose `min` <= s, with FRAYING covering
+## everything in (0, whispers.min), so 0 < s < fraying.min is FRAYING, not MADNESS.
+func sanity_state_for(s: float) -> SimState.SanityState:
+	if s <= 0.0:
+		return SimState.SanityState.MADNESS
+	var th := config.sanity.thresholds
+	if s >= th["lucid"].min_sanity:
+		return SimState.SanityState.LUCID
+	if s >= th["whispers"].min_sanity:
+		return SimState.SanityState.WHISPERS
+	return SimState.SanityState.FRAYING
+
+
 ## The tower with this id, or null (also null once sold).
 func tower_by_id(id: int) -> SimTower:
 	for t in state.towers:
@@ -292,13 +319,65 @@ func _add_gold(delta: int, reason: String, id: int) -> void:
 	_emit(SimEvent.Type.GOLD_CHANGED, id, {"delta": delta, "gold": state.gold, "reason": reason})
 
 
+## Every sanity change goes through here: clamps to [0, max], then emits SANITY_CHANGED
+## {delta, sanity, reason} with the delta actually applied (nothing when it is 0, e.g. regen
+## at the cap), and SANITY_STATE_CHANGED {old, new} (SimState.SanityState values) when the
+## threshold state moves. `id` is the enemy (kill) it is about, 0 otherwise.
+## Returns the applied delta.
+func _add_sanity(delta: float, reason: String, id: int) -> float:
+	# LT-13 hook: with madness.exit_rule "permanent", MADNESS is latched and regen must not
+	# lift sanity out of it; gate positive deltas here once the latch exists.
+	var before := state.sanity
+	state.sanity = clampf(before + delta, 0.0, config.sanity.max_sanity)
+	var applied := state.sanity - before
+	if applied == 0.0:
+		return 0.0
+	_emit(SimEvent.Type.SANITY_CHANGED, id,
+		{"delta": applied, "sanity": state.sanity, "reason": reason})
+	var old := state.sanity_state
+	state.sanity_state = sanity_state_for(state.sanity)
+	if state.sanity_state != old:
+		_emit(SimEvent.Type.SANITY_STATE_CHANGED, 0, {"old": old, "new": state.sanity_state})
+	return applied
+
+
+## Slot 6: every live real enemy with horror_drain > 0 within sanity.horror_radius_cells of
+## any tower (same metric as enemies_in_range: enemy position to tower cell centre, boundary
+## included) drains horror_drain per second, i.e. horror_drain * DT per tick; counted once
+## per enemy however many towers are near. Fakes never drain (illusions, LT-12); flyers do.
+## One SANITY_CHANGED "horror" per tick with the summed delta.
+func _horror_drain() -> void:
+	if state.towers.is_empty():
+		return
+	var r := config.sanity.horror_radius_cells
+	var r2 := r * r
+	var total := 0.0
+	for e in state.enemies:
+		if not e.is_live() or e.is_fake or e.def.horror_drain <= 0.0:
+			continue
+		var p := e.route.position_at(e.distance)
+		for t in state.towers:
+			var c := t.centre()
+			var dx := float(p.x) - c.x
+			var dy := float(p.y) - c.y
+			if dx * dx + dy * dy <= r2:
+				total += e.def.horror_drain * SimTime.DT
+				break
+	if total > 0.0:
+		_add_sanity(-total, "horror", 0)
+
+
 ## Kill hook, called once per enemy when apply_damage kills it. Real enemies pay their
 ## reward; fakes (LT-12) pay nothing. `source` is the damage source; for towers it is the
-## tower def id. LT-10 adds the mundane-kill sanity regen here (source is a tower def of
-## kind "mundane").
-func _on_enemy_killed(e: SimEnemy, _source: String) -> void:
-	if not e.is_fake:
-		_add_gold(e.def.reward, "kill", e.id)
+## tower def id. A real enemy killed by a mundane tower restores regen.mundane_kill sanity
+## (only damage-dealing levels fire, so a tower kill is always by a damage level).
+func _on_enemy_killed(e: SimEnemy, source: String) -> void:
+	if e.is_fake:
+		return
+	_add_gold(e.def.reward, "kill", e.id)
+	var tower_def: TowerDef = config.towers.get(source)
+	if tower_def != null and tower_def.kind == "mundane":
+		_add_sanity(config.sanity.regen_mundane_kill, "mundane_kill", e.id)
 
 
 ## Slot 5 (§3.3): every tower in id order counts down its cooldown and, when ready, fires
