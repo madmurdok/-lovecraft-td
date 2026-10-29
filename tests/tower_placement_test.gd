@@ -124,20 +124,26 @@ func test_unknown_tower_is_rejected() -> void:
 	_assert_rejected(sim, "no_such_tower", TOWER, R.UNKNOWN_TOWER)
 
 
-func test_occult_towers_are_not_available_yet() -> void:
-	var sim := tsim()
-	for def_id: String in sim.config.towers:
-		if sim.config.towers[def_id].kind == "occult":
-			_assert_rejected(sim, def_id, TOWER, R.NOT_AVAILABLE)
+func test_occult_towers_are_buildable_at_any_sanity() -> void:
+	for def_id: String in ["elder_sign", "necronomicon_reader"]:
+		var sim := tsim()
+		var def: TowerDef = sim.config.towers[def_id]
+		assert_str(def.kind).is_equal("occult")
+		sim.state.sanity = 0.0
+		assert_int(sim.can_build(def_id, TOWER)).is_equal(R.OK)
+		assert_int(sim.build_tower(def_id, TOWER)).is_equal(R.OK)
+		assert_int(sim.state.gold).is_equal(sim.config.economy.starting_gold - def.cost)
+		assert_int(sim.state.tower_at.size()).is_equal(1)
 
 
 func test_rejection_reasons_are_checked_in_the_documented_order() -> void:
 	var sim := tsim()
 	var path_cell := Vector2i(3, 0)
 	sim.state.gold = 0
-	# UNKNOWN before NOT_AVAILABLE before NOT_BUILDABLE before OCCUPIED before GOLD.
+	# UNKNOWN before NOT_BUILDABLE before OCCUPIED before GOLD.
 	assert_int(sim.can_build("nope", path_cell)).is_equal(R.UNKNOWN_TOWER)
-	assert_int(sim.can_build("elder_sign", path_cell)).is_equal(R.NOT_AVAILABLE)
+	assert_int(sim.can_build("elder_sign", path_cell)).is_equal(R.NOT_BUILDABLE)
+	assert_int(sim.can_build("elder_sign", TOWER)).is_equal(R.NOT_ENOUGH_GOLD)
 	assert_int(sim.can_build("rifleman", path_cell)).is_equal(R.NOT_BUILDABLE)
 	assert_int(sim.can_build("rifleman", TOWER)).is_equal(R.NOT_ENOUGH_GOLD)
 	sim.state.gold = 200
