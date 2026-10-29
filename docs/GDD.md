@@ -73,7 +73,7 @@ Global pool, 0..100, starts at 100.
 |---|---|---|
 | 100–70 | Lucid | none |
 | 69–40 | Whispers | audio whispers, UI jitter; fake enemies spawn at 1 per 15 s |
-| 39–1 | Fraying | fake enemies 1 per 6 s; towers miss 15% of shots; phantom path flickers on screen |
+| 39–1 | Fraying | fake enemies 1 per 6 s; mundane towers miss 15% of shots; phantom path flickers on screen |
 | 0 | Madness | see §5.4 |
 
 **Hallucinations affect gameplay.** A fake enemy looks exactly like a real one
@@ -164,7 +164,7 @@ layer is built from milestone 1 on, independent of the final art:
 
 - Godot 2D lighting: darkness outside light sources, the lighthouse beam, tower lights.
 - Shaders: sea fog, screen distortion / chromatic aberration / vignette driven by sanity,
-  flicker on fake enemies, UI jitter.
+  flicker on all enemies while Fraying (never only on fakes: that would reveal them), UI jitter.
 
 Assets needed for the MVP:
 
@@ -228,6 +228,8 @@ data/
 - **Hallucinations can feel unfair.** Losing to something the player could not
   tell apart. Mitigation: fake enemies never leak, Revealing searchlight exists,
   whispers telegraph the threshold. Validate in the first playtest.
+  Fakes do not drain sanity (no horror spiral), so an attentive player may notice a
+  shoggoth that does not drain: accepted trade-off. Bosses are never picked as fakes.
 - **Madness as a deliberate strategy.** ×2 occult damage may make crashing sanity
   on purpose optimal. Mitigation: astray shots cut the net gain to ≈ ×1.2, plus permanent default; tune `madness.shot_split`.
 - **Permanent madness may make the rest of the run a lottery.** That is why the exit rule is switchable.
