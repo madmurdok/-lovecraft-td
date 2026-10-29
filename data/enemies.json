@@ -1,0 +1,38 @@
+{
+  "enemies": {
+    "cultist": {
+      "name": "Cultist of Dagon",
+      "hp": 60, "speed": 1.0, "armor": 0, "leak_damage": 1, "reward": 5,
+      "traits": {
+        "tower_harass": { "stop_seconds": 2, "fire_rate_multiplier": 0.5, "debuff_seconds": 5 }
+      }
+    },
+    "hybrid": {
+      "name": "Innsmouth Hybrid",
+      "hp": 140, "speed": 0.9, "armor": 2, "leak_damage": 1, "reward": 10
+    },
+    "deep_one": {
+      "name": "Deep One",
+      "hp": 90, "speed": 1.6, "armor": 0, "leak_damage": 1, "reward": 8,
+      "traits": {
+        "pack": { "min": 4, "max": 6 }
+      }
+    },
+    "night_gaunt": {
+      "name": "Night-gaunt",
+      "hp": 110, "speed": 1.3, "armor": 0, "leak_damage": 2, "reward": 15,
+      "flying": true,
+      "traits": {
+        "tower_lift": { "from_wave": 6, "drop_cells": 2, "disable_seconds": 3 }
+      }
+    },
+    "shoggoth": {
+      "name": "Shoggoth",
+      "hp": 900, "speed": 0.5, "armor": 5, "leak_damage": 5, "reward": 60,
+      "horror_drain": 0.5,
+      "traits": {
+        "regen": { "hp_percent_per_second": 1 }
+      }
+    }
+  }
+}
