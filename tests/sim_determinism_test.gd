@@ -106,6 +106,9 @@ func test_rolls_on_another_stream_do_not_change_pack_sizes() -> void:
 
 # --- purity (behaviour 16) --------------------------------------------------
 
+var FORBIDDEN := RegEx.create_from_string("(^|[^.\\w])(Time\\.|OS\\.|randomize\\(|randi\\(|randf\\()")
+
+
 func test_no_sim_script_extends_node_or_uses_scene_tree() -> void:
 	var files := _scripts("res://sim")
 	assert_int(files.size()).is_greater(10)
@@ -115,6 +118,11 @@ func test_no_sim_script_extends_node_or_uses_scene_tree() -> void:
 			"%s extends Node" % f).is_false()
 		assert_bool(text.contains("SceneTree") or text.contains("get_tree(")) \
 			.override_failure_message("%s references the scene tree" % f).is_false()
+		# Global clocks, OS and unseeded RNG break determinism; seeded rng.randi() is fine
+		# (the dot before it), as is SimTime. (a word character before it).
+		var m := FORBIDDEN.search(text)
+		assert_object(m).override_failure_message(
+			"%s uses %s" % [f, m.get_string(2) if m else ""]).is_null()
 
 
 func _scripts(dir: String) -> Array[String]:

@@ -18,14 +18,15 @@ func test_cultist_on_real_map_leaks_on_tick_1210_not_earlier() -> void:
 	var e: SimEnemy = sim.state.enemies[0]
 	assert_int(e.spawn_tick).is_equal(10)
 	assert_int(e.distance).is_equal(e.route.length - 1000)
-	assert_int(sim.state.lighthouse_hp).is_equal(20)
+	var hp := cfg.economy.lighthouse_hp
+	assert_int(sim.state.lighthouse_hp).is_equal(hp)
 
 	var at := run(sim, 1)
 	var leaks := of_type(at, SimEvent.Type.LEAKED)
 	assert_int(leaks.size()).is_equal(1)
 	assert_int(leaks[0].tick).is_equal(1210)
 	assert_int(leaks[0].id).is_equal(e.id)
-	assert_int(sim.state.lighthouse_hp).is_equal(19)
+	assert_int(sim.state.lighthouse_hp).is_equal(hp - cfg.enemies["cultist"].leak_damage)
 
 
 func test_deep_one_pack_on_real_map_leaks_together() -> void:
