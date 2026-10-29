@@ -3,7 +3,8 @@ extends RefCounted
 ## A one-shot fact the sim reports to scenes and tests (design note LT-4 §2).
 
 ## New types are appended so existing values never change.
-enum Type {SPAWNED, LEAKED, DIED, OUTCOME, TOWER_BUILT, TOWER_SOLD, GOLD_CHANGED, SHOT}
+enum Type {SPAWNED, LEAKED, DIED, OUTCOME, TOWER_BUILT, TOWER_SOLD, GOLD_CHANGED, SHOT,
+		BUILD_STARTED, WAVE_STARTED, WAVE_CLEARED}
 
 var type: Type
 var tick: int
