@@ -66,6 +66,8 @@ func is_exhausted() -> bool:
 ## ran out and the caller spawns in this same tick. Only valid in BUILD.
 func start_wave(sim: Simulation, early: bool) -> void:
 	var s := sim.state
+	if s.phase != SimState.Phase.BUILD:
+		return
 	var ticks_left := s.build_ticks_left
 	s.phase = SimState.Phase.WAVE
 	s.wave_index += 1
