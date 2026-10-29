@@ -13,7 +13,8 @@ extends SimSpawner
 ##
 ## A wave is cleared when every group has fired all its events and no real enemy is alive
 ## (fakes do not count). Clearing pays award_wave_bonus(n) before the outcome check, so the
-## last wave's bonus is paid in the same tick WON is set.
+## last wave's bonus is paid in the same tick WON is set; the between-waves sanity regen
+## (award_wave_sanity) follows the bonus the same way.
 
 var _waves: WavesConfig
 var _build_ticks: int
@@ -113,6 +114,7 @@ func _clear_wave(sim: Simulation) -> void:
 	var n := s.wave_index
 	# LT-12 hook: dissolve the live fakes of this wave here (FAKE_DISSOLVED), before the bonus.
 	var bonus := sim.award_wave_bonus(n)
+	sim.award_wave_sanity()  # LT-10: regen.between_waves, also for the last wave
 	sim.emit_event(SimEvent.Type.WAVE_CLEARED, 0, {"wave": n, "bonus": bonus})
 	if n < s.waves_total:
 		_begin_build(sim)
