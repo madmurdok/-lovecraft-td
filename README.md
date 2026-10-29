@@ -28,11 +28,20 @@ Binary from `$GODOT` (default `/Applications/Godot.app/Contents/MacOS/Godot`).
 Does the first-time import automatically when `.godot/` is missing.
 Reports go to `reports/` (git-ignored).
 
-## Web export
+## Web build
+
+Prerequisite: export templates 4.7.2 (see above).
 
 ```
-mkdir -p build/web
-/Applications/Godot.app/Contents/MacOS/Godot --headless --path . --export-release "Web" build/web/index.html
+scripts/export-web.sh          # exports to build/web/ (git-ignored), prints path and size
+scripts/serve-web.py [port]    # serves build/web, default port 8060
 ```
 
-Serve `build/web/` over HTTP to play (e.g. `python3 -m http.server -d build/web`).
+Open http://localhost:8060/ in Chrome or Safari. Stop the server with Ctrl+C.
+`$GODOT` overrides the Godot binary.
+
+Known limits:
+- Single-threaded export (`thread_support=false`), so no special hosting is needed;
+  the server still sends COOP/COEP headers, harmless here.
+- Needs WebGL2; the first load is slow (~38 MB, wasm compile), 20-30 s under load.
+- Must be served over HTTP; `file://` does not work.
