@@ -327,6 +327,29 @@ func test_casts_repeat_every_fire_interval_and_each_costs_sanity_per_cast_once()
 	assert_float(sim.state.sanity).is_equal_approx(start - 3.0 * l.sanity_per_cast, 0.0001)
 
 
+func test_a_cast_hitting_several_enemies_costs_sanity_per_cast_exactly_once() -> void:
+	var sim := tsim()
+	sim.state.gold = 1000
+	build(sim, NECRO)
+	var l := _l1(sim, NECRO)
+	var a := put(sim, "cultist", 8.0, HUGE_HP)
+	var b := put(sim, "cultist", 8.0 - 0.3, HUGE_HP)
+	var c := put(sim, "cultist", 8.0 - 0.6, HUGE_HP)
+	sim.drain_events()
+	var start := sim.state.sanity
+	sim.step()
+	var ev := sim.drain_events()
+	var shots := of_type(ev, T.SHOT)
+	assert_int(shots.size()).is_equal(1)
+	assert_int(shots[0].data["hits"].size()).is_greater_equal(3)
+	for e in [a, b, c]:
+		assert_float(e.hp).is_equal_approx(HUGE_HP - l.damage, 0.0001)
+	var casts := _casts(ev)
+	assert_int(casts.size()).is_equal(1)
+	assert_float(casts[0].data["delta"]).is_equal_approx(-l.sanity_per_cast, 0.0001)
+	assert_float(sim.state.sanity - start).is_equal_approx(-l.sanity_per_cast, 0.0001)
+
+
 func test_blast_hits_every_enemy_within_the_radius_of_the_target() -> void:
 	var sim := tsim()
 	sim.state.gold = 1000
