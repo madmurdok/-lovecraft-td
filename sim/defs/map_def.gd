@@ -70,6 +70,15 @@ static func parse(r: ConfigReader, root: Dictionary) -> MapDef:
 ## Walks S -> L and reports forks, dead ends and orphan path cells.
 func _derive_path(r: ConfigReader) -> void:
 	var n := r.errors.size()
+	for end: Array in [["S", spawn], ["L", lighthouse]]:
+		var cell: Vector2i = end[1]
+		var count := _path_neighbours(cell).size()
+		if count != 1:
+			r.error(ConfigReader.index("rows", cell.y),
+				"%s must be a path end (column %d has %d path neighbours, needs 1)"
+				% [end[0], cell.x, count])
+	if r.errors.size() > n:
+		return
 	for y in height:
 		for x in width:
 			var cell := Vector2i(x, y)

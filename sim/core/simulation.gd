@@ -57,8 +57,11 @@ func step() -> void:
 
 ## Spawns `def_id` at the start of its route; a `pack` enemy spawns min..max of them
 ## (rolled on SPAWN) on the same tick at the same spot. Returns the first new id
-## (a pack's ids are consecutive), or 0 if `def_id` is unknown.
+## (a pack's ids are consecutive), or 0 if `def_id` is unknown or the outcome is set
+## (then nothing changes and no event is emitted).
 func spawn_enemy(def_id: String, is_fake := false) -> int:
+	if state.outcome != SimState.Outcome.NONE:
+		return 0
 	if not config.enemies.has(def_id):
 		push_error("Simulation.spawn_enemy: unknown enemy \"%s\"" % def_id)
 		return 0
@@ -86,19 +89,24 @@ func spawn_enemy(def_id: String, is_fake := false) -> int:
 	return first_id
 
 
-## The one armor rule for every damage source (§3.4). Returns the damage taken.
+## The one armor rule for every damage source (§3.4). Returns the hp actually removed
+## (capped at the remaining hp, so overkill is not counted); 0 for an unknown, dead or
+## leaked enemy, or once the outcome is set (then nothing changes and no event is emitted).
 ## A killed enemy emits DIED and is removed at the end of the current/next tick.
 func apply_damage(enemy_id: int, amount: float, source: String) -> float:
+	if state.outcome != SimState.Outcome.NONE:
+		return 0.0
 	var e := enemy_by_id(enemy_id)
 	if e == null or not e.is_live():
 		return 0.0
 	var armor := maxf(0.0, e.def.armor + e.armor_bonus)
 	var taken := maxf(0.0, amount - armor) * e.damage_taken_mult
+	var removed := minf(taken, e.hp)
 	e.hp -= taken
 	if e.hp <= 0.0:
 		e.dead = true
 		_emit(SimEvent.Type.DIED, e.id, {"source": source, "reward": e.def.reward})
-	return taken
+	return removed
 
 
 ## The enemy with this id, or null (also null once removed).
