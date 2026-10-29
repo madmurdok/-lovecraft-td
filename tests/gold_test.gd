@@ -144,6 +144,17 @@ func test_sell_refunds_the_rounded_ratio_of_the_cost_and_frees_the_cell() -> voi
 		assert_int(sim.build_tower(def_id, TOWER)).is_equal(R.OK)
 
 
+func test_sell_refund_rounds_to_nearest_not_down() -> void:
+	# 57 * 0.7 = 39.9: floor gives 39, nearest gives 40. Seed costs (50, 70) round exactly.
+	var sim := tsim()
+	var t := build(sim, "rifleman")
+	t.spent = 57
+	var gold := sim.state.gold
+	assert_int(sim.sell_refund(t)).is_equal(40)
+	assert_int(sim.sell_tower(t.id)).is_equal(R.OK)
+	assert_int(sim.state.gold).is_equal(gold + 40)
+
+
 func test_sell_applies_between_ticks_and_logs_the_current_tick() -> void:
 	var sim := tsim()
 	var t := build(sim, "rifleman")
