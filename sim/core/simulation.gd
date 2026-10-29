@@ -204,12 +204,23 @@ func call_wave() -> CommandResult:
 	var director := _spawner as WaveDirector
 	if director == null or state.phase != SimState.Phase.BUILD:
 		return CommandResult.NOT_BUILD_PHASE
-	var seconds_left := SimTime.whole_seconds(state.build_ticks_left)
-	var bonus := floori(config.economy.early_call_gold_per_second * seconds_left)
+	var bonus := early_call_bonus()
 	state.command_log.append([state.tick, "call_wave"])
 	director.start_wave(self, true)
 	_add_gold(bonus, "early_call", 0)
 	return CommandResult.OK
+
+
+## Gold call_wave() would pay if called now: economy.early_call_gold_per_second x whole
+## seconds left on the build timer (seconds rounded down from ticks, the product rounded
+## down); 0 when call_wave() would be refused. Changes nothing.
+func early_call_bonus() -> int:
+	if state.outcome != SimState.Outcome.NONE or state.phase != SimState.Phase.BUILD:
+		return 0
+	if not (_spawner is WaveDirector):
+		return 0
+	var seconds_left := SimTime.whole_seconds(state.build_ticks_left)
+	return floori(config.economy.early_call_gold_per_second * seconds_left)
 
 
 ## Gold a sell of `t` would return now.
