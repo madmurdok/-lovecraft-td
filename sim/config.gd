@@ -9,12 +9,14 @@ const ENEMIES_FILE := "enemies.json"
 const WAVES_FILE := "waves.json"
 const ECONOMY_FILE := "economy.json"
 const SANITY_FILE := "sanity.json"
+const MAP_FILE := "map.json"
 
 var towers: Dictionary[String, TowerDef] = {}
 var enemies: Dictionary[String, EnemyDef] = {}
 var waves: WavesConfig
 var economy: EconomyConfig
 var sanity: SanityConfig
+var map: MapDef
 
 
 ## Loads and validates every config file in `dir`. Never returns a partial config:
@@ -65,6 +67,12 @@ static func load_from_dir(dir: String = DEFAULT_DIR) -> ConfigLoadResult:
 	var sanity_root: Variant = _read_json(dir, r)
 	if sanity_root != null:
 		c.sanity = SanityConfig.parse(r, sanity_root)
+	result.errors.append_array(r.errors)
+
+	r = ConfigReader.new(MAP_FILE)
+	var map_root: Variant = _read_json(dir, r)
+	if map_root != null:
+		c.map = MapDef.parse(r, map_root)
 	result.errors.append_array(r.errors)
 
 	if result.ok:

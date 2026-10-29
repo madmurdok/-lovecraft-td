@@ -194,6 +194,7 @@ data/
   waves.json      # per wave: spawn groups with type, count, interval, delay
   sanity.json     # thresholds, drains, regen, hallucination rates, madness.exit_rule
   economy.json    # starting gold, wave bonus, sell ratio, early-call bonus
+  map.json        # grid rows (. buildable, # path, ~ water, S start, L lighthouse); path derived S -> L
 ```
 
 ## 11. Risks
@@ -216,4 +217,8 @@ data/
 
 ## Topics for further discussion (auto-analysis)
 
-All findings from the 2026-10-29 pass were resolved in the body of the document; no open topics.
+All findings from the 2026-10-29 pass were resolved in the body of the document.
+
+- **Night-gaunt spawn point.** Flyers start at the path entry `S` for now (LT-4 design,
+  owner decision 2026-10-29). Check a separate `F` spawn cell on the map (approach from
+  the sea) when flyers arrive with the Content milestone.
