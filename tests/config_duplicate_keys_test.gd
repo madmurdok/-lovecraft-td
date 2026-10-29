@@ -40,6 +40,11 @@ func test_escaped_backslash_before_closing_quote_does_not_hide_a_duplicate() -> 
 	assert_array(_dups('{"a": "\\\\", "a": 1}')).contains_exactly(["a"])
 
 
+func test_escaped_quote_inside_value_does_not_end_the_string() -> void:
+	# value is the one-character string " ; scanning must skip the escaped quote
+	assert_array(_dups('{"a": "\\"", "b": 1, "b": 2}')).contains_exactly(["b"])
+
+
 # --- false positives that must NOT be flagged -------------------------------
 
 func test_same_key_in_array_elements_is_not_a_duplicate() -> void:

@@ -130,8 +130,11 @@ func test_integer_beyond_2_pow_53_is_rejected_not_wrapped() -> void:
 
 
 func test_negative_huge_integer_is_rejected() -> void:
-	var r := load_text_edit(EC, "\"starting_gold\": 200", "\"starting_gold\": -1e20")
-	assert_rejected(r, EC, "starting_gold")
+	# Every config int has min >= 0, so the lower safe-int bound is only reachable directly.
+	var reader := ConfigReader.new("economy.json")
+	reader.as_int(-1e20, "starting_gold")
+	assert_int(reader.errors.size()).is_equal(1)
+	assert_str(reader.errors[0]).starts_with("economy.json: starting_gold: ")
 
 
 func test_range_must_be_positive() -> void:
