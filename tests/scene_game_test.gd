@@ -98,18 +98,14 @@ func test_picker_has_one_button_per_config_tower_with_name_and_cost() -> void:
 		assert_str(_game.picker.buttons[def_id].text).contains("%s - %d gold" % [def.name, def.cost])
 
 
-func test_picker_disables_unaffordable_and_unavailable_towers() -> void:
+func test_picker_enables_every_buildable_tower_and_disables_unaffordable_ones() -> void:
 	await _start_game()
 	var cell := _buildable_cell()
 	await _click_cell(cell)
-	assert_bool(_game.picker.buttons[RIFLE].disabled).is_false()
-	var occult := ""
+	# Occult towers are buildable since LT-11: every tower the sim accepts is enabled.
 	for def_id: String in _config.towers:
-		if _game.sim.can_build(def_id, cell) == Simulation.CommandResult.NOT_AVAILABLE:
-			occult = def_id
-	assert_str(occult).is_not_empty()
-	assert_bool(_game.picker.buttons[occult].disabled).is_true()
-	assert_str(_game.picker.buttons[occult].text).contains("not available yet")
+		var ok := _game.sim.can_build(def_id, cell) == Simulation.CommandResult.OK
+		assert_bool(_game.picker.buttons[def_id].disabled).is_equal(not ok)
 	# Gold drops below the cost while the panel is open: re-evaluated on the next frame.
 	_game.sim.state.gold = _cost(RIFLE) - 1
 	_game.advance(0.0)
