@@ -10,7 +10,7 @@ enum CommandResult {
 	OK,
 	OUTCOME_REACHED,  ## the run is over; every command is refused
 	UNKNOWN_TOWER,  ## no such tower def
-	NOT_AVAILABLE,  ## tower kind not playable yet (occult towers: LT-11)
+	NOT_AVAILABLE,  ## reserved: no tower kind is refused since LT-11 (kept so values never shift)
 	NOT_BUILDABLE,  ## path, water, the lighthouse or out of bounds
 	OCCUPIED,  ## another tower stands on the cell
 	NOT_ENOUGH_GOLD,
@@ -58,12 +58,14 @@ func step() -> void:
 	state.tick += 1
 	for e in state.enemies:
 		e.reset_modifiers()
-	# 2. Effect systems (auras, slows, stuns): LT-6/LT-11.
+	# 2. Effect systems: Elder Sign auras (LT-11); later slows/stuns add theirs here.
+	_apply_auras()
 	# 3. Movement.
 	_move()
 	# 4. Leaks.
 	_leak()
-	# 5. Towers fire / damage: LT-6 (mundane); LT-11, LT-13 add theirs.
+	# 5. Towers fire / damage: single and line shots (LT-6), AoE casts and their sanity
+	# cost (LT-11); LT-13 adds madness effects.
 	_fire_towers()
 	# 6. Sanity (LT-10): horror drain. Kill regen is paid in slot 5 (_on_enemy_killed),
 	# between-waves regen in slot 8 (wave system), each through _add_sanity.
@@ -143,8 +145,6 @@ func can_build(def_id: String, cell: Vector2i) -> CommandResult:
 	if not config.towers.has(def_id):
 		return CommandResult.UNKNOWN_TOWER
 	var def: TowerDef = config.towers[def_id]
-	if def.kind != "mundane":
-		return CommandResult.NOT_AVAILABLE
 	if not state.map.is_buildable(cell):
 		return CommandResult.NOT_BUILDABLE
 	if state.tower_at.has(cell):
@@ -156,7 +156,9 @@ func can_build(def_id: String, cell: Vector2i) -> CommandResult:
 
 ## Player command (§1.3, applied at once between ticks): builds an L1 `def_id` on `cell`
 ## for its cost. On OK the tower gets the next entity id, is ready to fire on the next
-## tick, and TOWER_BUILT + GOLD_CHANGED are emitted.
+## tick, and TOWER_BUILT + GOLD_CHANGED are emitted. An occult tower's sanity_cost is then
+## paid through _add_sanity (SANITY_CHANGED "build"): allowed at any sanity, clamped at 0,
+## so building can push the player into MADNESS (GDD §11). Only gold is checked.
 func build_tower(def_id: String, cell: Vector2i) -> CommandResult:
 	var result := can_build(def_id, cell)
 	if result != CommandResult.OK:
@@ -174,11 +176,14 @@ func build_tower(def_id: String, cell: Vector2i) -> CommandResult:
 	state.command_log.append([state.tick, "build", def_id, cell])
 	_emit(SimEvent.Type.TOWER_BUILT, t.id, {"def": def_id, "cell": cell, "cost": def.cost})
 	_add_gold(-def.cost, "build", t.id)
+	if def.sanity_cost > 0.0:
+		_add_sanity(-def.sanity_cost, "build", t.id)
 	return CommandResult.OK
 
 
 ## Player command: sells tower `tower_id` for economy.sell_refund_ratio of everything spent
 ## on it (rounded to the nearest gold) and frees its cell. Emits TOWER_SOLD + GOLD_CHANGED.
+## Sanity paid to build an occult tower is not refunded.
 func sell_tower(tower_id: int) -> CommandResult:
 	if state.outcome != SimState.Outcome.NONE:
 		return CommandResult.OUTCOME_REACHED
@@ -266,15 +271,20 @@ func tower_by_id(id: int) -> SimTower:
 ## Live enemies (fakes included) whose position is within `range_cells` of the centre of
 ## `cell`, boundary included; id order (§6 target query).
 func enemies_in_range(cell: Vector2i, range_cells: float) -> Array[SimEnemy]:
-	var c := Vector2(cell.x + 0.5, cell.y + 0.5)
-	var r2 := range_cells * range_cells
+	return enemies_near(Vector2(cell.x + 0.5, cell.y + 0.5), range_cells)
+
+
+## Live enemies (fakes included) whose position is within `radius` cells of `centre`
+## (cell units), boundary included; id order.
+func enemies_near(centre: Vector2, radius: float) -> Array[SimEnemy]:
+	var r2 := radius * radius
 	var out: Array[SimEnemy] = []
 	for e in state.enemies:
 		if not e.is_live():
 			continue
 		var p := e.route.position_at(e.distance)
-		var dx := float(p.x) - float(c.x)
-		var dy := float(p.y) - float(c.y)
+		var dx := float(p.x) - float(centre.x)
+		var dy := float(p.y) - float(centre.y)
 		if dx * dx + dy * dy <= r2:
 			out.append(e)
 	return out
@@ -322,7 +332,8 @@ func _add_gold(delta: int, reason: String, id: int) -> void:
 ## Every sanity change goes through here: clamps to [0, max], then emits SANITY_CHANGED
 ## {delta, sanity, reason} with the delta actually applied (nothing when it is 0, e.g. regen
 ## at the cap), and SANITY_STATE_CHANGED {old, new} (SimState.SanityState values) when the
-## threshold state moves. `id` is the enemy (kill) it is about, 0 otherwise.
+## threshold state moves. `id` is the enemy (kill) or tower (build, cast) it is about,
+## 0 otherwise.
 ## Returns the applied delta.
 func _add_sanity(delta: float, reason: String, id: int) -> float:
 	# LT-13 hook: with madness.exit_rule "permanent", MADNESS is latched and regen must not
@@ -380,9 +391,52 @@ func _on_enemy_killed(e: SimEnemy, source: String) -> void:
 		_add_sanity(config.sanity.regen_mundane_kill, "mundane_kill", e.id)
 
 
+## Slot 2 (§3.3): aura towers (Elder Sign) set this tick's modifiers. An aura tower is a
+## support level (damage 0) with a `slow` and/or `damage_taken_multiplier` effect; its aura
+## radius is the level's range, measured like enemies_in_range from the enemy's position at
+## the start of the tick (before movement). Every live enemy inside (fakes too) gets
+## speed_mult x (1 - slow) and damage_taken_mult x multiplier. Auras do not stack: inside
+## several signs an enemy gets each modifier once, the strongest among the covering signs.
+## The speed modifier scales this tick's movement (slot 3); the damage modifier applies to
+## every hit this tick (slot 5), after armor (apply_damage).
+func _apply_auras() -> void:
+	var auras: Array[SimTower] = []
+	for t in state.towers:
+		var s := t.stats()
+		if s.damage <= 0.0 and (s.effects.has("slow") or s.effects.has("damage_taken_multiplier")):
+			auras.append(t)
+	if auras.is_empty():
+		return
+	for e in state.enemies:
+		if not e.is_live():
+			continue
+		var p := e.route.position_at(e.distance)
+		var inside := false
+		var slow := 0.0
+		var mult := 1.0
+		for t in auras:
+			var s := t.stats()
+			var c := t.centre()
+			var dx := float(p.x) - c.x
+			var dy := float(p.y) - c.y
+			if dx * dx + dy * dy > s.range_cells * s.range_cells:
+				continue
+			inside = true
+			slow = maxf(slow, s.effects.get("slow", 0.0))
+			mult = maxf(mult, s.effects.get("damage_taken_multiplier", 1.0))
+			# Corrupted Seal's strip_armor (L3 branch) is not wired yet: L1 only in LT-11.
+		if inside:
+			e.speed_mult *= 1.0 - slow
+			e.damage_taken_mult *= mult
+
+
 ## Slot 5 (§3.3): every tower in id order counts down its cooldown and, when ready, fires
 ## at the live enemy in range nearest the end of its route (ties: lower id). Instant hit.
-## A level with a `pierce` effect fires a line shot (_line_hits) instead of a single shot.
+## A level with a `pierce` effect fires a line shot (_line_hits) instead of a single shot;
+## one with an `aoe_radius` effect casts a blast centred on that target, hitting every live
+## enemy (fakes too) within aoe_radius of it (Necronomicon). No enemy in range: no shot, no
+## cast and no sanity cost; the tower stays ready. A level's sanity_per_cast is paid through
+## _add_sanity (SANITY_CHANGED "cast", id = tower) in the tick it fires, before its damage.
 func _fire_towers() -> void:
 	for t in state.towers:
 		if t.cooldown_ticks > 0:
@@ -395,17 +449,24 @@ func _fire_towers() -> void:
 		var target := _first_along_route(enemies_in_range(t.cell, s.range_cells))
 		if target == null:
 			continue
+		# LT-13 hook: madness_affected levels (s.madness_affected) deal x2 and may shoot
+		# astray while state.sanity_state == MADNESS; not implemented here.
 		var pierce: float = s.effects.get("pierce", 0.0)
+		var aoe: float = s.effects.get("aoe_radius", 0.0)
 		var hits: Array[SimEnemy] = [target]
 		var to := target.route.position_at(target.distance)
 		if pierce > 0.0:
 			to = _line_end(t.centre(), to, s.range_cells)
 			hits = _line_hits(t.centre(), to, pierce * 0.5, target)
+		elif aoe > 0.0:
+			hits = enemies_near(to, aoe)
 		var ids: Array[int] = []
 		for e in hits:
 			ids.append(e.id)
 		_emit(SimEvent.Type.SHOT, t.id,
 			{"def": t.def.id, "target": target.id, "hits": ids, "to": to})
+		if s.sanity_per_cast > 0.0:
+			_add_sanity(-s.sanity_per_cast, "cast", t.id)
 		for e in hits:
 			apply_damage(e.id, s.damage, t.def.id)
 		t.cooldown_ticks = maxi(1, SimTime.ticks(s.fire_interval))
