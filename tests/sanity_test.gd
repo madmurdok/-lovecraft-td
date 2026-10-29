@@ -55,6 +55,24 @@ func test_initial_sanity_is_the_configured_start_with_derived_state_and_no_event
 	assert_array(sim.drain_events()).is_empty()
 
 
+func _start_sim(start: float) -> Simulation:
+	var r := load_edited(func(dir: String) -> void:
+		edit(dir, "sanity.json", func(root: Dictionary) -> void:
+			root["start"] = start))
+	assert_bool(r.ok).override_failure_message("config rejected:\n%s" % "\n".join(r.errors)) \
+		.is_true()
+	return Simulation.new(r.config, SEED)
+
+
+func test_initial_state_is_derived_from_a_configured_start_below_lucid() -> void:
+	var cases := [[50.0, S.WHISPERS], [0.5, S.FRAYING]]
+	for c: Array in cases:
+		var sim := _start_sim(c[0])
+		assert_float(sim.state.sanity).is_equal(c[0])
+		assert_int(sim.state.sanity_state).is_equal(c[1])
+		assert_array(sim.drain_events()).is_empty()
+
+
 # --- horror drain ------------------------------------------------------------
 
 func test_shoggoth_in_radius_drains_horror_drain_per_second() -> void:
@@ -81,6 +99,39 @@ func test_horror_is_one_event_per_tick_with_reason_horror() -> void:
 		assert_str(e.data["reason"]).is_equal("horror")
 		assert_bool(is_equal_approx(e.data["delta"], -_tick_drain(sim, "shoggoth"))).is_true()
 	assert_bool(is_equal_approx(ev[2].data["sanity"], sim.state.sanity)).is_true()
+
+
+func test_a_shoggoth_killed_by_a_tower_in_the_tick_does_not_drain_that_tick() -> void:
+	# Fire is slot 5, drain slot 6: the corpse is still in the list but is not visible.
+	var sim := tsim()
+	build(sim, "rifleman")
+	put(sim, "shoggoth", 7.0, 1.0)
+	_set_sanity(sim, 50.0)
+	var events := run(sim, 1)
+	assert_array(of_type(events, T.DIED)).has_size(1)
+	var ev := _changes(events)
+	assert_int(ev.size()).is_equal(1)
+	assert_str(ev[0].data["reason"]).is_equal("mundane_kill")
+	assert_bool(is_equal_approx(sim.state.sanity, 50.0 + sim.config.sanity.regen_mundane_kill)) \
+		.is_true()
+
+
+func test_a_shoggoth_leaking_in_the_tick_does_not_drain_that_tick() -> void:
+	# Leaks are slot 4, drain slot 6; the route end lies inside the tower's radius.
+	var sim := tsim()
+	var tower := build(sim, "rifleman", Vector2i(13, 1))
+	var e := put(sim, "shoggoth", 0.0)
+	e.distance = e.route.length
+	e.prev_distance = e.distance
+	var p := e.route.position_at(e.distance)
+	var c := tower.centre()
+	var r := sim.config.sanity.horror_radius_cells
+	assert_float((p.x - c.x) * (p.x - c.x) + (p.y - c.y) * (p.y - c.y)).is_less_equal(r * r)
+	sim.drain_events()
+	var events := run(sim, 1)
+	assert_array(of_type(events, T.LEAKED)).has_size(1)
+	assert_array(_changes(events)).is_empty()
+	assert_float(sim.state.sanity).is_equal(sim.config.sanity.start)
 
 
 func test_enemy_exactly_at_the_radius_drains() -> void:
