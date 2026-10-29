@@ -7,6 +7,7 @@ extends Node2D
 signal restart_requested
 
 const BOARD_ORIGIN := Vector2(0, 48)  ## below the HUD bar
+const REVEAL_FAKES_ARG := "--reveal-fakes"  ## `-- --reveal-fakes` (debug builds only)
 
 var sim: Simulation
 var clock := SimClock.new()
@@ -25,6 +26,9 @@ func setup(config: GameConfig, p_seed: int) -> void:
 	run_seed = p_seed
 	sim = Simulation.new(config, p_seed)
 	sim.set_spawner(WaveDirector.new(config.waves))
+	# LT-12 §1: debug builds only; the board then marks fakes via sim.debug_is_fake.
+	sim.debug_reveal_fakes = OS.is_debug_build() \
+		and OS.get_cmdline_user_args().has(REVEAL_FAKES_ARG)
 
 
 func _ready() -> void:
