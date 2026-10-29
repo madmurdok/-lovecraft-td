@@ -216,4 +216,8 @@ data/
 
 ## Topics for further discussion (auto-analysis)
 
-All findings from the 2026-10-29 pass were resolved in the body of the document; no open topics.
+All findings from the 2026-10-29 pass were resolved in the body of the document.
+
+- **Night-gaunt spawn point.** Flyers start at the path entry `S` for now (LT-4 design,
+  owner decision 2026-10-29). Check a separate `F` spawn cell on the map (approach from
+  the sea) when flyers arrive with the Content milestone.
