@@ -2,11 +2,15 @@ extends Node2D
 ## Boot: loads every balance config before anything else starts.
 ## A bad config refuses to start: each error goes to push_error, the screen
 ## lists them, and a headless run exits with code 1.
-## Override the config directory with `-- --config-dir=<path>` (dev/CI).
+## Override the config directory with `-- --config-dir=<path>` (dev/CI) and the run seed
+## with `-- --seed=<int>` (random otherwise). A loaded config starts a Game (LT-7);
+## its restart button replaces it with a fresh run.
 
 const CONFIG_DIR_ARG := "--config-dir="
+const SEED_ARG := "--seed="
 
 var config: GameConfig
+var game: Game
 
 
 func _ready() -> void:
@@ -18,6 +22,28 @@ func _ready() -> void:
 	config = result.config
 	print("Config loaded from %s: %d towers, %d enemies, %d waves"
 		% [dir, config.towers.size(), config.enemies.size(), config.waves.waves.size()])
+	start_game()
+
+
+## Replaces the current run (if any) with a new one on the same config.
+func start_game() -> void:
+	if game != null:
+		remove_child(game)
+		game.queue_free()
+	var run_seed := _seed()
+	game = Game.new()
+	game.name = "Game"
+	game.setup(config, run_seed)
+	game.restart_requested.connect(start_game, CONNECT_DEFERRED)
+	add_child(game)
+	print("Run started, seed %d" % run_seed)
+
+
+func _seed() -> int:
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with(SEED_ARG):
+			return arg.trim_prefix(SEED_ARG).to_int()
+	return randi()
 
 
 func _config_dir() -> String:
