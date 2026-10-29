@@ -194,6 +194,7 @@ data/
   waves.json      # per wave: spawn groups with type, count, interval, delay
   sanity.json     # thresholds, drains, regen, hallucination rates, madness.exit_rule
   economy.json    # starting gold, wave bonus, sell ratio, early-call bonus
+  map.json        # grid rows (. buildable, # path, ~ water, S start, L lighthouse); path derived S -> L
 ```
 
 ## 11. Risks

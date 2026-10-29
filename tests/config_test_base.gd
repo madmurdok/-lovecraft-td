@@ -3,7 +3,8 @@ extends GdUnitTestSuite
 ## Shared helpers for the config loader suites: builds config directories in user://
 ## (a copy of the real res://data, then edited) and checks error lists.
 
-const FILES := ["towers.json", "enemies.json", "waves.json", "economy.json", "sanity.json"]
+const FILES := ["towers.json", "enemies.json", "waves.json", "economy.json", "sanity.json",
+	"map.json"]
 const ROOT := "user://config_tests"
 
 var _counter := 0
