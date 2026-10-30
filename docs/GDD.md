@@ -73,7 +73,7 @@ Global pool, 0..100, starts at 100.
 |---|---|---|
 | 100–70 | Lucid | none |
 | 69–40 | Whispers | audio whispers, UI jitter; fake enemies spawn at 1 per 15 s |
-| 39–1 | Fraying | fake enemies 1 per 6 s; towers miss 15% of shots; phantom path flickers on screen |
+| 39–1 | Fraying | fake enemies 1 per 6 s; mundane towers miss 15% of shots; phantom path flickers on screen |
 | 0 | Madness | see §5.4 |
 
 **Hallucinations affect gameplay.** A fake enemy looks exactly like a real one
@@ -87,9 +87,9 @@ but deals no leak damage and gives no reward. The player cannot tell which is wh
 ### 5.4 Madness
 
 - Triggered when sanity hits 0.
-- Occult towers deal ×2 damage, but each shot goes astray: 60% hit a random real
-  enemy in range, 25% hit a fake enemy, 15% hit an empty cell. Net output ≈ ×1.2,
-  spread unpredictably. No friendly fire. Ratios live in `sanity.json` (`madness.shot_split`).
+- Occult towers deal ×2 damage, but each shot goes astray: 40% hit a random real
+  enemy in range, 35% hit a fake enemy, 25% hit an empty cell. Net output ≈ ×0.8,
+  spread unpredictably, so crashing sanity on purpose costs damage. No friendly fire. Ratios live in `sanity.json` (`madness.shot_split`).
 - Fraying effects stay at maximum.
 - Duration: until the end of the game (default).
 - Exit rule is a config switch for rebalancing:
@@ -137,16 +137,19 @@ Speed is in cells per second. Armor is flat damage reduction per hit.
 
 | Wave | Content |
 |---|---|
-| 1 | 8 cultists |
-| 2 | 10 cultists, 1 pack of Deep Ones |
-| 3 | 2 packs of Deep Ones, 4 hybrids |
-| 4 | 6 hybrids, 3 night-gaunts |
-| 5 | 1 shoggoth + escort of cultists |
+| 1 | 12 cultists |
+| 2 | 12 cultists, 2 packs of Deep Ones |
+| 3 | 6 packs of Deep Ones, 12 hybrids |
+| 4 | 20 hybrids, 16 night-gaunts |
+| 5 | 1 shoggoth + escort: 29 cultists, 11 hybrids, 4 packs of Deep Ones, 6 night-gaunts |
 | 6 | 3 packs of Deep Ones, 5 night-gaunts |
 | 7 | 2 shoggoths, 8 hybrids |
 | 8 | mixed: everything except Dagon, dense |
 | 9 | 3 shoggoths, 6 night-gaunts, 3 packs |
 | 10 | Dagon + periodic summons |
+
+Waves 1–5 are the MVP's `data/waves.json` (spawn intervals and delays live there, tuned in
+LT-15); waves 6–10 are the post-MVP plan.
 
 - Build phase between waves: 25 s timer, or start early with the "call wave" button for the bonus.
 - Game speed: ×1 / ×2, plus pause (building is allowed while paused).
@@ -164,7 +167,7 @@ layer is built from milestone 1 on, independent of the final art:
 
 - Godot 2D lighting: darkness outside light sources, the lighthouse beam, tower lights.
 - Shaders: sea fog, screen distortion / chromatic aberration / vignette driven by sanity,
-  flicker on fake enemies, UI jitter.
+  flicker on all enemies while Fraying (never only on fakes: that would reveal them), UI jitter.
 
 Assets needed for the MVP:
 
@@ -179,11 +182,37 @@ Assets needed for the MVP:
 - Animation: cutout (parts + Skeleton2D) by default, so walk/death cycles do not need
   frame-by-frame drawing and work with any art source.
 - Milestones 1–3 use vector/procedural placeholders with the final silhouettes' sizes.
-- Before milestone 4: style test. Draw one enemy, one tower and a map fragment in 2–3
-  styles, drop them into the game under real fog and lighting, pick one.
 - Art source (AI generation + cleanup, freelance artist, asset packs) is decided at the
   style test. AI-generated content must be disclosed on Steam.
 - Already excluded: pixel art, 1920s engraving.
+
+### Candidate styles
+
+| # | Style | Why it fits | Risk |
+|---|---|---|---|
+| 1 | Silhouettes with glowing accents ("shadow theatre"): black shapes, light only from eyes, lanterns, runes, the lighthouse beam | Works with the darkness/light layer for free; cheap to draw; a fake enemy is easy to make indistinguishable; reads well at ×2 | Units of the same size can blur together; needs strong outline shapes per enemy |
+| 2 | Textured dark gouache painting: muted palette, visible brush strokes | Rich atmosphere; suits a hand-painted harbor background | Most drawing work per sprite; detail may turn to mud under fog and distortion |
+| 3 | Stylised 3D pre-render (Blender → sprites) | Consistent lighting and angles; animations re-rendered cheaply | Needs 3D skills; can look generic or "plasticky" without a strong shader pass |
+| 4 | Hybrid: painted background (2) with silhouette units (1) | Atmosphere from the map, readability from the units | Two styles must agree in value range and edge softness |
+
+Current favourite: 1 (or 4). Not a decision; the style test decides.
+
+### Tools
+
+- Krita (painterly, default); Inkscape or Affinity for vector work; Procreate if an iPad is used.
+- Godot Skeleton2D for cutout animation: draw each unit as separate parts (head, torso, limbs).
+- Laigter to generate normal maps, so sprites react to 2D lights.
+
+### Style test (before milestone 4)
+
+- Per style: one Deep One (walk + death), one rifleman tower (L1) and a lighthouse
+  map fragment.
+- Shown in the running game, not as stills: real fog, 2D lighting and sanity shaders.
+- Judged in three sanity states (Lucid, Fraying, Madness) and at game speed ×1 and ×2.
+- Criteria: enemy type readable at a glance; real and fake enemies identical;
+  the tower stands out from the background; the mood holds under the shaders;
+  the cost of producing the full asset list (§9a table).
+- Outcome: the owner picks one style and the art source; record both here.
 
 ## 10. Data layout (proposal)
 
@@ -194,6 +223,7 @@ data/
   waves.json      # per wave: spawn groups with type, count, interval, delay
   sanity.json     # thresholds, drains, regen, hallucination rates, madness.exit_rule
   economy.json    # starting gold, wave bonus, sell ratio, early-call bonus
+  map.json        # grid rows (. buildable, # path, ~ water, S start, L lighthouse); path derived S -> L
 ```
 
 ## 11. Risks
@@ -201,8 +231,10 @@ data/
 - **Hallucinations can feel unfair.** Losing to something the player could not
   tell apart. Mitigation: fake enemies never leak, Revealing searchlight exists,
   whispers telegraph the threshold. Validate in the first playtest.
+  Fakes do not drain sanity (no horror spiral), so an attentive player may notice a
+  shoggoth that does not drain: accepted trade-off. Bosses are never picked as fakes.
 - **Madness as a deliberate strategy.** ×2 occult damage may make crashing sanity
-  on purpose optimal. Mitigation: astray shots cut the net gain to ≈ ×1.2, plus permanent default; tune `madness.shot_split`.
+  on purpose optimal. Mitigation: astray shots cut the net output to ≈ ×0.8 (a loss, not a gain), plus permanent default; tune `madness.shot_split`.
 - **Permanent madness may make the rest of the run a lottery.** That is why the exit rule is switchable.
 - **Scope creep.** L3 branches double tower content; keep branch effects to one
   stat or flag each.
@@ -216,4 +248,8 @@ data/
 
 ## Topics for further discussion (auto-analysis)
 
-All findings from the 2026-10-29 pass were resolved in the body of the document; no open topics.
+All findings from the 2026-10-29 pass were resolved in the body of the document.
+
+- **Night-gaunt spawn point.** Flyers start at the path entry `S` for now (LT-4 design,
+  owner decision 2026-10-29). Check a separate `F` spawn cell on the map (approach from
+  the sea) when flyers arrive with the Content milestone.
