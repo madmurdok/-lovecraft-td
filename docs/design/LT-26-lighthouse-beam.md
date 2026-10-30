@@ -1,10 +1,10 @@
 # LT-26 — Lighthouse beam: buffs mundane towers, weakens occult (design note)
 
-Status: draft for owner review · 2026-10-31 · branch `docs/LT-26-lighthouse-beam-design`
+Status: approved · 2026-10-31 · branch `docs/LT-26-lighthouse-beam-design`
 
 Source: playtest 0.1 finding 8 (`docs/playtest-0.1.md`): "the lighthouse beam drives back
 darkness and gives the defenders confidence: buffs mundane towers in it, weakens occult
-ones". Lamp oil (finding 7, LT-27) is kept as a future beam resource.
+ones". Lamp oil (finding 7, LT-27) is kept as a future beam resource. Owner decisions: §6.
 
 ## 0. What exists today and what this task adds
 
@@ -18,278 +18,283 @@ Geometry of the current map (`data/map.json`, 24×14): the lighthouse `L` is at 
 (from "west" to "north"). The path entry `S` (0, 1) is 23.5 cells away, outside the
 16-cell reach: the entry stays in darkness, the last third of the path is reachable.
 
-Two numbers that drive the control question:
+**Coverage:** one beam of 0.48 rad turning a full circle lights a given tower (within reach)
+0.48 / 2π = **7.6 %** of the time. Beams are evenly spaced, so the lighthouse levels give:
 
-- **Today's full turn:** a tower is inside the 0.48 rad cone for 0.48 / 2π = **7.6 %** of
-  the time, and three quarters of every turn light only sea. A +25 % fire-rate buff at
-  7.6 % uptime is **+1.9 %** average DPS: invisible.
-- **A fixed (aimed) beam** lights the same towers 100 % of the time, so the buff is a
-  placement rule the player can read and plan around.
+| Lighthouse level | Beams | Spacing | Coverage per tower |
+|---|---|---|---|
+| L1 (start) | 1 | — | 7.6 % |
+| L2 | 2 | 180° | 15.3 % |
+| L3 | 4 | 90° | 30.6 % |
+| (not used) 8 beams | 8 | 45° | 61 %: near-global buff, kept out of the default levels |
 
-**This task (the follow-up implementation)** moves the beam into the sim: its direction
-is sim state, updated in the fixed tick; every tick each tower gets a `lit` flag; mundane
-lit towers get a buff, occult lit towers a debuff; the render layer draws the cone from the
-sim's direction instead of its own timer.
+**This task (the follow-up implementation)** moves the beam into the sim: beam directions
+are sim state, turned in the fixed tick; every tick each tower and each enemy gets a `lit`
+flag; lit mundane towers get a buff, lit occult towers a debuff, lit enemies lose LT-23's
+Madness buff; the lighthouse becomes an upgradeable structure whose levels add beams; the
+render layer draws the cones from the sim instead of its own timer.
 
 Non-goals: the beam does not damage, slow or reveal enemies (the Searchlight's Revealing
-branch stays the only fake counter); oil is not implemented here (§5, Q5).
+branch stays the only fake counter); the player does not aim the beam; oil is not
+implemented here (§5).
 
 ```
-command aim_beam(cell)  ──► state.beam.target_dir           (between ticks, also while paused)
-step slot 2 _update_beam ─► state.beam.dir turns toward target, then tower.lit for every tower
+command upgrade(lighthouse)  ─► state.lighthouse_level += 1  (LT-24 upgrade command, between ticks)
+step slot 2 _update_beam ─► rotate base dir; beam i = base dir rotated by i × spacing;
+                             tower.lit / enemy.lit for every tower and live enemy
 step slot 2 _apply_auras ─► Elder Sign strength × occult multiplier if lit
-step slot 5 _fire_towers ─► fire interval / damage / miss chance use lit modifiers
-step slot 6 sanity       ─► LT-23 passive drain × lit multiplier (if Q3 = A)
-render  lighting.gd      ─► beam.rotation = atan2(sim dir), interpolated; lit marker on towers
+step slot 2/3 LT-23 buff ─► Madness enemy buff skipped for lit enemies
+step slot 5 _fire_towers ─► fire interval / damage / miss roll use lit modifiers
+step slot 6 sanity       ─► LT-23 passive drain × drain multiplier for lit occult towers
+render  lighting.gd      ─► one cone per beam, rotation = atan2(sim dir), interpolated
 ```
 
 ---
 
 ## 1. Beam model in the sim
 
-### 1.1 Direction without trig
+### 1.1 Directions without trig
 
 LT-4 §4 forbids `sin/cos/atan2/pow` in gameplay math (libm may differ desktop vs web).
-So the beam direction is a **unit vector**, not an angle:
+So beam directions are **unit vectors**, not angles:
 
-- `state.beam.dir: Vector2` (64-bit components kept as two `float`s, not a `Vector2`, which
-  is 32-bit; LT-4 §4) and `state.beam.target_dir`.
-- **Lit test** for a tower centre `p`, lighthouse centre `L`, `v = p - L`:
-  `|v|² ≤ reach²` and `v·dir > 0` and `cross(v, dir)² ≤ k² · (v·dir)²`, where
-  `k = tan(half angle)` is a **config number** (`half_width_ratio`, e.g. 0.25 ≈ 14°). Only
-  `+ - * /`, so bit-identical everywhere.
-- **Turning** toward `target_dir` (aimed mode) or around (auto mode): rotate `dir` each tick
-  by a fixed small rotation `(c, s)` derived from a config rational `t` by
-  `c = (1 - t²)/(1 + t²)`, `s = 2t/(1 + t²)` (exact, no libm), then renormalise with `sqrt`.
-  In aimed mode the beam stops turning when the next step would pass the target (sign of
-  `cross(dir, target_dir)` flips) and snaps `dir = target_dir`.
-- Render: `lighting.gd` sets `beam.rotation = atan2(dir.y, dir.x)` (trig is fine in render),
-  interpolated between the previous and current tick like enemy positions (LT-4 §1.2).
-  The cone texture's half angle is set from the same `half_width_ratio` so what the player
-  sees is exactly what the sim lights.
+- `state.beam` holds one base direction as two 64-bit `float`s (`Vector2` is 32-bit, LT-4 §4)
+  and `beam_count` (from the lighthouse level).
+- **Beam i** = base direction rotated by `i × 2π / beam_count`, built without trig:
+  2 beams → negate; 4 beams → add the two perpendiculars `(−y, x)` and `(y, −x)`; 8 beams
+  → the 45° rotation with `c = s = sqrt(0.5)`. So `beam_count` is validated to 1, 2, 4 or 8.
+- **Lit test** for a point `p` (tower centre, or enemy route position), lighthouse centre `L`,
+  `v = p − L`, beam direction `d`: `|v|² ≤ reach²` and `v·d > 0` and
+  `cross(v, d)² ≤ k² · (v·d)²`, where `k = tan(half angle)` is a **config number**
+  (`half_width_ratio`; 0.245 matches today's 0.24 rad). Lit = inside **any** beam; overlaps
+  do not stack. Only `+ − * / sqrt`, so bit-identical everywhere.
+- **Turning:** each tick rotate the base direction by a fixed small rotation `(c, s)` from a
+  config rational `t`: `c = (1 − t²)/(1 + t²)`, `s = 2t/(1 + t²)` (exact, no libm; the angle
+  per tick is `2·atan(t)`), then renormalise with `sqrt`. Today's speed 0.45 rad/s =
+  0.015 rad/tick → `t = 0.0075`. A negative `t` turns the other way.
+- **Pattern switch** `pattern`: `"rotate"` (default, full turn as today) or `"sweep"`
+  (base direction swings back and forth across the land arc, reversing `t` when it crosses
+  an edge vector from config). Both use the same lit test, so the measure slice can compare
+  them; the default stays the owner's choice.
+- Start of the run: the base direction points left (as `lighting.gd` does today, `PI`), so
+  the first sweep goes over land.
+- Render: `lighting.gd` draws `beam_count` cones; each `rotation = atan2(d.y, d.x)` (trig is
+  fine in render), interpolated between the previous and current tick like enemy positions
+  (LT-4 §1.2). The cone texture's half angle and reach come from the same config, so what
+  the player sees is exactly what the sim lights.
 
-### 1.2 Player command (if Q1 = C)
+### 1.2 Lighthouse upgrades
 
-- `Simulation.aim_beam(cell: Vector2i) -> CommandResult`: sets `target_dir` to the unit
-  vector from `L` to the cell centre. Rejected if the cell is `L` itself. Free, no cooldown,
-  allowed in build phase, during a wave and while paused (LT-4 §1.3: commands apply between
-  ticks; the turn itself only happens in ticks). Recorded in the command log like `build`.
-- Input: a "Beam" button / hotkey `B` toggles aim mode; the next click on any cell sets the
-  target; right-click cancels. A faint target line shows where the beam is turning to.
-- Start of the run: the beam points at the path cell nearest the lighthouse at half reach
-  (deterministic default from the map), so a player who never aims still gets a useful beam.
+- The lighthouse is a **special upgradeable structure**: it is not a `SimTower` (no shots,
+  cannot be sold or built), but it is a valid target of LT-24's upgrade command. LT-26 adds a
+  target kind "lighthouse" to that command; its exact API (method name, rejection reasons,
+  logging) follows LT-24's design note.
+- `state.lighthouse_level` (0 = L1). Upgrade checks: next level exists, enough Relics
+  (LT-27 currency; internal `gold`), allowed in build phase and during a wave, also while
+  paused (LT-4 §1.3). Paid through `_add_gold`; event `LIGHTHOUSE_UPGRADED {level, beams}`.
+  The new beams appear on the next tick, evenly spaced from the current base direction.
+- No refund (the lighthouse is never sold). Lighthouse HP does not change with level.
+- UI: clicking the lighthouse cell opens LT-24's side panel with level, beam count,
+  coverage and the upgrade button.
 
 ### 1.3 Config
 
 New `beam` block inside the existing `lighthouse` block of `data/economy.json` (already loaded,
-holds `hp`); `EconomyConfig` gets a `BeamConfig` with validation in `config_reader.gd`:
+holds `hp`); `EconomyConfig` gets a `BeamConfig` with validation in `config_reader.gd`.
+Costs and multipliers are tunable placeholders for the measure slice:
 
 ```jsonc
 "lighthouse": {
   "hp": 20,
   "beam": {
-    "mode": "aimed",                 // "aimed" | "sweep" | "rotate" (Q1 options, a switch)
+    "pattern": "rotate",             // "rotate" | "sweep"
+    "turn_t": 0.0075,                // ~0.015 rad/tick = 0.45 rad/s, one turn in 14 s
     "reach_cells": 16,
-    "half_width_ratio": 0.25,        // tan of the half angle (~14 deg)
-    "turn_t": 0.01,                  // rotation rational: ~0.02 rad/tick = 0.6 rad/s
+    "half_width_ratio": 0.245,       // tan of the half angle (0.24 rad today)
+    "sweep_edges": [[-1, 0], [0, -1]], // only for "sweep": land arc of the current map
+    "levels": [
+      { "beams": 1 },
+      { "beams": 2, "upgrade_cost": 120 },
+      { "beams": 4, "upgrade_cost": 250 }
+    ],
     "mundane": { "fire_interval_mult": 0.8, "ignore_miss": true },
-    "occult":  { "power_mult": 0.7, "drain_mult": 0.5 }
+    "occult":  { "power_mult": 0.7, "drain_mult": 0.5 },
+    "enemy":   { "cancel_madness_buff": true }
   }
 }
 ```
 
-Keeping all three modes behind `mode` is cheap (same lit test, different turn rule) and lets
-the bots measure Q1 instead of arguing it. Numbers are placeholders for the measure slice.
+Validation: `beams` in {1, 2, 4, 8} and non-decreasing; `upgrade_cost` > 0 from L2 on;
+`half_width_ratio` > 0; multipliers > 0; `pattern` known. Adding an 8-beam level later is a
+data change only.
 
 ### 1.4 Where the modifiers apply (existing code)
 
-- `SimTower` gets `var lit := false`, written once per tick in slot 2 before `_apply_auras`.
-- **Mundane, lit** (`_fire_towers`): cooldown `ticks(fire_interval × fire_interval_mult)`;
-  `ignore_miss` skips `_roll_miss()` (the COMBAT stream is then not consumed for that shot,
-  which is a deterministic, seed-stable choice; tests pin it).
-- **Occult, lit**: Necronomicon damage × `power_mult` (applied before the madness ×2);
-  Elder Sign in `_apply_auras`: slow × `power_mult`, damage-taken bonus
-  `1 + (mult − 1) × power_mult`. LT-23's passive drain (`sanity_per_second`) × `drain_mult`.
-- Events: `BEAM_CHANGED {dir, target}` when the target is set, `TOWER_LIT {lit}` when a
-  tower's flag flips (render marker, side panel from LT-24).
+- `SimTower` gets `var lit := false`; `SimEnemy` gets `var lit := false` (reset with the
+  other per-tick modifiers in slot 1). Both written in slot 2, before `_apply_auras`.
+- **Mundane, lit** (`_fire_towers`): the cooldown set after a shot uses
+  `ticks(fire_interval × fire_interval_mult)` (decided at the shot, so a tower that leaves the
+  beam keeps its shorter cooldown once; tests pin it); `ignore_miss` skips `_roll_miss()` (the
+  COMBAT stream is then not consumed for that shot: deterministic and seed-stable).
+- **Occult, lit**: Necronomicon damage × `power_mult` (before the madness ×2); Elder Sign in
+  `_apply_auras`: slow × `power_mult`, damage-taken bonus `1 + (mult − 1) × power_mult`.
+  LT-23's passive drain (`sanity_per_second`) × `drain_mult` for the ticks the tower is lit.
+- **Enemy, lit**: LT-23's Madness enemy buff is not applied that tick (§4).
+- Events: `TOWER_LIT {lit}` when a tower's flag flips (render marker, LT-24 panel). No event
+  for enemies (too frequent; the render layer reads `lit` from state if it needs it).
 
 ---
 
 ## 2. Example with today's numbers
 
-| Tower (L1) | Dark | Lit (recommended numbers) | Change |
+While lit (L1 towers):
+
+| Tower (L1) | Dark | Lit | Change while lit |
 |---|---|---|---|
 | Rifleman, Lucid | 10 dmg / 0.8 s = 12.5 DPS | 10 / 0.64 s = 15.6 DPS | +25 % |
 | Rifleman, Fraying (15 % miss) | 10.6 DPS | 15.6 DPS (no misses) | +47 % |
-| Necronomicon Reader | 40 AoE / 4 s = 10 DPS per target, −2 sanity/cast | 28 AoE = 7 DPS | −30 % |
+| Necronomicon Reader | 40 AoE / 4 s = 10 DPS per target | 28 AoE = 7 DPS | −30 % |
 | Elder Sign | slow 30 %, +25 % damage taken | slow 21 %, +17.5 % | −30 % strength |
 
-A board of 6 riflemen and 2 Readers: aiming the beam at the riflemen and keeping the Readers
-outside it is worth about +19 DPS in Lucid; aiming it at the Readers by mistake costs 6 DPS.
+Averaged over a turn, by lighthouse level (coverage from §0):
+
+| Effect | L1 (7.6 %) | L2 (15.3 %) | L3 (30.6 %) |
+|---|---|---|---|
+| Rifleman, Lucid | +1.9 % | +3.8 % | +7.6 % |
+| Rifleman, Fraying | +3.6 % | +7.2 % | +14.4 % |
+| Reader damage | −2.3 % | −4.6 % | −9.2 % |
+| Occult passive drain (×0.5 while lit) | −3.8 % | −7.6 % | −15.3 % |
+
+So at L1 the beam is mostly flavour; the lighthouse upgrades are what make it matter, and
+they cost Relics that would otherwise go to towers. If L3 still feels weak, the measure slice
+raises the multipliers or the cone width, not the beam count (8 beams = 61 % coverage, a
+near-global buff).
 
 ---
 
 ## 3. Sanity
 
-The beam is the mundane answer to sanity pressure: "the light gives the defenders confidence".
-The recommended link is through **misses**, not through the sanity pool: lit mundane towers
-ignore the Fraying/Madness miss chance (`sanity.json` `miss_chance` 0.15). So the beam matters
-more the lower sanity falls, without making sanity easier to keep. Other options in Q4.
+Two links, both decided (§6):
+
+- **Misses:** lit mundane towers ignore the Fraying/Madness miss chance (`sanity.json`
+  `miss_chance` 0.15): the beam matters more the lower sanity falls.
+- **Madness world pushed back:** enemies inside a beam lose LT-23's Madness enemy buff (§4).
+
+The beam adds no sanity regen and no drain of its own; the sanity pool moves only through the
+halved occult drain while lit (§1.4).
 
 ## 4. Interplay with LT-23 (parallel)
 
 LT-23 makes occult towers much stronger, adds a constant per-tower sanity drain
-(`sanity_per_second`, parsed but unused today) and makes enemies stronger in Madness.
+(`sanity_per_second`, parsed but unused today) and makes enemies stronger in Madness
+(LT-20 folded in).
 
-- **Recommended trade (Q3 = A):** a lit occult tower is weaker (`power_mult` 0.7) but also
-  drains less (`drain_mult` 0.5). With LT-23's strong occult towers this turns the beam into a
-  choice, not a pure penalty: light the occult cluster to slow the sanity slide at the cost of
-  damage, or light the mundane line for DPS. Example with a hypothetical LT-23 drain of
-  0.3/s per tower: 3 occult towers drain 0.9/s = 54 sanity over a 60 s wave; lit, 27.
-- **Order:** LT-26 implementation starts after LT-23's code slice merges (both change
-  `_fire_towers`, `_apply_auras` and the sanity slot); LT-26 multipliers apply on top of
-  LT-23's final tower numbers. Its measure slice runs after LT-23's tuning, so the beam is
-  balanced against the new occult strength, not against today's weak occult towers.
-- **Madness enemy buff (LT-20 folded into LT-23):** the beam does not cancel it in the
-  recommendation (Q4 option C would).
+- **Occult trade:** a lit occult tower is weaker (`power_mult` 0.7) but drains half
+  (`drain_mult` 0.5) while lit. Example with a hypothetical LT-23 drain of 0.3/s per tower,
+  L3 lighthouse: 3 occult towers drain 0.9/s = 54 sanity over a 60 s wave dark; with 30.6 %
+  of the time lit, about 46.
+- **Madness enemy buff:** a lit enemy loses it for the ticks it is lit. This **depends on
+  LT-23's buff design, still open there**:
+  - Which stats: if the buff is speed, the lit test runs before `_move` (slot 2 already is);
+    if it is HP or armor, a lit enemy uses base armor for hits that tick, and a max-HP buff
+    cannot be taken away per tick (it would need "bonus HP shield" semantics). LT-26's code
+    slice follows whatever LT-23 decides; if the buff is max HP, LT-26 needs a follow-up
+    decision.
+  - Fakes: the rule is "whatever LT-23 buffs, a lit beam removes", for real and fake enemies
+    alike. If LT-23 buffs fakes too, lit fakes lose it too; the render layer must show the
+    loss the same way for both, so the beam never tells fakes apart (LT-12 §1).
+- **Order:** LT-26 implementation starts after LT-23's code slice and LT-24's upgrade command
+  merge (both change `_fire_towers`, `_apply_auras`, the sanity slot and the command API).
+  LT-26's measure slice runs after LT-23's tuning, so the beam is balanced against the new
+  occult strength, not against today's weak occult towers.
 
 ## 5. Lamp oil (future resource)
 
 Owner's idea: buy oil to make the lighthouse shine brighter. LT-27 settled one currency,
 Relics; amber is folded into Relics' lore, so oil would be the first second resource.
-Recommended for now: **design hooks only** (Q5 = A). The beam block already carries every
-number oil would raise (`reach_cells`, `half_width_ratio`, the multipliers, `turn_t`), so a
-later "Lamp oil" task adds a `brightness` level that scales them, without touching the lit
-test. Sketch for that task (not built here): in the build phase, spend 60 Relics on oil →
-the next wave the cone is 1.5× wider and the mundane buff 1.4× stronger; oil burns out at
-the wave end. Open there: oil bought vs. dropped by enemies, burn per wave vs. per second,
-what happens at zero oil (dim beam, never off).
+Decided: **hooks only** in LT-26. The beam block already carries every number oil would
+raise (`reach_cells`, `half_width_ratio`, `turn_t`, the multipliers), so a later "Lamp oil"
+task adds a `brightness` factor that scales them, without touching the lit test or the
+level/beam-count model. Sketch for that task (not built here): spend Relics on oil in the
+build phase → the next wave the cones are 1.5× wider. Open there: oil bought vs. dropped by
+enemies, burn per wave vs. per second, what happens at zero oil (dim beam, never off).
 
 ---
 
-## 6. Open questions
+## 6. Decisions (owner, 2026-10-31)
 
-### Q1. How is the beam controlled?
+### D1. Beam control: lighthouse levels add beams
 
-**Today:** the beam is a picture: it turns on its own, one full turn every 14 s, and changes
-nothing in the game. **Change:** the beam becomes a game rule: towers inside it get buffs or
-debuffs. How it moves decides whether that rule is luck or a decision.
-**Example:** a rifleman 8 cells from the lighthouse, +25 % fire rate when lit.
+Chosen: **"Уровни добавляют лучи 1→2→4"** (the owner's own idea). The beam keeps rotating
+automatically as today (full turn, 14 s); the lighthouse is upgradeable through LT-24's
+upgrade command and its levels add beams 1 → 2 → 4 (coverage 7.6 % → 15 % → 30 %). The owner
+also asked about levels up to 4× or 8× beams and about tuning rotation speed and pattern;
+8 beams (~61 %) was flagged as a near-global buff. Result: beam count per level, rotation
+speed and pattern stay in config (§1.3); default levels stop at 4 beams; costs are tunable
+placeholders. Rejected: player-aimed beam, automatic sweep over land as the default (kept as
+a config pattern), aiming with oil.
 
-- **C. Player-aimed (recommended).** You click "Beam" (or `B`), then a cell; the beam turns
-  there at about 0.6 rad/s (a quarter turn in 2.6 s) and stays. The rifleman is lit 100 % of
-  the time if you aim at it: +25 % DPS. Benefit: a readable, plannable choice each wave (light
-  the mundane line, keep occult in the dark, re-aim when the Shoggoth arrives). Risk: one more
-  thing to manage; bots need an aiming policy; a fixed beam on a fixed path becomes a "set
-  once" choice until Map v2 (LT-18) changes the path per wave.
-- **B. Automatic sweep over land.** The beam swings back and forth across the land quarter
-  only (never the sea). The rifleman is lit about 30 % of the time: +7.5 % average. Benefit:
-  no input, still noticeable, lively look. Risk: weak and random-feeling; the player can only
-  place towers by the sweep, which is hard to read.
-- **A. Automatic full turn as today.** Lit 7.6 % of the time: +1.9 % average. Benefit: no
-  change in feel. Risk: the effect is invisible; the finding is not really addressed.
-- **D. Automatic sweep, aiming costs oil.** B by default; spend oil to hold the beam on a
-  spot for a wave. Benefit: links to the oil idea. Risk: needs the oil resource now (Q5),
-  doubles the scope.
+### D2. Mundane towers in the beam
 
-All modes stay behind a config switch, so the choice can be revisited after bot runs.
+Chosen: **"+25% скорострельности и без промахов (Recommended)"**. Lit mundane towers fire
+25 % faster (`fire_interval × 0.8`) and never miss.
 
-### Q2. What does the beam give mundane towers?
+### D3. Occult towers in the beam
 
-**Today:** mundane towers (Rifleman, Harpooner; later Searchlight) have fixed stats and miss
-15 % of shots when sanity is below 40. **Change:** a lit mundane tower gets a bonus.
-**Example:** Rifleman L1 deals 12.5 DPS in the dark, 10.6 DPS while Fraying.
+Chosen: **"−30% силы, но дренаж вдвое меньше (Recommended)"**. Lit occult towers have −30 %
+power (Reader damage, Elder Sign slow and damage-taken bonus) and their LT-23 passive drain
+is halved while lit.
 
-- **A. +25 % fire rate and no misses (recommended).** Lit: 15.6 DPS in any sanity state
-  (+25 % lucid, +47 % fraying). Benefit: ties "confidence" to the sanity system, matters most
-  when things go wrong. Risk: mundane is already the stronger strategy (playtest: mundane
-  never loses HP); needs LT-23's difficulty pass to land first.
-- **B. +20 % damage only.** Lit: 15 DPS lucid, 12.7 fraying. Benefit: simplest, one number.
-  Risk: no link to sanity; flat damage also pierces armor better, which shifts the Hybrid/
-  Shoggoth balance.
-- **C. +1 cell range.** Rifleman 3 → 4 cells. Benefit: visible on the range circle. Risk:
-  range on a fixed path is worth very different amounts per spot; hard to tune.
+### D4. Sanity and madness
 
-### Q3. What does the beam do to occult towers?
+Chosen: **"Враги в луче теряют усиление безумия"**. Enemies inside a beam lose LT-23's
+Madness enemy buff while lit. Depends on LT-23's buff design (stats, fakes included or not),
+see §4.
 
-**Today:** occult towers (Elder Sign, Necronomicon Reader) are unaffected by light; after
-LT-23 they will be much stronger and drain sanity every second just by standing on the board.
-**Change:** a lit occult tower is weakened.
-**Example:** a Reader (40 AoE every 4 s) and a hypothetical LT-23 drain of 0.3 sanity/s.
+### D5. Lamp oil
 
-- **A. −30 % power, but half the passive drain (recommended).** Lit Reader: 28 AoE, drains
-  0.15/s. Benefit: the beam becomes a trade (damage vs. sanity), which gives the occult player
-  a reason to use it too. Risk: if the drain is the main occult cost, lighting all occult
-  towers may become the default; the measure slice must check it.
-- **B. −40 % power, no drain change.** Lit Reader: 24 AoE. Benefit: a clean "light hurts the
-  occult" rule. Risk: for the occult player the beam is only ever a penalty to point away.
-- **C. Lit occult towers stop working.** Benefit: strongest, most legible rule. Risk: with an
-  aimed beam the player just never lights them; with an automatic beam it is a random off
-  switch that feels unfair.
-
-### Q4. Does the beam touch sanity or madness directly?
-
-**Today:** sanity falls from Elder Signs, Reader casts and horror (big enemies near towers),
-and regenerates +12 between waves and +0.5 per mundane kill. **Change (options):**
-**Example:** sanity 35 (Fraying), a lit rifleman line.
-
-- **A. No direct effect; only through misses (recommended).** Lit riflemen stop missing (Q2 A);
-  sanity itself moves as today. The beam works the same in Madness. Benefit: one clear rule,
-  no new sanity source to balance against LT-23. Risk: none of the "light drives back the
-  darkness" shows on the sanity bar.
-- **B. Lit mundane towers regenerate sanity.** E.g. +0.05/s per lit mundane tower: 6 lit
-  riflemen give +0.3/s, +18 over a 60 s wave. Benefit: the bar shows the light's effect. Risk:
-  a new regen source works against LT-23's sanity pressure; a mundane board could cancel horror
-  drain.
-- **C. Enemies in the beam lose the LT-23 Madness buff.** Benefit: the light pushes back the
-  madness world. Risk: touches LT-23's design; adds an enemy-side rule to an otherwise
-  tower-side feature.
-
-### Q5. Lamp oil: now or later?
-
-**Today:** there is one currency (Relics after LT-27); the lighthouse has only HP.
-**Change:** oil would be a resource that makes the beam brighter.
-**Example:** 60 Relics → oil for one wave → cone 1.5× wider, mundane buff 1.4× stronger.
-
-- **A. Later; hooks only (recommended).** This task keeps every beam number in config so a
-  future "Lamp oil" task scales them; the GDD keeps oil as an idea. Benefit: LT-26 stays small
-  and lands in 0.2.0. Risk: the beam has no economy decision until the oil task.
-- **B. Now, as a Relics purchase per wave.** Benefit: the owner's idea in the game this release.
-  Risk: a second economy lever on top of LT-23's rebalance makes both harder to tune; doubles
-  the scope.
-- **C. Now, as a resource dropped by enemies.** Benefit: lore fit (whale oil, deep-one fat).
-  Risk: same as B plus a drop system.
+Chosen: **"Позже, сейчас только задел (Recommended)"**. No oil in LT-26; config hooks only
+(§5).
 
 ---
 
 ## 7. Proposed follow-up task
 
-**Title:** Lighthouse beam in the sim: aimed beam buffs mundane, weakens occult towers
+**Title:** Lighthouse beam in the sim: upgradeable lighthouse, beams buff mundane, weaken
+occult, cancel the Madness buff
 
-**Description:** Implement LT-26's design note: beam direction as sim state with the
-trig-free lit test, `aim_beam` command and input, per-tower `lit` flag, mundane/occult
-modifiers from `economy.json` `lighthouse.beam`, LT-23 drain multiplier, render from the sim
-direction with a lit marker, bot aiming policy. Depends on LT-23 (code slice merged; measure
-after LT-23 tuning).
+**Description:** Implement LT-26's design note: beam directions as sim state with the
+trig-free lit test and rotation (§1.1); lighthouse as an upgradeable structure through
+LT-24's upgrade command, levels adding beams 1 → 2 → 4 (§1.2); config block
+`economy.json` `lighthouse.beam` with validation (§1.3); per-tower and per-enemy `lit` flag;
+mundane buff, occult debuff and halved LT-23 drain, Madness enemy buff cancelled for lit
+enemies (§1.4, §4); render of `beam_count` cones from the sim, lit marker, lighthouse panel;
+bot policy for lighthouse upgrades. **Depends on** LT-24 (upgrade command, code slice merged)
+and LT-23 (passive drain and Madness enemy buff, code slice merged; measure after LT-23
+tuning).
 
 **Acceptance criteria:**
-- Beam direction and `lit` live in the sim; `lighting.gd` has no timer of its own; same seed +
-  command log → identical events (including `aim_beam`).
-- Lit test uses only `+ - * / sqrt`; a cone-boundary test pins inside/outside on both sides.
-- Mundane and occult modifiers, and the drain multiplier, are config-driven and validated;
-  tests with controls (revert each modifier → its test fails).
-- Bots aim the beam (mundane bot: at its towers' centroid; occult bot: per Q3); 10-seed table
-  shows the beam's effect (beam on vs. `mode: rotate` as the control arm).
-- Owner replay: the lit area reads on screen and the choice where to aim matters.
+- Beam directions, `lighthouse_level` and `lit` live in the sim; `lighting.gd` has no timer of
+  its own; same seed + command log → identical events (including lighthouse upgrades).
+- Lit test and rotation use only `+ − * / sqrt`; geometry tests pin inside/outside on both
+  sides of a cone edge, for 1, 2 and 4 beams.
+- Lighthouse upgrade through LT-24's command: cost paid, rejected without Relics or at max
+  level, beam count follows the level.
+- Mundane buff, occult debuff, drain multiplier and Madness-buff cancel are config-driven and
+  validated; each has a test with a control (revert the modifier → its test fails).
+- Bots upgrade the lighthouse; 10-seed table per strategy with beam on vs. a control arm
+  (beam modifiers set to 1.0), so the beam's effect is measured, not assumed.
+- Owner replay: the cones read on screen, the lighthouse upgrade feels worth its cost.
 
 **Rough slicing:**
-1. S1 implement (opus): sim beam state, lit test, turn rule, config + reader, modifiers in
-   `_apply_auras` / `_fire_towers` / sanity slot, `aim_beam` command.
+1. S1 implement (opus): sim beam state, lit test, rotation and pattern, config + reader,
+   lighthouse level and upgrade target in LT-24's command, modifiers in `_apply_auras` /
+   `_fire_towers` / sanity slot / LT-23 Madness buff.
 2. S2 verify (opus): review the sim diff against this note.
-3. S3 implement (sonnet, with an edit map): `lighting.gd` reads the sim, interpolation, aim
-   input (`B` + click), lit marker; side-panel line if LT-24 has landed.
-4. S4 tests (opus): lit test geometry, turn/snap, each modifier, determinism with `aim_beam`;
-   6-8 controls.
-5. S5 measure (sonnet): bot aiming policy, 10-seed tables per strategy, tune multipliers;
-   `mode: rotate` as the control arm.
+3. S3 implement (sonnet, with an edit map): `lighting.gd` draws the cones from the sim with
+   interpolation, lit marker on towers, lighthouse panel with the upgrade button (LT-24 UI).
+4. S4 tests (opus): geometry for 1/2/4 beams, rotation determinism, upgrade command, each
+   modifier, Madness-buff cancel (real and fake per LT-23); 6-8 controls.
+5. S5 measure (sonnet): bot lighthouse-upgrade policy, 10-seed tables per strategy, tune
+   multipliers and costs; control arm with beam modifiers at 1.0.
 6. S6 verify (opus): fresh agent, full suite, controls in a throwaway worktree.

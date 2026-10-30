@@ -267,8 +267,9 @@ All findings from the 2026-10-29 pass were resolved in the body of the document.
     partial shifts only); impact on route distance, range and placement in the sim;
     conflict with the hand-painted harbor background (§9a).
 
-- **Lighthouse beam as a game rule** (playtest 0.1 finding 8, design task LT-26). Today the
-  beam is only a picture. Proposal in `docs/design/LT-26-lighthouse-beam.md`: the beam lives
-  in the sim; towers inside it are "lit": mundane towers fire faster and stop missing, occult
-  towers are weaker (and, with LT-23, drain less sanity). Open: player-aimed vs. automatic
-  beam, buff/debuff numbers, direct sanity effects, lamp oil as a later beam resource.
+- **Lighthouse beam as a game rule** (playtest 0.1 finding 8, design task LT-26, decided
+  2026-10-31). Today the beam is only a picture. Decided in
+  `docs/design/LT-26-lighthouse-beam.md`: the beam lives in the sim and keeps rotating; the
+  lighthouse is upgradeable and its levels add beams 1 → 2 → 4. Lit mundane towers fire 25 %
+  faster and never miss; lit occult towers lose 30 % power but drain half (LT-23); lit enemies
+  lose the Madness buff (LT-23). Lamp oil stays a later beam resource.
