@@ -165,3 +165,69 @@ also takes `--data=<dir>` to run a config copy.
   ~9-12 HP. Weakening mundane L1 enough to leak only works through the shoggoth's armor and
   breaks the occult bot first. The pinned economy (200 start, 50+10n, rewards) sets the tower
   count; L2/L3 upgrades are not in the sim, so the bots cannot spend differently.
+
+## Tuning pass 2 (deliberate madness costs damage, harder late waves)
+
+### Method
+
+Owner decision "Вариант 1 - разброс выстрелов + сложность": keep madness damage x2, lower
+`madness.shot_split.real` so madness nets below x1, and raise difficulty so the lost shots matter.
+Five iterations of `tools/bot_runs.gd` (10 seeds x 3 bots), 5 variants in parallel per iteration
+from copies of `data/` via `--data=<dir>`. Wall time per variant 69-226 s with `user` 67-202 s
+(computing, not waiting); `uptime` load averages ranged from 3.79 to 156.40 across iterations
+(final iteration: `18.08 73.17 88.76` before, `10.65 53.76 79.26` after).
+
+### Changed values
+
+| File / value | Old | New | Reason |
+|---|---|---|---|
+| `sanity.json` `madness.shot_split` | real 0.6 / fake 0.25 / empty 0.15 | 0.4 / 0.35 / 0.25 | net madness output x2 x 0.4 = x0.8 (was x1.2): crashing sanity on purpose now costs damage |
+| `waves.json` wave 3 | 4 Deep One packs @7 s; 9 hybrids @3 s | 6 packs @7 s; 12 hybrids @3 s | difficulty from wave 3 on (counts x1.3) |
+| `waves.json` wave 4 | 6 + 4 hybrids; 4 + 4 night-gaunts | 6 + 5 hybrids @1.8 s (one stream), 9 @2.7 s from 14 s; 9 gaunts @3.5 s from 4 s, 7 @4.5 s from 20 s (x1.8) | late pressure; group split keeps the `config_reject_test` text fixtures (`"count": 8` once, the 6-hybrid group) |
+| `waves.json` wave 5 | 16 cultists, 6 hybrids, 2 packs, 3 gaunts (+1 shoggoth) | 29 cultists, 11 hybrids, 4 packs, 6 gaunts (+1 shoggoth) (x1.8) | late pressure |
+
+Waves 1-2, enemy stats and tower stats are unchanged. Tests: `config_valid_test` pins the split
+(updated to 0.4 / 0.35 / 0.25). GDD: §5.4 (40/35/25 %, net ≈ x0.8), §8 (waves 1-5 now list the
+data's counts, which also fixes the drift left by the first pass), §11 risk text.
+
+### Iterations (summary)
+
+| Variant (all with split 0.4/0.35/0.25) | mundane | occult | madness |
+|---|---|---|---|
+| split only | 10/10, 20 HP | 10/10, 10.6 HP | 6/10, 4.6 HP |
+| all wave counts x1.3 | 10/10, 20 HP | 10/10, 6.0 HP | 0/10 |
+| enemy HP x1.3 | 10/10, 20 HP | 5/10, 0.9 HP | 4/10 |
+| enemy HP x1.25 + counts x1.25 / HP x1.5 + counts x1.3 | 10/10, 20 HP | 0/10 (dies in wave 1) | 2/10 / 0/10 |
+| counts x1 / x1 / x1.3 / x1.8 / x1.8 (**kept**) | 10/10, 20 HP | 10/10, 11.0 HP | 0/10 |
+| kept + all speeds x1.3, or HP x1.8 | 10/10, 20 HP | 5/10 / 0/10 | 0/10 |
+| kept + armor 2/4/2/2 (cultist/hybrid/deep one/gaunt) | 10/10, 20 HP | 10/10, 5.3 HP | 3/10 |
+| kept + shoggoth HP x2, hybrid and gaunt HP x1.5 | 10/10, 20 HP | 7/10, 6.1 HP | 0/10 |
+| kept + Reader L1 damage 40 -> 55 (or 50 with rifleman 8) | 10/10, 20 HP | 10/10, 9.6 HP | 10/10, 9.3 HP |
+| kept + rifleman L1 damage 8 / fire interval 1.0 / harpooner 15 | 10/10, 20 HP | 10/10, 9.8 HP | 0/10 |
+| final data + all enemy HP x2.5 (probe) | 10/10, 9.7 HP | 0/10 | 0/10 |
+
+### Final bot table (committed data)
+
+`real 108.83 user 104.98 sys 0.83`. Full suite: 408 test cases, 0 failures
+(`real 31.25 user 24.68 sys 5.15`, load `10.65 53.76 79.26`).
+
+| Strategy | Win rate | Mean waves cleared | Lighthouse HP left (of 20) | Mean final gold | Fakes / run | Astray / run | Missed / run | Shots / run | Lucid / Whispers / Fraying / Madness | Seconds / run |
+|---|---|---|---|---|---|---|---|---|---|---|
+| mundane | 10/10 | 5.0 | 20.0 | 126 | 0 | 0 | 0 | 1471 | 100 / 0 / 0 / 0 % | 259 |
+| occult | 10/10 | 5.0 | 10.8 | 143 | 20.2 | 18.7 | 220.4 | 1640 | 46 / 8 / 20 / 26 % | 335 |
+| madness | 0/10 | 3.2 | 0.0 | 96 | 14.7 | 60.1 | 0 | 110 | 39 / 19 / 8 / 33 % | 257 |
+
+Mean sanity at each wave end: occult 100 / 86 / 15 / 1 / 0; madness 84 / 52 / 0 (lost in wave 4-5).
+
+### Targets
+
+- **Deliberate madness loses most runs (≤ 3/10 wins): met** (0/10, dies in wave 4 or 5).
+- **Fakes still appear: met** (20.2 per occult run, 14.7 per madness run).
+- **Mundane wins most runs: met** (10/10), **but loses lighthouse HP: missed** (20/20). The mundane
+  bot leaks nothing under any enemy/wave variant tried, including HP x1.8 with doubled late waves;
+  it first leaks at enemy HP x2.5, where the occult and madness bots die in wave 1. Riflemen give
+  far more damage per gold than occult towers, so no difficulty level separates the bots the way
+  the targets ask.
+- **Occult not worse than mundane: missed** (10.8 vs 20 HP; unchanged from pass 1). Needs a tower
+  economy change (cheaper/stronger occult or weaker mundane), not enemy or wave tuning; a Reader
+  buff also restores the madness bot (10/10), so it must come with a further split cut.

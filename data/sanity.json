@@ -11,7 +11,7 @@
   },
   "madness": {
     "damage_multiplier": 2,
-    "shot_split": { "real": 0.6, "fake": 0.25, "empty": 0.15 },
+    "shot_split": { "real": 0.4, "fake": 0.35, "empty": 0.25 },
     "exit_rule": "permanent",
     "restore_sanity": 30,
     "buyout_cost": 150

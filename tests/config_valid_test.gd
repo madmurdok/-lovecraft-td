@@ -177,9 +177,9 @@ func test_sanity() -> void:
 func test_madness_rules() -> void:
 	var m := _real().sanity.madness
 	assert_float(m.damage_multiplier).is_equal(2.0)
-	assert_float(m.shot_real).is_equal(0.6)
-	assert_float(m.shot_fake).is_equal(0.25)
-	assert_float(m.shot_empty).is_equal(0.15)
+	assert_float(m.shot_real).is_equal(0.4)
+	assert_float(m.shot_fake).is_equal(0.35)
+	assert_float(m.shot_empty).is_equal(0.25)
 	assert_str(m.exit_rule).is_equal("permanent")
 	assert_float(m.restore_sanity).is_equal(30.0)
 	assert_int(m.buyout_cost).is_equal(150)
