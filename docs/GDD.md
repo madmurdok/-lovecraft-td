@@ -253,3 +253,16 @@ All findings from the 2026-10-29 pass were resolved in the body of the document.
 - **Night-gaunt spawn point.** Flyers start at the path entry `S` for now (LT-4 design,
   owner decision 2026-10-29). Check a separate `F` spawn cell on the map (approach from
   the sea) when flyers arrive with the Content milestone.
+
+- **Map v2: islands and a changing path** (owner idea 2026-10-30, design task LT-18,
+  after the LT-15 playtest). Replace the square grid with one fixed path by:
+  - Cells: hexes (equal neighbour distance, fairer range circles) or an organic
+    Voronoi-like layout; likely a hex/graph logic grid with Voronoi only as the look.
+  - Buildable "islands" with the enemy path running between them; the next path is
+    shown in advance (build phase) and changes from wave to wave.
+  - A seeded, deterministic generator that guarantees chokepoints: every path segment
+    must pass a metric (e.g. enough buildable cells within tower range of a point on
+    it); layouts that fail are rejected and regenerated.
+  - Open: path-change rule that does not punish earlier placement (free sell on change,
+    partial shifts only); impact on route distance, range and placement in the sim;
+    conflict with the hand-painted harbor background (§9a).
