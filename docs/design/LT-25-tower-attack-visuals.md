@@ -231,6 +231,42 @@ flag dropped from the wave effect -> 7 fails; (f) miss drawn like a hit (end = `
 fails; (g) per-tower cap removed -> 10 fails. Seven controls, one test file
 (`tests/tower_attack_visuals_test.gd`), one build.
 
+## Behaviours (S2 hand-over)
+
+Confirmed against the code in `scenes/board.gd` (S2). Effects are appended by
+`on_event` -> `_shot_fx` -> `_add_attack_fx`; every attack effect carries `kind`, `tower`,
+`from`, `to` (the event's `to`, except `"astray"`), `end` (draw end), `hits` (ids copy),
+`hit_pos`, `miss`, `astray`, `ttl`, `dur`, `seed`.
+
+1. Rifleman SHOT with hits -> `"tracer"`, `end == to` (`_shot_fx`, `shot_kind`).
+2. Harpooner SHOT -> `"harpoon"`, `to` == event `to`, `hits` copied, one `pass_t` per
+   hit position (`_shot_fx`, `_pass_times`).
+3. Necronomicon SHOT -> `"wave"`, `radius == stats().effects.aoe_radius` (`_shot_fx`).
+4. `Board.shot_kind(t)` (static) of an Elder Sign is `"aura"`; a SHOT from an aura tower
+   adds no effect (`_shot_fx` returns `{}`).
+5. `Board.enemy_markers(e)` (static): `speed_mult 0.7` -> `["slow"]`;
+   `damage_taken_mult 1.25` -> `["vuln"]`; both -> `["slow", "vuln"]`; neither -> empty.
+6. `ward_alpha(t)` == `WARD_IDLE_ALPHA` with no `_last_pos` entry inside
+   `stats().range_cells` of `t.centre()`; with one inside it is in
+   `[WARD_PULSE_LOW, WARD_ACTIVE_ALPHA]` (> idle). `_last_pos` is filled by `_draw_enemies`;
+   a test may set `board._last_pos[id] = pos` directly.
+7. Necronomicon SHOT `astray: true` with hits -> `"wave"`, `astray` true; with
+   `hits: []` -> `"astray"` with `radius == WAVE_FIZZLE_CELLS` (0.5) and `aim` == event `to`;
+   a rifleman empty astray SHOT -> `"astray"` without `radius` (`_shot_fx`).
+8. Fake parity: `_shot_fx` reads only `to`/`hits`/`miss`/`astray` and tower stats; the
+   same SHOT aimed at a fake and a real enemy gives the same kind and fields (except the
+   random `seed`).
+9. Rifleman miss (`miss: true`, `hits: []`) -> `"tracer"`, `miss` true, `end != to`
+   (0.4 cell to the side + 0.5 past, `_miss_end`); harpoon miss -> `"harpoon"`, `miss`
+   true, `hit_pos` and `pass_t` empty.
+10. Cap: 10 SHOTs from one tower without `tick_effects` -> exactly `MAX_FX_PER_TOWER` (2)
+    effects with that `tower`, the newest kept (`_add_attack_fx`).
+
+Controls (a)-(g) of §5 map onto: (a) `shot_kind` returns `"tracer"`; (b) `fx["radius"]`
+in `_shot_fx` fixed at 1.0; (c) slow branch of `enemy_markers`; (d) `ward_alpha` loop;
+(e) `"astray"` field; (f) `_miss_end` returning `aim`; (g) the removal loop in
+`_add_attack_fx`.
+
 ## 6. Screenshot plan for verify
 
 Run the game windowed (not headless: draws need a renderer) from a debug build, capture
