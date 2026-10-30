@@ -37,7 +37,8 @@ scripts/export-web.sh          # exports to build/web/ (git-ignored), prints pat
 scripts/serve-web.py [port]    # serves build/web, default port 8060
 ```
 
-Open http://localhost:8060/ in Chrome or Safari. Stop the server with Ctrl+C.
+The server runs in the foreground: leave it running and open http://localhost:8060/
+in Chrome (verified). Safari is not verified yet. Stop the server with Ctrl+C.
 `$GODOT` overrides the Godot binary.
 
 Known limits:
