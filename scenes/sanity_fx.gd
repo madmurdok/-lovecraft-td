@@ -107,6 +107,11 @@ func target_level() -> float:
 	return lerpf(state_levels[i], state_levels[i + 1], p)
 
 
+## Screen pixels per base-viewport pixel: the window stretch factor (1 when unstretched).
+func screen_scale() -> float:
+	return screen_rect.get_viewport().get_final_transform().get_scale().x
+
+
 func _apply() -> void:
 	var fraying := state >= SimState.SanityState.FRAYING
 	var whispers := state >= SimState.SanityState.WHISPERS
@@ -116,8 +121,11 @@ func _apply() -> void:
 		0.0, 1.0) if fraying else 0.0
 	ui_jitter_material.set_shader_parameter("jitter_px",
 		max_ui_jitter_px * (0.6 + 0.4 * level) if whispers else 0.0)
-	screen_material.set_shader_parameter("distortion", max_distortion_px * level)
-	screen_material.set_shader_parameter("aberration", max_aberration_px * level)
+	# The screen shader works in real screen pixels; the *_px tunables are base-viewport
+	# pixels, so they grow with the window stretch (LT-22).
+	var px := screen_scale()
+	screen_material.set_shader_parameter("distortion", max_distortion_px * level * px)
+	screen_material.set_shader_parameter("aberration", max_aberration_px * level * px)
 	screen_material.set_shader_parameter("vignette", max_vignette * level)
 	screen_material.set_shader_parameter("madness", madness)
 	screen_material.set_shader_parameter("pulse", pulse)

@@ -5,15 +5,21 @@ extends Node2D
 ## Override the config directory with `-- --config-dir=<path>` (dev/CI) and the run seed
 ## with `-- --seed=<int>` (random otherwise). A loaded config starts a Game (LT-7);
 ## its restart button replaces it with a fresh run.
+## LT-22: the game scales with the window (stretch mode canvas_items, aspect keep, base
+## 1152x648 in project.godot). At boot a desktop window is sized to fill WINDOW_FILL of
+## the screen's usable area: window sizes are in physical pixels, so a fixed size is
+## half as large on a 2x (Retina) screen.
 
 const CONFIG_DIR_ARG := "--config-dir="
 const SEED_ARG := "--seed="
+const WINDOW_FILL := 0.85  ## share of the usable screen area the boot window may take
 
 var config: GameConfig
 var game: Game
 
 
 func _ready() -> void:
+	_fit_window()
 	var dir := _config_dir()
 	var result := GameConfig.load_from_dir(dir)
 	if not result.ok:
@@ -37,6 +43,33 @@ func start_game() -> void:
 	game.restart_requested.connect(start_game, CONNECT_DEFERRED)
 	add_child(game)
 	print("Run started, seed %d" % run_seed)
+
+
+## The largest window with the base viewport's aspect that fits `fill` of `usable`.
+static func fit_window_size(usable: Vector2i, base: Vector2i, fill: float) -> Vector2i:
+	var room := Vector2(usable) * fill
+	var s := minf(room.x / base.x, room.y / base.y)
+	return Vector2i((Vector2(base) * s).round())
+
+
+## Desktop only: no headless run, no web page (the canvas follows the page), no window
+## embedded in the editor, and only a window still at the project's size (an explicit
+## `--resolution`, or fullscreen, wins).
+func _fit_window() -> void:
+	if DisplayServer.get_name() == "headless" or OS.has_feature("web") \
+			or Engine.is_embedded_in_editor():
+		return
+	var w := get_window()
+	var project_size := Vector2i(
+		ProjectSettings.get_setting("display/window/size/window_width_override"),
+		ProjectSettings.get_setting("display/window/size/window_height_override"))
+	if w.mode != Window.MODE_WINDOWED or w.size != project_size:
+		return
+	var usable := DisplayServer.screen_get_usable_rect(w.current_screen)
+	var base := Vector2i(ProjectSettings.get_setting("display/window/size/viewport_width"),
+		ProjectSettings.get_setting("display/window/size/viewport_height"))
+	w.size = fit_window_size(usable.size, base, WINDOW_FILL)
+	w.position = usable.position + (usable.size - w.size) / 2
 
 
 func _seed() -> int:
