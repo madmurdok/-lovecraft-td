@@ -16,7 +16,7 @@ func test_leak_removes_enemy_and_reports_damage_and_hp_after() -> void:
 	assert_int(leaks.size()).is_equal(1)
 	assert_int(leaks[0].id).is_equal(id)
 	assert_int(leaks[0].tick).is_equal(60)
-	assert_dict(leaks[0].data).is_equal({"damage": 1, "hp_after": 19, "fake": false})
+	assert_dict(leaks[0].data).is_equal({"damage": 1, "hp_after": 19})  # no "fake" key (LT-12)
 	assert_int(sim.state.lighthouse_hp).is_equal(19)
 	assert_object(sim.enemy_by_id(id)).is_null()
 	assert_array(sim.state.enemies).is_empty()
@@ -163,15 +163,18 @@ func test_lose_takes_precedence_over_win_on_the_same_tick() -> void:
 
 # --- fakes ------------------------------------------------------------------
 
-func test_fake_leak_deals_no_damage() -> void:
+## LT-12 §3 (owner Q1): a fake reaching the lighthouse dissolves instead of leaking.
+func test_fake_at_the_lighthouse_dissolves_without_leaking() -> void:
 	var cfg := make_config(line_map(2), 1)
 	var sim := Simulation.new(cfg, SEED)
 	var id := sim.spawn_enemy("cultist", true)
 	var events := run(sim, 60)
-	var leaks := of_type(events, SimEvent.Type.LEAKED)
-	assert_int(leaks.size()).is_equal(1)
-	assert_int(leaks[0].id).is_equal(id)
-	assert_dict(leaks[0].data).is_equal({"damage": 0, "hp_after": 1, "fake": true})
+	assert_array(of_type(events, SimEvent.Type.LEAKED)).is_empty()
+	var gone := of_type(events, SimEvent.Type.FAKE_DISSOLVED)
+	assert_int(gone.size()).is_equal(1)
+	assert_int(gone[0].id).is_equal(id)
+	assert_int(gone[0].tick).is_equal(60)
+	assert_dict(gone[0].data).is_equal({"reason": "lighthouse"})
 	assert_int(sim.state.lighthouse_hp).is_equal(1)
 	assert_object(sim.enemy_by_id(id)).is_null()
 	assert_int(sim.state.outcome).is_equal(SimState.Outcome.NONE)
