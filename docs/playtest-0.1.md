@@ -231,3 +231,34 @@ Mean sanity at each wave end: occult 100 / 86 / 15 / 1 / 0; madness 84 / 52 / 0 
 - **Occult not worse than mundane: missed** (10.8 vs 20 HP; unchanged from pass 1). Needs a tower
   economy change (cheaper/stronger occult or weaker mundane), not enemy or wave tuning; a Reader
   buff also restores the madness bot (10/10), so it must come with a further split cut.
+
+## Owner playtest (native, 2026-10-30)
+
+Played natively from Godot (not the web build, so the Safari check stays open). No config
+changes came out of the session: every finding needs code or design first.
+
+### Findings
+
+| # | Finding | Decision | Task |
+|---|---|---|---|
+| 1 | `--sanity 10` did nothing: only `-- --sanity=10` is parsed | Fix in 0.1.0 | LT-21 |
+| 2 | Small window; resizing does not scale the game (`project.godot` has no stretch settings) | Fix in 0.1.0 | LT-22 |
+| 3 | Too easy, no tension | Together with 5, separate task with a design note | LT-23 |
+| 4 | Towers all look like they shoot the same; the difference is unclear even in the demo | Content epic | LT-25 |
+| 5 | Make occult towers stronger, but each one on the board drains sanity constantly (`sanity_per_second` is parsed but not applied by the sim) | Separate task with a design note | LT-23 |
+| 6 | Side panel should show what a tower does, and later its upgrade paths | Content epic | LT-24 |
+| 7 | Gold from kills makes no sense in the lore | Rename to amber and relics (creature fragments/bones); lamp oil kept as a future lighthouse resource | LT-27 |
+| 8 | Lighthouse beam drives back darkness: buffs mundane towers in it, weakens occult ones | Content epic, design note first | LT-26 |
+
+Owner decision on the Content epic: "Описание и прокачка башен (п.6), Луч маяка (п.8),
+Визуальные различия башен (п.4)".
+
+### Carried over (not addressed in 0.1)
+
+- `sanity.json` `thresholds.fraying.min` has no effect beyond the state boundary.
+- Tower picker is semi-transparent; clicks outside the grid keep panels open.
+- 12-light cap; grey margins outside the board (may go away with LT-22).
+- Placeholder stats; enemies barely visible in Madness; the sanity bar label overlaps the
+  threshold marks.
+- FPS not measured; Searchlight latent aura detection (Searchlight task).
+- Bots never upgrade towers: the sim has no upgrade command (LT-24).
