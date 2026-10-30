@@ -412,6 +412,50 @@ func test_shot_split_missing_part_reports_only_the_missing_field() -> void:
 	assert_bool(has_error(r, S, "madness.shot_split", "sum to 1")).is_false()
 
 
+# --- LT-13: restore_sanity 0 cannot exit madness ------------------------------------
+
+func test_restore_sanity_zero_is_rejected_when_the_exit_rule_restores() -> void:
+	for rule in ["buyout", "auto_restore"]:
+		var r := load_json_edit(S, func(d: Dictionary) -> void:
+			d["madness"]["exit_rule"] = rule
+			d["madness"]["restore_sanity"] = 0)
+		assert_rejected(r, S, "madness.restore_sanity", rule)
+		assert_int(r.errors.size()).is_equal(1)
+
+
+func test_restore_sanity_zero_is_accepted_for_the_permanent_rule() -> void:
+	var r := load_json_edit(S, func(d: Dictionary) -> void:
+		d["madness"]["exit_rule"] = "permanent"
+		d["madness"]["restore_sanity"] = 0)
+	assert_bool(r.ok).override_failure_message("\n".join(r.errors)).is_true()
+
+
+func test_restore_sanity_above_zero_is_accepted_for_every_exit_rule() -> void:
+	for rule in ["permanent", "buyout", "auto_restore"]:
+		var r := load_json_edit(S, func(d: Dictionary) -> void:
+			d["madness"]["exit_rule"] = rule
+			d["madness"]["restore_sanity"] = 0.5)
+		assert_bool(r.ok).override_failure_message("%s: %s" % [rule, "\n".join(r.errors)]) \
+			.is_true()
+
+
+func test_invalid_exit_rule_with_restore_zero_reports_only_the_exit_rule() -> void:
+	var r := load_json_edit(S, func(d: Dictionary) -> void:
+		d["madness"]["exit_rule"] = "magic"
+		d["madness"]["restore_sanity"] = 0)
+	assert_rejected(r, S, "madness.exit_rule", "magic")
+	assert_int(r.errors.size()).is_equal(1)
+	assert_bool(has_error(r, S, "madness.restore_sanity")).is_false()
+
+
+func test_missing_exit_rule_with_restore_zero_reports_only_the_missing_field() -> void:
+	var r := load_json_edit(S, func(d: Dictionary) -> void:
+		d["madness"].erase("exit_rule")
+		d["madness"]["restore_sanity"] = 0)
+	assert_rejected(r, S, "madness.exit_rule", "missing required field")
+	assert_int(r.errors.size()).is_equal(1)
+
+
 # --- collecting ---------------------------------------------------------------
 
 func test_errors_from_all_files_are_collected_in_file_order() -> void:

@@ -406,6 +406,11 @@ func test_killing_a_fake_by_blast_pays_nothing() -> void:
 
 func test_cast_at_zero_sanity_still_fires_and_deals_damage() -> void:
 	var sim := tsim()
+	# LT-13: at 0 the cast is astray; pin the roll to "real" so the test never depends on the seed.
+	var m := sim.config.sanity.madness
+	m.shot_real = 1.0
+	m.shot_fake = 0.0
+	m.shot_empty = 0.0
 	sim.state.gold = 1000
 	build(sim, NECRO)
 	var e := put(sim, "cultist", 7.0)

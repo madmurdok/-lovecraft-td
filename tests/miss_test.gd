@@ -205,8 +205,14 @@ func test_fraying_shots_do_draw_from_combat() -> void:
 
 # --- occult towers never miss (owner Q3) -----------------------------------------
 
-func _assert_occult_never_misses(key: String) -> void:
+## `real_only` (madness): every astray shot is a "real" one, so each cast has a hit to check.
+func _assert_occult_never_misses(key: String, real_only := false) -> void:
 	var sim := _sim()
+	if real_only:
+		var m := sim.config.sanity.madness
+		m.shot_real = 1.0
+		m.shot_fake = 0.0
+		m.shot_empty = 0.0
 	_set_state(sim, key)
 	assert_float(sim.threshold().miss_chance).is_greater(0.0)
 	var target := put(sim, "cultist", TARGET_CELLS)
@@ -225,5 +231,29 @@ func test_necronomicon_never_misses_at_fraying() -> void:
 	_assert_occult_never_misses("fraying")
 
 
-func test_necronomicon_never_misses_in_madness() -> void:
-	_assert_occult_never_misses("madness")
+func test_necronomicon_never_uses_the_miss_roll_in_madness() -> void:
+	# LT-13: its shots go astray (shot_split) instead; the madness row's miss_chance is unused.
+	_assert_occult_never_misses("madness", true)
+
+
+func test_an_empty_astray_shot_is_not_a_miss_and_draws_no_combat_roll() -> void:
+	var sim := _sim()
+	var m := sim.config.sanity.madness
+	m.shot_real = 0.0
+	m.shot_fake = 0.0
+	m.shot_empty = 1.0
+	_set_state(sim, "madness")
+	assert_float(sim.threshold().miss_chance).is_greater(0.0)
+	var target := put(sim, "cultist", TARGET_CELLS)
+	_ring(sim, "necronomicon_reader", target)
+	sim.drain_events()
+	var before := _combat_state(sim)
+	var casts := _shots(sim, 20, "madness")
+	assert_int(casts.size()).is_greater_equal(20)
+	for c in casts:
+		assert_bool(c.data["miss"]).is_false()
+		assert_bool(c.data["astray"]).is_true()
+		assert_array(c.data["hits"]).is_empty()
+	assert_int(_misses(casts)).is_equal(0)
+	assert_int(_combat_state(sim)).is_equal(before)
+	assert_float(target.hp).is_equal(HUGE_HP)
