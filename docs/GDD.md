@@ -87,9 +87,9 @@ but deals no leak damage and gives no reward. The player cannot tell which is wh
 ### 5.4 Madness
 
 - Triggered when sanity hits 0.
-- Occult towers deal ×2 damage, but each shot goes astray: 60% hit a random real
-  enemy in range, 25% hit a fake enemy, 15% hit an empty cell. Net output ≈ ×1.2,
-  spread unpredictably. No friendly fire. Ratios live in `sanity.json` (`madness.shot_split`).
+- Occult towers deal ×2 damage, but each shot goes astray: 40% hit a random real
+  enemy in range, 35% hit a fake enemy, 25% hit an empty cell. Net output ≈ ×0.8,
+  spread unpredictably, so crashing sanity on purpose costs damage. No friendly fire. Ratios live in `sanity.json` (`madness.shot_split`).
 - Fraying effects stay at maximum.
 - Duration: until the end of the game (default).
 - Exit rule is a config switch for rebalancing:
@@ -137,16 +137,19 @@ Speed is in cells per second. Armor is flat damage reduction per hit.
 
 | Wave | Content |
 |---|---|
-| 1 | 8 cultists |
-| 2 | 10 cultists, 1 pack of Deep Ones |
-| 3 | 2 packs of Deep Ones, 4 hybrids |
-| 4 | 6 hybrids, 3 night-gaunts |
-| 5 | 1 shoggoth + escort of cultists |
+| 1 | 12 cultists |
+| 2 | 12 cultists, 2 packs of Deep Ones |
+| 3 | 6 packs of Deep Ones, 12 hybrids |
+| 4 | 20 hybrids, 16 night-gaunts |
+| 5 | 1 shoggoth + escort: 29 cultists, 11 hybrids, 4 packs of Deep Ones, 6 night-gaunts |
 | 6 | 3 packs of Deep Ones, 5 night-gaunts |
 | 7 | 2 shoggoths, 8 hybrids |
 | 8 | mixed: everything except Dagon, dense |
 | 9 | 3 shoggoths, 6 night-gaunts, 3 packs |
 | 10 | Dagon + periodic summons |
+
+Waves 1–5 are the MVP's `data/waves.json` (spawn intervals and delays live there, tuned in
+LT-15); waves 6–10 are the post-MVP plan.
 
 - Build phase between waves: 25 s timer, or start early with the "call wave" button for the bonus.
 - Game speed: ×1 / ×2, plus pause (building is allowed while paused).
@@ -231,7 +234,7 @@ data/
   Fakes do not drain sanity (no horror spiral), so an attentive player may notice a
   shoggoth that does not drain: accepted trade-off. Bosses are never picked as fakes.
 - **Madness as a deliberate strategy.** ×2 occult damage may make crashing sanity
-  on purpose optimal. Mitigation: astray shots cut the net gain to ≈ ×1.2, plus permanent default; tune `madness.shot_split`.
+  on purpose optimal. Mitigation: astray shots cut the net output to ≈ ×0.8 (a loss, not a gain), plus permanent default; tune `madness.shot_split`.
 - **Permanent madness may make the rest of the run a lottery.** That is why the exit rule is switchable.
 - **Scope creep.** L3 branches double tower content; keep branch effects to one
   stat or flag each.
