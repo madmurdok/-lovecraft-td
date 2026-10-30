@@ -121,7 +121,8 @@ class Madness:
 		var n_restore := r.errors.size()
 		m.restore_sanity = r.req_number(obj, "restore_sanity", path, 0.0, top)
 		# Restoring to 0 would leave the player in madness: buyout would only take gold.
-		if r.errors.size() == n_restore and m.exit_rule != "permanent" and m.restore_sanity <= 0.0:
+		if r.errors.size() == n_restore and m.exit_rule in EXIT_RULES \
+				and m.exit_rule != "permanent" and m.restore_sanity <= 0.0:
 			r.error(ConfigReader.join(path, "restore_sanity"),
 				"must be > 0 when exit_rule is %s, got %s"
 				% [m.exit_rule, ConfigReader.fmt(m.restore_sanity)])
