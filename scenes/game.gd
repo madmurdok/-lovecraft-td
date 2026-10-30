@@ -8,6 +8,10 @@ signal restart_requested
 
 const BOARD_ORIGIN := Vector2(0, 48)  ## below the HUD bar
 const REVEAL_FAKES_ARG := "--reveal-fakes"  ## `-- --reveal-fakes` (debug builds only)
+## `-- --sanity=<v>` (debug builds only, LT-14): sets sanity at the start of the run through
+## the sim's own sanity path, so SANITY_CHANGED / SANITY_STATE_CHANGED fire as usual.
+const SANITY_ARG := "--sanity="
+const UI_LAYER := 2  ## above SanityFx.SCREEN_LAYER, so the HUD is never distorted
 
 var sim: Simulation
 var clock := SimClock.new()
@@ -17,6 +21,7 @@ var run_seed := 0
 
 var board: Board
 var lighting: Lighting  ## LT-8: darkness, beam, tower lights, sea fog (visual only)
+var sanity_fx: SanityFx  ## LT-14: screen distortion, UI jitter, whispers (visual only)
 var hud: Hud
 var picker: TowerPicker
 var sell_panel: SellPanel
@@ -30,6 +35,18 @@ func setup(config: GameConfig, p_seed: int) -> void:
 	# LT-12 §1: debug builds only; the board then marks fakes via sim.debug_is_fake.
 	sim.debug_reveal_fakes = OS.is_debug_build() \
 		and OS.get_cmdline_user_args().has(REVEAL_FAKES_ARG)
+	if OS.is_debug_build():
+		var forced := debug_sanity_arg(OS.get_cmdline_user_args())
+		if forced >= 0.0:
+			sim._add_sanity(forced - sim.state.sanity, "debug", 0)
+
+
+## The `--sanity=<v>` value, or -1 when absent.
+static func debug_sanity_arg(args: PackedStringArray) -> float:
+	for arg in args:
+		if arg.begins_with(SANITY_ARG):
+			return maxf(arg.trim_prefix(SANITY_ARG).to_float(), 0.0)
+	return -1.0
 
 
 func _ready() -> void:
@@ -43,9 +60,14 @@ func _ready() -> void:
 	lighting.name = "Lighting"
 	lighting.setup(self, self)
 	board.add_child(lighting)
+	sanity_fx = SanityFx.new()
+	sanity_fx.name = "SanityFx"
+	sanity_fx.game = self
+	add_child(sanity_fx)
 
 	var ui := CanvasLayer.new()
 	ui.name = "UI"
+	ui.layer = UI_LAYER
 	add_child(ui)
 	hud = Hud.new()
 	hud.name = "Hud"
@@ -106,6 +128,12 @@ func call_wave() -> Simulation.CommandResult:
 	return r
 
 
+func buy_sanity() -> Simulation.CommandResult:
+	var r := sim.buy_sanity()
+	_after_command()
+	return r
+
+
 func toggle_speed() -> void:
 	chosen_speed = 2 if chosen_speed == 1 else 1
 	_apply_speed()
@@ -132,6 +160,7 @@ func _after_command() -> void:
 func _consume_events() -> void:
 	for ev in sim.drain_events():
 		board.on_event(ev)
+		sanity_fx.on_event(ev)
 		if ev.type == SimEvent.Type.OUTCOME:
 			picker.close()
 			sell_panel.close()
