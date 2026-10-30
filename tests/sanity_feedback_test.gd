@@ -127,6 +127,17 @@ func test_sanity_arg_parses_only_its_own_flag() -> void:
 	assert_float(Game.debug_sanity_arg(PackedStringArray(["--sanity=-4"]))).is_equal(0.0)
 
 
+func test_sanity_arg_accepts_the_space_separated_form() -> void:
+	assert_float(Game.debug_sanity_arg(PackedStringArray(["--sanity", "10"]))).is_equal(10.0)
+	assert_float(Game.debug_sanity_arg(PackedStringArray(["--x", "--sanity", "7.5"]))).is_equal(7.5)
+
+
+func test_sanity_arg_without_a_number_is_ignored() -> void:
+	for args: Array in [["--sanity"], ["--sanity", "abc"], ["--sanity="], ["--sanity=abc"],
+			["--sanityx=5"]]:
+		assert_float(Game.debug_sanity_arg(PackedStringArray(args))).is_equal(-1.0)
+
+
 func _first_buildable() -> Vector2i:
 	var m := _game.sim.state.map
 	for y in m.height:
