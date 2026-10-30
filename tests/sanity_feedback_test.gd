@@ -2,7 +2,7 @@ class_name SanityFeedbackTest
 extends GdUnitTestSuite
 ## LT-14: the sanity feedback layer follows sim sanity (level per threshold, flicker only
 ## from Fraying on), keeps the HUD above the distortion and clickable, offers the madness
-## buyout only with exit_rule "buyout", and draws an empty astray shot off its aim point.
+## buyout only with exit_rule "buyout" in madness, and draws an empty astray shot off its aim point.
 ## The real check of the look is by render (screenshots); these pin the wiring.
 
 var _vp: SubViewport
@@ -89,13 +89,18 @@ func test_buyout_button_follows_the_exit_rule_and_can_buy_sanity() -> void:
 	_config.sanity.madness.exit_rule = "buyout"
 	await _start_game()
 	var b := _game.hud.buyout_button
-	assert_bool(b.visible).is_true()
-	assert_str(b.text).contains(str(_config.sanity.madness.buyout_cost))
-	assert_bool(b.disabled).is_true()  # not in madness
+	_game.hud.refresh()
+	assert_bool(b.visible).is_false()  # buyout rule, but not in madness
 	_game.sim.state.gold = 1000
 	_set_sanity(0.0)
 	_game.hud.refresh()
+	assert_bool(b.visible).is_true()
+	assert_str(b.text).contains(str(_config.sanity.madness.buyout_cost))
 	assert_bool(b.disabled).is_false()
+	# The whole HUD bar, buyout button included, fits the window width.
+	var bar := _game.hud.get_node("Bar") as Control
+	assert_float(bar.position.x + bar.get_combined_minimum_size().x).is_less_equal(
+		float(ProjectSettings.get_setting("display/window/size/viewport_width")))
 	b.pressed.emit()
 	assert_float(_game.sim.state.sanity).is_equal(_config.sanity.madness.restore_sanity)
 	assert_int(_game.sim.state.gold).is_equal(1000 - _config.sanity.madness.buyout_cost)
