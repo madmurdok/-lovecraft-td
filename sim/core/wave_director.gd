@@ -130,6 +130,7 @@ func _clear_wave(sim: Simulation) -> void:
 	sim.dissolve_fakes("wave_end")  # LT-12 §5: before the bonus, so BUILD starts with none
 	var bonus := sim.award_wave_bonus(n)
 	sim.award_wave_sanity()  # LT-10: regen.between_waves, also for the last wave
+	sim.auto_restore_sanity()  # LT-13: exit rule auto_restore; regen above is 0 in madness
 	sim.emit_event(SimEvent.Type.WAVE_CLEARED, 0, {"wave": n, "bonus": bonus})
 	if n < s.waves_total:
 		_begin_build(sim)

@@ -451,27 +451,37 @@ func test_fraying_to_madness_only_when_sanity_reaches_zero() -> void:
 
 
 func test_half_a_point_of_sanity_is_fraying_not_madness() -> void:
+	# Madness is latched (LT-13), so a positive value below fraying.min is reached from above.
 	var sim := tsim()
 	build(sim, "rifleman")
 	var e := put(sim, "cultist", 8.0)
-	_set_sanity(sim, 0.0)
-	assert_int(sim.state.sanity_state).is_equal(S.MADNESS)
-	sim.apply_damage(e.id, 1.0e9, "rifleman")
 	var regen: float = sim.config.sanity.regen_mundane_kill
-	assert_bool(is_equal_approx(sim.state.sanity, regen)).is_true()
-	assert_int(sim.state.sanity_state).is_equal(sim.sanity_state_for(regen))
+	assert_int(sim.sanity_state_for(regen)).is_equal(S.FRAYING)
+	_set_sanity(sim, 0.25 * regen)
 	assert_int(sim.state.sanity_state).is_equal(S.FRAYING)
+	sim.apply_damage(e.id, 1.0e9, "rifleman")
+	assert_bool(is_equal_approx(sim.state.sanity, 1.25 * regen)).is_true()
+	assert_int(sim.state.sanity_state).is_equal(S.FRAYING)
+	assert_array(_state_changes(sim.drain_events())).is_empty()
 
 
-func test_regen_out_of_madness_emits_the_reverse_transition() -> void:
+func test_regen_does_not_leave_madness_only_the_exit_rule_emits_the_reverse_transition() -> void:
 	var sim := tsim()
+	sim.config.sanity.madness.exit_rule = "buyout"
+	sim.state.gold = 1000000
 	build(sim, "rifleman")
 	var e := put(sim, "cultist", 8.0)
 	_set_sanity(sim, 0.0)
 	sim.apply_damage(e.id, 1.0e9, "rifleman")
+	var ev := sim.drain_events()
+	assert_array(_changes(ev)).is_empty()
+	assert_array(_state_changes(ev)).is_empty()
+	assert_int(sim.state.sanity_state).is_equal(S.MADNESS)
+	assert_int(sim.buy_sanity()).is_equal(Simulation.CommandResult.OK)
 	var sc := _state_changes(sim.drain_events())
 	assert_int(sc.size()).is_equal(1)
-	assert_dict(sc[0].data).is_equal({"old": S.MADNESS, "new": S.FRAYING})
+	var restored := sim.sanity_state_for(sim.config.sanity.madness.restore_sanity)
+	assert_dict(sc[0].data).is_equal({"old": S.MADNESS, "new": restored})
 
 
 func test_regen_upward_across_70_and_40_emits_transitions() -> void:

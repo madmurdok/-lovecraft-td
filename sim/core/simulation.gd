@@ -16,7 +16,12 @@ enum CommandResult {
 	NOT_ENOUGH_GOLD,
 	NO_SUCH_TOWER,  ## sell: unknown or already sold tower id
 	NOT_BUILD_PHASE,  ## call_wave: not in the build phase (or no WaveDirector)
+	NO_BUYOUT,  ## buy_sanity: madness.exit_rule is not "buyout"
+	NOT_IN_MADNESS,  ## buy_sanity: sanity state is not MADNESS
 }
+
+## Sanity change reasons that may move sanity while in MADNESS (LT-13): the exit rules.
+const MADNESS_EXIT_REASONS: PackedStringArray = ["buyout", "auto_restore"]
 
 var state: SimState
 var config: GameConfig
@@ -69,7 +74,7 @@ func step() -> void:
 	# 4. Leaks.
 	_leak()
 	# 5. Towers fire / damage: single and line shots (LT-6), AoE casts and their sanity
-	# cost (LT-11); LT-13 adds madness effects.
+	# cost (LT-11); madness damage and astray shots (LT-13).
 	_fire_towers()
 	# 6. Sanity (LT-10): horror drain. Kill regen is paid in slot 5 (_on_enemy_killed),
 	# between-waves regen in slot 8 (wave system), each through _add_sanity.
@@ -223,6 +228,48 @@ func call_wave() -> CommandResult:
 	return CommandResult.OK
 
 
+## Whether buy_sanity() would be applied now; OK or the first failing reason, in this
+## order: OUTCOME_REACHED, NO_BUYOUT, NOT_IN_MADNESS, NOT_ENOUGH_GOLD. Changes nothing.
+func can_buy_sanity() -> CommandResult:
+	if state.outcome != SimState.Outcome.NONE:
+		return CommandResult.OUTCOME_REACHED
+	var m := config.sanity.madness
+	if m.exit_rule != "buyout":
+		return CommandResult.NO_BUYOUT
+	if state.sanity_state != SimState.SanityState.MADNESS:
+		return CommandResult.NOT_IN_MADNESS
+	if state.gold < m.buyout_cost:
+		return CommandResult.NOT_ENOUGH_GOLD
+	return CommandResult.OK
+
+
+## Player command (LT-13, exit rule "buyout"): pays madness.buyout_cost gold and sets sanity
+## to madness.restore_sanity, in any phase. Emits GOLD_CHANGED {reason: "buyout"}, then
+## SANITY_CHANGED {reason: "buyout"} and SANITY_STATE_CHANGED (MADNESS -> the new state).
+func buy_sanity() -> CommandResult:
+	var result := can_buy_sanity()
+	if result != CommandResult.OK:
+		return result
+	var m := config.sanity.madness
+	state.command_log.append([state.tick, "buy_sanity"])
+	_add_gold(-m.buyout_cost, "buyout", 0)
+	_add_sanity(m.restore_sanity - state.sanity, "buyout", 0)
+	return CommandResult.OK
+
+
+## Exit rule "auto_restore" (LT-13): called by the wave system when a wave is cleared,
+## after the bonus and between-waves regen, before WAVE_CLEARED. In MADNESS, sets sanity to
+## madness.restore_sanity (SANITY_CHANGED {reason: "auto_restore"}); otherwise, under
+## another exit rule or once the outcome is set, does nothing. Returns the applied delta.
+func auto_restore_sanity() -> float:
+	if state.outcome != SimState.Outcome.NONE:
+		return 0.0
+	var m := config.sanity.madness
+	if m.exit_rule != "auto_restore" or state.sanity_state != SimState.SanityState.MADNESS:
+		return 0.0
+	return _add_sanity(m.restore_sanity - state.sanity, "auto_restore", 0)
+
+
 ## Gold call_wave() would pay if called now: economy.early_call_gold_per_second x whole
 ## seconds left on the build timer (seconds rounded down from ticks, the product rounded
 ## down); 0 when call_wave() would be refused. Changes nothing.
@@ -351,11 +398,13 @@ func _add_gold(delta: int, reason: String, id: int) -> void:
 ## {delta, sanity, reason} with the delta actually applied (nothing when it is 0, e.g. regen
 ## at the cap), and SANITY_STATE_CHANGED {old, new} (SimState.SanityState values) when the
 ## threshold state moves. `id` is the enemy (kill) or tower (build, cast) it is about,
-## 0 otherwise.
+## 0 otherwise. MADNESS is latched (LT-13): while in it only MADNESS_EXIT_REASONS change
+## sanity; regen and drain apply nothing and emit nothing.
 ## Returns the applied delta.
 func _add_sanity(delta: float, reason: String, id: int) -> float:
-	# LT-13 hook: with madness.exit_rule "permanent", MADNESS is latched and regen must not
-	# lift sanity out of it; gate positive deltas here once the latch exists.
+	if state.sanity_state == SimState.SanityState.MADNESS \
+			and not MADNESS_EXIT_REASONS.has(reason):
+		return 0.0
 	var before := state.sanity
 	state.sanity = clampf(before + delta, 0.0, config.sanity.max_sanity)
 	var applied := state.sanity - before
@@ -456,6 +505,8 @@ func _apply_auras() -> void:
 ## cast and no sanity cost; the tower stays ready. A mundane shot may miss (LT-12 §4,
 ## _roll_miss): cooldown spent, no damage, SHOT {miss: true, hits: []}, `to` = aim point. A level's sanity_per_cast is paid through
 ## _add_sanity (SANITY_CHANGED "cast", id = tower) in the tick it fires, before its damage.
+## In MADNESS a madness_affected level shoots astray (LT-13): SHOT {astray: true}, centre
+## rolled by shot_split on MADNESS, damage x madness.damage_multiplier.
 func _fire_towers() -> void:
 	for t in state.towers:
 		if t.cooldown_ticks > 0:
@@ -465,11 +516,29 @@ func _fire_towers() -> void:
 		var s := t.stats()
 		if s.damage <= 0.0:
 			continue
-		var target := _first_along_route(enemies_in_range(t.cell, s.range_cells))
+		var in_range := enemies_in_range(t.cell, s.range_cells)
+		var target := _first_along_route(in_range)
 		if target == null:
 			continue
-		# LT-13 hook: madness_affected levels (s.madness_affected) deal x2 and may shoot
-		# astray while state.sanity_state == MADNESS; not implemented here.
+		# LT-13: a madness_affected tower in MADNESS deals x damage_multiplier and its shot
+		# goes astray (shot_split on MADNESS): centred on a random real / fake in range, or
+		# on nothing. An empty shot keeps the usual target as its aim point.
+		var damage := s.damage
+		var astray := ""
+		if s.madness_affected and state.sanity_state == SimState.SanityState.MADNESS:
+			damage *= config.sanity.madness.damage_multiplier
+			astray = _roll_astray()
+			var pool: Array[SimEnemy] = []
+			if astray == "real":
+				for e in in_range:
+					if not e.is_fake:
+						pool.append(e)
+			elif astray == "fake":
+				pool = live_fakes_in_range(t.cell, s.range_cells)
+			if pool.is_empty():
+				astray = "empty"
+			else:
+				target = pool[rng(SimRng.Stream.MADNESS).randi_range(0, pool.size() - 1)]
 		var pierce: float = s.effects.get("pierce", 0.0)
 		var aoe: float = s.effects.get("aoe_radius", 0.0)
 		var hits: Array[SimEnemy] = [target]
@@ -481,17 +550,21 @@ func _fire_towers() -> void:
 			hits = enemies_near(to, aoe)
 		# LT-12 §4: a mundane shot may miss as a whole (Q3: occult towers never miss).
 		var miss := t.def.kind == "mundane" and _roll_miss()
-		if miss:
+		if miss or astray == "empty":
 			hits = []
 		var ids: Array[int] = []
 		for e in hits:
 			ids.append(e.id)
-		_emit(SimEvent.Type.SHOT, t.id,
-			{"def": t.def.id, "target": target.id, "hits": ids, "to": to, "miss": miss})
+		var shot := {"def": t.def.id, "target": target.id, "hits": ids, "to": to, "miss": miss}
+		if astray != "":
+			# A bool, not the outcome: a shot centred on a fake must look like any other
+			# (LT-12 §1). An empty one is told by its empty "hits".
+			shot["astray"] = true
+		_emit(SimEvent.Type.SHOT, t.id, shot)
 		if s.sanity_per_cast > 0.0:
 			_add_sanity(-s.sanity_per_cast, "cast", t.id)
 		for e in hits:
-			apply_damage(e.id, s.damage, t.def.id)
+			apply_damage(e.id, damage, t.def.id)
 		t.cooldown_ticks = maxi(1, SimTime.ticks(s.fire_interval))
 
 
@@ -608,6 +681,17 @@ func _roll_miss() -> bool:
 	if chance <= 0.0:
 		return false
 	return rng(SimRng.Stream.COMBAT).randf() < chance
+
+
+## LT-13 shot_split: one MADNESS roll per astray shot -> "real" | "fake" | "empty".
+func _roll_astray() -> String:
+	var m := config.sanity.madness
+	var r := rng(SimRng.Stream.MADNESS).randf()
+	if r < m.shot_real:
+		return "real"
+	if r < m.shot_real + m.shot_fake:
+		return "fake"
+	return "empty"
 
 
 func _compact() -> void:
