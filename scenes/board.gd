@@ -23,6 +23,8 @@ const COLOR_HP := Color(0.9, 0.2, 0.2)
 const COLOR_SHOT := Color(1, 1, 0.7)
 const COLOR_DEATH := Color(1, 0.5, 0.2)
 const COLOR_LEAK := Color(1, 0.1, 0.1)
+const COLOR_DISSOLVE := Color(0.6, 0.6, 0.75)
+const COLOR_DEBUG_FAKE := Color(1, 0, 1)  ## debug outline (--reveal-fakes), LT-12 §1
 const COLOR_SELECT := Color(1, 1, 1, 0.8)
 
 var game: Game
@@ -64,6 +66,10 @@ func on_event(ev: SimEvent) -> void:
 		SimEvent.Type.DIED:
 			if _last_pos.has(ev.id):
 				effects.append({"kind": "death", "from": _last_pos[ev.id], "ttl": FLASH_SECONDS})
+		SimEvent.Type.FAKE_DISSOLVED:
+			if _last_pos.has(ev.id):
+				effects.append({"kind": "dissolve", "from": _last_pos[ev.id],
+					"ttl": FLASH_SECONDS})
 		SimEvent.Type.LEAKED:
 			var lh := game.sim.state.map.lighthouse
 			effects.append({"kind": "leak", "from": Vector2(lh) + Vector2(0.5, 0.5),
@@ -132,6 +138,8 @@ func _draw_enemies(s: SimState) -> void:
 		if e.revealed:
 			color.a = 0.35
 		draw_circle(px, CELL * 0.25, color)
+		if game.sim.debug_is_fake(e):
+			draw_arc(px, CELL * 0.3, 0, TAU, 24, COLOR_DEBUG_FAKE, 2.0)
 		var w := CELL * 0.6
 		var bar := Rect2(px + Vector2(-w * 0.5, -CELL * 0.4), Vector2(w, 4))
 		draw_rect(bar, COLOR_HP_BACK)
@@ -146,6 +154,8 @@ func _draw_effects() -> void:
 				draw_line(fx["from"] * CELL, fx["to"] * CELL, COLOR_SHOT, 2.0)
 			"death":
 				draw_circle(fx["from"] * CELL, CELL * 0.35, COLOR_DEATH)
+			"dissolve":
+				draw_arc(fx["from"] * CELL, CELL * 0.35, 0, TAU, 24, COLOR_DISSOLVE, 2.0)
 			"leak":
 				draw_rect(Rect2((fx["from"] - Vector2(0.5, 0.5)) * CELL, Vector2(CELL, CELL)),
 					COLOR_LEAK, false, 4.0)

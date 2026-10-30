@@ -10,12 +10,15 @@ var route: SimRoute
 var distance: int = 0  ## along `route`, in SimTime.UNITS_PER_CELL units
 var prev_distance: int = 0  ## distance before this tick's movement (render interpolation)
 var base_units_per_tick: int
-var is_fake := false  ## hallucination (LT-12): never damages the lighthouse
+## Hallucination (LT-12): never damages the lighthouse. Sim only: no script outside sim/
+## and tests/ names it (render isolation, LT-12 §1); scenes use Simulation.debug_is_fake.
+var is_fake := false
 var revealed := false  ## fake made visible (LT-12); the renderer sees this, never is_fake
 var spawn_tick: int
 ## Set during a tick; the enemy is removed at the end of that tick (step 8).
 var dead := false
 var leaked := false
+var dissolved := false  ## fake gone at the lighthouse or at wave end (LT-12)
 
 # Per-tick modifiers: reset every tick, rebuilt by effect systems (LT-6/LT-11).
 var speed_mult := 1.0
@@ -32,6 +35,6 @@ func reset_modifiers() -> void:
 	armor_bonus = 0.0
 
 
-## Still in play: neither killed nor leaked.
+## Still in play: neither killed, leaked nor dissolved.
 func is_live() -> bool:
-	return not dead and not leaked
+	return not dead and not leaked and not dissolved

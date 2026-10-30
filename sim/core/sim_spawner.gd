@@ -23,3 +23,9 @@ func end_tick(_sim: Simulation) -> void:
 ## True when nothing more will ever spawn (part of the win rule, §5).
 func is_exhausted() -> bool:
 	return true
+
+
+## Enemy ids a hallucination may mimic right now (LT-12 §2), weighted by repetition;
+## empty = no fake may spawn now. The base spawner (and ScriptedSpawner) never has any.
+func fake_candidates(_sim: Simulation) -> Array[String]:
+	return []

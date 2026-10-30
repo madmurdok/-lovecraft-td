@@ -57,6 +57,21 @@ func end_tick(sim: Simulation) -> void:
 	_clear_wave(sim)
 
 
+## LT-12 §2: in a wave whose groups are not all fired, one entry per unfired spawn event
+## (`count - fired` copies of the group's enemy id, group order); otherwise empty, so no
+## fake spawns in BUILD/DONE or after the wave's last real spawn (owner decision Q2).
+func fake_candidates(sim: Simulation) -> Array[String]:
+	var out: Array[String] = []
+	var s := sim.state
+	if s.phase != SimState.Phase.WAVE or _all_fired(s):
+		return out
+	var groups := _current_wave(s).groups
+	for gi in groups.size():
+		for _k in groups[gi].count - _fired[gi]:
+			out.append(groups[gi].enemy_id)
+	return out
+
+
 ## True once the last wave is cleared.
 func is_exhausted() -> bool:
 	return _done
@@ -112,7 +127,7 @@ func _all_fired(s: SimState) -> bool:
 func _clear_wave(sim: Simulation) -> void:
 	var s := sim.state
 	var n := s.wave_index
-	# LT-12 hook: dissolve the live fakes of this wave here (FAKE_DISSOLVED), before the bonus.
+	sim.dissolve_fakes("wave_end")  # LT-12 §5: before the bonus, so BUILD starts with none
 	var bonus := sim.award_wave_bonus(n)
 	sim.award_wave_sanity()  # LT-10: regen.between_waves, also for the last wave
 	sim.emit_event(SimEvent.Type.WAVE_CLEARED, 0, {"wave": n, "bonus": bonus})

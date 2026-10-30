@@ -21,10 +21,14 @@ enum CommandResult {
 var state: SimState
 var config: GameConfig
 var events: Array[SimEvent] = []
+## Debug only (LT-12 §1): set by scenes/game.gd in debug builds with `--reveal-fakes`.
+## The sim never reads it; only debug_is_fake does, so it cannot change an outcome.
+var debug_reveal_fakes := false
 
 var _spawner: SimSpawner
 var _rng: SimRng
 var _ground_route: SimRoute
+var _hallucinations := HallucinationSystem.new()
 
 
 func _init(p_config: GameConfig, run_seed: int) -> void:
@@ -70,9 +74,10 @@ func step() -> void:
 	# 6. Sanity (LT-10): horror drain. Kill regen is paid in slot 5 (_on_enemy_killed),
 	# between-waves regen in slot 8 (wave system), each through _add_sanity.
 	_horror_drain()
-	# 7. Spawning.
+	# 7. Spawning, then fakes (LT-12) from the spawner's candidates.
 	if _spawner != null:
 		_spawner.tick(self)
+		_hallucinations.tick(self, _spawner)
 	# 8. Remove dead and leaked enemies; then the wave system settles a cleared wave
 	# (its bonus is paid before the outcome check, so the last wave's bonus lands too).
 	_compact()
@@ -83,7 +88,8 @@ func step() -> void:
 
 
 ## Spawns `def_id` at the start of its route; a `pack` enemy spawns min..max of them
-## (rolled on SPAWN) on the same tick at the same spot. Returns the first new id
+## (rolled on SPAWN, or on SANITY for a fake so hallucinations never change real pack
+## sizes, LT-12 §2) on the same tick at the same spot. Returns the first new id
 ## (a pack's ids are consecutive), or 0 if `def_id` is unknown or the outcome is set
 ## (then nothing changes and no event is emitted).
 func spawn_enemy(def_id: String, is_fake := false) -> int:
@@ -96,7 +102,8 @@ func spawn_enemy(def_id: String, is_fake := false) -> int:
 	var count := 1
 	if def.traits.has("pack"):
 		var pack: Dictionary = def.traits["pack"]
-		count = rng(SimRng.Stream.SPAWN).randi_range(int(pack["min"]), int(pack["max"]))
+		var stream := SimRng.Stream.SANITY if is_fake else SimRng.Stream.SPAWN
+		count = rng(stream).randi_range(int(pack["min"]), int(pack["max"]))
 	var first_id := state.next_id
 	for i in count:
 		var e := SimEnemy.new()
@@ -446,7 +453,8 @@ func _apply_auras() -> void:
 ## A level with a `pierce` effect fires a line shot (_line_hits) instead of a single shot;
 ## one with an `aoe_radius` effect casts a blast centred on that target, hitting every live
 ## enemy (fakes too) within aoe_radius of it (Necronomicon). No enemy in range: no shot, no
-## cast and no sanity cost; the tower stays ready. A level's sanity_per_cast is paid through
+## cast and no sanity cost; the tower stays ready. A mundane shot may miss (LT-12 §4,
+## _roll_miss): cooldown spent, no damage, SHOT {miss: true, hits: []}, `to` = aim point. A level's sanity_per_cast is paid through
 ## _add_sanity (SANITY_CHANGED "cast", id = tower) in the tick it fires, before its damage.
 func _fire_towers() -> void:
 	for t in state.towers:
@@ -471,11 +479,15 @@ func _fire_towers() -> void:
 			hits = _line_hits(t.centre(), to, pierce * 0.5, target)
 		elif aoe > 0.0:
 			hits = enemies_near(to, aoe)
+		# LT-12 §4: a mundane shot may miss as a whole (Q3: occult towers never miss).
+		var miss := t.def.kind == "mundane" and _roll_miss()
+		if miss:
+			hits = []
 		var ids: Array[int] = []
 		for e in hits:
 			ids.append(e.id)
 		_emit(SimEvent.Type.SHOT, t.id,
-			{"def": t.def.id, "target": target.id, "hits": ids, "to": to})
+			{"def": t.def.id, "target": target.id, "hits": ids, "to": to, "miss": miss})
 		if s.sanity_per_cast > 0.0:
 			_add_sanity(-s.sanity_per_cast, "cast", t.id)
 		for e in hits:
@@ -543,15 +555,59 @@ func _move() -> void:
 
 
 ## Every enemy at the end of its route leaks; all leaks of the tick are processed (§5).
+## A fake never leaks: it dissolves there (LT-12 §3), no HP change and no LEAKED.
 func _leak() -> void:
 	for e in state.enemies:
 		if not e.is_live() or e.distance != e.route.length:
 			continue
+		if e.is_fake:
+			e.dissolved = true
+			_emit(SimEvent.Type.FAKE_DISSOLVED, e.id, {"reason": "lighthouse"})
+			continue
 		e.leaked = true
-		var damage := 0 if e.is_fake else e.def.leak_damage
-		state.lighthouse_hp = maxi(0, state.lighthouse_hp - damage)
+		state.lighthouse_hp = maxi(0, state.lighthouse_hp - e.def.leak_damage)
 		_emit(SimEvent.Type.LEAKED, e.id,
-			{"damage": damage, "hp_after": state.lighthouse_hp, "fake": e.is_fake})
+			{"damage": e.def.leak_damage, "hp_after": state.lighthouse_hp})
+
+
+## LT-12 §5 (called by the wave director when a wave is cleared): every live fake, in id
+## order, is marked dissolved with FAKE_DISSOLVED {reason}; then state.enemies is
+## compacted again, so the build phase starts with no enemy in `state`.
+func dissolve_fakes(reason: String) -> void:
+	for e in state.enemies:
+		if e.is_live() and e.is_fake:
+			e.dissolved = true
+			_emit(SimEvent.Type.FAKE_DISSOLVED, e.id, {"reason": reason})
+	_compact()
+
+
+## The only way a scene may tell a fake (LT-12 §1): false unless debug_reveal_fakes.
+func debug_is_fake(e: SimEnemy) -> bool:
+	return debug_reveal_fakes and e.is_fake
+
+
+## Sim only (LT-13 madness "hit a fake" branch): live fakes in range, id order.
+func live_fakes_in_range(cell: Vector2i, range_cells: float) -> Array[SimEnemy]:
+	var out: Array[SimEnemy] = []
+	for e in enemies_in_range(cell, range_cells):
+		if e.is_fake:
+			out.append(e)
+	return out
+
+
+## The sanity.json threshold of the current sanity state (SimState.SanityState and
+## SanityConfig.STATES share their order: LUCID..MADNESS = "lucid".."madness").
+func threshold() -> SanityConfig.Threshold:
+	return config.sanity.thresholds[SanityConfig.STATES[state.sanity_state]]
+
+
+## LT-12 §4 miss hook: one roll on COMBAT against the state's miss_chance; no roll (and no
+## COMBAT draw) when the chance is 0, so Lucid/Whispers consume COMBAT as before.
+func _roll_miss() -> bool:
+	var chance := threshold().miss_chance
+	if chance <= 0.0:
+		return false
+	return rng(SimRng.Stream.COMBAT).randf() < chance
 
 
 func _compact() -> void:
