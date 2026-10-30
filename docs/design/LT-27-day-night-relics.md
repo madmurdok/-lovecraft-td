@@ -1,6 +1,6 @@
 # LT-27 — Day/night economy: relics drop at night, sold for money by day (design note)
 
-Status: draft for owner review · 2026-10-31 · branch `feat/LT-27-day-night-relics`
+Status: decisions taken (owner, 2026-10-31) · branch `feat/LT-27-day-night-relics`
 
 Owner idea (verbatim): "учитывая то что у нас теперь валюта - реликвии, то имеет смысл сделать
 2 фазы: день и ночь. Ночью - маяк работает и мы стреляем врагов, с них падают реликвии( разной
@@ -22,359 +22,384 @@ Owner idea (verbatim): "учитывая то что у нас теперь ва
 | Buyout | `buy_sanity` | `madness.buyout_cost` 150, any phase |
 
 Phases (`wave_director.gd`): BUILD 25 s → WAVE n → BUILD → … → DONE. Every gold change goes
-through `_add_gold` and emits `GOLD_CHANGED {delta, gold, reason}`. Gold income at
-baseline for the 5 MVP waves (packs at their mean of 5): kills ≈ 60 + 140 + 360 + 440 + 565
-= 1565, wave bonuses 400, start 200.
+through `_add_gold` (`GOLD_CHANGED {delta, gold, reason}`). RNG: `SimRng.Stream {SPAWN,
+COMBAT, SANITY, MADNESS}`, stream i seeded `run_seed × 16 + i`, so appended streams never
+change the existing ones. Baseline kill gold for the 5 MVP waves (packs at their mean of 5):
+≈ 60 + 140 + 360 + 440 + 565 = 1565; wave bonuses 400; start 200.
 
 Playtest 0.1 finding 7: gold from kills has no lore; the owner named the loot Relics
 (creature bones, fragments, amber). Lamp oil stays a future lighthouse resource (LT-26 §5).
 
-**This task** splits the economy into two resources, tied to the two phases:
+**This task** splits the economy into two resources tied to two phases:
 
-- **Night** = the wave phase. The lighthouse burns, towers fire, kills drop **relics** into
-  the keeper's stash. Relics cannot be spent.
-- **Day** = the build phase. Relics are **sold for money**; money buys towers, upgrades
-  (LT-24), lighthouse levels (LT-26) and the madness buyout.
+- **Night** = the wave phase. The lighthouse burns, towers fire, kills drop **relics**: a
+  token falls at the kill and flies to the HUD stash in ~2 s. Relics cannot be spent.
+- **Day** = the build phase, **40 s**. Relics are **sold for money** with one button; money
+  buys towers, upgrades (LT-24), lighthouse levels (LT-26) and the madness buyout. Lighting
+  the lamp early makes valuable drops likelier for that night.
 
 ```
-NIGHT (WAVE n)                      DAWN (WAVE_CLEARED)          DAY (BUILD)
-kill → RELICS_CHANGED +1 amulet     fakes dissolve               sell_relics() → money
-       (stash, not spendable)       wage (old wave bonus) → $    build / upgrade / sell towers
-                                    sanity regen                 "Light the lamp" → night n+1
+NIGHT (WAVE n)                          DAWN (WAVE_CLEARED)            DAY (BUILD, 40 s)
+kill → RELIC_DROPPED (token, kind)      tokens in flight settle        sell_relics() → $
+  real:  +2 s → RELICS_CHANGED (stash)  fakes dissolve                 build / upgrade / sell
+  ghost: +1 s → RELIC_VANISHED          dawn wage → $, luck reset      "Light the lamp" early
+                                                                         → luck × for night n+1
 ```
 
 ## 1. Relics
 
-### 1.1 Kinds and values (Open question 1)
+### 1.1 Kinds, prices, drop tables (D1)
 
-Recommended: **one relic kind per enemy, one piece per kill, price = today's reward.** The
-economy totals stay exactly as today, so LT-23/S5 tunes from a known baseline; "different
-value" is carried by the kind.
+Four kinds (data, tunable):
 
-| Enemy | Relic (id) | Name shown | Price ($) | Lore line |
-|---|---|---|---|---|
-| Cultist of Dagon | `amulet` | Tarnished amulet | 5 | Cheap gold-plated tin with the sign of Dagon |
-| Deep One | `scale` | Deep One scale | 8 | Iridescent, cold to the touch |
-| Innsmouth Hybrid | `bone` | Hybrid bone | 10 | Neither man nor fish |
-| Night-gaunt | `horn` | Night-gaunt horn | 15 | Curved, faintly warm |
-| Shoggoth | `amber` | Shoggoth amber | 60 | Hardened protoplasm with something still moving inside |
-| Dagon (post-MVP) | `idol` | Idol of the Deep | config | Boss relic, same rules |
+| Kind (id) | Name shown | Price ($) | Lore |
+|---|---|---|---|
+| `bone` | Bone fragment | 5 | Neither man nor fish |
+| `amber` | Amber | 15 | Hardened deep-sea resin with something inside |
+| `idol` | Idol fragment | 50 | A shard of a green soapstone idol |
+| `star_stone` | Star-stone of Mnar | 200 | The rarest find; the five-pointed grey stone |
 
-Config (data, all tunable):
+Every kill rolls **one** drop (a Deep One pack is 5 kills, 5 rolls). The kind is drawn from
+the enemy's table of integer weights (shares of 1000). The star-stone is the owner's 4th
+relic with a 0.1 % chance: weight 1 in every table.
+
+| Enemy | bone | amber | idol | star_stone | Mean $ (today's gold) |
+|---|---|---|---|---|---|
+| Cultist of Dagon | 999 | 0 | 0 | 1 | 5.2 (5) |
+| Deep One | 749 | 250 | 0 | 1 | 7.7 (8) |
+| Innsmouth Hybrid | 699 | 250 | 50 | 1 | 9.9 (10) |
+| Night-gaunt | 399 | 500 | 100 | 1 | 14.7 (15) |
+| Shoggoth | 0 | 0 | 999 | 1 | 50.2 (60) |
+| Dagon (post-MVP) | config | | | | |
+
+Hybrid is the owner-approved example (70 / 25 / 5 %, the star-stone's 0.1 % taken from
+bone). The other rows keep each enemy's mean within ~0.3 of today's reward (Shoggoth −10,
+one per run), so LT-23/S5 starts from about today's income; luck now moves a run's total
+by roughly ±10 %.
 
 ```jsonc
 // data/economy.json
 "relics": {
-  "amulet": { "name": "Tarnished amulet", "price": 5 },
-  "scale":  { "name": "Deep One scale",   "price": 8 },
-  "bone":   { "name": "Hybrid bone",      "price": 10 },
-  "horn":   { "name": "Night-gaunt horn", "price": 15 },
-  "amber":  { "name": "Shoggoth amber",   "price": 60 }
-}
-// data/enemies.json: "reward": 5  →  "relic": "amulet"   (optional "relic_count", default 1)
+  "bone":       { "name": "Bone fragment",      "price": 5 },
+  "amber":      { "name": "Amber",              "price": 15 },
+  "idol":       { "name": "Idol fragment",      "price": 50 },
+  "star_stone": { "name": "Star-stone of Mnar", "price": 200 }
+},
+"token_fly_seconds": 2.0,        // kill -> stash credit (real) / flight length (both)
+"ghost_vanish_seconds": 1.0,     // kill -> ghost token dissolves; < token_fly_seconds
+"early_night_luck_per_second": 0.02
+// replaces "early_call_gold_per_second" (removed)
+
+// data/enemies.json: "reward": 10  ->  "drops": { "bone": 699, "amber": 250, "idol": 50, "star_stone": 1 }
+// data/waves.json:   "build_phase_seconds": 25 -> 40
 ```
 
-Validation: at least one kind; `name` non-empty string; `price` int ≥ 0; every enemy's
-`relic` names a known kind (cross-file check in `sim/config.gd`, same place waves' enemy
-ids are checked); `relic_count` int ≥ 0. Kind order = config order (deterministic: sale
-events, HUD rows).
+Validation: at least one kind; `name` non-empty; `price` int ≥ 0; each enemy's `drops`
+keys are known kinds (cross-file check in `sim/config.gd`, next to the waves' enemy-id
+check), weights int ≥ 0, sum > 0; `ghost_vanish_seconds` > 0 and < `token_fly_seconds`;
+`early_night_luck_per_second` ≥ 0. Kind order = config order (sale events, HUD rows).
 
-### 1.2 Drop rules
+### 1.2 The roll and early-night luck (D1, D6)
 
-- **Real kill at night:** `relic_count` pieces of `def.relic` go **straight into the
-  stash** (`state.relics[kind] += n`) in the kill tick, through a new `_add_relics(kind, n,
-  reason, id)` that emits `RELICS_CHANGED {kind, delta, count, reason}`. No map pickup
-  (Open question 2).
-- **Fakes** (LT-12): drop nothing, as they pay no gold today (Open question 3).
-- **Leaks:** an enemy that reaches the lighthouse drops nothing (as today).
-- **Pack enemies:** each Deep One of a pack is one kill, one scale.
-- **Boss:** same rule; its kind and price are config. "Leaking = instant loss" ends the run
-  before dawn, so a boss relic only counts when the boss is killed.
-- **Multi-kill / two towers on one enemy:** one drop per enemy (`_on_enemy_killed` already
-  runs once per enemy).
-- **`DIED` data** `{source, reward}` becomes `{source, relic, relic_count}` from the def
-  (identical for real and fake enemies, LT-12 §1 rule A).
-- Relics carry over between days; unsold relics at the end of the run are worth nothing
-  (end screen shows them for flavour).
+- New stream `SimRng.Stream.LOOT` (appended) rolls real drops. Fakes roll their token's
+  kind on a second appended stream `GHOST_LOOT`, so hallucinations never shift real loot
+  and existing SPAWN/COMBAT/SANITY/MADNESS sequences are unchanged.
+- Roll: `w'[k] = w[k] × luck` for every kind except the cheapest kind in that enemy's table
+  (`w'` = `w` for it); pick with `randf() × Σw'` over config order. One `randf()` per drop.
+- **Luck** (`state.night_luck`, 1.0 by default): `call_wave()` sets it to
+  `1 + early_night_luck_per_second × whole seconds left` and the dawn resets it to 1.0.
+  It replaces today's early-call money bonus.
+- Example, hybrid, lamp lit with 30 s of 40 left: luck 1.6 → amber 400, idol 80,
+  star-stone 1.6, bone 699; P(star-stone) 0.1 % → 0.14 %; mean $9.9 → $11.7 (+18 %). Lit at
+  once (40 s): luck 1.8, mean $12.2 (+22 %). A cultist only gains star-stone odds (1 → 1.8).
+- `early_night_luck() -> float` (replaces `early_call_bonus()`): the luck `call_wave()`
+  would set now; 1.0 outside BUILD.
 
-### 1.3 Selling (Open question 4)
+### 1.3 Tokens: drop, flight, credit (D2, D3)
 
-Recommended: **fixed price per kind, sold only by day, no limits.**
+Sim side, deterministic in ticks. Credit happens **on arrival**, not at the kill, so
+`state.relics` cannot reveal a fake before its token dissolves.
+
+- Every kill (real and fake alike, slot 5) creates a token: `RelicToken {id, kind, at:
+  Vector2, drop_tick, arrive_tick}` in `state.relic_tokens`; ids from a separate
+  `state.next_token_id` (entity ids are untouched). `arrive_tick = drop_tick +
+  ticks(token_fly_seconds)` for both kinds of enemy.
+- Event `RELIC_DROPPED {token, kind, at, arrive_tick}` — identical shape and values for
+  real and fake (kind comes from LOOT or GHOST_LOOT with the same table and luck).
+- Whether a token is a ghost lives only in `Simulation._ghost_tokens:
+  Dictionary[int, bool]` (sim-private).
+- New slot 6b `_settle_tokens()` (after `_horror_drain`, before spawning), tokens in id
+  order:
+  - ghost at `drop_tick + ticks(ghost_vanish_seconds)`: removed, `RELIC_VANISHED {token}`;
+    credits nothing.
+  - real at `arrive_tick`: removed, `_add_relics(kind, 1, "kill", token)` →
+    `RELICS_CHANGED {kind, delta, count, reason, token}`.
+- Dawn (`WaveDirector._clear_wave`, right after `dissolve_fakes`): `settle_all_tokens()`
+  vanishes every ghost and credits every real token at once, so a day starts with none in
+  flight. A night lost keeps whatever is in flight uncredited (the run is over).
+- Leaks drop nothing. One drop per enemy (multi-kills, two towers on one enemy).
+- `DIED` data `{source, reward}` becomes `{source}` (the def no longer has one value;
+  identical for real and fake).
+
+**Render isolation.** Nothing the render reads differs between a real and a ghost token
+before the ghost's vanish tick: same event shape, same `arrive_tick`, same kind
+distribution, `state.relic_tokens` holds both, `state.relics` changes only at arrival
+(after the vanish tick). The fake is revealed at the vanish tick, by the vanish itself,
+mid-flight: the owner's "token-ghost melts in flight". `render_isolation_test.gd` adds
+`\b_ghost_tokens\b` and `\bGHOST_LOOT\b` to `FORBIDDEN`. A new sim test pins "a real and a
+ghost token have equal `RELIC_DROPPED` data and leave `state.relics` unchanged until the
+vanish tick".
+
+### 1.4 Selling (D4)
+
+Fixed price per kind, sold only by day, one button, no limits.
 
 ```
-func relic_price(kind: String) -> int                ## config price; 0 for an unknown kind
-func relics_value() -> int                           ## stash total at today's prices
+func relic_price(kind: String) -> int            ## config price; 0 for an unknown kind
+func relics_value() -> int                       ## stash at today's prices
 func can_sell_relics(kind := "") -> CommandResult
-func sell_relics(kind := "") -> CommandResult        ## "" = every kind
+func sell_relics(kind := "") -> CommandResult    ## "" = every kind
 ```
 
-Checks, in this order: outcome set → `OUTCOME_REACHED`; `phase == WAVE` →
-`NOT_BUILD_PHASE` (reused); unknown kind, or nothing to sell (that kind, or the whole stash
-for `""`) → `NO_RELICS` (new, appended to `CommandResult`).
-
-On OK: `command_log.append([tick, "sell_relics", kind])`; for each sold kind in config
-order `RELICS_CHANGED {kind, delta: -n, count: 0, reason: "sell"}` then one
-`GOLD_CHANGED {delta: Σ price × n, reason: "relic_sale"}`. A whole stack is sold; there is
-no count argument (with fixed prices a partial sale changes nothing). The sim supports
-per-kind sales; the 0.2 UI offers one "Sell relics" button (§4).
-
-`phase == WAVE` rather than `!= BUILD` keeps sim unit tests without a WaveDirector
-(phase NONE) working unchanged.
-
-### 1.4 Market hook (not built)
-
-`relic_price(kind)` is the single place a price is read. A later market (daily price roll,
-or demand that drops as you sell one kind) replaces its body and adds config; no other code
-changes. Not in 0.2 unless the owner picks it in Q4.
+Checks in order: outcome set → `OUTCOME_REACHED`; not day (§3) → `NOT_BUILD_PHASE`
+(reused); unknown kind or nothing to sell → `NO_RELICS` (new, appended to `CommandResult`).
+On OK: `command_log.append([tick, "sell_relics", kind])`; per non-empty kind in config
+order `RELICS_CHANGED {kind, delta: -n, count: 0, reason: "sell"}`, then one
+`GOLD_CHANGED {delta: Σ price × n, reason: "relic_sale"}`. Whole stacks only. The UI uses
+`""`; per-kind sale stays in the sim for a later market (`relic_price` is the only place a
+price is read).
 
 ## 2. Money
 
-**Name:** shown as **"$"** (1920s New England dollars): `Money: $200`, `Rifleman — $50`.
-Text only; trivially changed.
+Shown as **"$"** (1920s New England dollars). **Internally money stays `gold`**
+(`state.gold`, `_add_gold`, `GOLD_CHANGED`, `NOT_ENOUGH_GOLD`, `starting_gold`,
+`sell_refund`, `buyout_cost`): ~190 test references in 18 files, and LT-23/24/26 code slices
+landing on `simulation.gd` already call these. A rename can be a backlog task after 0.2.
 
-**Internally money stays `gold`:** `state.gold`, `_add_gold`, `GOLD_CHANGED`,
-`NOT_ENOUGH_GOLD`, `economy.starting_gold`, `early_call_gold_per_second`, `sell_refund`,
-`buyout_cost`. Reasons: ~190 test references in 18 files, and LT-23/LT-24/LT-26 code slices
-(landing in parallel on `simulation.gd`) already call `_add_gold` / `NOT_ENOUGH_GOLD`; a
-rename now conflicts with all three for zero player-visible gain. Doc comments and the GDD
-say "gold (money)". A mechanical rename can be a backlog task after 0.2.
-
-| Use / source | Currency | Change |
+| Use / source | Currency | Rule |
 |---|---|---|
-| Build tower | money | day only (Open question 5) |
+| Build tower | money | day only |
 | Upgrade tower (LT-24) | money | day only (LT-24 decision) |
-| Lighthouse level (LT-26) | money | LT-26 note says "Relics (LT-27 currency; internal gold)" and "during a wave": its code already uses `_add_gold`, so only the wording and the phase rule follow this note |
-| Sell tower refund | money | 70 % unchanged; day only (Q5) |
-| Madness buyout | money | unchanged, **any phase** (an emergency at night) |
-| Wave bonus | money | renamed **"Dawn wage"** ("the harbour board pays the keeper"), paid at dawn as today, formula unchanged |
-| Early call | money | kept as **"Light the lamp early"** bonus (Open question 6) |
-| Kill | relics | §1.2 |
+| Lighthouse level (LT-26) | money | **day only**, like other upgrades (D7); LT-26's "Relics" / "during a wave" wording is superseded |
+| Sell tower refund | money | 70 %, day only |
+| Madness buyout | money | any phase, also at night (D5) |
+| Wave bonus | money | renamed **"Dawn wage"**, paid at dawn, formula unchanged |
+| Early night | luck | §1.2; no money |
+| Kill | relics | §1.3 |
 
-Starting stash: money 200, relics 0. Example, wave 3 at baseline: the night drops 30 scales
-and 12 bones (stash value $360); at dawn the wage pays $80; selling gives $360; the day
-starts with leftover + $440, the same total as today, but none of it is spendable until
-dawn.
+Start: $200, no relics. **Consequence for LT-23/S5:** kill income was spent mid-wave
+(the bots re-check every second during a wave); now it is spent at the next dawn, and the
+early-call money (≤ $50 per day) becomes luck. The run gets harder; 0.1 bot tables are
+not comparable; LT-23/S5 measures after LT-27/S5, over 10 seeds per strategy (loot is
+random now).
 
-**Consequence (for LT-23/S5):** today kill gold arrives mid-wave and the bots spend it at
-once (they re-check every second during a wave). With the split, the money of night n is
-spent only at dawn n. Same totals, later spending: the run gets harder, and the 0.1 bot
-tables are not comparable before/after. LT-23/S5 measures after LT-27/S5 (the task order
-already says so).
+## 3. Phase rules
 
-## 3. Day length and phase rules
+- **Day = BUILD**, 40 s (`build_phase_seconds`); "Light the lamp" (old "Call wave") ends it
+  early and sets the night's luck.
+- **Night = WAVE.** One helper `_day_only() -> CommandResult` returns `NOT_BUILD_PHASE` when
+  `state.phase == WAVE` (not `!= BUILD`, so unit tests without a WaveDirector, phase NONE,
+  are unaffected). Used by `can_build` (as its **last** check, keeping "first failing reason
+  in `CommandResult` order"), `sell_tower`, `can_sell_relics`, LT-24 `can_upgrade`, LT-26
+  lighthouse upgrade. The single helper is the seam for the crew layer (§7), which will
+  whitelist night deployment there.
+- Allowed at night: `buy_sanity`, pause, speed; LT-27's night controls end there. More night
+  agency comes from separate tasks (D5): an active lighthouse ability (lighthouse beam
+  backlog task), tower target priority (new small 0.2.0 task), the crew layer (next
+  release, §7).
+- Pause allows every day action (LT-4 §1.3). DONE: outcome WON already set.
 
-- **Day = BUILD**, timed by `waves.build_phase_seconds` (25 s) as today; the HUD button
-  "Light the lamp" (old "Call wave") ends it early for the bonus (Open question 6).
-- Config switch either way: `build_phase_seconds: 0` = **untimed day** (the night starts only
-  when the player lights the lamp; the early bonus is 0). Built in S5 regardless of the
-  default, because it costs one branch in `WaveDirector.tick` / `_begin_build` and one in
-  `early_call_bonus`.
-- **Night = WAVE.** Refused at night with `NOT_BUILD_PHASE`: `build_tower` (via
-  `can_build`), `sell_tower`, `sell_relics`, LT-24 `upgrade_tower`, LT-26 lighthouse
-  upgrade. Allowed: `buy_sanity`, pause, speed (Open question 5). `can_build`'s phase check
-  goes **last** so its documented "first failing reason in `CommandResult` order" holds.
-- **Pause** still allows every day action (LT-4 §1.3).
-- **DONE** (after the last night): outcome WON is already set; nothing to buy.
+## 4. Presentation (grey-box, S6)
 
-## 4. Presentation (grey-box)
-
-- **Lighting** (`scenes/lighting.gd`): `AMBIENT` becomes `AMBIENT_NIGHT` (today's
-  `Color(0.30, 0.32, 0.42)`) plus `AMBIENT_DAY = Color(0.80, 0.80, 0.76)` (overcast). A
-  render-only `night := 0.0..1.0` eases toward 1 in WAVE, 0 in BUILD/DONE
-  (`lerp` with `1 - exp(-delta / DAY_FADE_SECONDS)`, `DAY_FADE_SECONDS = 0.6`, runs while
-  paused). `CanvasModulate.color = AMBIENT_DAY.lerp(AMBIENT_NIGHT, night)`; beam energy
-  and tower-light energy × `night` (the lighthouse is dark by day; LT-26's sim-driven cones
-  follow the same factor); fog alpha lerps toward a lighter day value. Reads `state.phase`
-  only; nothing depends on the enemy kind.
-- **HUD** (`ui/hud.gd`):
-  - `Money: $240` (node `GoldLabel` keeps its name; tests find it by name).
-  - `Relics: 12  (≈ $96)` — new `RelicsLabel`; tooltip lists kinds: `5 amulets × $5`.
-  - Phase text: `Day 3 — night falls in 18 s` / `Day 3` (untimed) / `Night 3 of 5` /
-    `Dawn. All nights survived`.
-  - `Light the lamp (+$36)` (old call-wave button), disabled at night.
-  - `Sell relics (+$96)` — new `SellRelicsButton`, enabled by day with a non-empty stash.
-  - `Restore ($150)` buyout.
-- **Tower picker / side panel:** `Rifleman — $50`; refusal texts `not enough money`,
-  `only by day` (`NOT_BUILD_PHASE`); `Sell (+$35)`. LT-24's side panel uses the same words.
-- **Kill feedback:** HUD relic counter ticks; no pop at the death spot (§1.2, Q2/Q3).
-- **End screen:** adds `Relics left unsold: 7` (flavour).
+- **Lighting** (`scenes/lighting.gd`): `AMBIENT` → `AMBIENT_NIGHT` (today's
+  `Color(0.30, 0.32, 0.42)`) and `AMBIENT_DAY = Color(0.80, 0.80, 0.76)`. Render-only
+  `night` 0..1 eases toward 1 in WAVE, 0 in BUILD/DONE (`1 - exp(-delta / 0.6)`, runs while
+  paused); `CanvasModulate.color = AMBIENT_DAY.lerp(AMBIENT_NIGHT, night)`; beam,
+  lighthouse glow and tower lights × `night` (the lamp is dark by day; LT-26 cones follow
+  the same factor); fog lighter by day. Reads `state.phase` only.
+- **Relic tokens** (`scenes/board.gd` or a new `scenes/relic_tokens.gd` on the UI layer):
+  on `RELIC_DROPPED` a small kind-coloured token pops at `at` (bone white, amber orange,
+  idol green, star-stone pale blue with a glint), hangs ~0.3 s, then flies to the HUD relic
+  counter so it lands at `arrive_tick` (progress from `game.sim.state.tick` and the clock's
+  alpha, so ×2 speed and pause stay in sync). On `RELIC_VANISHED` it fades and shrinks where
+  it is (same dissolve style as `FAKE_DISSOLVED`). A star-stone drop also gets a brief chime
+  and a larger glint (same for ghost and real).
+- **HUD** (`ui/hud.gd`): `Money: $240` (node `GoldLabel` keeps its name); new `RelicsLabel`
+  `Relics: 12 (≈ $96)` with a per-kind tooltip; phase text `Day 3 — night falls in 31 s` /
+  `Night 3 of 5` / `Dawn. All nights survived`; `Light the lamp (luck ×1.6)` disabled at
+  night; new `SellRelicsButton` `Sell relics (+$96)`, enabled by day with a non-empty
+  stash; `Restore ($150)`; at night a `Luck ×1.6` line while luck > 1.
+- **Tower picker / side panel:** `Rifleman — $50`; refusals `not enough money`,
+  `only by day`; `Sell (+$35)`.
+- **End screen:** `Relics left unsold: 7`, and `Star-stones found: 1` when > 0.
 
 ## 5. Bots (`tools/bot_runs.gd`)
 
-- `_act` in BUILD: `sim.sell_relics()` first, then buy as today (LT-24 "wide then deep"
-  rule), then `call_wave()` at once (untimed day: same call ends the day).
-- At night: only `buy_sanity()` (occult strategy, as today); builds are refused, so the
-  bot no longer re-checks the build order mid-wave.
-- `RUN` JSON: keeps `"gold"` (final money); adds `"relics_sold": <money from sales>`,
-  `"relics_left": <unsold value>`, `"wage": <sum of dawn wages>`. Header comment updated.
-- No compatibility flag for the old one-currency rules (they are code, not data): the
-  before/after comparison is by commit.
+- In BUILD: `sell_relics()`, buy as today (LT-24 "wide then deep"), then `call_wave()` at
+  once (maximum luck). At night: only `buy_sanity()` (occult strategy).
+- `RUN` JSON: `"gold"` (final money) kept; adds `"relics_sold"` ($ from sales), `"drops"`
+  (count per kind), `"star_stones"`, `"wage"`. Default `--seeds=10` stays the comparison
+  unit; header comment updated (randomised loot, day/night rules).
 
 ## 6. Must confirm, edit map, behaviours
 
 ### Must confirm (code slices)
-1. `sim/config.gd` is where enemy ids from `waves.json` are cross-checked; the relic-kind
-   check goes next to it.
-2. Nothing outside `sim/` and tests reads `EnemyDef.reward` or `DIED.data.reward` (grep at
-   design time: only `simulation.gd` 147, 455 and tests).
-3. Every replay dispatcher (`build_phase_test.gd` ~146, `madness_test.gd` ~604) gets a
-   `"sell_relics"` arm if the tests replay it.
-4. LT-24/S2 and LT-26 code: their build-phase refusal returns `NOT_BUILD_PHASE` (align if
-   they added their own value).
-5. `scenes/board.gd` `on_event` and `sanity_fx.on_event` ignore unknown event types (the
-   appended `RELICS_CHANGED`).
+1. `sim/config.gd` is where waves' enemy ids are cross-checked; the `drops` kind check goes
+   there.
+2. Nothing outside `sim/` and tests reads `EnemyDef.reward` or `DIED.data.reward` (design
+   time: `simulation.gd` 147, 455 and tests only).
+3. Replay dispatchers in tests (`build_phase_test.gd` ~146, `madness_test.gd` ~604) get a
+   `"sell_relics"` arm.
+4. LT-24/S2 and LT-26 code: their phase refusals go through `_day_only()`.
+5. `board.on_event`, `sanity_fx.on_event` ignore unknown event types (appended
+   `RELIC_DROPPED`, `RELIC_VANISHED`, `RELICS_CHANGED`).
+6. The scene can map a sim tick to screen time (`game.clock` alpha) for token flight.
 
-### Edit map — S5 (sim, after LT-24/S2 and LT-23/S2 on `simulation.gd`)
+### Edit map — S5 (sim + data + bots; lands after LT-24/S2 and LT-23/S2)
 
 | Path | Function / place | Change |
 |---|---|---|
-| `sim/defs/economy_config.gd` | `FIELDS`, `parse`, new inner `RelicKind {id, name, price}` | `relics` block, ordered `relic_kinds: Array[RelicKind]`, `relic_by_id` |
-| `sim/defs/enemy_def.gd` | `FIELDS`, `parse`, vars | `reward` → `relic: String`, `relic_count: int` (opt, default 1) |
-| `sim/config.gd` | `load_from_dir` cross-checks | enemy `relic` must be a known kind |
-| `sim/core/sim_state.gd` | vars | `relics: Dictionary[String, int]` (every kind, 0); doc: `gold` = money |
-| `sim/core/sim_event.gd` | `Type` | append `RELICS_CHANGED` after the last value at landing time |
+| `sim/defs/economy_config.gd` | `FIELDS`, `parse`, new inner `RelicKind {id, name, price}` | `relics`, `token_fly_seconds`, `ghost_vanish_seconds`, `early_night_luck_per_second`; drop `early_call_gold_per_second` |
+| `sim/defs/enemy_def.gd` | `FIELDS`, `parse`, vars | `reward` → `drops: Dictionary[String, int]` (ordered as config kinds) |
+| `sim/defs/waves_config.gd` | — | none (40 s is data) |
+| `sim/config.gd` | `load_from_dir` cross-checks | `drops` kinds known |
+| `sim/core/sim_rng.gd` | `Stream` | append `LOOT`, `GHOST_LOOT` |
+| `sim/core/sim_state.gd` | vars | `relics: Dictionary[String, int]`, `relic_tokens: Array[RelicToken]`, `next_token_id`, `night_luck := 1.0`; doc: `gold` = money |
+| `sim/core/relic_token.gd` | new | `RelicToken` (id, kind, at, drop_tick, arrive_tick) |
+| `sim/core/sim_event.gd` | `Type` | append `RELIC_DROPPED`, `RELIC_VANISHED`, `RELICS_CHANGED` |
 | `sim/core/simulation.gd` | `CommandResult` | append `NO_RELICS` |
-| | `_init` | seed `state.relics` from config |
-| | `apply_damage` (DIED emit) | data `{source, relic, relic_count}` |
-| | `_on_enemy_killed` | `_add_relics(def.relic, def.relic_count, "kill", e.id)` replaces `_add_gold` |
-| | new after `_add_gold` | `_add_relics(kind, delta, reason, id)` |
-| | `can_build`, `sell_tower` | `phase == WAVE` → `NOT_BUILD_PHASE` (last check in `can_build`) |
-| | LT-24 `can_upgrade`, LT-26 lighthouse upgrade check | same phase rule if not already there |
-| | new after `buy_sanity` | `relic_price`, `relics_value`, `can_sell_relics`, `sell_relics` (§1.3) |
-| | `early_call_bonus` | 0 when the day is untimed |
-| | doc comments | `call_wave`, `award_wave_bonus` (dawn wage), `_add_gold` (money) |
-| `sim/core/wave_director.gd` | `tick`, `_begin_build`, header | untimed day when `build_phase_seconds == 0` (no countdown, `build_ticks_left` stays 0) |
-| `sim/defs/waves_config.gd` | `build_phase_seconds` validation | allow 0 |
-| `data/economy.json`, `data/enemies.json` | | §1.1 |
+| | `_init` | seed `state.relics` (every kind 0) |
+| | `step` | slot 6b `_settle_tokens()`; slot comments |
+| | `apply_damage` (DIED emit) | data `{source}` |
+| | `_on_enemy_killed` | real and fake: `_drop_token(e)`; real no longer `_add_gold` |
+| | new | `_roll_drop(def, stream)`, `_drop_token(e)`, `_settle_tokens()`, `settle_all_tokens()`, `_add_relics()`, `_day_only()` |
+| | `can_build`, `sell_tower` | `_day_only()` (last check in `can_build`) |
+| | LT-24 `can_upgrade`, LT-26 lighthouse upgrade | `_day_only()` |
+| | `call_wave` | set `state.night_luck`; no money |
+| | `early_call_bonus` | → `early_night_luck()` |
+| | new after `buy_sanity` | `relic_price`, `relics_value`, `can_sell_relics`, `sell_relics` |
+| | doc comments | `award_wave_bonus` (dawn wage), `_add_gold` (money) |
+| `sim/core/wave_director.gd` | `_clear_wave` | `sim.settle_all_tokens()` after `dissolve_fakes`; reset `night_luck` to 1.0 before `_begin_build` |
+| `data/economy.json`, `enemies.json`, `waves.json` | | §1.1 |
 | `tools/bot_runs.gd` | header, `_act`, `_play` | §5 |
-| `tests/relic_test.gd` | new | tests slice, behaviours below |
-| existing tests | `gold_test`, `sim_damage_test`, `config_valid/reject_test`, `harpoon_test`, `occult_tower_test` kill-gold asserts | kill now changes relics, not gold; config tests read `relic` |
+| `tests/relic_test.gd` | new | behaviours below |
+| existing tests | `gold_test`, `sim_damage_test`, `harpoon_test`, `occult_tower_test` (kill gold), `build_phase_test` (early-call money → luck; 25 → 40 s where read from data), `config_valid/reject_test` (`reward` → `drops`), `render_isolation_test` (§1.3) | update |
 
 ### Edit map — S6 (UI, texts, GDD)
 
 | Path | Change |
 |---|---|
-| `scenes/lighting.gd` | §4 day/night ambient, `night` factor, beam/tower-light/fog scaling |
-| `ui/hud.gd` | `$` texts, `RelicsLabel`, `SellRelicsButton`, phase texts, "Light the lamp" |
-| `scenes/game.gd` | `sell_relics()` wrapper (same shape as `call_wave`), `_after_command` |
-| `ui/tower_picker.gd` | `$` cost text, `not enough money`, `only by day` |
-| `ui/sell_panel.gd` (or LT-24's side panel) | `Sell (+$N)` |
-| `ui/end_screen.gd` | unsold relics line |
-| `tests/scene_game_test.gd`, `tests/lighting_test.gd` | text/node updates; day/night ambient test |
-| `tests/render_isolation_test.gd` | unchanged (the HUD reads `state.relics`, which never says which kill was fake) |
-| `docs/GDD.md` | §4 core loop (day/night), §5.1 "Money and relics" (table + relic table), §5.4 buyout in money, §7 Reward → Relic column, §8 build phase → day, §9 HUD |
-| `README.md` | any gold wording |
+| `scenes/lighting.gd` | §4 day/night ambient, `night` factor |
+| `scenes/relic_tokens.gd` (new) or `scenes/board.gd` `on_event` | §4 tokens |
+| `ui/hud.gd` | `$` texts, `RelicsLabel`, `SellRelicsButton`, phase texts, "Light the lamp", luck line |
+| `scenes/game.gd` | `sell_relics()` wrapper (shape of `call_wave`), `_after_command` |
+| `ui/tower_picker.gd`, `ui/sell_panel.gd` (or LT-24 side panel) | `$`, `not enough money`, `only by day`, `Sell (+$N)` |
+| `ui/end_screen.gd` | unsold relics, star-stones |
+| `tests/scene_game_test.gd`, `tests/lighting_test.gd` | text/node updates, ambient by phase, token pops and vanishes |
+| `docs/GDD.md` | §4 core loop (day/night), §5.1 "Money and relics" (kinds, tables, luck), §5.4 buyout in money, §7 Reward → drops, §8 day 40 s + early-night luck, §9 HUD |
+| `README.md` | gold wording |
 
 ### Behaviours the tests slice pins (one line each)
-1. A real kill at night adds `relic_count` of `def.relic` to the stash and emits `RELICS_CHANGED {kind, delta, count, reason: "kill"}`; money is unchanged.
-2. A fake killed drops nothing (no `RELICS_CHANGED`); a leaked enemy drops nothing.
-3. Two towers killing one enemy in one tick, and a harpoon multi-kill, drop one relic set per enemy.
-4. `DIED` data is `{source, relic, relic_count}` and identical for a real and a fake of one def.
-5. `sell_relics()` by day sells every kind in config order: one `RELICS_CHANGED` per non-empty kind, then one `GOLD_CHANGED {reason: "relic_sale"}` with Σ price × count; stash is 0.
-6. `sell_relics("scale")` sells only scales; other kinds stay.
-7. `sell_relics` at night → `NOT_BUILD_PHASE`, nothing changes (no event, no log entry).
-8. `sell_relics` with an empty stash or unknown kind → `NO_RELICS`, nothing changes.
-9. `build_tower` and `sell_tower` at night → `NOT_BUILD_PHASE`; by day OK; `can_build` with no money at night still returns `NOT_ENOUGH_GOLD` (order).
-10. `buy_sanity` at night still works.
-11. Dawn wage (`award_wave_bonus`) and early-call bonus still pay money with today's formulas.
-12. Untimed day (`build_phase_seconds: 0`): BUILD never ends by itself (run 10 000 ticks); `call_wave` starts the night; `early_call_bonus()` is 0.
-13. Config: unknown relic kind on an enemy, missing `relic`, negative/float price, empty `relics` → rejected with the path.
-14. Replay: a command log with `sell_relics` reproduces state and events (determinism).
-15. Lighting: ambient is the night colour during a wave and the day colour in BUILD after the fade (scene test, advance > fade).
-16. HUD: money, relics value, "Sell relics" enabled only by day with a non-empty stash.
+1. A real kill emits `RELIC_DROPPED`; `state.relics` is unchanged until `arrive_tick`, then `RELICS_CHANGED {reason: "kill"}` adds one of that kind; money never changes on a kill.
+2. A fake kill emits `RELIC_DROPPED` with the same data shape; at `drop_tick + ghost_vanish` `RELIC_VANISHED`; nothing is ever credited.
+3. Real and ghost tokens are indistinguishable before the vanish tick (event data keys/values, `state.relic_tokens` entries, `state.relics`).
+4. Leaks drop nothing; a multi-kill or two towers on one enemy drop one token per enemy.
+5. Drop distribution: over 10 000 rolls with a fixed seed each kind's share is within tolerance of its weight; weight 0 never drops.
+6. Luck: `call_wave` with s seconds left sets `night_luck = 1 + rate × s`; it scales every kind except the table's cheapest; dawn resets it to 1.0.
+7. Stream independence: the same seed and commands give the same real drops with hallucinations on and off (GHOST_LOOT), and SPAWN/COMBAT/SANITY/MADNESS draws are unchanged versus a run with loot disabled.
+8. Dawn: tokens in flight are settled (real credited, ghosts vanished) before `BUILD_STARTED`.
+9. `sell_relics()` by day: one `RELICS_CHANGED` per non-empty kind in config order, then one `GOLD_CHANGED {reason: "relic_sale"}` = Σ price × count; stash 0. `sell_relics("amber")` sells only amber.
+10. `sell_relics` at night → `NOT_BUILD_PHASE`; empty stash / unknown kind → `NO_RELICS`; nothing changes on refusal (no event, no log).
+11. `build_tower`, `sell_tower` at night → `NOT_BUILD_PHASE`; `can_build` with no money at night returns `NOT_ENOUGH_GOLD` (order); `buy_sanity` works at night.
+12. Day lasts `build_phase_seconds` (40 s from data); dawn wage formula unchanged; `call_wave` pays no money.
+13. Config: unknown `drops` kind, negative/float weight, all-zero table, missing `drops`, `ghost_vanish_seconds ≥ token_fly_seconds` → rejected with the path.
+14. Replay with `sell_relics` and `call_wave` reproduces state and events.
+15. Lighting: night colour in a wave, day colour in BUILD after the fade.
+16. HUD: money, relics value; "Sell relics" enabled only by day with a non-empty stash; render isolation scan forbids `_ghost_tokens`, `GHOST_LOOT`.
 
-### Candidate controls (revert the fix, the test must fail)
-- C1 `_on_enemy_killed` pays `_add_gold` again instead of relics → 1.
-- C2 drop the `is_fake` early return in `_on_enemy_killed` → 2.
-- C3 drop the night check in `can_sell_relics` → 7.
-- C4 drop the night check in `can_build` → 9.
-- C5 sell kinds in reverse order / emit per-kind `GOLD_CHANGED` → 5.
-- C6 untimed-day branch removed from `WaveDirector.tick` → 12.
-- C7 enemy `relic` cross-check removed from `sim/config.gd` → 13.
-- C8 lighting: `night` factor ignores phase (always night) → 15.
+### Candidate controls (revert the fix; the test must fail)
+- C1 credit at the kill instead of at arrival → 1, 3.
+- C2 ghost tokens credited (no `_ghost_tokens` check in `_settle_tokens`) → 2.
+- C3 fakes roll on `LOOT` instead of `GHOST_LOOT` → 7.
+- C4 luck applied to the cheapest kind too (or not at all) → 6.
+- C5 `settle_all_tokens` removed from `_clear_wave` → 8.
+- C6 `_day_only()` removed from `can_sell_relics` / `can_build` → 10, 11.
+- C7 drops kind cross-check removed from `sim/config.gd` → 13.
+- C8 lighting `night` ignores phase → 15.
 
-## 7. Open questions for the owner
+## 7. Future layer: crew (design only, next release; D5)
 
-### Q1. What relics exist and how much is each worth?
-**Today:** each enemy kind pays a fixed gold reward on kill (cultist 5, Deep One 8, hybrid
-10, Night-gaunt 15, Shoggoth 60). **Change:** kills drop relics instead; the question is how
-"different value" is expressed.
-**Example:** wave 3 kills 30 Deep Ones and 12 hybrids.
-- **A. One relic kind per enemy, price = today's reward (Recommended).** 30 scales × $8 +
-  12 bones × $10 = $360, exactly today's 360 gold. Benefit: economy unchanged, so LT-23
-  tuning starts from a known baseline; each kind has its own lore line. Risk: fully
-  predictable; "value" is only which enemy you killed.
-- **B. Three tiers (bone $5, amber $15, idol $50) with random drops per enemy** (e.g. a
-  hybrid drops bone 70 %, amber 25 %, idol 5 %). The same wave pays $300–$450 depending on
-  luck. Benefit: excitement of a rare drop. Risk: income varies run to run, harder to tune
-  and to compare bot runs; needs a new RNG stream.
+Owner, verbatim: "Мне кажется что продажа только днем, и возможно имеет смысл закупать не
+башни а юнитов. Ну типа - закупили 10 гарпунщиков, на каждую башню положено по 2 человека,
+4х разместили ( сделали 2 башни ) а 6 придержали до ночи. Если есть нужда - ставим еще 3
+гарпунные башни (или даже не башни а пункты обороны, которые бьют хуже чем башни, а в башни
+они автоматически апгрейдятся днем/или вариант что днем они снова возвращаются в резерв )".
 
-### Q2. Do relics go straight to the stash, or fall on the map?
-**Today:** gold is added to the counter the instant an enemy dies. **Change:** relics need a
-way into the stash.
-**Example:** a Deep One pack of 5 dies on the far bend.
-- **A. Straight into the stash, the HUD counter ticks (Recommended).** +5 scales at once.
-  Benefit: no extra clicks during the night; simplest. Risk: "падают" is not literally
-  seen.
-- **B. They lie on the map all night and the keeper gathers them at dawn.** 5 scale tokens
-  stay on the bend until dawn, then fly to the stash. Benefit: you see the night's haul
-  pile up. Risk: a token appears only for real kills, so the player sees at once which
-  dead enemy was a hallucination (unless Q3 B); more render work.
-- **C. They lie on the map and must be clicked to collect, at night.** Benefit: active
-  play. Risk: clicking during combat in a tower defense; missed tokens are lost money; same
-  fake tell as B.
+**Model sketch.** Money hires **crew** by day (riflemen, harpooners, later occultists) into
+a **reserve**. A tower needs a crew (e.g. 2 harpooners) plus its build cost; crew in the
+reserve can be **deployed at night** as a **defence post** on a free buildable cell (weaker
+than a tower: e.g. 60 % damage, no upgrades, cheap or free). At dawn a post either becomes a
+tower if the day's money covers the build cost, or its crew returns to the reserve. This
+gives night agency without breaking "money only by day".
 
-### Q3. Do hallucinated enemies drop relics?
-**Today:** a killed fake pays no gold (LT-12). **Change:** none needed, but a fun variant
-exists.
-**Example:** in Fraying, 6 of 40 kills are fakes that would drop 6 amulets.
-- **A. Fakes drop nothing (Recommended, today's rule).** Benefit: no change to the approved
-  LT-12 design. Risk: none new.
-- **B. Fakes drop "false relics" that crumble to dust at dawn.** At night the stash shows
-  46 pieces; at dawn 6 crumble ("…they were never there"). Benefit: strong theme — madness
-  literally costs money, and Q2 B/C become safe. Risk: the night stash lies to the player;
-  the sim must hide which relics are false (one more forbidden name in the render
-  isolation test).
+**What LT-27 already provides (no crew code here):**
+- All spending goes through `_add_gold(-cost, reason, id)`; a hire is one more reason.
+- All phase gating goes through `_day_only()`; night deployment is one whitelisted command.
+- `can_build` keeps its check order; a crew check can be appended as one more reason.
+- Towers keep `spent` (money) for refunds; crew would be refunded to the reserve separately.
 
-### Q4. How does selling work?
-**Today:** nothing is sold. **Change:** relics turn into money by day.
-**Example:** the day starts with 12 bones and 1 amber.
-- **A. Fixed price, one "Sell relics (+$180)" button, by day only (Recommended).** Benefit:
-  one click, nothing to learn; the market hook is kept for later. Risk: selling is a
-  ritual, not a decision (no reason to hold).
-- **B. Daily market:** each dawn prices roll ±30 % per kind (bones $7–$13 today, amber
-  $42–$78); the player may hold a kind for a better day. Benefit: a real day-phase
-  decision. Risk: more UI (per-kind rows), bot policy, harder tuning; luck in income.
-- **C. Auto-sell at dawn:** a "Dawn ledger" shows what was sold. Benefit: zero clicks.
-  Risk: the owner's "phase when we sell" becomes a summary, not an action.
+**Open questions for the crew task:**
+1. Crew per tower kind, and whether occult towers need crew at all (cultists? scholars?).
+2. Hire price per unit vs. today's tower cost (does a tower become crew + a cheaper frame?).
+3. Post stats (damage share, range, targeting) and whether a post can be built on any
+   buildable cell.
+4. Dawn rule: auto-upgrade post → tower (if money suffices) vs. always back to reserve vs.
+   player chooses.
+5. Can crew die or desert (losses at night, sanity effects on crew)?
+6. Selling a tower: crew back to reserve, money refund at 70 % of the frame only?
+7. Upkeep: crew wage at dawn vs. one-time hire.
+8. UI: reserve panel, night deployment flow; bots' deployment policy.
 
-### Q5. What may the player do at night?
-**Today:** build and sell towers in any phase, mid-wave too; LT-24 already restricts
-upgrades to the build phase. **Change:** money only comes by day.
-**Example:** wave 4, a Night-gaunt column breaks through; the player has $60 left from
-the day.
-- **A. Night: no building, selling towers or upgrades; the madness buyout stays allowed
-  (Recommended).** The $60 waits for dawn; a buyout ($150) can still be bought. Benefit:
-  day and night are truly different phases, matches LT-24; buyout stays an emergency
-  button. Risk: harder (no panic builds); leftover money is idle at night.
-- **B. Everything allowed at night as today** (money spent at night, only relic sales by
-  day). Benefit: forgiving. Risk: the day/night split is only about relics; LT-24's
-  "upgrades only by day" would look arbitrary.
-- **C. A plus no buyout at night.** Benefit: strictest. Risk: a player in madness mid-wave
-  has no way out until dawn.
+## 8. Decisions (owner, 2026-10-31)
 
-### Q6. How long is the day?
-**Today:** 25 s timer; "Call wave" ends it early and pays $2 per second left (up to $50).
-Building is allowed while paused, so the timer only pressures players who do not pause.
-**Change:** the day now also has selling.
-**Example:** the player sells, builds two towers and lights the lamp with 14 s left.
-- **A. Keep the 25 s timer + "Light the lamp" early bonus (Recommended).** +$28. Benefit:
-  keeps the pressure the owner asked for (finding 3: "no tension"); bots and tuning
-  unchanged. Risk: a day with selling and LT-24 upgrades in 25 s may feel rushed without
-  pause.
-- **B. Untimed day: night starts only when the player lights the lamp; no early bonus.**
-  Benefit: calm shopping, reading LT-24's side panel. Risk: −$0–50 per day of income;
-  no time pressure at all.
+### D1. Relic kinds and values
+Owner: "Три тира со случайным дропом, можно добавить еще четвертую реликвию, с 0.1%
+вероятности выпадания, но ценой 200$". → Three tiers (bone $5, amber $15, idol $50) with
+random drops per enemy (tables in §1.1, tunable defaults) plus the star-stone of Mnar,
+0.1 % per drop, $200. Seeded `LOOT` stream; bot comparisons over 10 seeds.
 
-Either way S5 builds the config switch (`build_phase_seconds: 0` = untimed), so the
-answer only sets the default.
+### D2. How relics reach the stash
+Owner: "Может пусть падают и через пару секунд уходят в HUD счетчики?" → A token drops at
+the kill and flies to the HUD counter in ~2 s (`token_fly_seconds`); the sim credits the
+stash on arrival, in ticks (§1.3), which keeps it deterministic and keeps fakes hidden
+until their token dissolves.
+
+### D2b. Tokens from fakes
+Owner chose: "Токен-призрак тает на лету (Recommended)". → Fakes emit the same drop event;
+the token dissolves mid-flight (`ghost_vanish_seconds`) and never reaches the counter.
+Render isolation per §1.3.
+
+### D3. Do fakes add relics to the stash
+Owner chose: "Ничего не роняют (Recommended)". → Fakes credit nothing (today's LT-12 rule);
+only the ghost token is shown.
+
+### D4. Selling
+Owner chose: "Фикс. цена, одна кнопка (Recommended)". → Fixed prices, one "Sell relics"
+button, by day only (§1.4).
+
+### D5. Night actions
+Buyout allowed at night; building, selling towers and upgrades by day only. Owner: "надо
+подумать что-нибудь еще, а то получается что у нас днем фаза планирования, а если что-то
+идет не так - то мы никак не контроллируем. Это неправильно." Follow-ups, outside LT-27's
+code: active lighthouse ability → lighthouse beam backlog task; tower target priority → new
+small 0.2.0 task; crew → owner chose "Вписать в дизайн LT-27, реализация — след. релиз
+(Recommended)" (§7).
+
+### D6. Day length and early night
+Owner: "Можно сделать таймер секунд 40, а за \"раннюю ночь\" давать бонус в виде
+увеличенных вероятностей ценного дропа". → Day 40 s; lighting the lamp early sets
+`night_luck = 1 + 0.02 × seconds left` (≤ ×1.8), multiplying the weights of every kind but
+the cheapest in each table for that night; no money bonus (§1.2).
+
+### D7. LT-26 lighthouse upgrade
+Costs money and is bought by day only, like other upgrades.
