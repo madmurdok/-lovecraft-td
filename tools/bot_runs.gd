@@ -1,6 +1,7 @@
 extends SceneTree
 ## Headless bot harness for the playtest baseline (LT-15). Run:
 ##   $GODOT --headless --path . -s res://tools/bot_runs.gd -- [--seeds=10] [--out=<file>]
+##   [--data=<dir>] (a config directory other than res://data, e.g. a tuning variant)
 ## For each strategy x seed it plays one full run on data/ with a fresh Simulation +
 ## WaveDirector and prints one "RUN {json}" line per run, then a "SUMMARY {json}" line.
 ##
@@ -27,12 +28,15 @@ var _score_cache := {}  ## def id -> Array of [score, cell] sorted best first
 func _init() -> void:
 	var seeds := 10
 	var out := ""
+	var data_dir := ""
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--seeds="):
 			seeds = int(a.substr(8))
 		elif a.begins_with("--out="):
 			out = a.substr(6)
-	var res := GameConfig.load_from_dir()
+		elif a.begins_with("--data="):
+			data_dir = a.substr(7)
+	var res := GameConfig.load_from_dir(data_dir) if data_dir != "" else GameConfig.load_from_dir()
 	if not res.ok:
 		printerr("config errors: ", res.errors)
 		quit(1)
@@ -56,6 +60,10 @@ func _init() -> void:
 func _play(strat: String, run_seed: int) -> Dictionary:
 	var sim := Simulation.new(_cfg, run_seed)
 	sim.set_spawner(WaveDirector.new(_cfg.waves))
+	# Fakes are counted via the debug accessor: the render isolation test bans the raw flag.
+	sim.debug_reveal_fakes = OS.is_debug_build()
+	if not sim.debug_reveal_fakes:
+		push_warning("release build: fakes are not counted")
 	var st := sim.state
 	var idx := 0
 	var ticks_in_state := [0, 0, 0, 0]
@@ -72,7 +80,7 @@ func _play(strat: String, run_seed: int) -> Dictionary:
 		sim.step()
 		ticks_in_state[st.sanity_state] += 1
 		for e in st.enemies:
-			if e.is_fake and e.id > last_fake_id:
+			if sim.debug_is_fake(e) and e.id > last_fake_id:
 				last_fake_id = e.id
 				fakes += 1
 		for ev in sim.drain_events():
