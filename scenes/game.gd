@@ -8,9 +8,10 @@ signal restart_requested
 
 const BOARD_ORIGIN := Vector2(0, 48)  ## below the HUD bar
 const REVEAL_FAKES_ARG := "--reveal-fakes"  ## `-- --reveal-fakes` (debug builds only)
-## `-- --sanity=<v>` (debug builds only, LT-14): sets sanity at the start of the run through
-## the sim's own sanity path, so SANITY_CHANGED / SANITY_STATE_CHANGED fire as usual.
-const SANITY_ARG := "--sanity="
+## `-- --sanity=<v>` or `-- --sanity <v>` (debug builds only, LT-14, LT-21): sets sanity at
+## the start of the run through the sim's own sanity path, so SANITY_CHANGED /
+## SANITY_STATE_CHANGED fire as usual. User args must follow a bare `--`.
+const SANITY_ARG := "--sanity"
 const UI_LAYER := 2  ## above SanityFx.SCREEN_LAYER, so the HUD is never distorted
 
 var sim: Simulation
@@ -41,11 +42,18 @@ func setup(config: GameConfig, p_seed: int) -> void:
 			sim._add_sanity(forced - sim.state.sanity, "debug", 0)
 
 
-## The `--sanity=<v>` value, or -1 when absent.
+## The `--sanity=<v>` / `--sanity <v>` value clamped to >= 0, or -1 when absent or not a
+## number.
 static func debug_sanity_arg(args: PackedStringArray) -> float:
-	for arg in args:
-		if arg.begins_with(SANITY_ARG):
-			return maxf(arg.trim_prefix(SANITY_ARG).to_float(), 0.0)
+	for i in args.size():
+		var v := ""
+		if args[i].begins_with(SANITY_ARG + "="):
+			v = args[i].trim_prefix(SANITY_ARG + "=")
+		elif args[i] == SANITY_ARG and i + 1 < args.size():
+			v = args[i + 1]
+		else:
+			continue
+		return maxf(v.to_float(), 0.0) if v.is_valid_float() else -1.0
 	return -1.0
 
 
