@@ -1,7 +1,8 @@
 class_name Hud
 extends Control
 ## Top HUD bar (LT-7, GDD §8-§9): gold, lighthouse HP, wave n / total, phase + build
-## timer, call-wave button with the bonus it would pay, x1/x2 speed, pause.
+## timer, call-wave button with the bonus it would pay, x1/x2 speed, pause, the sanity
+## bar (LT-14) and, with madness exit_rule "buyout", the buyout button while in madness.
 ## Texts are rebuilt from sim state by refresh(); buttons call Game commands.
 
 var game: Game
@@ -13,6 +14,8 @@ var phase_label: Label
 var call_wave_button: Button
 var speed_button: Button
 var pause_button: Button
+var sanity_bar: SanityBar  ## LT-14: sanity with threshold marks
+var buyout_button: Button  ## LT-13/14: madness buyout, only with exit_rule "buyout", in madness
 
 
 func _ready() -> void:
@@ -28,7 +31,7 @@ func _ready() -> void:
 	var bar := HBoxContainer.new()
 	bar.name = "Bar"
 	bar.position = Vector2(8, 8)
-	bar.add_theme_constant_override("separation", 16)
+	bar.add_theme_constant_override("separation", 10)
 	add_child(bar)
 	gold_label = _label(bar, "GoldLabel")
 	hp_label = _label(bar, "HpLabel")
@@ -38,6 +41,19 @@ func _ready() -> void:
 	call_wave_button = _button(bar, "CallWaveButton", game.call_wave)
 	speed_button = _button(bar, "SpeedButton", game.toggle_speed)
 	pause_button = _button(bar, "PauseButton", game.toggle_pause)
+	sanity_bar = SanityBar.new()
+	sanity_bar.name = "SanityBar"
+	sanity_bar.game = game
+	sanity_bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	bar.add_child(sanity_bar)
+	# LT-13 exit rule "buyout": shown by refresh() only in madness.
+	buyout_button = _button(bar, "BuyoutButton", game.buy_sanity)
+	buyout_button.visible = false
+	# LT-14 Whispers jitter: the shader moves only the drawing, so click areas stay put.
+	if game.sanity_fx != null:
+		for c: CanvasItem in [gold_label, hp_label, wave_label, phase_label, call_wave_button,
+				speed_button, pause_button, sanity_bar, buyout_button]:
+			c.material = game.sanity_fx.ui_jitter_material
 
 
 func refresh() -> void:
@@ -52,6 +68,12 @@ func refresh() -> void:
 		or s.outcome != SimState.Outcome.NONE)
 	speed_button.text = "x%d" % game.chosen_speed
 	pause_button.text = "Resume" if game.paused else "Pause"
+	# Visible only while it could ever apply: exit rule "buyout" and the player in madness.
+	buyout_button.visible = (game.sim.config.sanity.madness.exit_rule == "buyout"
+		and s.sanity_state == SimState.SanityState.MADNESS)
+	buyout_button.text = "Restore (%dg)" % game.sim.config.sanity.madness.buyout_cost
+	buyout_button.disabled = game.sim.can_buy_sanity() != Simulation.CommandResult.OK
+	sanity_bar.queue_redraw()
 
 
 ## The build timer shows whole seconds rounded down, the same seconds the early-call
