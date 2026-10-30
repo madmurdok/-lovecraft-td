@@ -266,3 +266,9 @@ All findings from the 2026-10-29 pass were resolved in the body of the document.
   - Open: path-change rule that does not punish earlier placement (free sell on change,
     partial shifts only); impact on route distance, range and placement in the sim;
     conflict with the hand-painted harbor background (§9a).
+
+- **Lighthouse beam as a game rule** (playtest 0.1 finding 8, design task LT-26). Today the
+  beam is only a picture. Proposal in `docs/design/LT-26-lighthouse-beam.md`: the beam lives
+  in the sim; towers inside it are "lit": mundane towers fire faster and stop missing, occult
+  towers are weaker (and, with LT-23, drain less sanity). Open: player-aimed vs. automatic
+  beam, buff/debuff numbers, direct sanity effects, lamp oil as a later beam resource.
