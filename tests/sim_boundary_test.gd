@@ -3,10 +3,12 @@ extends SimTestBase
 ## LT-34/S2: the sim / presentation boundary guard (docs/design/LT-33-sim-presentation-boundary.md,
 ## "Proposed automated guard"). Static scans of the sources found by path under res://:
 ##  1. sim/ uses only its own types and a pinned engine allowlist (no Node, Tween, Engine, OS,
-##     Time, Input, Color, ...), none of the forbidden tokens (signal, await, get_tree, frame
-##     callbacks, global RNG, scene loads);
+##     Time, Input, Color, ...; all-capitals engine classes such as OS or IP too, LT-36), none
+##     of the forbidden tokens (signal, await, get_tree, frame callbacks, global RNG, scene loads);
 ##  2. scenes/, ui/ and tools/ never reach a private Simulation member (`sim._x`, or any
-##     `_name` declared in simulation.gd) or write sim.state / sim.config fields;
+##     `_name` declared in simulation.gd, static ones included) or write sim.state / sim.config:
+##     no assignment at any depth, no mutator call (append, erase, ...), and none through a
+##     local alias of SimState or of something inside it (LT-36);
 ##  3. is_fake stays out of presentation (render_isolation_test is the main guard and must stay);
 ## and two runtime proofs: the sim plays a whole game without a SceneTree, and a Game driven
 ## by uneven frames ends in the state a bare Simulation reaches by stepping the same commands.
@@ -16,7 +18,7 @@ const PRESENTATION_DIRS := ["res://scenes", "res://ui", "res://tools"]
 const SIMULATION := "res://sim/core/simulation.gd"
 ## Engine types sim/ may name today (computed from the code once and pinned, LT-34/S2).
 const ENGINE_ALLOWLIST := [
-	"Array", "Callable", "Dictionary", "FileAccess", "PackedByteArray", "PackedInt64Array",
+	"Array", "Callable", "Dictionary", "FileAccess", "JSON", "PackedByteArray", "PackedInt64Array",
 	"PackedStringArray", "RandomNumberGenerator", "RefCounted", "RegEx", "String", "Variant",
 	"Vector2", "Vector2i",
 ]
@@ -39,10 +41,20 @@ const SIM_FORBIDDEN_WITH_STRINGS := [
 	"\\bload\\s*\\(\\s*\"res://(scenes|ui|shaders|assets|tools)",
 	"\"res://(scenes|ui|shaders|assets)/",
 ]
+## A member or index step of an access chain: `.x` or `[...]`.
+const CHAIN := "(?:\\.\\w+|\\[[^\\]]*\\])"
+## An assignment operator (not ==, <=, >=, !=).
+const ASSIGN := "\\s*(?:=(?!=)|[-+*/%|&^]=|<<=|>>=)"
+## Array / Dictionary / Object methods that change their receiver.
+const MUTATORS := "(?:append|append_array|assign|clear|erase|fill|insert|merge|pop_at|pop_back" \
+	+ "|pop_front|push_back|push_front|remove_at|resize|reverse|set|shuffle|sort|sort_custom)"
+## Writes at any depth below sim.state / sim.config (LT-36: nested, `sim.state.map.x = 1`).
 const WRITE_PATTERNS := [
-	"\\.state\\.\\w+(\\[[^\\]]*\\])?\\s*(=(?!=)|\\+=|-=|\\*=|/=)",
-	"\\.config\\.\\w+(\\.\\w+)*\\s*(=(?!=)|\\+=|-=|\\*=|/=)",
+	"\\.state" + CHAIN + "+" + ASSIGN,
+	"\\.config" + CHAIN + "+" + ASSIGN,
 ]
+## Mutator calls on sim.state / sim.config or anything inside them (LT-36).
+const MUTATOR_PATTERN := "\\.(?:state|config)" + CHAIN + "*\\." + MUTATORS + "\\s*\\("
 const STEPS_AFTER_FRAMES := 3000
 
 var _vp: SubViewport
@@ -144,9 +156,14 @@ func _foreign_types(file: String, text: String, own: Dictionary) -> Array[String
 
 
 func _private_members_of_simulation() -> Array[String]:
-	var re := RegEx.create_from_string("(?m)^(?:func|var|const)\\s+(_[a-z]\\w*)")
+	return _private_members_of(FileAccess.get_file_as_string(SIMULATION))
+
+
+## `_name`s declared at the top level of `text` (func, static func, var, const), _init aside.
+func _private_members_of(text: String) -> Array[String]:
+	var re := RegEx.create_from_string("(?m)^(?:static\\s+)?(?:func|var|const)\\s+(_[a-z]\\w*)")
 	var out: Array[String] = []
-	for m in re.search_all(FileAccess.get_file_as_string(SIMULATION)):
+	for m in re.search_all(text):
 		var name := m.get_string(1)
 		if name != "_init" and not out.has(name):
 			out.append(name)
@@ -157,6 +174,83 @@ func _presentation_files() -> Array[String]:
 	var out: Array[String] = []
 	for dir: String in PRESENTATION_DIRS:
 		out.append_array(_gd_files(dir))
+	return out
+
+
+## LT-36 (F2): all-capitals identifiers naming an engine class, singleton or built-in type
+## (OS, JSON, IP, AABB, ...), which the PascalCase scan skips, unless own or in `allow`.
+## A member after a dot (Type.SHOT) and constants or enum values (SIGN, TYPE_INT) are not.
+func _engine_caps(file: String, text: String, own: Dictionary, allow: Array) -> Array[String]:
+	var builtin := {}
+	for t in TYPE_MAX:
+		builtin[type_string(t)] = true
+	var re := RegEx.create_from_string("(?<![.\\w])[A-Z][A-Z0-9_]*\\b")
+	var out: Array[String] = []
+	for entry: Array in _code_lines(text):
+		for m in re.search_all(entry[1]):
+			var name := m.get_string()
+			if own.has(name) or allow.has(name):
+				continue
+			if ClassDB.class_exists(name) or Engine.has_singleton(name) or builtin.has(name):
+				out.append("%s:%d: %s" % [file, entry[0], name])
+	return out
+
+
+## LT-36 (F3): names bound to SimState or to something inside it in one scope (code lines):
+## `var s := game.sim.state[.x...]`, `s: SimState` (a var or a parameter) and
+## `for t in sim.state.towers:`, also through an earlier alias (`for t in s.towers:`).
+## A call ends the chain: `var c := sim.state.towers.duplicate()` is a copy, not an alias.
+func _state_aliases(code_lines: Array) -> Array[String]:
+	var names: Array[String] = []
+	var typed := RegEx.create_from_string("\\b(\\w+)\\s*:\\s*SimState\\b")
+	while true:
+		var src := "[\\w.]*\\.state"
+		if not names.is_empty():
+			src = "(?:%s|(?<![.\\w])(?:%s))" % [src, "|".join(names)]
+		var res: Array[RegEx] = [
+			RegEx.create_from_string("\\bvar\\s+(\\w+)[^=]*=\\s*" + src + CHAIN + "*\\s*$"),
+			RegEx.create_from_string("\\bfor\\s+(\\w+)(?:\\s*:\\s*\\w+)?\\s+in\\s+" + src
+				+ CHAIN + "*\\s*:"),
+			typed,
+		]
+		var found := names.size()
+		for entry: Array in code_lines:
+			for re in res:
+				for m in re.search_all(entry[1]):
+					var n := m.get_string(1)
+					if n != "self" and not names.has(n):
+						names.append(n)
+		if names.size() == found:
+			break
+	return names
+
+
+## Every write to sim.state / sim.config in a presentation source: an assignment at any depth,
+## a mutator call, or either through a SimState alias of the same function (aliases bound
+## at the top level, before the first func, count in every function).
+func _state_writes(file: String, text: String) -> Array[String]:
+	var code := _code_lines(text)
+	var out: Array[String] = []
+	for p: String in WRITE_PATTERNS:
+		out.append_array(_find(file, code, p))
+	out.append_array(_find(file, code, MUTATOR_PATTERN))
+	var scopes: Array = [[]]
+	var func_re := RegEx.create_from_string("^(?:static\\s+)?func\\b")
+	for entry: Array in code:
+		if func_re.search(entry[1]) != null:
+			scopes.append([])
+		scopes.back().append(entry)
+	var top := _state_aliases(scopes[0])
+	for scope: Array in scopes:
+		var names := top.duplicate()
+		for n in _state_aliases(scope):
+			if not names.has(n):
+				names.append(n)
+		if names.is_empty():
+			continue
+		var head := "(?<![.\\w])(?:%s)" % "|".join(names)
+		out.append_array(_find(file, scope, head + CHAIN + "+" + ASSIGN))
+		out.append_array(_find(file, scope, head + CHAIN + "*\\." + MUTATORS + "\\s*\\("))
 	return out
 
 
@@ -178,6 +272,59 @@ func test_the_scanner_blanks_comments_and_strings_and_flags_engine_types() -> vo
 	assert_array(_find("f.gd", _code_lines("g.state.gold += 5"), WRITE_PATTERNS[0])).has_size(1)
 	assert_array(_find("f.gd", _code_lines("if g.state.gold == 5:"), WRITE_PATTERNS[0])).is_empty()
 	assert_array(_find("f.gd", _code_lines("g.config.sanity.max = 1"), WRITE_PATTERNS[1])).has_size(1)
+
+
+func test_the_caps_scan_flags_all_caps_engine_names_but_not_constants() -> void:
+	var text := "var a := OS.get_name()\nvar b := JSON.new()\nvar c := IP.get_singleton()\n" \
+		+ "const SIGN := 1\nvar t := TYPE_INT\nvar m := S.MADNESS\nvar d: AABB\n" \
+		+ "var e := 1 # OS\nvar f := \"JSON\"\nvar g := MAX_TICKS + REPLAY_ARGS.size()\n"
+	assert_array(_engine_caps("f.gd", text, {}, [])).is_equal(
+		["f.gd:1: OS", "f.gd:2: JSON", "f.gd:3: IP", "f.gd:7: AABB"])
+	assert_array(_engine_caps("f.gd", text, {"IP": true}, ["JSON"])).is_equal(
+		["f.gd:1: OS", "f.gd:7: AABB"])
+
+
+func test_the_write_scan_flags_nested_writes_mutator_calls_and_aliases() -> void:
+	for text: String in [
+		"sim.state.map.width = 3",
+		"game.sim.state.relics[\"x\"] += 1",
+		"sim.state.towers[0].level = 3",
+		"sim.state.gold |= 1",
+		"sim.state.towers.append(t)",
+		"game.sim.state.relics.erase(k)",
+		"sim.state.set(\"gold\", 1)",
+		"sim.state.tower_at[c].sort_custom(f)",
+		"sim.config.towers.clear()",
+		"func f() -> void:\n\tvar st := game.sim.state\n\tst.gold = 1",
+		"func f() -> void:\n\tvar st: SimState = sim.state\n\tst.towers.push_back(t)",
+		"func f() -> void:\n\tvar tw := sim.state.towers\n\ttw.clear()",
+		"func f() -> void:\n\tvar m := sim.state.map\n\tm.width -= 1",
+		"static func f(s: SimState) -> void:\n\ts.gold -= 1",
+		"func f() -> void:\n\tfor t in sim.state.towers:\n\t\tt.level = 3",
+		"func f() -> void:\n\tvar s := sim.state\n\tfor t: SimTower in s.towers:\n\t\tt.level = 3",
+		"var s: SimState\nfunc f() -> void:\n\ts.relics.merge(r)",
+	]:
+		assert_array(_state_writes("f.gd", text)).override_failure_message(
+			"not flagged:\n" + text).is_not_empty()
+	for text: String in [
+		"if sim.state.map.width == 3: pass",
+		"if sim.state.gold >= 3 and sim.state.gold <= 9 and sim.state.gold != 4: pass",
+		"var n := sim.state.towers.size() + sim.state.relics.keys().size()",
+		"var x := \"sim.state.gold = 1\"  # sim.state.towers.clear()",
+		"func f() -> void:\n\tvar s := sim.state\n\tvar g := s.gold\n\tlabel.text = str(s.gold)",
+		"func f() -> void:\n\tvar s := sim.state\nfunc g() -> void:\n\ts.text = \"x\"",
+		"func f() -> void:\n\tvar c := sim.state.towers.duplicate()\n\tc.clear()",
+		"func f() -> void:\n\tvar s := sim.state\n\ts = other\n\tlabels.append(s)",
+		"var states := 1\nstates.clear()\nnode.state_text = \"a\"",
+	]:
+		assert_array(_state_writes("f.gd", text)).override_failure_message(
+			"falsely flagged:\n" + text).is_empty()
+
+
+func test_the_private_member_scan_includes_static_functions() -> void:
+	var text := "var _a := 1\nconst _b := 2\nfunc _c() -> void:\nstatic func _d() -> int:\n" \
+		+ "func _init() -> void:\nconst _E := 3\n\tvar _local := 4\nfunc pub() -> void:\n"
+	assert_array(_private_members_of(text)).is_equal(["_a", "_b", "_c", "_d"])
 
 
 func test_the_scans_cover_the_expected_files() -> void:
@@ -212,12 +359,24 @@ func test_the_engine_allowlist_is_not_stale() -> void:
 	var files := _gd_files(SIM_DIR)
 	var used := {}
 	var re := RegEx.create_from_string("\\b[A-Z][A-Za-z0-9]*[a-z][A-Za-z0-9]*\\b")
+	var caps := RegEx.create_from_string("(?<![.\\w])[A-Z][A-Z0-9_]*\\b")  # JSON (LT-36)
 	for f in files:
 		for entry: Array in _code_lines(FileAccess.get_file_as_string(f)):
-			for m in re.search_all(entry[1]):
+			for m in re.search_all(entry[1]) + caps.search_all(entry[1]):
 				used[m.get_string()] = true
 	for t: String in ENGINE_ALLOWLIST:
 		assert_bool(used.has(t)).override_failure_message("%s is allowlisted but unused" % t).is_true()
+
+
+func test_sim_names_no_all_caps_engine_class_outside_the_allowlist() -> void:
+	var files := _gd_files(SIM_DIR)
+	var own := _own_types(files)
+	var bad: Array[String] = []
+	for f in files:
+		bad.append_array(_engine_caps(f, FileAccess.get_file_as_string(f), own, ENGINE_ALLOWLIST))
+	assert_array(bad).override_failure_message(
+		"sim/ names an all-capitals engine class or singleton outside the allowlist:\n"
+		+ "\n".join(bad)).is_empty()
 
 
 func test_sim_uses_no_forbidden_tokens() -> void:
@@ -252,11 +411,10 @@ func test_presentation_calls_no_private_simulation_member() -> void:
 func test_presentation_writes_no_sim_state_or_config() -> void:
 	var bad: Array[String] = []
 	for f in _presentation_files():
-		var code := _code_lines(FileAccess.get_file_as_string(f))
-		for p: String in WRITE_PATTERNS:
-			bad.append_array(_find(f, code, p))
+		bad.append_array(_state_writes(f, FileAccess.get_file_as_string(f)))
 	assert_array(bad).override_failure_message(
-		"presentation writes sim.state / config fields:\n" + "\n".join(bad)).is_empty()
+		"presentation writes sim.state / config (directly, nested, by a mutator call or "
+		+ "through an alias):\n" + "\n".join(bad)).is_empty()
 
 
 # --- 3: the is_fake leak guard stays ------------------------------------------------------

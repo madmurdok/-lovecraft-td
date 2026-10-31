@@ -397,3 +397,107 @@ func test_unknown_command_is_a_distinct_result() -> void:
 	assert_int(R2.UNKNOWN_COMMAND).is_equal(R2.size() - 2)
 	assert_int(R2.BAD_ARGS).is_equal(R2.size() - 1)  # LT-36: appended, values never shift
 	assert_int(R2.OK).is_equal(0)
+
+
+# --- LT-36: replay_command refuses malformed entries; buyout_applies ----------------------
+
+## Malformed entries per known command: missing, extra and wrong-typed args.
+const BAD_ENTRIES := {
+	"build": [[0, "build"], [0, "build", SIGN], [0, "build", SIGN, Vector2i(3, 1), 1],
+		[0, "build", 5, Vector2i(3, 1)], [0, "build", SIGN, Vector2(3, 1)], [0, "build", SIGN, "3,1"]],
+	"sell": [[0, "sell"], [0, "sell", 1, 2], [0, "sell", "1"], [0, "sell", 1.0], [0, "sell", null]],
+	"upgrade": [[0, "upgrade"], [0, "upgrade", 1], [0, "upgrade", 1, "", 3],
+		[0, "upgrade", "1", ""], [0, "upgrade", 1, null], [0, "upgrade", 1, 2]],
+	"set_target_priority": [[0, "set_target_priority", 1], [0, "set_target_priority", 1, 7],
+		[0, "set_target_priority", "strongest", 1]],
+	"call_wave": [[0, "call_wave", 1], [0, "call_wave", null]],
+	"buy_sanity": [[0, "buy_sanity", ""]],
+	"sell_relics": [[0, "sell_relics"], [0, "sell_relics", 3], [0, "sell_relics", "star_stone", 1]],
+	"debug_set_sanity": [[0, "debug_set_sanity"], [0, "debug_set_sanity", "40"],
+		[0, "debug_set_sanity", true], [0, "debug_set_sanity", 1.0, 2.0]],
+}
+
+
+## A sim where every well-formed command could apply: gold, relics, a tower (id known),
+## exit rule "buyout" and the player in MADNESS.
+func _ready_sim() -> Array:
+	var sim := wsim([[group("deep_one", 1)]], 5)
+	sim.state.gold = 100000
+	sim.state.relics["star_stone"] = 2
+	sim.config.sanity.madness.exit_rule = "buyout"
+	var t := build(sim, RIFLE, Vector2i(5, 1))
+	sim.drain_events()
+	return [sim, t.id]
+
+
+func test_bad_entries_cover_every_replayable_command() -> void:
+	var keys: Array = BAD_ENTRIES.keys()
+	keys.sort()
+	var want: Array = Simulation.REPLAY_ARGS.keys()
+	want.sort()
+	assert_array(keys).is_equal(want)
+
+
+func test_replay_command_known_name_with_bad_args_is_bad_args_and_changes_nothing() -> void:
+	var p := _ready_sim()
+	var sim: Simulation = p[0]
+	var before := _digest_all(sim)
+	for cmd: String in BAD_ENTRIES:
+		for entry: Array in BAD_ENTRIES[cmd]:
+			var r := {"v": -1}
+			await assert_error(func() -> void: r["v"] = sim.replay_command(entry)) \
+				.is_push_error("Simulation.replay_command: bad args %s" % [entry])
+			assert_int(r["v"]).override_failure_message("%s" % [entry]).is_equal(R2.BAD_ARGS)
+	assert_str(_digest_all(sim)).is_equal(before)
+	assert_array(sim.drain_events()).is_empty()
+
+
+func test_replay_command_non_string_or_unknown_name_stays_unknown_command() -> void:
+	var sim: Simulation = _ready_sim()[0]
+	var before := _digest_all(sim)
+	for entry: Array in [[0, 5], [0, null], [0, ["build"]], [0, &"no_such_command"],
+			[0, "Build", RIFLE, Vector2i(6, 1)], [0, "build_tower", RIFLE, Vector2i(6, 1)]]:
+		var r := {"v": -1}
+		await assert_error(func() -> void: r["v"] = sim.replay_command(entry)) \
+			.is_push_error("Simulation.replay_command: unknown entry %s" % [entry])
+		assert_int(r["v"]).override_failure_message("%s" % [entry]).is_equal(
+			R2.UNKNOWN_COMMAND)
+	assert_str(_digest_all(sim)).is_equal(before)
+
+
+func test_replay_command_accepts_string_name_for_string_and_int_for_float() -> void:
+	var a: Array = _ready_sim()
+	var b: Array = _ready_sim()
+	assert_int(a[0].replay_command([0, &"sell_relics", &"star_stone"])).is_equal(R2.OK)
+	assert_int(b[0].sell_relics("star_stone")).is_equal(R2.OK)
+	assert_int(a[0].replay_command([0, "upgrade", a[1], &"b"])).is_equal(
+		b[0].upgrade_tower(b[1], "b"))
+	assert_int(a[0].replay_command([0, "debug_set_sanity", 12])).is_equal(R2.OK)
+	assert_int(b[0].debug_set_sanity(12.0)).is_equal(R2.OK)
+	assert_str(_digest_all(a[0])).is_equal(_digest_all(b[0]))
+	assert_float(a[0].state.sanity).is_equal(minf(12.0, a[0].state.sanity_cap))
+
+
+func test_buyout_applies_only_with_the_buyout_rule_in_madness() -> void:
+	for rule: String in ["permanent", "buyout", "auto_restore"]:
+		for st: S in [S.LUCID, S.WHISPERS, S.FRAYING, S.MADNESS]:
+			var sim := tsim()
+			sim.config.sanity.madness.exit_rule = rule
+			sim.state.sanity_state = st
+			var before := _digest_all(sim)
+			assert_bool(sim.buyout_applies()).override_failure_message("%s %d" % [rule, st]) \
+				.is_equal(rule == "buyout" and st == S.MADNESS)
+			assert_str(_digest_all(sim)).is_equal(before)
+
+
+func test_buyout_applies_ignores_gold_cap_and_outcome() -> void:
+	# It says whether the button exists; can_buy_sanity says whether pressing it works.
+	var sim := tsim()
+	sim.config.sanity.madness.exit_rule = "buyout"
+	_at(sim, 0.0, S.MADNESS)
+	sim.state.gold = 0
+	assert_int(sim.can_buy_sanity()).is_not_equal(R2.OK)
+	assert_bool(sim.buyout_applies()).is_true()
+	sim.state.outcome = SimState.Outcome.LOST
+	assert_int(sim.can_buy_sanity()).is_equal(R2.OUTCOME_REACHED)
+	assert_bool(sim.buyout_applies()).is_true()
