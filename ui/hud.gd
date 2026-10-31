@@ -25,12 +25,16 @@ var flare_button: Button  ## LT-30: the night flare, in the footer strip at the 
 var oil_label: Label  ## LT-30: "Oil 4 / 6", beside the flare button
 var frame_label: Label  ## LT-38 P1: only with `--frame-stats` (debug builds)
 var _frame_label_msec := 0
+var fps_label: Label  ## LT-44: always-visible FPS readout, bottom-left in the footer strip
+var _fps_label_msec := -FPS_INTERVAL_MSEC
+var _fps_shown := -1
 var footer: ColorRect  ## LT-28: covers the strip below the board (range rings end there)
 
 const COLOR_LUCK := Color(0.75, 0.9, 1.0)
 const FONT_SIZE := 14  ## LT-27: the bar fits the 1152 px base width, buyout included
 const SEPARATION := 10
 const MARGIN := 8  ## bar inset from the right edge
+const FPS_INTERVAL_MSEC := 250  ## LT-44: the FPS label refreshes a few times per second
 const RELIC_SLOT := 22.0  ## LT-28: left inset; relic tokens land in it, beside the counter
 
 
@@ -54,6 +58,14 @@ func _ready() -> void:
 	footer.size = Vector2(base_w,
 		float(ProjectSettings.get_setting("display/window/size/viewport_height")) - footer.position.y)
 	add_child(footer)
+	# LT-44: in the footer strip (nothing else lives there); not in the jitter list below.
+	fps_label = Label.new()
+	fps_label.name = "FpsLabel"
+	fps_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	fps_label.add_theme_font_size_override("font_size", 13)
+	fps_label.add_theme_color_override("font_color", Color(0.6, 1.0, 0.6))
+	fps_label.position = Vector2(6, footer.position.y + 4)
+	add_child(fps_label)
 	var bar := HBoxContainer.new()
 	bar.name = "Bar"
 	# LT-27: two-line columns (money over relics, phase over lighthouse HP) keep the bar
@@ -159,6 +171,7 @@ func refresh() -> void:
 	if flare_button != null:
 		_refresh_flare()
 	sanity_bar.queue_redraw()
+	_refresh_fps()
 	if frame_label != null:
 		var now := Time.get_ticks_msec()
 		if now - _frame_label_msec >= 250:  # a few times per second, readable
@@ -191,6 +204,19 @@ func _refresh_flare() -> void:
 	flare_button.position = Vector2(right - w, y - footer.position.y)
 	var label_right := right - w - 8.0 if night else right
 	oil_label.position = Vector2(label_right - lw, y - footer.position.y + 4.0)
+
+
+## LT-44: Engine.get_frames_per_second() every FPS_INTERVAL_MSEC; the string is rebuilt
+## only when the integer changed.
+func _refresh_fps() -> void:
+	var now := Time.get_ticks_msec()
+	if now - _fps_label_msec < FPS_INTERVAL_MSEC:
+		return
+	_fps_label_msec = now
+	var fps := int(Engine.get_frames_per_second())
+	if fps != _fps_shown:
+		_fps_shown = fps
+		fps_label.text = "FPS %d" % fps
 
 
 ## LT-23 Q10: "The world turns hostile: enemies +20 % speed, −20 % damage taken" from the
