@@ -394,5 +394,6 @@ func test_unknown_command_is_a_distinct_result() -> void:
 	for k: String in R2:
 		assert_bool(seen.has(R2[k])).is_false()
 		seen[R2[k]] = true
-	assert_int(R2.UNKNOWN_COMMAND).is_equal(R2.size() - 1)
+	assert_int(R2.UNKNOWN_COMMAND).is_equal(R2.size() - 2)
+	assert_int(R2.BAD_ARGS).is_equal(R2.size() - 1)  # LT-36: appended, values never shift
 	assert_int(R2.OK).is_equal(0)

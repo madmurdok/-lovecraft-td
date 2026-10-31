@@ -135,9 +135,8 @@ func refresh() -> void:
 	luck_label.text = "Luck " + luck_text(s.night_luck)
 	speed_button.text = "x%d" % game.chosen_speed
 	pause_button.text = "Resume" if game.paused else "Pause"
-	# Visible only while it could ever apply: exit rule "buyout" and the player in madness.
-	buyout_button.visible = (game.sim.config.sanity.madness.exit_rule == "buyout"
-		and s.sanity_state == SimState.SanityState.MADNESS)
+	# Visible only while it could ever apply (sim query, LT-36): exit rule "buyout", in madness.
+	buyout_button.visible = game.sim.buyout_applies()
 	buyout_button.text = "Restore (%s)" % TowerInfo.money(game.sim.config.sanity.madness.buyout_cost)
 	buyout_button.disabled = game.sim.can_buy_sanity() != Simulation.CommandResult.OK
 	hostile_label.visible = s.sanity_state == SimState.SanityState.MADNESS
