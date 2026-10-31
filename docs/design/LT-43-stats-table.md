@@ -154,6 +154,13 @@ the tower tasks LT-47..LT-52 land first.
 
 ## 7. Questions for the owner
 
+**Owner decisions (2026-11-01, verbatim option labels; note approved "Утверждаю (Recommended)"):**
+- Q1: "Широкая поверх поля (Recommended)"
+- Q2: "Форма атаки (Recommended)"
+- Q3: "Диапазон в таблице, текущий в панели (Recommended)"
+- Q4: "Живые числа со звёздочкой (Recommended)"
+- Q5: "Один клик, карточка по наведению (Recommended)"
+
 ### Q1. Where the build table lives
 
 **Today:** clicking an empty cell fills the narrow right panel with ~30 lines of text for 4
