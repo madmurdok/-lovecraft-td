@@ -60,13 +60,6 @@ static func money(amount: int) -> String:
 	return ("%s%s%d" % [MINUS if amount < 0 else "", CURRENCY, absi(amount)])
 
 
-## LT-23 Q3: reserving `delta` more sanity would take the cap to 0 (and so start madness);
-## never while already in madness. Shared by the build and upgrade previews.
-static func drives_mad(st: SimState, delta: float) -> bool:
-	return delta > 0.0 and st.sanity_cap - delta <= 0.0 \
-		and st.sanity_state != SimState.SanityState.MADNESS
-
-
 ## The reason text for a refused command; a generic word for an unmapped result.
 static func reason(r: Simulation.CommandResult) -> String:
 	return REASONS.get(r, "unavailable")

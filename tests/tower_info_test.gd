@@ -295,23 +295,9 @@ func test_reserve_delta_line_signs_and_absence() -> void:
 	assert_array(Array(TowerInfo.delta_lines(a, b))).is_empty()
 
 
-## LT-23 Q3 / pin 25: drives_mad iff a positive delta takes the cap to 0 or below, never in
-## MADNESS.
-func test_drives_mad_on_a_cap_taken_to_zero_outside_madness_only() -> void:
-	var st := SimState.new()
-	st.sanity_cap = 10.0
-	st.sanity = 10.0
-	st.sanity_state = SimState.SanityState.FRAYING
-	assert_bool(TowerInfo.drives_mad(st, 10.0)).is_true()
-	assert_bool(TowerInfo.drives_mad(st, 12.0)).is_true()
-	assert_bool(TowerInfo.drives_mad(st, 9.5)).is_false()
-	assert_bool(TowerInfo.drives_mad(st, 0.0)).is_false()
-	assert_bool(TowerInfo.drives_mad(st, -5.0)).is_false()
-	st.sanity_cap = 0.0  # a reserve of 0 never warns, even with no room left
-	assert_bool(TowerInfo.drives_mad(st, 0.0)).is_false()
-	st.sanity_cap = 10.0
-	st.sanity_state = SimState.SanityState.MADNESS
-	assert_bool(TowerInfo.drives_mad(st, 12.0)).is_false()
+## LT-23 Q3: the warning text. The rule itself moved to Simulation.would_drive_mad_build /
+## would_drive_mad_upgrade (LT-34) and is pinned in the sim tests.
+func test_madness_warning_text() -> void:
 	assert_str(TowerInfo.MADNESS_WARNING).is_equal(" (drives you mad!)")
 
 

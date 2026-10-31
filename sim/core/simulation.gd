@@ -27,6 +27,7 @@ enum CommandResult {
 	BAD_PRIORITY,  ## set_target_priority: mode is not one of SimTower.TARGET_PRIORITIES
 	NO_SANITY_ROOM,  ## buy_sanity: the sanity cap is 0, a buyout would restore nothing (LT-23)
 	NO_RELICS,  ## sell_relics: unknown kind or nothing of it in the stash (LT-27)
+	UNKNOWN_COMMAND,  ## replay_command: the entry names no command (LT-34)
 }
 
 ## Sanity change reasons that may move sanity while in MADNESS (LT-13): the exit rules.
@@ -313,6 +314,38 @@ func upgrade_tower(tower_id: int, branch := "") -> CommandResult:
 	return CommandResult.OK
 
 
+## LT-34 (LT-33 finding 4): whether build_tower(def_id, ...) would start MADNESS: its L1
+## sanity_reserve takes the cap to 0 or below (LT-23 Q3); never while already in MADNESS.
+## False for an unknown def_id. Checks no gold, cell, phase or outcome: the UI warns only on
+## a button can_build allows. Changes nothing.
+func would_drive_mad_build(def_id: String) -> bool:
+	if not config.towers.has(def_id):
+		return false
+	var def: TowerDef = config.towers[def_id]
+	return _reserve_drives_mad(def.levels[0].sanity_reserve)
+
+
+## LT-34: whether upgrade_tower(tower_id, branch) would start MADNESS: its reserve delta
+## (reserve_delta, the upgrade's own) takes the cap to 0 or below; never in MADNESS. False
+## for an unknown tower or no upgrade_target (L3, a bad branch). Checks no gold, phase or
+## outcome. Changes nothing.
+func would_drive_mad_upgrade(tower_id: int, branch := "") -> bool:
+	var t := tower_by_id(tower_id)
+	if t == null:
+		return false
+	var target := upgrade_target(t, branch)
+	if target == null:
+		return false
+	return _reserve_drives_mad(reserve_delta(t.def.id, t.stats(), target))
+
+
+## LT-23 Q3: reserving `delta` more cap would take it to 0 (and so start madness); a delta
+## <= 0 never does, and nothing does while already in MADNESS.
+func _reserve_drives_mad(delta: float) -> bool:
+	return delta > 0.0 and state.sanity_cap - delta <= 0.0 \
+		and state.sanity_state != SimState.SanityState.MADNESS
+
+
 ## Whether `t` picks a target when it fires (LT-31): its current level deals damage.
 ## False for an aura tower (Elder Sign), which has no target priority to switch.
 func has_targeting(t: SimTower) -> bool:
@@ -408,6 +441,36 @@ func buy_sanity() -> CommandResult:
 	_add_gold(-m.buyout_cost, "buyout", 0)
 	_add_sanity(restore_target() - state.sanity, "buyout", 0)
 	return CommandResult.OK
+
+
+## Debug command (LT-34, LT-33 finding 5; the `--sanity` flag of debug builds): sets
+## sanity to `value` through _add_sanity "debug" (clamped to [0, sanity_cap]; SANITY_CHANGED
+## {reason: "debug"} and SANITY_STATE_CHANGED as usual; nothing applies while in MADNESS,
+## "debug" is no exit reason). Logged as [tick, "debug_set_sanity", value] so a replay
+## reproduces it. OUTCOME_REACHED once the run is over, else OK.
+func debug_set_sanity(value: float) -> CommandResult:
+	if state.outcome != SimState.Outcome.NONE:
+		return CommandResult.OUTCOME_REACHED
+	state.command_log.append([state.tick, "debug_set_sanity", value])
+	_add_sanity(value - state.sanity, "debug", 0)
+	return CommandResult.OK
+
+
+## LT-34: re-applies one command_log entry [tick, name, args...] now (the caller steps the
+## sim to entry[0] first) through the same public command, so it is logged again.
+## UNKNOWN_COMMAND (and an error) for an entry naming no command.
+func replay_command(entry: Array) -> CommandResult:
+	match entry[1] if entry.size() > 1 else "":
+		"build": return build_tower(entry[2], entry[3])
+		"sell": return sell_tower(entry[2])
+		"upgrade": return upgrade_tower(entry[2], entry[3])
+		"set_target_priority": return set_target_priority(entry[2], entry[3])
+		"call_wave": return call_wave()
+		"buy_sanity": return buy_sanity()
+		"sell_relics": return sell_relics(entry[2])
+		"debug_set_sanity": return debug_set_sanity(entry[2])
+	push_error("Simulation.replay_command: unknown entry %s" % [entry])
+	return CommandResult.UNKNOWN_COMMAND
 
 
 ## LT-27 §1.4: the money one relic of `kind` sells for (economy.relics price); 0 for an
