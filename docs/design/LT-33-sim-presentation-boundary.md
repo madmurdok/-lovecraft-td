@@ -145,3 +145,29 @@ New file `tests/sim_boundary_test.gd` (gdUnit, same scan helpers as `render_isol
 
 Items 1 to 3 are cheap static scans in the existing test run. Items 4 and 5 are runtime proofs,
 one test each.
+
+
+## Controls (LT-34 S2)
+
+Each control reverts or breaks CODE (never a test) and names the test that must then fail.
+Files: `tests/sim_boundary_api_test.gd` (API), `tests/sim_boundary_test.gd` (guard).
+
+| # | Behaviour | Code change | Must fail |
+|---|-----------|-------------|-----------|
+| 1 | Build prediction rule | `sim/core/simulation.gd` `_reserve_drives_mad`: change `state.sanity_cap - delta <= 0.0` to `< 0.0` | `SimBoundaryApiTest.test_would_drive_mad_build_cap_taken_to_zero_outside_madness_only` (and `..._agrees_with_build_tower`) |
+| 2 | Upgrade uses the delta | `would_drive_mad_upgrade`: pass `target.sanity_reserve` instead of `reserve_delta(...)` to `_reserve_drives_mad` | `SimBoundaryApiTest.test_would_drive_mad_upgrade_uses_the_delta_not_the_absolute_reserve` |
+| 3 | debug_set_sanity is logged | `debug_set_sanity`: delete the `state.command_log.append(...)` line | `SimBoundaryApiTest.test_debug_set_sanity_sets_logs_and_emits_debug_reason` and `test_a_debug_run_replays_through_replay_command` |
+| 4 | debug_set_sanity refused after the run | `debug_set_sanity`: delete the `OUTCOME_REACHED` guard | `SimBoundaryApiTest.test_debug_set_sanity_is_refused_once_the_run_is_over` |
+| 5 | replay_command arms | `replay_command`: delete the `"debug_set_sanity"` arm (or swap `entry[2]` / `entry[3]` in the `"upgrade"` arm) | `SimBoundaryApiTest.test_replay_command_call_wave_sell_relics_buy_sanity_debug` (resp. `test_replay_command_build_sell_upgrade_priority`) |
+| 6 | Allowed types in sim/ | add `var _t: Tween` (or `Node`, `Color`, `Engine.get_frames_drawn()`) to any file under `sim/` | `SimBoundaryTest.test_sim_names_only_own_types_and_allowlisted_engine_types` |
+| 7 | Private calls from presentation | `scenes/game.gd` `setup`: replace `sim.debug_set_sanity(forced)` with `sim._add_sanity(forced - sim.state.sanity, "debug", 0)` | `SimBoundaryTest.test_presentation_calls_no_private_simulation_member` |
+| 8 | Frame driver equals stepping | `scenes/game.gd` `advance`: after the `for i in steps` loop add `if delta > 0.1: sim.step()` | `SimBoundaryTest.test_a_frame_driven_game_equals_direct_stepping` (clock-granted ticks check) |
+
+Also covered by the same tests (extra controls, optional): `get_tree()` or `signal` in a sim file
+fails `test_sim_uses_no_forbidden_tokens`; `sim.state.gold += 1` in `ui/` fails
+`test_presentation_writes_no_sim_state_or_config`; `is_fake` in `ui/` fails
+`test_the_is_fake_leak_guard_is_kept_and_presentation_is_clean` and
+`RenderIsolationTest.test_no_script_outside_sim_and_tests_can_tell_a_fake`; a sim that reads the
+SceneTree breaks `test_a_whole_game_runs_without_a_scene_tree`.
+
+Runtime tests (frame driver, no-tree) were run 5 times: all passed.
