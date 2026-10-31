@@ -10,10 +10,14 @@ extends Node2D
 ## (shot_kind): rifle tracer, piercing harpoon, Elder Sign ward aura, Necronomicon dark
 ## wave; slow and damage-taken markers on enemies (enemy_markers). Nothing here tells a
 ## fake from a real enemy: every look depends only on SHOT fields and aura state.
+## LT-41 (LT-38 P2): the static map (cells, grid, start, lighthouse) lives in a child
+## MapLayer drawn behind the board's own draw and redrawn only when the map changes, not
+## every frame. Same parent, so the same CanvasModulate and light mask apply to it.
 
 signal cell_clicked(cell: Vector2i)
 signal outside_clicked  ## LT-28: a left click no control took that misses the grid
 
+const LIT_MARK_COLOR := Color(1.0, 0.95, 0.6)  ## LT-30: tower inside a beam
 const CELL := 40.0  ## pixels per cell
 const FLASH_SECONDS := 0.25
 
@@ -91,10 +95,23 @@ var phantom: Array[Vector2i] = []  ## LT-14: cells of the current phantom path (
 var _phantom_ttl := 0.0
 var _time := 0.0  ## seconds of effects time, drives the flicker
 var _fx_rng := RandomNumberGenerator.new()  ## presentation-only; never the sim's RNG
+var map_layer: MapLayer  ## LT-41: the cached static map, drawn below everything else here
 
 
 func _ready() -> void:
 	_fx_rng.randomize()
+	map_layer = MapLayer.new()
+	map_layer.name = "MapLayer"
+	map_layer.show_behind_parent = true  # below the phantom, towers, enemies and effects
+	add_child(map_layer)
+	move_child(map_layer, 0)
+	sync_map()
+
+
+## Hands the sim's current map to the map layer; it redraws only if the map changed.
+func sync_map() -> void:
+	if game != null and game.sim != null and map_layer != null:
+		map_layer.set_map(game.sim.state.map)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -116,6 +133,10 @@ func cell_at(local: Vector2) -> Vector2i:
 
 ## Grid cell -> top-left in this node's local pixels.
 func cell_origin(cell: Vector2i) -> Vector2:
+	return origin_of(cell)
+
+
+static func origin_of(cell: Vector2i) -> Vector2:
 	return Vector2(cell) * CELL
 
 
@@ -345,7 +366,7 @@ func _draw() -> void:
 	if game == null or game.sim == null:
 		return
 	var s := game.sim.state
-	_draw_map(s.map)
+	sync_map()  # O(1) unless the map changed; the map itself is drawn by map_layer
 	_draw_phantom()
 	_draw_auras(s)
 	for t in s.towers:
@@ -357,26 +378,6 @@ func _draw() -> void:
 		if selected_range > 0.0:
 			draw_arc((Vector2(selected_cell) + Vector2(0.5, 0.5)) * CELL, selected_range * CELL,
 				0, TAU, 48, COLOR_SELECT, 1.0)
-
-
-func _draw_map(m: MapDef) -> void:
-	for y in m.height:
-		for x in m.width:
-			var c := Vector2i(x, y)
-			var color := COLOR_WATER
-			match m.kind_at(c):
-				MapDef.Kind.BUILDABLE:
-					color = COLOR_BUILDABLE
-				MapDef.Kind.PATH:
-					color = COLOR_PATH
-			var r := Rect2(cell_origin(c), Vector2(CELL, CELL))
-			draw_rect(r, color)
-			draw_rect(r, COLOR_GRID, false, 1.0)
-	draw_rect(Rect2(cell_origin(m.spawn), Vector2(CELL, CELL)).grow(-4), COLOR_START)
-	var lh := Rect2(cell_origin(m.lighthouse), Vector2(CELL, CELL)).grow(-4)
-	draw_rect(lh, COLOR_LIGHTHOUSE)
-	draw_string(ThemeDB.fallback_font, lh.position + Vector2(9, 24), "L",
-		HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color.BLACK)
 
 
 func _draw_phantom() -> void:
@@ -415,6 +416,9 @@ func _draw_tower(t: SimTower) -> void:
 	draw_rect(Rect2(r.position + LETTER_PLATE.position, LETTER_PLATE.size), COLOR_LETTER_PLATE)
 	draw_string(ThemeDB.fallback_font, r.position + Vector2(8, 20), t.def.name.left(1),
 		HORIZONTAL_ALIGNMENT_LEFT, -1, 16, c)
+	# LT-30: a lit tower (a beam sweeps its centre) gets a small bright corner mark.
+	if t.lit:
+		draw_circle(r.position + Vector2(r.size.x - 6, 6), 3.5, LIT_MARK_COLOR)
 	# LT-24 level mark: one pip per level along the bottom, the branch letter at L3.
 	for i in t.level + 1:
 		draw_rect(Rect2(r.position + Vector2(3 + i * 6, r.size.y - 6), Vector2(4, 4)), Color.BLACK)
@@ -609,3 +613,40 @@ func _draw_wave(fx: Dictionary) -> void:
 	if be < WAVE_FLASH:
 		for p: Vector2 in fx["hit_pos"]:
 			draw_arc(p * CELL, CELL * 0.3, 0, TAU, 20, Color(rim, 1.0 - be / WAVE_FLASH), 2.0)
+
+
+## LT-41: the static map layer (water, buildable and path cells, grid, start, lighthouse).
+## Its draw commands are cached by the engine and re-issued only on set_map with a new map.
+## Nothing here depends on towers, enemies, sanity or day/night (lighting is the canvas's).
+class MapLayer extends Node2D:
+	var map: MapDef
+
+	## Redraws only when `m` is a different map from the one drawn.
+	func set_map(m: MapDef) -> void:
+		if m == map:
+			return
+		map = m
+		queue_redraw()
+
+	func _draw() -> void:
+		if map == null:
+			return
+		var m := map
+		for y in m.height:
+			for x in m.width:
+				var c := Vector2i(x, y)
+				var color := Board.COLOR_WATER
+				match m.kind_at(c):
+					MapDef.Kind.BUILDABLE:
+						color = Board.COLOR_BUILDABLE
+					MapDef.Kind.PATH:
+						color = Board.COLOR_PATH
+				var r := Rect2(Board.origin_of(c), Vector2(CELL, CELL))
+				draw_rect(r, color)
+				draw_rect(r, Board.COLOR_GRID, false, 1.0)
+		draw_rect(Rect2(Board.origin_of(m.spawn), Vector2(CELL, CELL)).grow(-4),
+			Board.COLOR_START)
+		var lh := Rect2(Board.origin_of(m.lighthouse), Vector2(CELL, CELL)).grow(-4)
+		draw_rect(lh, Board.COLOR_LIGHTHOUSE)
+		draw_string(ThemeDB.fallback_font, lh.position + Vector2(9, 24), "L",
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color.BLACK)

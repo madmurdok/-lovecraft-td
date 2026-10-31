@@ -38,3 +38,20 @@ var sanity := 0.0  ## global pool, 0..sanity_cap; from sanity.start (LT-10)
 ## Changes only in build/upgrade/sell; sanity never rises above it.
 var sanity_cap := 0.0
 var sanity_state := SanityState.LUCID  ## derived from `sanity`; changes emit SANITY_STATE_CHANGED
+## LT-30 (LT-26 §1.1, §1.2): lighthouse level, 0 = L1 (index into economy.beam.levels).
+var lighthouse_level := 0
+## Base beam direction, a unit vector as two 64-bit floats (Vector2 is 32-bit); starts
+## pointing left ("sweep": at sweep_edges[0], Simulation._start_beam). Beam i is it rotated
+## by i x 360° / beam count (Simulation.beam_count).
+var beam_dx := -1.0
+var beam_dy := 0.0
+## The base direction before this tick's turn (render interpolation, like prev_distance).
+var prev_beam_dx := -1.0
+var prev_beam_dy := 0.0
+var beam_sign := 1.0  ## "sweep" pattern: +1 / -1, the current swing direction
+## LT-30 §1.1: ticks the current flare still burns (0 = none) and ticks until the next
+## flare may be fired; both count down in slot 2.
+var flare_ticks_left := 0
+var flare_cooldown_ticks := 0
+## LT-30 §1.2: lamp oil in stock, 0..economy.oil.cap; 0 without an `oil` block.
+var oil := 0

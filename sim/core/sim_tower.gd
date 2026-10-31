@@ -20,6 +20,9 @@ var build_tick := 0
 var cooldown_ticks := 0
 ## One of TARGET_PRIORITIES; whom _fire_towers picks among the live enemies in range.
 var target_priority := DEFAULT_TARGET_PRIORITY
+## LT-30: inside a lighthouse beam (centre test, slot 2); persists between ticks, a flip
+## emits TOWER_LIT {lit}.
+var lit := false
 
 ## Disable/harass timers (tower_harass, tower_lift, ...) added by later tasks.
 var status: Dictionary = {}
