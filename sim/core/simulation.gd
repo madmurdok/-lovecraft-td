@@ -69,6 +69,7 @@ func _init(p_config: GameConfig, run_seed: int) -> void:
 	state.sanity_state = sanity_state_for(state.sanity)  # initial state: no event
 	if config.economy.oil != null:
 		state.oil = config.economy.oil.start
+	_start_beam()
 	_ground_route = SimRoute.from_cells(config.map.path)
 
 
@@ -1133,6 +1134,22 @@ func _update_beam() -> void:
 			continue
 		var p := e.route.position_at(e.distance)
 		e.lit = _lit_by(dirs, k, p.x, p.y)
+
+
+## Run start: "rotate" points the base direction left (SimState default); "sweep" starts at
+## sweep_edges[0] (normalised), so the beam begins inside its arc and _turn_beam's edge
+## checks reverse it once per edge (LT-30 review F1).
+func _start_beam() -> void:
+	var b := config.economy.beam
+	if b.pattern != "sweep" or b.sweep_edges.size() != 2:
+		return
+	var x: float = b.sweep_edges[0][0]
+	var y: float = b.sweep_edges[0][1]
+	var n := sqrt(x * x + y * y)
+	state.beam_dx = x / n
+	state.beam_dy = y / n
+	state.prev_beam_dx = state.beam_dx
+	state.prev_beam_dy = state.beam_dy
 
 
 ## Rotates the base direction by the exact rational rotation of beam.turn_t (x beam_sign):

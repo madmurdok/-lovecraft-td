@@ -41,7 +41,8 @@ var sanity_state := SanityState.LUCID  ## derived from `sanity`; changes emit SA
 ## LT-30 (LT-26 §1.1, §1.2): lighthouse level, 0 = L1 (index into economy.beam.levels).
 var lighthouse_level := 0
 ## Base beam direction, a unit vector as two 64-bit floats (Vector2 is 32-bit); starts
-## pointing left. Beam i is it rotated by i x 360° / beam count (Simulation.beam_count).
+## pointing left ("sweep": at sweep_edges[0], Simulation._start_beam). Beam i is it rotated
+## by i x 360° / beam count (Simulation.beam_count).
 var beam_dx := -1.0
 var beam_dy := 0.0
 ## The base direction before this tick's turn (render interpolation, like prev_distance).
