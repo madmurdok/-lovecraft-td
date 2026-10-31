@@ -76,6 +76,22 @@ func test_p90_is_nearest_rank() -> void:
 	assert_float(_stats(values).p90_ms()).is_equal(14.0)
 
 
+func test_p90_where_nine_tenths_of_the_count_is_whole() -> void:
+	var values: Array = []
+	for i in range(1, 11):
+		values.append(float(i))
+	assert_float(_stats(values).p90_ms()).is_equal(9.0)
+
+
+func test_p90_of_a_full_buffer_is_the_nearest_rank_value() -> void:
+	var values: Array = []
+	for i in range(1, FrameStats.CAPACITY + 1):
+		values.append(float(i))
+	var s := _stats(values)
+	assert_int(s.count()).is_equal(FrameStats.CAPACITY)
+	assert_float(s.p90_ms()).is_equal(108.0)  # sorted[107] of 1..120
+
+
 func test_text_format() -> void:
 	assert_str(_stats([10.0, 20.0, 30.0]).text()).is_equal("frame 20.0 ms median / 30.0 p90")
 
