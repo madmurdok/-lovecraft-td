@@ -135,7 +135,7 @@ static func kind_lines(def: TowerDef, s: TowerDef.Level, sanity: SanityConfig) -
 		# Madness changes shots only (x damage, astray); an aura has none.
 		if s.madness_affected:
 			var mult := sanity.madness.damage_multiplier if sanity != null else 0.0
-			out.append("In madness: x%s damage, shots go astray" % num(mult))
+			out.append("Madness: x%s, astray" % num(mult))
 		else:
 			out.append("Unaffected by madness")
 	return out
@@ -219,24 +219,24 @@ static func _delta(out: PackedStringArray, label: String, a: float, b: float, un
 static func _effect_text(first_key: String, e: Dictionary) -> String:
 	match first_key:
 		"pierce":
-			return "Line shot: hits every enemy on a %s-cell-wide line" % num(e.get("pierce", 0.0))
+			return "Pierce: %s-cell-wide line" % num(e.get("pierce", 0.0))
 		"aoe_radius":
-			return "Blast: hits all enemies within %s cells of the target" % num(e.get("aoe_radius", 0.0))
+			return "Blast radius %s cells" % num(e.get("aoe_radius", 0.0))
 		"slow":
-			return "Slows enemies inside by %s%%" % num(e.get("slow", 0.0) * 100.0)
+			return "Slows enemies %s%%" % num(e.get("slow", 0.0) * 100.0)
 		"damage_taken_multiplier":
-			return "Enemies inside take +%s%% damage" \
+			return "Foes take +%s%% damage" \
 				% num((e.get("damage_taken_multiplier", 1.0) - 1.0) * 100.0)
 		"crit_chance":
-			return "%s%% chance to deal x%s damage" \
+			return "%s%% crit, x%s damage" \
 				% [num(e.get("crit_chance", 0.0) * 100.0), num(e.get("crit_multiplier", 0.0))]
 		"shooters":
 			return "%s shooters" % num(e.get("shooters", 0.0))
 		"bleed_dps":
-			return "Bleed: %s damage/s for %s s" \
+			return "Bleed %s/s for %s s" \
 				% [num(e.get("bleed_dps", 0.0)), num(e.get("bleed_seconds", 0.0))]
 		"pull_cells":
-			return "Pulls the target %s cells back along the path" % num(e.get("pull_cells", 0.0))
+			return "Pulls back %s cells" % num(e.get("pull_cells", 0.0))
 		"strip_armor":
-			return "Enemies inside lose %s armor" % num(e.get("strip_armor", 0.0))
+			return "Foes lose %s armor" % num(e.get("strip_armor", 0.0))
 	return "%s: %s" % [first_key, num(e.get(first_key, 0.0))]

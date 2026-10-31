@@ -2,7 +2,7 @@
   "towers": {
     "rifleman": {
       "name": "Rifleman",
-      "role": "Single target, steady damage",
+      "role": "Steady single target",
       "kind": "mundane",
       "cost": 50,
       "levels": [
@@ -10,17 +10,17 @@
         { "upgrade_cost": 40, "range": 3.5, "damage": 14, "fire_interval": 0.7 }
       ],
       "branches": {
-        "a": { "name": "Marksman", "role": "Long range and critical hits",
+        "a": { "name": "Marksman", "role": "Long range, crits",
                "upgrade_cost": 80, "range": 5, "damage": 18, "fire_interval": 0.7,
                "effects": { "crit_chance": 0.2, "crit_multiplier": 2 } },
-        "b": { "name": "Militia", "role": "Two shooters, faster fire",
+        "b": { "name": "Militia", "role": "2 shooters, faster fire",
                "upgrade_cost": 80, "range": 3.5, "damage": 12, "fire_interval": 0.5,
                "effects": { "shooters": 2 } }
       }
     },
     "harpooner": {
       "name": "Harpooner",
-      "role": "Piercing line shot, good against packs",
+      "role": "Pierces a line of foes",
       "kind": "mundane",
       "cost": 70,
       "levels": [
@@ -28,17 +28,17 @@
         { "upgrade_cost": 55, "range": 4.5, "damage": 24, "fire_interval": 1.5, "effects": { "pierce": 1 } }
       ],
       "branches": {
-        "a": { "name": "Barbed", "role": "Harpoons make enemies bleed",
+        "a": { "name": "Barbed", "role": "Enemies bleed",
                "upgrade_cost": 100, "range": 4.5, "damage": 24, "fire_interval": 1.5,
                "effects": { "pierce": 1, "bleed_dps": 6, "bleed_seconds": 3 } },
-        "b": { "name": "Chain harpoon", "role": "Pulls the target back along the path",
+        "b": { "name": "Chain harpoon", "role": "Pulls target back",
                "upgrade_cost": 100, "range": 4.5, "damage": 24, "fire_interval": 1.5,
                "effects": { "pierce": 1, "pull_cells": 1.5 } }
       }
     },
     "elder_sign": {
       "name": "Elder Sign",
-      "role": "Aura: slows enemies and makes them take more damage",
+      "role": "Aura: slows and exposes",
       "kind": "occult",
       "cost": 100,
       "levels": [
@@ -51,14 +51,14 @@
         "a": { "name": "Pure Ward", "role": "Larger aura",
                "upgrade_cost": 140, "range": 4, "sanity_reserve": 14,
                "effects": { "slow": 0.35, "damage_taken_multiplier": 1.5 } },
-        "b": { "name": "Corrupted Seal", "role": "Enemies inside lose armor; reserves more sanity",
+        "b": { "name": "Corrupted Seal", "role": "Strips armor; +reserve",
                "upgrade_cost": 140, "range": 3, "sanity_reserve": 30,
                "effects": { "slow": 0.35, "damage_taken_multiplier": 1.5, "strip_armor": 1 } }
       }
     },
     "necronomicon_reader": {
       "name": "Necronomicon Reader",
-      "role": "Area blast; reserves sanity while it stands",
+      "role": "Area blast, uses sanity",
       "kind": "occult",
       "cost": 150,
       "levels": [
@@ -68,10 +68,10 @@
           "effects": { "aoe_radius": 1.5 } }
       ],
       "branches": {
-        "a": { "name": "Pure Rite", "role": "Slower, but unaffected by madness",
+        "a": { "name": "Pure Rite", "role": "Slower; ignores madness",
                "upgrade_cost": 200, "range": 3.5, "damage": 135, "fire_interval": 4,
                "sanity_reserve": 22, "madness_affected": false, "effects": { "aoe_radius": 1.5 } },
-        "b": { "name": "Corrupted Rite", "role": "Stronger blasts, more sanity reserved",
+        "b": { "name": "Corrupted Rite", "role": "Bigger hits, +reserve",
                "upgrade_cost": 200, "range": 3.5, "damage": 150, "fire_interval": 3,
                "sanity_reserve": 45, "effects": { "aoe_radius": 1.5 } }
       }

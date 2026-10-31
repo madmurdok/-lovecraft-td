@@ -60,8 +60,8 @@ next shot (no free shot, nothing to exploit, deterministic).
 **`role` (Decision 5).** Optional string on each tower object and on each branch object;
 not allowed on `levels[]` entries (an L2 is "the same tower, stronger"). Validation in
 `TowerDef.parse` / `Level.parse`: if present it must be a string, non-empty after
-`strip_edges()`, at most 60 characters (tunable; keeps a line in the 192 px panel to ~3
-wrapped lines). Errors go through `ConfigReader.error` with the usual path
+`strip_edges()`, at most 24 characters (LT-37: render-checked at 1280x720, one visual line in the
+192 px panel). Errors go through `ConfigReader.error` with the usual path
 (`towers.rifleman.role`, `towers.rifleman.branches.a.role`, `towers.rifleman.levels[1].role:
 not allowed on levels`). Absent → `""`, the panel shows no role line. Role text carries no
 numbers (numbers come from stats, so they cannot drift).
@@ -70,10 +70,10 @@ Seed texts (English, from GDD §6):
 
 | Tower | role | branch a role | branch b role |
 |---|---|---|---|
-| rifleman | `Single target, steady damage` | Marksman: `Long range and critical hits` | Militia: `Two shooters, faster fire` |
-| harpooner | `Piercing line shot, good against packs` | Barbed: `Harpoons make enemies bleed` | Chain harpoon: `Pulls the target back along the path` |
-| elder_sign | `Aura: slows enemies and makes them take more damage` | Pure Ward: `Larger aura` | Corrupted Seal: `Enemies inside lose armor; drains sanity while active` |
-| necronomicon_reader | `Area blast; every cast costs sanity` | Pure Rite: `Slower, but unaffected by madness` | Corrupted Rite: `Stronger blasts, more sanity per cast` |
+| rifleman | `Steady single target` | Marksman: `Long range, crits` | Militia: `2 shooters, faster fire` |
+| harpooner | `Pierces a line of foes` | Barbed: `Enemies bleed` | Chain harpoon: `Pulls target back` |
+| elder_sign | `Aura: slows and exposes` | Pure Ward: `Larger aura` | Corrupted Seal: `Strips armor; +reserve` |
+| necronomicon_reader | `Area blast, uses sanity` | Pure Rite: `Slower; ignores madness` | Corrupted Rite: `Bigger hits, +reserve` |
 
 **Pending effects (Decision 1).** `TowerDef.Level` gets
 `const PENDING: PackedStringArray = ["crit_chance", "crit_multiplier", "shooters",
@@ -389,7 +389,7 @@ Read for context: `ui/tower_picker.gd` (all, 89 lines), `ui/sell_panel.gd` (all,
 10. Pure Ward's aura covers an enemy at 3.5 cells that L1 did not reach; Pure Rite in
     MADNESS: no x2, no `astray`; Corrupted Rite casts cost 4 sanity.
 11. Config: `role` on tower and branch parses; absent → `""`; non-string, empty/blank,
-    over 60 chars, and `role` on a `levels[]` entry are each rejected with their path.
+    over 24 chars, and `role` on a `levels[]` entry are each rejected with their path.
 12. `has_pending()`: true for Marksman, Militia, Barbed, Chain harpoon, Corrupted Seal;
     false for every L1/L2, Pure Ward, Pure Rite, Corrupted Rite (real config).
 13. Bots: with upgrades on, `occult` and `madness` buy L3s (Pure Ward/Pure Rite,
