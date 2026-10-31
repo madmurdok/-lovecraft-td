@@ -14,7 +14,10 @@ enum Type {SPAWNED, LEAKED, DIED, OUTCOME, TOWER_BUILT, TOWER_SOLD, GOLD_CHANGED
 		RELIC_DROPPED, RELIC_VANISHED, RELICS_CHANGED,
 		## LT-30, id 0: {level, beams, cost}; id = the tower: {lit}; id 0: {ticks, cooldown};
 		## id 0: {delta, oil, reason: "buy" | "flare"}
-		LIGHTHOUSE_UPGRADED, TOWER_LIT, FLARE_FIRED, OIL_CHANGED}
+		LIGHTHOUSE_UPGRADED, TOWER_LIT, FLARE_FIRED, OIL_CHANGED,
+		## LT-47, id = the blast (SimState.next_blast_id): {tower, def, at, radius, hits}
+		## when a fused charge (SHOT {fuse: true, blast}) explodes; hits in id order
+		BLAST}
 
 var type: Type
 var tick: int

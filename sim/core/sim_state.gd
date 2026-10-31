@@ -26,6 +26,9 @@ var relics: Dictionary[String, int] = {}
 ## LT-27 §1.3: tokens in flight, id order; real and ghost tokens alike.
 var relic_tokens: Array[RelicToken] = []
 var next_token_id := 1  ## relic token ids; separate from next_id, never reused
+## LT-47 (LT-46 P2): charges in flight (thrown, fuse burning), throw order = id order.
+var blasts: Array[SimBlast] = []
+var next_blast_id := 1  ## blast ids; separate from next_id, never reused
 var night_luck := 1.0  ## LT-27 §1.2: set by call_wave, reset to 1.0 at dawn
 var towers: Array[SimTower] = []  ## id order
 var tower_at: Dictionary[Vector2i, int] = {}  ## occupied cell -> tower id

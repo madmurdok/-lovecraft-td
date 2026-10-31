@@ -9,8 +9,10 @@ extends Node2D
 ## LT-25: each attack kind has its own look, chosen from the tower's current stats
 ## (shot_kind): rifle tracer, piercing harpoon, Elder Sign ward aura, Necronomicon dark
 ## wave; slow, damage-taken and (LT-29) bleed markers on enemies (enemy_markers), a longer
-## hit spark on a crit and a dashed chain for a pull. Nothing here tells a
-## fake from a real enemy: every look depends only on SHOT fields and aura state.
+## hit spark on a crit and a dashed chain for a pull. LT-47: the Dynamite crew's lobbed
+## charge (an arc, then a sputtering fuse on the ground until the BLAST event, sim time) and
+## its blast ring. Nothing here tells a fake from a real enemy: every look depends only on
+## SHOT / BLAST fields and aura state.
 ## LT-41 (LT-38 P2): the static map (cells, grid, start, lighthouse) lives in a child
 ## MapLayer drawn behind the board's own draw and redrawn only when the map changes, not
 ## every frame. Same parent, so the same CanvasModulate and light mask apply to it.
@@ -82,6 +84,20 @@ const BLEED_DROP_SECONDS := 0.5  ## one drip loop (decoration, real time)
 const CHAIN_SECONDS := 0.3  ## LT-29: the pull chain, one shot
 const CHAIN_DASH := 6.0  ## px per dash and per gap
 const CRIT_SPARK_SCALE := 2.0  ## a crit's hit spark rays are this much longer
+## LT-47 Dynamite crew: the charge flies DYN_FLIGHT_TICKS (or the whole fuse if shorter) on
+## an arc DYN_ARC_BASE + DYN_ARC_PER_CELL x distance cells high, then lies with a burning
+## fuse until its detonate_tick; a dud fizzles out in grey smoke for DYN_DUD_TICKS more.
+const DYNAMITE_COLOR := Color(2.6, 1.4, 0.45)
+const DYN_STICK_COLOR := Color(0.85, 0.12, 0.08)
+const DYN_SMOKE := Color(0.55, 0.52, 0.5)
+const DYN_FLIGHT_TICKS := 12
+const DYN_ARC_BASE := 0.5
+const DYN_ARC_PER_CELL := 0.3
+const DYN_DUD_TICKS := 12
+const DYN_STICK_PX := 7.0  ## half length of the stick
+const BLAST_SECONDS := 0.5
+const BLAST_FLASH := 0.08
+const BLAST_DEBRIS := 8
 
 ## LT-14 visual tunables.
 @export var flicker_rate := 13.0  ## flicker steps per second
@@ -151,7 +167,15 @@ func on_event(ev: SimEvent) -> void:
 		SimEvent.Type.SHOT:
 			var t := game.sim.tower_by_id(ev.id)
 			if t != null:
-				_add_attack_fx(_shot_fx(t, ev.data))
+				var fx := _shot_fx(t, ev.data)
+				if fx.get("kind", "") == "dynamite":
+					fx["throw_tick"] = ev.tick
+				_add_attack_fx(fx)
+		SimEvent.Type.BLAST:  # LT-47: the charge explodes (hits real and fake alike)
+			var hits: Array = ev.data.get("hits", [])
+			effects.append({"kind": "blast", "from": ev.data["at"],
+				"radius": ev.data.get("radius", 0.0), "hit_pos": _hit_positions(hits),
+				"seed": _fx_rng.randi(), "ttl": BLAST_SECONDS, "dur": BLAST_SECONDS})
 		SimEvent.Type.DIED:
 			if _last_pos.has(ev.id):
 				effects.append({"kind": "death", "from": _last_pos[ev.id], "ttl": FLASH_SECONDS})
@@ -166,14 +190,16 @@ func on_event(ev: SimEvent) -> void:
 
 
 ## LT-25 §1: the attack look from the tower's current stats (so upgrades and branches
-## change it): pierce -> "harpoon", aoe_radius -> "wave", support level -> "aura",
-## otherwise "tracer".
+## change it): pierce -> "harpoon", fuse_seconds -> "dynamite" (LT-47), aoe_radius ->
+## "wave", support level -> "aura", otherwise "tracer".
 static func shot_kind(t: SimTower) -> String:
 	var s := t.stats()
 	if s.damage <= 0.0:
 		return "aura"
 	if s.effects.get("pierce", 0.0) > 0.0:
 		return "harpoon"
+	if s.effects.get("fuse_seconds", 0.0) > 0.0:
+		return "dynamite"
 	if s.effects.get("aoe_radius", 0.0) > 0.0:
 		return "wave"
 	return "tracer"
@@ -249,6 +275,13 @@ func _shot_fx(t: SimTower, data: Dictionary) -> Dictionary:
 			"wave":
 				fx["radius"] = t.stats().effects.get("aoe_radius", 0.0)
 				fx["ttl"] = WAVE_SECONDS
+			"dynamite":
+				# Sim time: tick_effects keeps ttl at what is left until detonate_tick
+				# (+ DYN_DUD_TICKS for a dud); the BLAST event draws the explosion.
+				fx["radius"] = data.get("radius", 0.0)
+				fx["detonate_tick"] = data.get("detonate_tick", 0)
+				fx["end_tick"] = fx["detonate_tick"] + (DYN_DUD_TICKS if fx["miss"] else 0)
+				fx["ttl"] = BLAST_SECONDS
 	fx["dur"] = fx["ttl"]
 	return fx
 
@@ -317,6 +350,10 @@ func astray_end(aim: Vector2) -> Vector2:
 func tick_effects(delta: float) -> void:
 	_time += delta
 	for fx in effects:
+		if fx.has("end_tick") and game != null and game.sim != null:
+			# LT-47: a lobbed charge lives in sim time (pause and x2 follow the clock).
+			fx["ttl"] = delta + (float(fx["end_tick"] - game.sim.state.tick) - alpha) \
+				/ SimTime.TICK_RATE
 		fx["ttl"] -= delta
 	effects = effects.filter(func(fx: Dictionary) -> bool: return fx["ttl"] > 0.0)
 	_tick_phantom(delta)
@@ -419,6 +456,8 @@ static func attack_color(kind: String) -> Color:
 			return WAVE_RIM
 		"aura":
 			return WARD_COLOR
+		"dynamite":
+			return DYNAMITE_COLOR
 	return Color.BLACK
 
 
@@ -430,7 +469,7 @@ func _draw_tower(t: SimTower) -> void:
 	# LT-28: a dark plate under the letter keeps it readable where the beam washes the
 	# light tile out (the plate stays dark under the light; the letter's colour is over 1).
 	draw_rect(Rect2(r.position + LETTER_PLATE.position, LETTER_PLATE.size), COLOR_LETTER_PLATE)
-	draw_string(ThemeDB.fallback_font, r.position + Vector2(8, 20), t.def.name.left(1),
+	draw_string(ThemeDB.fallback_font, r.position + Vector2(8, 20), t.def.glyph,
 		HORIZONTAL_ALIGNMENT_LEFT, -1, 16, c)
 	# LT-30: a lit tower (a beam sweeps its centre) gets a small bright corner mark.
 	if t.lit:
@@ -517,6 +556,10 @@ func _draw_effects() -> void:
 				_draw_wave(fx)
 			"astray":
 				_draw_astray(fx)
+			"dynamite":
+				_draw_charge(fx)
+			"blast":
+				_draw_blast(fx)
 			"death":
 				draw_circle(fx["from"] * CELL, CELL * 0.35, COLOR_DEATH)
 			"dissolve":
@@ -642,6 +685,103 @@ func _draw_wave(fx: Dictionary) -> void:
 	if be < WAVE_FLASH:
 		for p: Vector2 in fx["hit_pos"]:
 			draw_arc(p * CELL, CELL * 0.3, 0, TAU, 20, Color(rim, 1.0 - be / WAVE_FLASH), 2.0)
+
+
+## LT-47 Dynamite crew: the stick flies on an arc to `to` (a dotted trail behind it, its
+## fuse spitting sparks), then lies there under a pulsing ring of the blast radius until
+## detonate_tick; the BLAST event takes over. A dud's fuse dies and it smokes instead.
+func _draw_charge(fx: Dictionary) -> void:
+	var el := float(game.sim.state.tick - int(fx["throw_tick"])) + alpha  # ticks
+	var fuse := maxf(1.0, float(int(fx["detonate_tick"]) - int(fx["throw_tick"])))
+	var flight := minf(float(DYN_FLIGHT_TICKS), fuse)
+	var a: Vector2 = fx["from"] * CELL
+	var b: Vector2 = fx["to"] * CELL
+	var h := _arc_lift(a, b) * CELL * (DYN_ARC_BASE + DYN_ARC_PER_CELL * a.distance_to(b) / CELL)
+	var k := clampf(el / flight, 0.0, 1.0)
+	var pos := _arc_point(a, b, h, k)
+	if k < 1.0:
+		draw_circle(a.lerp(b, k), 3.0, Color(0, 0, 0, 0.35))  # its shadow on the ground
+		var n := 10
+		for i in n:
+			var kk := k * float(i) / n
+			draw_circle(_arc_point(a, b, h, kk), 1.5,
+				Color(DYNAMITE_COLOR, 0.15 + 0.5 * float(i) / n))
+		var dir := (_arc_point(a, b, h, minf(1.0, k + 0.05)) - pos).normalized()
+		var spin := dir.rotated(el * 0.6)
+		_draw_stick(pos, spin, true, el)
+		return
+	var lying := el - flight
+	var left := fuse - el  # ticks to detonation
+	if left > 0.0:
+		var urgency := 1.0 - clampf(left / maxf(1.0, fuse - flight), 0.0, 1.0)
+		var pulse := 0.5 + 0.5 * sin(_time * TAU * (2.0 + 6.0 * urgency))
+		var r := CELL * float(fx["radius"])
+		draw_circle(b, r, Color(DYNAMITE_COLOR, 0.04 + 0.06 * urgency))
+		draw_arc(b, r, 0, TAU, 40, Color(DYNAMITE_COLOR, 0.25 + 0.35 * pulse * urgency + 0.1), 1.5)
+		_draw_stick(b, Vector2.RIGHT.rotated(0.35), not fx["miss"] or left > fuse * 0.3, lying)
+	else:
+		# A dud: the stick lies dead and a grey puff rises.
+		var dk := clampf(-left / DYN_DUD_TICKS, 0.0, 1.0)
+		_draw_stick(b, Vector2.RIGHT.rotated(0.35), false, lying)
+		draw_circle(b + Vector2(0, -CELL * 0.3 * dk), CELL * (0.15 + 0.2 * dk),
+			Color(DYN_SMOKE, 0.6 * (1.0 - dk)))
+
+
+## A point of the throw arc at k in [0, 1]: the chord a -> b lifted by a parabola whose
+## top is the offset `h` (pixels, a vector).
+func _arc_point(a: Vector2, b: Vector2, h: Vector2, k: float) -> Vector2:
+	return a.lerp(b, k) + h * (4.0 * k * (1.0 - k))
+
+
+## The unit direction the arc bulges: the chord's normal on the screen-up side, so a throw
+## straight up or down the screen still reads as a curve (it bends to the left).
+static func _arc_lift(a: Vector2, b: Vector2) -> Vector2:
+	var d := b - a
+	if d.length_squared() < 0.0001:
+		return Vector2.UP
+	var n := d.orthogonal().normalized()
+	if n.y > 0.0 or (absf(n.y) < 0.001 and n.x > 0.0):
+		n = -n
+	return (n + Vector2.UP).normalized() if absf(n.y) > 0.3 else n
+
+
+## One stick of dynamite at `p` along `dir`, its fuse end spitting a flickering spark.
+func _draw_stick(p: Vector2, dir: Vector2, burning: bool, el: float) -> void:
+	var half := dir * DYN_STICK_PX
+	draw_line(p - half, p + half, Color(0.05, 0.02, 0.02), 7.0)
+	draw_line(p - half * 0.9, p + half * 0.9, DYN_STICK_COLOR, 5.0)
+	var tip := p + half + dir * 3.0
+	draw_line(p + half, tip, Color(0.9, 0.85, 0.7), 1.5)
+	if not burning:
+		return
+	var flick := 0.6 + 0.4 * absf(sin(el * 2.3 + _time * 31.0))
+	draw_circle(tip, 2.0 + 2.0 * flick, Color(DYNAMITE_COLOR, flick))
+	for i in 3:
+		var v := Vector2.from_angle(_time * 17.0 + i * TAU / 3.0)
+		draw_line(tip + v * 2.0, tip + v * (4.0 + 4.0 * flick), Color(2.4, 2.2, 1.2, flick), 1.0)
+
+
+## LT-47: a white flash, an orange ring racing out to the blast radius over a fading smoke
+## disc, flying debris, and a flash ring on each hit enemy.
+func _draw_blast(fx: Dictionary) -> void:
+	var el := _elapsed(fx)
+	var c: Vector2 = fx["from"] * CELL
+	var r := CELL * float(fx["radius"])
+	var k := clampf(el / BLAST_SECONDS, 0.0, 1.0)
+	var grow := 1.0 - (1.0 - k) * (1.0 - k) * (1.0 - k)  # fast out, slow end
+	draw_circle(c, r * (0.6 + 0.4 * grow), Color(DYN_SMOKE, 0.45 * (1.0 - k)))
+	if el < BLAST_FLASH:
+		draw_circle(c, r * 0.7, Color(3.0, 2.6, 1.6, 1.0 - el / BLAST_FLASH))
+	draw_arc(c, r * (0.2 + 0.8 * grow), 0, TAU, 48, Color(DYNAMITE_COLOR, 1.0 - k * k), 4.0)
+	var sd: int = fx["seed"]
+	for i in BLAST_DEBRIS:
+		var ang := float((sd >> i) % 628) * 0.01 + i * TAU / BLAST_DEBRIS
+		var d := r * (0.3 + 0.9 * grow)
+		draw_circle(c + Vector2.from_angle(ang) * d, 2.0, Color(DYNAMITE_COLOR, 1.0 - k))
+	if el < WAVE_FLASH:
+		for p: Vector2 in fx["hit_pos"]:
+			draw_arc(p * CELL, CELL * 0.3, 0, TAU, 20,
+				Color(DYNAMITE_COLOR, 1.0 - el / WAVE_FLASH), 2.0)
 
 
 ## LT-41: the static map layer (water, buildable and path cells, grid, start, lighthouse).
