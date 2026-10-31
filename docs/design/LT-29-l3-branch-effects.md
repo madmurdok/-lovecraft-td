@@ -1,6 +1,6 @@
 # LT-29 — L3 branch effects: crits, gangster bursts, bleed, pull, armor strip (design note)
 
-Status: draft for owner review · branch `feat/LT-29-l3-branch-effects`. Line numbers are
+Status: approved by the owner 2026-11-01 ("Утверждаю (Recommended)") · branch `feat/LT-29-l3-branch-effects`. Line numbers are
 `release-0.3.0` at `594d24b` (LT-46 merge).
 
 Source: LT-24 design found five L3 effects that parse but do nothing (Marksman crits,
