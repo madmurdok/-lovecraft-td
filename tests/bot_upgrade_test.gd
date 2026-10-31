@@ -267,3 +267,17 @@ func test_run_lines_carry_upgrade_keys_only_with_upgrades_on() -> void:
 	# Same strategy and seed twice: the same RUN line.
 	var again: Dictionary = _bot(true).call("_play", "mundane", 1000)
 	assert_str(JSON.stringify(again)).is_equal(JSON.stringify(on))
+
+
+## LT-31 decision 12: bots never switch target priority, so their towers keep "first" and
+## their runs are those of before LT-31.
+func test_bots_never_set_target_priority() -> void:
+	var src := FileAccess.get_file_as_string(BOT_PATH)
+	assert_bool(src.contains("set_target_priority")).is_false()
+	var sim := _sim(_mundane_builds(7) + 1000)
+	_bot().call("_act", sim, "mundane", 0, {})
+	assert_int(sim.state.towers.size()).is_greater(0)
+	for t in sim.state.towers:
+		assert_str(t.target_priority).is_equal(SimTower.DEFAULT_TARGET_PRIORITY)
+	assert_bool(sim.state.command_log.any(
+		func(c: Array) -> bool: return c[1] == "set_target_priority")).is_false()

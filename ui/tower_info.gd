@@ -22,6 +22,15 @@ const REASONS := {
 	Simulation.CommandResult.MAX_LEVEL: "max level",
 	Simulation.CommandResult.NEED_BRANCH: "choose a branch",
 	Simulation.CommandResult.BAD_BRANCH: "unknown branch",
+	Simulation.CommandResult.NO_TARGETING: "no target to pick",
+	Simulation.CommandResult.BAD_PRIORITY: "unknown priority",
+}
+
+## Player-facing names of SimTower.TARGET_PRIORITIES (LT-31).
+const PRIORITY_NAMES := {
+	"first": "Closest to the lighthouse",
+	"strongest": "Strongest",
+	"fastest": "Fastest",
 }
 
 ## Effect lines in display order: the keys one line reads (a pair shares a line).

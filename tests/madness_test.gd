@@ -120,6 +120,42 @@ func test_a_real_or_fake_shot_picks_uniformly_among_those_in_range() -> void:
 		_assert_within_sigmas(on_a, n, 0.5)
 
 
+## LT-31 decision 8: an astray shot re-picks at random from the pool whatever the tower's
+## target priority; "fastest" alone would hit `fast` every time.
+func test_an_astray_shot_ignores_the_target_priority() -> void:
+	var sim := _necro_sim()
+	_split(sim, 1.0, 0.0, 0.0)
+	var slow := put(sim, "cultist", REAL_CELLS)
+	var fast := put(sim, "cultist", FAR_CELLS)
+	fast.base_units_per_tick = 1  # 400 casts move it 400 units (0.013 cells)
+	var t := sim.state.towers[0]
+	assert_int(sim.set_target_priority(t.id, "fastest")).is_equal(R.OK)
+	assert_str(t.target_priority).is_equal("fastest")
+	var n := 400
+	var on_slow := 0
+	for s in _casts(sim, n):
+		assert_bool(s.data["astray"]).is_true()
+		assert_array(s.data["hits"]).has_size(1)
+		if s.data["target"] == slow.id:
+			on_slow += 1
+		else:
+			assert_int(s.data["target"]).is_equal(fast.id)
+	_assert_within_sigmas(on_slow, n, 0.5)
+
+
+## LT-31 decision 8: the aim point of an empty astray shot is the mode's pick.
+func test_an_empty_astray_shot_aims_at_the_mode_pick() -> void:
+	var sim := _necro_sim()
+	_split(sim, 0.0, 0.0, 1.0)
+	put(sim, "cultist", FAR_CELLS)
+	var strong := put(sim, "cultist", REAL_CELLS, HUGE_HP * 2.0)
+	assert_int(sim.set_target_priority(sim.state.towers[0].id, "strongest")).is_equal(R.OK)
+	for s in _casts(sim, 5):
+		assert_array(s.data["hits"]).is_empty()
+		assert_int(s.data["target"]).is_equal(strong.id)
+		assert_vector(s.data["to"]).is_equal(strong.route.position_at(strong.distance))
+
+
 func test_a_real_roll_with_no_real_in_range_is_an_empty_shot() -> void:
 	var sim := _necro_sim()
 	_split(sim, 1.0, 0.0, 0.0)
@@ -603,6 +639,9 @@ func _play(run_seed: int, commands: Array, ticks: int) -> Array:
 					"build": sim.build_tower(c[2], c[3])
 					"call_wave": sim.call_wave()
 					"buy_sanity": sim.buy_sanity()
+					"set_target_priority": sim.set_target_priority(c[2], c[3])
+					# Resolves the tower on a cell (first run); the log holds the real id.
+					"set_target_priority_at": sim.set_target_priority(sim.state.tower_at[c[2]], c[3])
 		sim.step()
 		out.append_array(strings_of(sim.drain_events()))
 	out.append("tick=%d gold=%d sanity=%s madness=%d" % [sim.state.tick, sim.state.gold,
@@ -628,3 +667,23 @@ func test_same_seed_and_command_log_replay_the_same_madness_run() -> void:
 	assert_bool(without[0] == first[0]).is_false()
 	var other := _play(SEED + 1, commands, 500)
 	assert_bool(other[0] == first[0]).is_false()
+
+
+## LT-31: mid-run target priority switches are logged and replay identically in madness.
+func test_a_madness_run_with_target_priority_switches_replays_the_same() -> void:
+	var base := [[2, "build", NECRO, TOWER], [3, "build", NECRO, Vector2i(8, 1)],
+		[5, "call_wave"]]
+	var commands := base + [[40, "set_target_priority_at", TOWER, "fastest"],
+		[90, "set_target_priority_at", Vector2i(8, 1), "strongest"],
+		[200, "set_target_priority_at", TOWER, "first"]]
+	var first := _play(SEED, commands, 500)
+	var stp: Array = (first[1] as Array).filter(
+		func(c: Array) -> bool: return c[1] == "set_target_priority")
+	assert_array(stp.map(func(c: Array) -> Array: return [c[0], c[3]])) \
+		.is_equal([[40, "fastest"], [90, "strongest"], [200, "first"]])
+	var replay := _play(SEED, first[1], 500)
+	assert_array(replay[0]).is_equal(first[0])
+	assert_array(replay[1]).is_equal(first[1])
+	# Control: without the switches the run differs (an empty shot aims at the mode pick).
+	var without := _play(SEED, base, 500)
+	assert_bool(without[0] == first[0]).is_false()
