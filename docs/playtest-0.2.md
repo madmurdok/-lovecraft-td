@@ -95,3 +95,50 @@ Tests that pinned tuned numbers now read them from the raw JSON files (and asser
 `tests/config_valid_test.gd` (enemy hp, Elder/Reader reserves, madness multipliers),
 `tests/madness_buff_test.gd` (madness multipliers). 21 test files that read enemies, towers, waves or sanity
 were run; all pass after the edit. The full suite is left to verify.
+
+## S13: madness multiplier scan (LT-23)
+
+Owner decision: "Найти промежуточное значение (Recommended)". Start point 1.6 / 0.4 gave 7/10 madness wins (step H).
+Scan of madness enemy_speed_multiplier / enemy_damage_taken_multiplier, same 10 seeds (1000-1009), madness bot read from
+full 4-bot runs on `--data=<copy of data/>` variants (other bots do not depend on these values and were identical).
+
+| Pair (speed / damage taken) | Madness bot wins | Mean HP left | Wave of MADNESS |
+|---|---|---|---|
+| 1.6 / 0.4 (S10 step H) | 7/10 | 2.5 | 5 |
+| 1.7 / 0.37 | 0/10 | 0.0 | 5 (10/10 runs) |
+| 1.8 / 0.35 | 1/10 | 0.3 | 5 (10/10 runs) |
+| 1.9 / 0.32 | 0/10 | 0.0 | 5 (10/10 runs) |
+| 2.0 / 0.3 | 0/10 | 0.0 | 5 (10/10 runs) |
+
+MADNESS starts at tick 6841-8537 in every run, i.e. during wave 5 (cap after wave 4 is 3-46). Win counts are
+not monotonic (1.8/0.35 lets one seed win), so the mildest pair with <= 2/10 is **1.7 / 0.37** (0/10).
+
+**Chosen: speed 1.7, damage taken 0.37** (was 2.0 / 0.3 in S10's final; applied to `data/sanity.json`).
+
+### Final table (10 seeds, 1.7 / 0.37, data/ as committed)
+
+| Bot | Wins | Mean HP | Runs losing >= 1 HP | Cap after wave 4 | Runs with cap/sanity < 40 | Runs reaching MADNESS | Lowest cap | Fakes/run |
+|---|---|---|---|---|---|---|---|---|
+| mundane | 10/10 | 16.5 | 6 | 100 | 0 | 0 | 100 | 0 |
+| occult | 10/10 | 19.0 | 10 | 36-56 (8 of 10 <= 50) | 10 | 0 | 32-36 | 20.5 |
+| mixed | 10/10 | 20.0 | 0 | 64-76 | 0 | 0 | 64 | 9.9 |
+| madness | 0/10 | 0.0 | 10 | 3-46 | 10 | 10 | 3-46 | 18.1 |
+
+The three non-madness rows are byte-identical to the S10 final table, as expected.
+
+### Dropped target
+
+The §4 target "madness bot reaches cap 0 by wave 3" is **dropped**. It is economically unreachable at current
+prices: cap 0 needs about 1090 gold of occult reserve, and the bot has about 500 before wave 3. The owner chose to
+tune the multipliers instead; the madness bot is now in MADNESS from wave 5 and loses there.
+
+### Machine state
+
+Scan (4 variants in parallel, one process each): `uptime` load averages 254.84 166.28 149.96;
+`/usr/bin/time -p` per process: real 397-402, user 216-220, sys 1.84-1.87 (user about 54 % of real: CPU contention).
+Final run: load averages 97.23 124.63 137.20; real 168.43, user 159.17, sys 1.57 (user 94 % of real: computing).
+Outcomes are deterministic per seed; timings are not comparable.
+
+### Tests
+
+`tests/config_valid_test.gd` (16 cases) and `tests/madness_buff_test.gd` (11 cases): 0 failures, unchanged.

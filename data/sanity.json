@@ -15,7 +15,7 @@
     "exit_rule": "permanent",
     "restore_sanity": 30,
     "buyout_cost": 150,
-    "enemy_speed_multiplier": 1.6,
-    "enemy_damage_taken_multiplier": 0.4
+    "enemy_speed_multiplier": 1.7,
+    "enemy_damage_taken_multiplier": 0.37
   }
 }

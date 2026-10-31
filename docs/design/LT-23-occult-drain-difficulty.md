@@ -210,7 +210,7 @@ Targets (Q11, "Как предложено (Recommended)"; sanity terms restated
 | mundane | ≥ 8/10 | 10-18, ≥ 6/10 runs lose ≥ 1 HP | stays Lucid |
 | occult | ≥ 8/10 | ≥ mundane's mean − 2 | cap ≤ 50 by wave 4; cap or sanity < 40 (Fraying) in ≥ 7/10 runs; MADNESS in ≤ 2/10; ≥ 5 fakes per run |
 | mixed | ≥ 9/10 | ≥ mundane's mean | lowest cap in [20, 70) in ≥ 7/10 runs |
-| madness | ≤ 2/10 | — | MADNESS (cap 0) by wave 3 |
+| madness | ≤ 2/10 | — | ~~MADNESS (cap 0) by wave 3~~ dropped (S13): cap 0 needs ~1090 gold of occult reserve, the bot has ~500 before wave 3 |
 
 New per-run metrics: `min_sanity`, `final_cap`, `cap_per_wave`, `madness_tick` (−1 if
 never), `reserve_peak`, `free_reserve`, HP lost per wave, towers by kind and level.
