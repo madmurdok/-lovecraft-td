@@ -194,11 +194,12 @@ func test_num_prints_up_to_two_decimals_without_trailing_zeros() -> void:
 
 
 func test_cost_text_and_the_currency_word() -> void:
-	assert_str(TowerInfo.CURRENCY).is_equal("gold")
-	# LT-23 Q5: sanity is reserved, never paid, so a cost is gold only.
-	assert_str(TowerInfo.cost_text(80)).is_equal("80 gold")
-	assert_str(TowerInfo.cost_text(40)).is_equal("40 gold")
-	assert_str(TowerInfo.cost_text(0)).is_equal("0 gold")
+	# LT-27 §2: money is shown as "$" ("gold" stays the internal name).
+	assert_str(TowerInfo.CURRENCY).is_equal("$")
+	# LT-23 Q5: sanity is reserved, never paid, so a cost is money only.
+	assert_str(TowerInfo.cost_text(80)).is_equal("$80")
+	assert_str(TowerInfo.cost_text(40)).is_equal("$40")
+	assert_str(TowerInfo.cost_text(0)).is_equal("$0")
 
 
 ## LT-23 §1.4: a level without a reserve has no reserve line, and no line names a per-cast

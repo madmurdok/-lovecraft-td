@@ -24,6 +24,8 @@ var board: Board
 var lighting: Lighting  ## LT-8: darkness, beam, tower lights, sea fog (visual only)
 var sanity_fx: SanityFx  ## LT-14: screen distortion, UI jitter, whispers (visual only)
 var hud: Hud
+var relic_tokens: RelicTokens  ## LT-27 §4: tokens flying from kills to the HUD counter
+var star_stones_found := 0  ## LT-27 §4: star-stones credited this run (end screen)
 var side_panel: SidePanel  ## LT-24: fixed right panel holding the two views below
 var picker: TowerPicker  ## build view of side_panel
 var tower_panel: TowerPanel  ## tower view of side_panel
@@ -82,6 +84,10 @@ func _ready() -> void:
 	hud.name = "Hud"
 	hud.game = self
 	ui.add_child(hud)
+	relic_tokens = RelicTokens.new()
+	relic_tokens.name = "RelicTokens"
+	relic_tokens.game = self
+	ui.add_child(relic_tokens)
 	side_panel = SidePanel.new()
 	side_panel.name = "SidePanel"
 	side_panel.game = self
@@ -109,6 +115,7 @@ func advance(delta: float) -> void:
 	_consume_events()
 	board.alpha = clock.alpha()
 	board.tick_effects(delta)
+	relic_tokens.tick(delta)
 	board.queue_redraw()
 	hud.refresh()
 	picker.refresh()
@@ -138,6 +145,13 @@ func upgrade(tower_id: int, branch := "") -> Simulation.CommandResult:
 
 func call_wave() -> Simulation.CommandResult:
 	var r := sim.call_wave()
+	_after_command()
+	return r
+
+
+## LT-27 §1.4: sells the whole stash (by day only).
+func sell_relics() -> Simulation.CommandResult:
+	var r := sim.sell_relics()
 	_after_command()
 	return r
 
@@ -175,11 +189,16 @@ func _consume_events() -> void:
 	for ev in sim.drain_events():
 		board.on_event(ev)
 		sanity_fx.on_event(ev)
+		relic_tokens.on_event(ev)
+		if ev.type == SimEvent.Type.RELICS_CHANGED and ev.data.get("reason", "") == "kill" \
+				and ev.data.get("kind", "") == RelicTokens.STAR_STONE:
+			star_stones_found += 1
 		if ev.type == SimEvent.Type.OUTCOME:
 			picker.close()
 			tower_panel.close()
 			side_panel.visible = false
-			end_screen.show_result(ev.data.get("result", "") == "won", sim.state)
+			end_screen.show_result(ev.data.get("result", "") == "won", sim.state,
+				star_stones_found)
 
 
 func _on_cell_clicked(cell: Vector2i) -> void:

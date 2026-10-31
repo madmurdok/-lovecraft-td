@@ -5,7 +5,8 @@ extends RefCounted
 ## comes from TowerDef / SanityConfig. The role line is not part of lines(): the panels
 ## print def.role / the branch role first.
 
-const CURRENCY := "gold"  ## the one currency word (LT-27 renames it here)
+const CURRENCY := "$"  ## the money sign (LT-27 §2: "gold" internally, "$" on screen)
+const DASH := " — "  ## between a name and its cost: "Rifleman — $50"
 const COMING_SOON := " (coming soon)"  ## appended to lines whose key is in Level.PENDING
 const MINUS := "−"  ## U+2212, for sanity drains
 const MADNESS_WARNING := " (drives you mad!)"  ## LT-23 Q3: build/upgrade takes the cap to 0
@@ -17,9 +18,9 @@ const REASONS := {
 	Simulation.CommandResult.NOT_AVAILABLE: "not available yet",
 	Simulation.CommandResult.NOT_BUILDABLE: "cannot build here",
 	Simulation.CommandResult.OCCUPIED: "cell occupied",
-	Simulation.CommandResult.NOT_ENOUGH_GOLD: "not enough " + CURRENCY,
+	Simulation.CommandResult.NOT_ENOUGH_GOLD: "not enough money",
 	Simulation.CommandResult.NO_SUCH_TOWER: "tower is gone",
-	Simulation.CommandResult.NOT_BUILD_PHASE: "wave in progress",
+	Simulation.CommandResult.NOT_BUILD_PHASE: "only by day",
 	Simulation.CommandResult.MAX_LEVEL: "max level",
 	Simulation.CommandResult.NEED_BRANCH: "choose a branch",
 	Simulation.CommandResult.BAD_BRANCH: "unknown branch",
@@ -40,9 +41,14 @@ static func num(v: float) -> String:
 	return "0" if s == "-0" else s
 
 
-## "40 gold" (sanity is reserved, not paid: LT-23).
+## "$40" (sanity is reserved, not paid: LT-23).
 static func cost_text(gold: int) -> String:
-	return "%d %s" % [gold, CURRENCY]
+	return money(gold)
+
+
+## LT-27 §2: money as shown on screen, "$240"; a negative amount reads "−$5".
+static func money(amount: int) -> String:
+	return ("%s%s%d" % [MINUS if amount < 0 else "", CURRENCY, absi(amount)])
 
 
 ## LT-23 Q3: reserving `delta` more sanity would take the cap to 0 (and so start madness);

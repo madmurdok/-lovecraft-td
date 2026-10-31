@@ -213,7 +213,7 @@ func test_build_buttons_show_name_cost_and_role_first() -> void:
 		var def: TowerDef = _config.towers[id]
 		var b: Button = _game.picker.buttons[id]
 		if not b.disabled:
-			assert_str(b.text).is_equal("%s - %s" % [def.name, TowerInfo.cost_text(def.cost)])
+			assert_str(b.text).is_equal("%s — %s" % [def.name, TowerInfo.cost_text(def.cost)])
 		assert_str(_first_line(_game.picker.infos[id])).is_equal(def.role)
 	# LT-23 Q5: an occult build costs gold only; its info names the reserve instead.
 	var sign: TowerDef = _config.towers[SIGN]
@@ -231,7 +231,7 @@ func test_build_buttons_are_disabled_with_the_reason() -> void:
 	for id: String in _config.towers:
 		var b: Button = _game.picker.buttons[id]
 		assert_bool(b.disabled).is_true()
-		assert_str(b.text).ends_with(" (not enough gold)")
+		assert_str(b.text).ends_with(" (not enough money)")
 	_game.sim.state.gold = 10000
 	_game.picker.refresh()
 	assert_bool(_game.picker.buttons[RIFLE].disabled).is_false()
@@ -259,7 +259,7 @@ func test_l1_view_shows_only_the_l2_upgrade() -> void:
 	assert_bool(p.role_label.visible).is_true()
 	assert_str(p.role_label.text).is_equal(def.role)
 	assert_array(_visible_ups()).is_equal([""])
-	assert_str(_ups()[""].text).is_equal("Upgrade to L2 - %s" % TowerInfo.cost_text(
+	assert_str(_ups()[""].text).is_equal("Upgrade to L2 — %s" % TowerInfo.cost_text(
 		def.levels[1].upgrade_cost))
 	assert_bool(p.max_label.visible).is_false()
 
@@ -274,7 +274,7 @@ func test_l2_view_shows_the_two_named_branches_with_role_first() -> void:
 	assert_array(_visible_ups()).is_equal(["a", "b"])
 	for b: String in ["a", "b"]:
 		var br := def.branches[b]
-		assert_str(_ups()[b].text).is_equal("%s - %s" % [br.name,
+		assert_str(_ups()[b].text).is_equal("%s — %s" % [br.name,
 			TowerInfo.cost_text(br.upgrade_cost)])
 		assert_str(_first_line(p.upgrade_infos[b])).is_equal(br.role)
 	assert_bool(p.max_label.visible).is_false()
@@ -300,7 +300,7 @@ func test_upgrade_is_disabled_mid_wave_and_enabled_again_after_it() -> void:
 	_run_into_wave()
 	_game.tower_panel.refresh()
 	assert_bool(_ups()[""].disabled).is_true()
-	assert_str(_ups()[""].text).ends_with(" (wave in progress)")
+	assert_str(_ups()[""].text).ends_with(" (only by day)")
 	for i in 20000:
 		if _game.sim.state.phase == SimState.Phase.BUILD:
 			break
@@ -324,7 +324,7 @@ func test_upgrade_is_disabled_without_gold_and_enabled_when_gold_rises() -> void
 	_game.tower_panel.refresh()
 	for b: String in ["a", "b"]:
 		assert_bool(_ups()[b].disabled).is_true()
-		assert_str(_ups()[b].text).ends_with(" (not enough gold)")
+		assert_str(_ups()[b].text).ends_with(" (not enough money)")
 	_game.sim.state.gold = def.branches["a"].upgrade_cost
 	_game.tower_panel.refresh()
 	assert_bool(_ups()["a"].disabled).is_false()
@@ -399,7 +399,7 @@ func test_build_button_warns_when_its_reserve_takes_the_cap_to_zero() -> void:
 	l1.sanity_reserve = _config.sanity.max_sanity
 	_game.sim.state.gold = 0
 	_game.picker.refresh()
-	assert_str(_game.picker.buttons[SIGN].text).ends_with(" (not enough gold)")
+	assert_str(_game.picker.buttons[SIGN].text).ends_with(" (not enough money)")
 	assert_str(_game.picker.buttons[SIGN].text).not_contains("drives you mad")
 	_game.sim.state.gold = 10000
 	_game.sim.state.sanity = 0.0
@@ -425,7 +425,7 @@ func test_clicking_upgrade_and_branch_keeps_the_view_and_updates_ring_and_refund
 	assert_bool(_game.tower_panel.visible).is_true()
 	assert_float(_game.board.selected_range).is_equal(t.stats().range_cells)
 	var refund := _game.sim.sell_refund(t)
-	assert_str(_game.tower_panel.sell_button.text).is_equal("Sell (+%d gold)" % refund)
+	assert_str(_game.tower_panel.sell_button.text).is_equal("Sell (+$%d)" % refund)
 	if is_equal_approx(_config.economy.sell_refund_ratio, 0.7):
 		assert_int(refund).is_equal(119)  # LT-24 §2: Rifleman L3 at today's config
 

@@ -5,11 +5,19 @@ extends Node2D
 ## beam and glow, one small light per tower, and a sea fog shader over water cells.
 ## Visual only: reads `game.sim.state`, never changes it. Nothing here depends on the
 ## enemy kind, so fake enemies (LT-12) render exactly like real ones.
+## LT-27 §4 day/night: a render-only `night` factor (0 = day, 1 = night) eases toward 1 in
+## a wave and 0 by day (BUILD, DONE); it blends the ambient from AMBIENT_DAY to
+## AMBIENT_NIGHT, scales the beam, the lighthouse glow and the tower lights (the lamp is
+## dark by day) and thins the fog by day. It reads `state.phase` only and keeps easing
+## while paused.
 
 const FOG_SHADER := preload("res://shaders/sea_fog.gdshader")
 
-## Ambient level outside lights. Not total darkness: enemies stay readable at the edge.
-const AMBIENT := Color(0.30, 0.32, 0.42)
+## Ambient level outside lights at night. Not total darkness: enemies stay readable.
+const AMBIENT_NIGHT := Color(0.30, 0.32, 0.42)
+const AMBIENT_DAY := Color(0.80, 0.80, 0.76)  ## LT-27 §4: grey daylight
+const NIGHT_EASE_SECONDS := 0.6  ## time constant of the day <-> night fade
+const FOG_DAY_ALPHA := 0.45  ## fog opacity by day, relative to the night fog
 const BEAM_COLOR := Color(1.0, 0.94, 0.72)
 const BEAM_ENERGY := 1.6
 const BEAM_SPEED := 0.45  ## radians per second (about one turn every 14 s)
@@ -33,6 +41,7 @@ var beam: PointLight2D
 var glow: PointLight2D
 var fog: Node2D
 var _tower_lights: Dictionary[int, PointLight2D] = {}  ## tower id -> light
+var night := 0.0  ## LT-27 §4: 0 = day, 1 = night; eases toward night_target()
 
 
 ## `world` is the node whose canvas gets darkened (the Game); the lights live here.
@@ -40,8 +49,19 @@ func setup(p_game: Game, world: Node) -> void:
 	game = p_game
 	modulate_node = CanvasModulate.new()
 	modulate_node.name = "Darkness"
-	modulate_node.color = AMBIENT
+	night = night_target(game.sim.state.phase)
+	modulate_node.color = ambient(night)
 	world.add_child(modulate_node)
+
+
+## LT-27 §4: 1 during a wave (night), 0 otherwise (day: BUILD, DONE, NONE).
+static func night_target(phase: SimState.Phase) -> float:
+	return 1.0 if phase == SimState.Phase.WAVE else 0.0
+
+
+## The world ambient for a `night` factor: AMBIENT_DAY at 0, AMBIENT_NIGHT at 1.
+static func ambient(p_night: float) -> Color:
+	return AMBIENT_DAY.lerp(AMBIENT_NIGHT, clampf(p_night, 0.0, 1.0))
 
 
 func _ready() -> void:
@@ -63,11 +83,35 @@ func _ready() -> void:
 		BEAM_REACH_CELLS * 2.0 * Board.CELL / BEAM_TEX_SIZE)
 	beam.position = lh_center
 	beam.rotation = PI  # starts pointing left; sweeps up over the land first
+	_apply_night()
 
 
 func _process(delta: float) -> void:
 	beam.rotation = wrapf(beam.rotation + BEAM_SPEED * delta, -PI, PI)
 	_sync_tower_lights()
+	ease_night(delta)
+
+
+## Moves `night` toward the phase's target by 1 - exp(-delta / NIGHT_EASE_SECONDS) of the
+## gap (real seconds, so it also runs while paused) and applies it.
+func ease_night(delta: float) -> void:
+	var target := night_target(game.sim.state.phase)
+	night += (target - night) * (1.0 - exp(-maxf(delta, 0.0) / NIGHT_EASE_SECONDS))
+	if absf(target - night) < 0.001:
+		night = target
+	_apply_night()
+
+
+func _apply_night() -> void:
+	modulate_node.color = ambient(night)
+	beam.energy = BEAM_ENERGY * night
+	glow.energy = night
+	beam.visible = night > 0.0
+	glow.visible = night > 0.0
+	for l: PointLight2D in _tower_lights.values():
+		l.energy = TOWER_LIGHT_ENERGY * night
+		l.visible = night > 0.0
+	fog.modulate.a = lerpf(FOG_DAY_ALPHA, 1.0, night)
 
 
 func _sync_tower_lights() -> void:
@@ -78,7 +122,8 @@ func _sync_tower_lights() -> void:
 		seen[t.id] = true
 		if not _tower_lights.has(t.id):
 			var l := _light("TowerLight%d" % t.id, _glow_texture(), TOWER_LIGHT_COLOR,
-				TOWER_LIGHT_ENERGY, TOWER_LIGHT_CELLS * 2.0 * Board.CELL / 256.0)
+				TOWER_LIGHT_ENERGY * night, TOWER_LIGHT_CELLS * 2.0 * Board.CELL / 256.0)
+			l.visible = night > 0.0
 			l.position = (Vector2(t.cell) + Vector2(0.5, 0.5)) * Board.CELL
 			_tower_lights[t.id] = l
 	for id in _tower_lights.keys():

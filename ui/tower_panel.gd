@@ -99,7 +99,12 @@ func refresh() -> void:
 		if target == null:
 			continue
 		_refresh_upgrade(b, info, t, s, branch, target)
-	sell_button.text = "Sell (+%d %s)" % [game.sim.sell_refund(t), TowerInfo.CURRENCY]
+	# LT-27 §3: towers are sold by day only.
+	var sell := game.sim.can_sell_tower(t.id)
+	sell_button.disabled = sell != Simulation.CommandResult.OK
+	sell_button.text = "Sell (+%s)" % TowerInfo.money(game.sim.sell_refund(t))
+	if sell_button.disabled:
+		sell_button.text += " (%s)" % TowerInfo.reason(sell)
 	if game.board.selected_range != s.range_cells:
 		game.board.selected_range = s.range_cells
 		game.board.queue_redraw()
@@ -110,7 +115,7 @@ func _refresh_upgrade(b: Button, info: Label, t: SimTower, s: TowerDef.Level, br
 	var r := game.sim.can_upgrade(t.id, branch)
 	b.disabled = r != Simulation.CommandResult.OK
 	var label := "Upgrade to L%d" % (t.level + 2) if branch.is_empty() else target.name
-	var text := "%s - %s" % [label, TowerInfo.cost_text(target.upgrade_cost)]
+	var text := label + TowerInfo.DASH + TowerInfo.cost_text(target.upgrade_cost)
 	if b.disabled:
 		text += " (%s)" % TowerInfo.reason(r)
 	elif _drives_mad(game.sim.reserve_delta(t.def.id, s, target)):

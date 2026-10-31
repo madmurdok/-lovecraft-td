@@ -54,7 +54,7 @@ func close() -> void:
 	game.board.queue_redraw()
 
 
-## Re-evaluates every button against the sim (gold changes while the view is open).
+## Re-evaluates every button against the sim (money and the phase change while the view is open).
 func refresh() -> void:
 	if not visible:
 		return
@@ -63,7 +63,7 @@ func refresh() -> void:
 		var r := game.sim.can_build(def_id, cell)
 		var b := buttons[def_id]
 		b.disabled = r != Simulation.CommandResult.OK
-		var text := "%s - %s" % [def.name, TowerInfo.cost_text(def.cost)]
+		var text := def.name + TowerInfo.DASH + TowerInfo.cost_text(def.cost)
 		if b.disabled:
 			text += " (%s)" % TowerInfo.reason(r)
 		elif _drives_mad(def):

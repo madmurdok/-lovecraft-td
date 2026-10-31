@@ -30,22 +30,61 @@ only delayed. Power comes from forbidden knowledge, and knowledge costs the mind
 
 ## 4. Core loop
 
-1. Build phase: place/upgrade/sell towers on free grid cells next to the path.
-2. Wave phase: enemies walk the path; towers fire; sanity changes.
-3. Between waves: income + sanity regen, back to build.
-4. Win: survive wave 10 (dawn). Lose: lighthouse HP reaches 0.
+Two phases (LT-27): **day** = build, **night** = wave.
+
+1. Day (40 s): sell the relics found last night for money; place/upgrade/sell towers on
+   free grid cells next to the path. "Light the lamp" ends the day early and makes
+   valuable drops likelier that night (§8).
+2. Night: the lighthouse burns, enemies walk the path, towers fire, sanity changes. Kills
+   drop relics: a token falls at the kill and flies to the HUD stash in ~2 s. Building,
+   selling and upgrading wait for the day; the madness buyout works at night too.
+3. Dawn: tokens still in flight reach the stash, fakes dissolve, the dawn wage is paid,
+   sanity regen, back to day.
+4. Win: survive the last night. Lose: lighthouse HP reaches 0.
 
 ## 5. Resources
 
-### 5.1 Gold (defaults)
+### 5.1 Money and relics (defaults)
+
+Two resources tied to the two phases (LT-27). **Relics** drop at night and cannot be spent;
+by day they are sold for **money** (shown as "$", 1920s New England dollars; `gold` in code
+and data). Money buys towers, upgrades, lighthouse levels and the madness buyout.
 
 | Parameter | Value |
 |---|---|
-| Starting gold | 200 |
-| Wave completion bonus | 50 + 10 × wave number |
-| Kill reward | per enemy, see §7 |
-| Sell refund | 70% of total spent |
-| Early wave call | bonus gold = 2 × seconds left on the build timer |
+| Starting money | $200, no relics |
+| Dawn wage (wave completion) | 50 + 10 × wave number |
+| Kill | one relic drop per enemy, see the tables below and §7; no money |
+| Sell relics | by day, one button, the whole stash at fixed prices |
+| Sell tower refund | 70% of total spent, by day only |
+| Early night ("Light the lamp") | luck, no money (§8) |
+
+Relic kinds (`economy.json` `relics`):
+
+| Kind | Price | Lore |
+|---|---|---|
+| Bone fragment | $5 | Neither man nor fish |
+| Amber | $15 | Hardened deep-sea resin with something inside |
+| Idol fragment | $50 | A shard of a green soapstone idol |
+| Star-stone of Mnar | $200 | The rarest find; the five-pointed grey stone, 0.1 % per drop |
+
+Each kill rolls one kind from the enemy's integer weights (`enemies.json` `drops`, shares
+of 1000):
+
+| Enemy | bone | amber | idol | star-stone | Mean |
+|---|---|---|---|---|---|
+| Cultist of Dagon | 999 | 0 | 0 | 1 | $5.2 |
+| Deep One | 749 | 250 | 0 | 1 | $7.7 |
+| Innsmouth Hybrid | 699 | 250 | 50 | 1 | $9.9 |
+| Night-gaunt | 399 | 500 | 100 | 1 | $14.7 |
+| Shoggoth | 0 | 0 | 999 | 1 | $50.2 |
+
+- **Luck**: lighting the lamp with s whole seconds left on the day timer sets the night's
+  luck to 1 + 0.02 × s (up to ×1.8 at 40 s). It multiplies the weight of every kind except
+  the cheapest kind in each enemy's table; dawn resets it to ×1. Example: a hybrid at luck
+  ×1.6 drops amber 400, idol 80, star-stone 1.6 against bone 699 (mean $9.9 → $11.7).
+- **Tokens**: the stash is credited when a token lands (`token_fly_seconds` 2 s). A fake
+  enemy's token dissolves in flight (`ghost_vanish_seconds` 1 s) and credits nothing.
 
 ### 5.2 Lighthouse
 
@@ -86,7 +125,7 @@ Global pool, 0..100, starts at 100.
 
 **Hallucinations affect gameplay.** A fake enemy looks exactly like a real one
 (type picked from the current wave), walks the path, draws tower fire and has HP,
-but deals no leak damage and gives no reward. The player cannot tell which is which.
+but deals no leak damage and credits no relic (its token melts in flight). The player cannot tell which is which.
 
 - A fake has the same HP as a real enemy of its type.
 - Fakes spawn only during a wave, never in the build phase.
@@ -106,7 +145,8 @@ but deals no leak damage and gives no reward. The player cannot tell which is wh
 - Duration: until the end of the game (default).
 - Exit rule is a config switch for rebalancing:
   - `permanent` (default): no exit.
-  - `buyout`: spend gold to restore sanity to min(30, cap) (cost 150); refused at cap 0.
+  - `buyout`: spend money to restore sanity to min(30, cap) (cost $150), any phase, night
+    included; refused at cap 0.
   - `auto_restore`: after the current wave ends, sanity resets to min(30, cap).
 
 ## 6. Towers
@@ -134,16 +174,18 @@ repair later (a `disable` effect today, a `damage` effect later).
 
 ## 7. Enemies
 
-| Enemy | HP | Speed | Armor | Leak dmg | Reward | Trait |
+| Enemy | HP | Speed | Armor | Leak dmg | Drops | Trait |
 |---|---|---|---|---|---|---|
-| Cultist of Dagon | 60 | 1.0 | 0 | 1 | 5 | Stops at an adjacent tower for 2 s and halves its fire rate for 5 s |
-| Innsmouth Hybrid | 140 | 0.9 | 2 | 1 | 10 | Armored mid-tier walker |
-| Deep One | 90 | 1.6 | 0 | 1 | 8 | Spawns in packs of 4–6 |
-| Night-gaunt | 110 | 1.3 | 0 | 2 | 15 | Flies straight to the lighthouse ignoring the path; from wave 6 on it may lift a tower and drop it 2 cells away (disabled 3 s) |
-| Shoggoth | 900 | 0.5 | 5 | 5 | 60 | Horror drain 0.5/s; regenerates 1% HP/s |
+| Cultist of Dagon | 60 | 1.0 | 0 | 1 | bone | Stops at an adjacent tower for 2 s and halves its fire rate for 5 s |
+| Innsmouth Hybrid | 140 | 0.9 | 2 | 1 | bone, amber, idol | Armored mid-tier walker |
+| Deep One | 90 | 1.6 | 0 | 1 | bone, amber | Spawns in packs of 4–6 |
+| Night-gaunt | 110 | 1.3 | 0 | 2 | amber, bone, idol | Flies straight to the lighthouse ignoring the path; from wave 6 on it may lift a tower and drop it 2 cells away (disabled 3 s) |
+| Shoggoth | 900 | 0.5 | 5 | 5 | idol | Horror drain 0.5/s; regenerates 1% HP/s |
 | Dagon (boss) | 6000 | 0.4 | 8 | 20 | — | Horror drain 0.6/s; every 15 s summons 3 Deep Ones; leaking = instant loss |
 
-Speed is in cells per second. Armor is flat damage reduction per hit.
+Speed is in cells per second. Armor is flat damage reduction per hit. Drops: the likely
+relic kinds, most likely first (weights in §5.1); every enemy also has the 0.1 %
+star-stone.
 
 ## 8. Waves (default plan)
 
@@ -163,13 +205,24 @@ Speed is in cells per second. Armor is flat damage reduction per hit.
 Waves 1–5 are the MVP's `data/waves.json` (spawn intervals and delays live there, tuned in
 LT-15); waves 6–10 are the post-MVP plan.
 
-- Build phase between waves: 25 s timer, or start early with the "call wave" button for the bonus.
-- Game speed: ×1 / ×2, plus pause (building is allowed while paused).
+- Day (build phase) between nights: 40 s timer (`waves.json` `build_phase_seconds`), or
+  end it early with "Light the lamp" for that night's luck (1 + 0.02 × whole seconds
+  left, §5.1); no money bonus.
+- Game speed: ×1 / ×2, plus pause (every day action is allowed while paused).
 
 ## 9. Controls and UI
 
 - Mouse: click a buildable cell → tower picker; click a tower → upgrade / branch / sell.
-- HUD: gold, lighthouse HP, sanity bar with threshold marks, wave counter, call-wave button, speed toggle.
+- HUD: money (`Money: $240`), relics (`Relics: 12 (≈ $96)`, per-kind tooltip), lighthouse
+  HP, wave counter, phase (`Day 3 — night falls in 31 s` / `Night 3 of 5` / `Dawn. All
+  nights survived`), `Light the lamp (luck ×1.6)` (day only), `Sell relics (+$96)` (day,
+  non-empty stash), `Luck ×1.6` at night while luck > 1, sanity bar with threshold marks,
+  speed toggle, pause.
+- Day and night read at a glance: grey daylight with the lamp dark by day, darkness with
+  the beam and tower lights at night (a short fade between them). Relic tokens pop at
+  the kill and fly to the relic counter; a fake's token melts in flight.
+- Side panel: costs as `Rifleman — $50`; refusals `not enough money`, `only by day`;
+  `Sell (+$35)` by day. End screen: relics left unsold, and star-stones found.
 - Sanity effects show up in the HUD too: jitter at Whispers, a distorted sanity bar while Fraying.
 
 ## 9a. Art pipeline
@@ -231,10 +284,10 @@ Current favourite: 1 (or 4). Not a decision; the style test decides.
 ```
 data/
   towers.json     # per tower: kind, cost, levels[1..2] (sanity_reserve), branches{a,b}
-  enemies.json    # per enemy: hp, speed, armor, leak_damage, reward, traits
+  enemies.json    # per enemy: hp, speed, armor, leak_damage, drops (relic weights), traits
   waves.json      # per wave: spawn groups with type, count, interval, delay
   sanity.json     # thresholds, drains, regen, hallucination rates, madness.exit_rule
-  economy.json    # starting gold, wave bonus, sell ratio, early-call bonus
+  economy.json    # starting money, dawn wage, sell ratio, relics, token timings, night luck
   map.json        # grid rows (. buildable, # path, ~ water, S start, L lighthouse); path derived S -> L
 ```
 
@@ -253,7 +306,7 @@ data/
 
 ## 12. Milestones
 
-1. Grey-box: grid, path, waves, 2 mundane towers, gold, lighthouse HP. Is the base loop fun?
+1. Grey-box: grid, path, waves, 2 mundane towers, money, lighthouse HP. Is the base loop fun?
 2. Sanity: pool, occult towers, thresholds, fake enemies, madness. Does it add tension?
 3. Content: all towers/enemies/upgrades/branches, 10 waves, Dagon.
 4. Presentation: style test (§9a) and final art, audio, HUD polish, web export.

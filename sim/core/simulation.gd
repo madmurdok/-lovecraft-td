@@ -210,20 +210,27 @@ func build_tower(def_id: String, cell: Vector2i) -> CommandResult:
 	return CommandResult.OK
 
 
+## Whether sell_tower(tower_id) would be applied now; OK or the first failing reason in this
+## order: OUTCOME_REACHED, NO_SUCH_TOWER, NOT_BUILD_PHASE (at night, LT-27 §3). Changes
+## nothing.
+func can_sell_tower(tower_id: int) -> CommandResult:
+	if state.outcome != SimState.Outcome.NONE:
+		return CommandResult.OUTCOME_REACHED
+	if tower_by_id(tower_id) == null:
+		return CommandResult.NO_SUCH_TOWER
+	return _day_only()
+
+
 ## Player command: sells tower `tower_id` for economy.sell_refund_ratio of everything spent
 ## on it, build and upgrades (rounded once, on the total) and frees its cell. Emits
 ## TOWER_SOLD + GOLD_CHANGED, then the cap rises by the tower's reserve (_change_reserve
 ## "sell", LT-23 Q4); current sanity does not change, in MADNESS too. Day only (LT-27 §3):
 ## OUTCOME_REACHED, NO_SUCH_TOWER, then NOT_BUILD_PHASE at night.
 func sell_tower(tower_id: int) -> CommandResult:
-	if state.outcome != SimState.Outcome.NONE:
-		return CommandResult.OUTCOME_REACHED
+	var result := can_sell_tower(tower_id)
+	if result != CommandResult.OK:
+		return result
 	var t := tower_by_id(tower_id)
-	if t == null:
-		return CommandResult.NO_SUCH_TOWER
-	var day := _day_only()
-	if day != CommandResult.OK:
-		return day
 	var refund := sell_refund(t)
 	var reserve := reserve_of(t)
 	state.towers.erase(t)
@@ -304,16 +311,25 @@ func upgrade_tower(tower_id: int, branch := "") -> CommandResult:
 	return CommandResult.OK
 
 
+## Whether call_wave() would be applied now; OK, OUTCOME_REACHED, or NOT_BUILD_PHASE (no
+## WaveDirector, or not by day). Changes nothing.
+func can_call_wave() -> CommandResult:
+	if state.outcome != SimState.Outcome.NONE:
+		return CommandResult.OUTCOME_REACHED
+	if not (_spawner is WaveDirector) or state.phase != SimState.Phase.BUILD:
+		return CommandResult.NOT_BUILD_PHASE
+	return CommandResult.OK
+
+
 ## Player command ("Light the lamp", LT-27 §1.2): ends the day now; the next wave spawns
 ## from the next tick on. Sets state.night_luck to early_night_luck() (1 +
 ## economy.early_night_luck_per_second x whole seconds left on the day timer) for this
 ## night; pays no money. Emits WAVE_STARTED {early: true}.
 func call_wave() -> CommandResult:
-	if state.outcome != SimState.Outcome.NONE:
-		return CommandResult.OUTCOME_REACHED
+	var result := can_call_wave()
+	if result != CommandResult.OK:
+		return result
 	var director := _spawner as WaveDirector
-	if director == null or state.phase != SimState.Phase.BUILD:
-		return CommandResult.NOT_BUILD_PHASE
 	var luck := early_night_luck()
 	state.command_log.append([state.tick, "call_wave"])
 	director.start_wave(self, true)

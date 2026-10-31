@@ -1,6 +1,7 @@
 class_name EndScreen
 extends PanelContainer
-## Win / lose screen with restart (LT-7). Shown on the sim's OUTCOME event.
+## Win / lose screen with restart (LT-7). Shown on the sim's OUTCOME event. LT-27 §4: the
+## relics left unsold and, when any, the star-stones found.
 
 signal restart_pressed
 
@@ -26,10 +27,20 @@ func _ready() -> void:
 	list.add_child(restart_button)
 
 
-func show_result(won: bool, s: SimState) -> void:
+func show_result(won: bool, s: SimState, star_stones := 0) -> void:
+	var lines := PackedStringArray()
 	if won:
-		result_label.text = "The lighthouse stands.\nAll %d waves repelled." % s.waves_total
+		lines.append("The lighthouse stands.")
+		lines.append("All %d nights survived." % s.waves_total)
 	else:
-		result_label.text = "The lighthouse has fallen.\nWave %d / %d." % [s.wave_index, s.waves_total]
+		lines.append("The lighthouse has fallen.")
+		lines.append("Night %d / %d." % [s.wave_index, s.waves_total])
+	var unsold := 0
+	for kind: String in s.relics:
+		unsold += s.relics[kind]
+	lines.append("Relics left unsold: %d" % unsold)
+	if star_stones > 0:
+		lines.append("Star-stones found: %d" % star_stones)
+	result_label.text = "\n".join(lines)
 	visible = true
 	position = (get_viewport_rect().size - get_combined_minimum_size()) * 0.5
