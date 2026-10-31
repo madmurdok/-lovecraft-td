@@ -267,6 +267,28 @@ in `_shot_fx` fixed at 1.0; (c) slow branch of `enemy_markers`; (d) `ward_alpha`
 (e) `"astray"` field; (f) `_miss_end` returning `aim`; (g) the removal loop in
 `_add_attack_fx`.
 
+## Controls (S3)
+
+All in `tests/tower_attack_visuals_test.gd` (one test binary: one run per control with
+`--add res://tests/tower_attack_visuals_test.gd`). Each revert is in `scenes/board.gd`
+(production code, never the test) and must make the named test fail.
+
+| # | Behaviour | Revert in `scenes/board.gd` | Test that must fail |
+|---|---|---|---|
+| a | kind from stats (1-4) | `shot_kind`: body becomes `return "tracer"` | `test_shot_kind_follows_the_stats_of_each_tower`, `test_a_harpoon_flies_to_the_line_end_and_marks_each_pierced_enemy`, `test_a_necronomicon_shot_is_a_wave_of_its_aoe_radius`, `test_the_elder_sign_is_an_aura_and_draws_no_shot` |
+| b | wave radius = aoe_radius (3) | `_shot_fx`, `"wave"` branch: `fx["radius"] = 1.0` | `test_a_necronomicon_shot_is_a_wave_of_its_aoe_radius` |
+| c | slow marker (5) | `enemy_markers`: delete the `speed_mult < 0.999` branch | `test_enemy_markers_follow_slow_and_damage_taken` |
+| d | ward bright with an enemy inside (6, Decision Q2) | `ward_alpha`: delete the `_last_pos` loop (always `WARD_IDLE_ALPHA`) | `test_the_ward_is_faint_when_empty_and_bright_with_an_enemy_inside` |
+| e | astray flag carried (7) | `_shot_fx`: `"astray": false` instead of `data.get("astray", false)` | `test_an_astray_wave_with_hits_stays_a_wave_flagged_astray`, `test_an_empty_astray_wave_fizzles_small_off_its_aim` |
+| f | missed tracer deflected (9, Decision Q4) | `_miss_end`: `return aim` | `test_a_missed_rifle_shot_ends_beside_and_past_its_aim` |
+| g | per-tower cap (10) | `_add_attack_fx`: delete the `effects.remove_at` loop | `test_one_tower_keeps_at_most_two_attack_effects_the_newest` |
+| h | cap counts only the same tower (10) | `_add_attack_fx`: `mine.append(i)` for every effect with a `"tower"` key (drop the `== fx["tower"]` test) | `test_one_tower_keeps_at_most_two_attack_effects_the_newest` (other tower's effect is dropped) |
+
+Fake parity (8) has no revert control: the only way to break it would be reading
+`is_fake` in `scenes/`, which `render_isolation_test.gd` already rejects by source scan;
+`test_a_shot_at_a_fake_draws_like_the_same_shot_at_a_real_enemy` pins the effect-level
+result.
+
 ## 6. Screenshot plan for verify
 
 Run the game windowed (not headless: draws need a renderer) from a debug build, capture
