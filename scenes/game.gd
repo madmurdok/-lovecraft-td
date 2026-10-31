@@ -24,8 +24,9 @@ var board: Board
 var lighting: Lighting  ## LT-8: darkness, beam, tower lights, sea fog (visual only)
 var sanity_fx: SanityFx  ## LT-14: screen distortion, UI jitter, whispers (visual only)
 var hud: Hud
-var picker: TowerPicker
-var sell_panel: SellPanel
+var side_panel: SidePanel  ## LT-24: fixed right panel holding the two views below
+var picker: TowerPicker  ## build view of side_panel
+var tower_panel: TowerPanel  ## tower view of side_panel
 var end_screen: EndScreen
 
 
@@ -81,14 +82,12 @@ func _ready() -> void:
 	hud.name = "Hud"
 	hud.game = self
 	ui.add_child(hud)
-	picker = TowerPicker.new()
-	picker.name = "TowerPicker"
-	picker.game = self
-	ui.add_child(picker)
-	sell_panel = SellPanel.new()
-	sell_panel.name = "SellPanel"
-	sell_panel.game = self
-	ui.add_child(sell_panel)
+	side_panel = SidePanel.new()
+	side_panel.name = "SidePanel"
+	side_panel.game = self
+	ui.add_child(side_panel)
+	picker = side_panel.picker
+	tower_panel = side_panel.tower_panel
 	end_screen = EndScreen.new()
 	end_screen.name = "EndScreen"
 	ui.add_child(end_screen)
@@ -113,7 +112,7 @@ func advance(delta: float) -> void:
 	board.queue_redraw()
 	hud.refresh()
 	picker.refresh()
-	sell_panel.refresh()
+	tower_panel.refresh()
 
 
 # --- Player commands (forwarded to the sim) -------------------------------------------
@@ -126,6 +125,13 @@ func build(def_id: String, cell: Vector2i) -> Simulation.CommandResult:
 
 func sell(tower_id: int) -> Simulation.CommandResult:
 	var r := sim.sell_tower(tower_id)
+	_after_command()
+	return r
+
+
+## LT-24: branch "" for L1 -> L2, "a"/"b" for L2 -> L3.
+func upgrade(tower_id: int, branch := "") -> Simulation.CommandResult:
+	var r := sim.upgrade_tower(tower_id, branch)
 	_after_command()
 	return r
 
@@ -162,7 +168,7 @@ func _after_command() -> void:
 	board.queue_redraw()
 	hud.refresh()
 	picker.refresh()
-	sell_panel.refresh()
+	tower_panel.refresh()
 
 
 func _consume_events() -> void:
@@ -171,16 +177,17 @@ func _consume_events() -> void:
 		sanity_fx.on_event(ev)
 		if ev.type == SimEvent.Type.OUTCOME:
 			picker.close()
-			sell_panel.close()
+			tower_panel.close()
+			side_panel.visible = false
 			end_screen.show_result(ev.data.get("result", "") == "won", sim.state)
 
 
 func _on_cell_clicked(cell: Vector2i) -> void:
 	picker.close()
-	sell_panel.close()
+	tower_panel.close()
 	if sim.state.outcome != SimState.Outcome.NONE:
 		return
 	if sim.state.tower_at.has(cell):
-		sell_panel.open_for(sim.state.tower_at[cell])
+		tower_panel.open_for(sim.state.tower_at[cell])
 	elif sim.state.map.is_buildable(cell):
 		picker.open_for(cell)

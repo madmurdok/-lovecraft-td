@@ -19,7 +19,7 @@ var buyout_button: Button  ## LT-13/14: madness buyout, only with exit_rule "buy
 
 
 func _ready() -> void:
-	set_anchors_preset(Control.PRESET_TOP_WIDE)
+	set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var bg := ColorRect.new()
 	bg.name = "Background"

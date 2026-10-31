@@ -1,0 +1,416 @@
+class_name SidePanelTest
+extends GdUnitTestSuite
+## LT-24 §4 fixed side panel (Decision 2): its rect, the idle / build / tower views, role
+## lines, button texts and disabled reasons, the madness warning, upgrading from the panel,
+## and closing. Also the HUD bar fix (22a9d9c): the bar spans the full width above the
+## board, so a range ring near the top edge is drawn under it. Real mouse events go into a
+## 1152x648 SubViewport like scene_game_test; text formats come from the design note,
+## numbers from config.
+
+const RIFLE := "rifleman"
+const SIGN := "elder_sign"
+
+var _vp: SubViewport
+var _game: Game
+var _config: GameConfig
+
+
+func before_test() -> void:
+	var r := GameConfig.load_from_dir("res://data")
+	assert_bool(r.ok).override_failure_message("\n".join(r.errors)).is_true()
+	_config = r.config
+	_vp = SubViewport.new()
+	_vp.size = Vector2i(1152, 648)
+	add_child(_vp)
+
+
+func after_test() -> void:
+	if is_instance_valid(_vp):
+		_vp.queue_free()
+	_vp = null
+	_game = null
+
+
+func _start_game() -> void:
+	_game = Game.new()
+	_game.setup(_config, 7)
+	_vp.add_child(_game)
+	_game.set_process(false)
+	await get_tree().process_frame
+
+
+func _click(pos: Vector2) -> void:
+	for pressed in [true, false]:
+		var ev := InputEventMouseButton.new()
+		ev.button_index = MOUSE_BUTTON_LEFT
+		ev.pressed = pressed
+		ev.position = pos
+		ev.global_position = pos
+		_vp.push_input(ev)
+	await get_tree().process_frame
+
+
+func _click_control(c: Control) -> void:
+	assert_bool(c.is_visible_in_tree()).override_failure_message("%s hidden" % c.name).is_true()
+	if _game != null and _game.side_panel.is_ancestor_of(c):
+		# Long views scroll: bring the control into the panel before clicking it.
+		_game.side_panel.scroll.ensure_control_visible(c)
+		await get_tree().process_frame
+		assert_bool(SidePanel.panel_rect(_game.sim.state.map).encloses(c.get_global_rect())) \
+			.override_failure_message("%s outside the panel" % c.name).is_true()
+	await _click(c.get_global_rect().get_center())
+
+
+func _click_cell(cell: Vector2i) -> void:
+	await _click(_game.board.position + (Vector2(cell) + Vector2(0.5, 0.5)) * Board.CELL)
+
+
+func _buildable_cell() -> Vector2i:
+	var m := _game.sim.state.map
+	for y in m.height:
+		for x in m.width:
+			if m.is_buildable(Vector2i(x, y)) and not _game.sim.state.tower_at.has(Vector2i(x, y)):
+				return Vector2i(x, y)
+	return Vector2i(-1, -1)
+
+
+## Builds `def_id` with plenty of gold, raises it through `path` (branches per upgrade),
+## then clicks it open. Returns the tower.
+func _open_tower(def_id: String, path: Array = []) -> SimTower:
+	_game.sim.state.gold = 10000
+	var cell := _buildable_cell()
+	assert_int(_game.build(def_id, cell)).is_equal(Simulation.CommandResult.OK)
+	var t := _game.sim.tower_by_id(_game.sim.state.tower_at[cell])
+	for b: String in path:
+		assert_int(_game.upgrade(t.id, b)).is_equal(Simulation.CommandResult.OK)
+	await _click_cell(cell)
+	assert_bool(_game.tower_panel.visible).is_true()
+	return t
+
+
+func _ups() -> Dictionary:
+	return _game.tower_panel.upgrade_buttons
+
+
+func _visible_ups() -> Array:
+	var out := []
+	for k: String in _ups():
+		if _ups()[k].visible:
+			out.append(k)
+	return out
+
+
+func _first_line(l: Label) -> String:
+	return l.text.split("\n")[0]
+
+
+func _run_into_wave() -> void:
+	assert_int(_game.call_wave()).is_equal(Simulation.CommandResult.OK)
+	_game.sim.step()
+	_game.advance(0.0)
+	assert_int(_game.sim.state.phase).is_equal(SimState.Phase.WAVE)
+
+
+# --- 21: rect and scrolling ------------------------------------------------------------------
+
+func test_panel_rect_is_right_of_the_board_below_the_hud() -> void:
+	await _start_game()
+	var map := _game.sim.state.map
+	var r := SidePanel.panel_rect(map)
+	var board := Rect2(Game.BOARD_ORIGIN, Vector2(map.width, map.height) * Board.CELL)
+	assert_float(r.position.x).is_equal(Game.BOARD_ORIGIN.x + map.width * Board.CELL)
+	assert_float(r.position.y).is_equal(Game.BOARD_ORIGIN.y)
+	assert_float(r.end.x).is_equal(1152.0)
+	assert_float(r.end.y).is_equal(648.0)
+	assert_bool(r.intersects(board)).is_false()
+	if map.width * Board.CELL == 960:
+		assert_that(r).is_equal(Rect2(960, 48, 192, 600))
+	assert_that(_game.side_panel.get_global_rect()).is_equal(r)
+
+
+func test_long_content_scrolls_vertically_and_never_grows_the_panel() -> void:
+	await _start_game()
+	var r := SidePanel.panel_rect(_game.sim.state.map)
+	var scroll := _game.side_panel.scroll
+	assert_int(scroll.horizontal_scroll_mode).is_equal(ScrollContainer.SCROLL_MODE_DISABLED)
+	await _click_cell(_buildable_cell())
+	assert_bool(_game.picker.visible).is_true()
+	await get_tree().process_frame
+	assert_that(_game.side_panel.get_global_rect()).is_equal(r)
+	assert_bool(r.encloses(scroll.get_global_rect())).is_true()
+	_game.picker.close()
+	await _open_tower(RIFLE, [""])  # L2: two branch buttons with their deltas
+	await get_tree().process_frame
+	assert_that(_game.side_panel.get_global_rect()).is_equal(r)
+	assert_bool(r.encloses(scroll.get_global_rect())).is_true()
+	assert_float(_game.tower_panel.size.y).is_greater(scroll.size.y)  # it scrolls
+
+
+# --- 22, 28: exactly one view; closing ---------------------------------------------------------
+
+func _assert_view(idle: bool, picker: bool, tower: bool) -> void:
+	assert_array([_game.side_panel.idle_label.visible, _game.picker.visible,
+		_game.tower_panel.visible]).is_equal([idle, picker, tower])
+
+
+func test_idle_text_shows_iff_no_view_is_open() -> void:
+	await _start_game()
+	assert_str(_game.side_panel.idle_label.text).is_equal("Click a cell to build, a tower to upgrade.")
+	_assert_view(true, false, false)
+	await _click_cell(_buildable_cell())
+	_assert_view(false, true, false)
+	await _click_control(_game.picker.get_node("CancelButton"))
+	_assert_view(true, false, false)
+	await _open_tower(RIFLE)
+	_assert_view(false, false, true)
+
+
+func test_cancel_water_sell_and_a_vanished_tower_return_to_idle() -> void:
+	await _start_game()
+	var t := await _open_tower(RIFLE)
+	await _click_control(_game.tower_panel.get_node("CancelButton"))
+	_assert_view(true, false, false)
+	await _click_cell(t.cell)
+	_assert_view(false, false, true)
+	var water := Vector2i(0, 0)
+	assert_bool(_game.sim.state.map.is_buildable(water)).is_false()
+	await _click_cell(water)
+	_assert_view(true, false, false)
+	await _click_cell(t.cell)
+	await _click_control(_game.tower_panel.sell_button)
+	_assert_view(true, false, false)
+	var t2 := await _open_tower(RIFLE)
+	assert_int(_game.sim.sell_tower(t2.id)).is_equal(Simulation.CommandResult.OK)
+	_game.advance(0.0)
+	_game.tower_panel.refresh()
+	_assert_view(true, false, false)
+
+
+func test_a_click_on_empty_panel_space_does_not_reach_the_board() -> void:
+	await _start_game()
+	await _open_tower(RIFLE, ["", "a"])  # short L3 view
+	var r := SidePanel.panel_rect(_game.sim.state.map)
+	await _click(r.end - Vector2(12, 12))
+	_assert_view(false, false, true)
+
+
+func test_outcome_hides_the_whole_panel() -> void:
+	await _start_game()
+	await _open_tower(RIFLE)
+	_game.sim.state.lighthouse_hp = 0
+	_game.sim.step()
+	_game.advance(0.0)
+	assert_bool(_game.side_panel.visible).is_false()
+	assert_bool(_game.tower_panel.visible).is_false()
+
+
+# --- 20, 23: build view ----------------------------------------------------------------------
+
+func test_build_buttons_show_name_cost_and_role_first() -> void:
+	await _start_game()
+	await _click_cell(_buildable_cell())
+	for id: String in _config.towers:
+		var def: TowerDef = _config.towers[id]
+		var b: Button = _game.picker.buttons[id]
+		if not b.disabled:
+			assert_str(b.text).is_equal("%s - %s" % [def.name, TowerInfo.cost_text(def.cost, def.sanity_cost)])
+		assert_str(_first_line(_game.picker.infos[id])).is_equal(def.role)
+	var sign: TowerDef = _config.towers[SIGN]
+	assert_float(sign.sanity_cost).is_greater(0.0)
+	assert_str(_game.picker.buttons[SIGN].text).contains("+ %s sanity" % TowerInfo.num(sign.sanity_cost))
+
+
+func test_build_buttons_are_disabled_with_the_reason() -> void:
+	await _start_game()
+	await _click_cell(_buildable_cell())
+	_game.sim.state.gold = 0
+	_game.picker.refresh()
+	for id: String in _config.towers:
+		var b: Button = _game.picker.buttons[id]
+		assert_bool(b.disabled).is_true()
+		assert_str(b.text).ends_with(" (not enough gold)")
+	_game.sim.state.gold = 10000
+	_game.picker.refresh()
+	assert_bool(_game.picker.buttons[RIFLE].disabled).is_false()
+	assert_str(_game.picker.buttons[RIFLE].text).not_contains("(")
+
+
+func test_no_role_line_when_the_role_is_empty() -> void:
+	var def: TowerDef = _config.towers[RIFLE]
+	def.role = ""
+	await _start_game()
+	var lines := TowerInfo.lines(def, def.levels[0], _config.sanity)
+	assert_str(_first_line(_game.picker.infos[RIFLE])).is_equal(lines[0])
+	await _open_tower(RIFLE)
+	assert_bool(_game.tower_panel.role_label.visible).is_false()
+
+
+# --- 20, 24: tower view per level -------------------------------------------------------------
+
+func test_l1_view_shows_only_the_l2_upgrade() -> void:
+	await _start_game()
+	var def: TowerDef = _config.towers[RIFLE]
+	await _open_tower(RIFLE)
+	var p := _game.tower_panel
+	assert_str(p.title_label.text).is_equal("%s  L1" % def.name)
+	assert_bool(p.role_label.visible).is_true()
+	assert_str(p.role_label.text).is_equal(def.role)
+	assert_array(_visible_ups()).is_equal([""])
+	assert_str(_ups()[""].text).is_equal("Upgrade to L2 - %s" % TowerInfo.cost_text(
+		def.levels[1].upgrade_cost, def.levels[1].upgrade_sanity_cost))
+	assert_bool(p.max_label.visible).is_false()
+
+
+func test_l2_view_shows_the_two_named_branches_with_role_first() -> void:
+	await _start_game()
+	var def: TowerDef = _config.towers[RIFLE]
+	await _open_tower(RIFLE, [""])
+	var p := _game.tower_panel
+	assert_str(p.title_label.text).is_equal("%s  L2" % def.name)
+	assert_str(p.role_label.text).is_equal(def.role)
+	assert_array(_visible_ups()).is_equal(["a", "b"])
+	for b: String in ["a", "b"]:
+		var br := def.branches[b]
+		assert_str(_ups()[b].text).is_equal("%s - %s" % [br.name,
+			TowerInfo.cost_text(br.upgrade_cost, br.upgrade_sanity_cost)])
+		assert_str(_first_line(p.upgrade_infos[b])).is_equal(br.role)
+	assert_bool(p.max_label.visible).is_false()
+
+
+func test_l3_view_shows_max_level_branch_title_and_branch_role() -> void:
+	await _start_game()
+	var def: TowerDef = _config.towers[RIFLE]
+	await _open_tower(RIFLE, ["", "b"])
+	var p := _game.tower_panel
+	assert_str(p.title_label.text).is_equal("%s  L3 · %s" % [def.name, def.branches["b"].name])
+	assert_str(p.role_label.text).is_equal(def.branches["b"].role)
+	assert_array(_visible_ups()).is_empty()
+	assert_bool(p.max_label.visible).is_true()
+	assert_str(p.max_label.text).is_equal("Max level")
+
+
+# --- 25, 26: disabled reasons and the madness warning ----------------------------------------
+
+func test_upgrade_is_disabled_mid_wave_and_enabled_again_after_it() -> void:
+	await _start_game()
+	await _open_tower(RIFLE)
+	_run_into_wave()
+	_game.tower_panel.refresh()
+	assert_bool(_ups()[""].disabled).is_true()
+	assert_str(_ups()[""].text).ends_with(" (wave in progress)")
+	for i in 20000:
+		if _game.sim.state.phase == SimState.Phase.BUILD:
+			break
+		for e in _game.sim.state.enemies:
+			if not e.is_fake:
+				_game.sim.apply_damage(e.id, 1.0e9, "test")
+		_game.sim.step()
+	assert_int(_game.sim.state.phase).is_equal(SimState.Phase.BUILD)
+	_game.sim.state.gold = 10000
+	_game.advance(0.0)
+	_game.tower_panel.refresh()
+	assert_bool(_ups()[""].disabled).is_false()
+	assert_str(_ups()[""].text).not_contains("(")
+
+
+func test_upgrade_is_disabled_without_gold_and_enabled_when_gold_rises() -> void:
+	await _start_game()
+	var def: TowerDef = _config.towers[RIFLE]
+	await _open_tower(RIFLE, [""])
+	_game.sim.state.gold = def.branches["a"].upgrade_cost - 1
+	_game.tower_panel.refresh()
+	for b: String in ["a", "b"]:
+		assert_bool(_ups()[b].disabled).is_true()
+		assert_str(_ups()[b].text).ends_with(" (not enough gold)")
+	_game.sim.state.gold = def.branches["a"].upgrade_cost
+	_game.tower_panel.refresh()
+	assert_bool(_ups()["a"].disabled).is_false()
+
+
+func test_upgrade_is_disabled_once_the_run_is_over() -> void:
+	await _start_game()
+	await _open_tower(RIFLE)
+	_game.sim.state.outcome = SimState.Outcome.LOST
+	_game.tower_panel.refresh()
+	assert_bool(_ups()[""].disabled).is_true()
+	assert_str(_ups()[""].text).ends_with(" (run over)")
+
+
+func _sign_sanity(v: float) -> void:
+	_game.sim.state.sanity = v
+	_game.sim.state.sanity_state = _game.sim.sanity_state_for(v)
+	_game.tower_panel.refresh()
+
+
+func test_an_upgrade_that_empties_sanity_warns_but_stays_enabled() -> void:
+	await _start_game()
+	await _open_tower(SIGN)
+	var cost: float = _config.towers[SIGN].levels[1].upgrade_sanity_cost
+	assert_float(cost).is_greater(0.0)
+	_sign_sanity(cost)  # leaves exactly 0
+	assert_bool(_ups()[""].disabled).is_false()
+	assert_str(_ups()[""].text).ends_with(" (drives you mad!)")
+	_sign_sanity(cost + 1.0)
+	assert_str(_ups()[""].text).not_contains("drives you mad")
+	_sign_sanity(0.0)  # already mad: nothing more to lose
+	assert_int(_game.sim.state.sanity_state).is_equal(SimState.SanityState.MADNESS)
+	assert_bool(_ups()[""].disabled).is_false()
+	assert_str(_ups()[""].text).not_contains("drives you mad")
+
+
+func test_a_tower_without_upgrade_sanity_cost_never_warns() -> void:
+	await _start_game()
+	await _open_tower(RIFLE)
+	assert_float(_config.towers[RIFLE].levels[1].upgrade_sanity_cost).is_equal(0.0)
+	_sign_sanity(0.5)
+	assert_str(_ups()[""].text).not_contains("drives you mad")
+
+
+# --- 27: upgrading from the panel -------------------------------------------------------------
+
+func test_clicking_upgrade_and_branch_keeps_the_view_and_updates_ring_and_refund() -> void:
+	await _start_game()
+	var t := await _open_tower(RIFLE)
+	var id := t.id
+	await _click_control(_ups()[""])
+	assert_int(t.level).is_equal(1)
+	assert_bool(_game.tower_panel.visible).is_true()
+	assert_int(_game.tower_panel.tower_id).is_equal(id)
+	assert_float(_game.board.selected_range).is_equal(t.stats().range_cells)
+	await _click_control(_ups()["a"])
+	assert_int(t.level).is_equal(2)
+	assert_str(t.branch).is_equal("a")
+	assert_bool(_game.tower_panel.visible).is_true()
+	assert_float(_game.board.selected_range).is_equal(t.stats().range_cells)
+	var refund := _game.sim.sell_refund(t)
+	assert_str(_game.tower_panel.sell_button.text).is_equal("Sell (+%d gold)" % refund)
+	if is_equal_approx(_config.economy.sell_refund_ratio, 0.7):
+		assert_int(refund).is_equal(119)  # LT-24 §2: Rifleman L3 at today's config
+
+
+# --- HUD fix 22a9d9c ---------------------------------------------------------------------------
+
+func test_hud_bar_spans_the_full_width_above_the_board() -> void:
+	await _start_game()
+	var hud := _game.hud
+	assert_float(hud.get_global_rect().size.x).is_equal(1152.0)
+	var bg: Control = hud.get_node("Background")
+	assert_that(bg.get_global_rect()).is_equal(Rect2(0, 0, 1152, Game.BOARD_ORIGIN.y))
+
+
+func test_a_range_ring_crossing_the_top_edge_is_drawn_under_the_hud() -> void:
+	await _start_game()
+	var hud := _game.hud
+	# The HUD lives on a canvas layer above the board's canvas.
+	var layer := hud.get_parent() as CanvasLayer
+	assert_object(layer).is_not_null()
+	assert_int(layer.layer).is_greater(0)
+	assert_object(_game.board.get_canvas_layer_node()).is_null()
+	# A ring around a top-row tower reaches above the board: that strip is HUD background.
+	var t := await _open_tower(RIFLE)
+	var ring_top := _game.board.position.y + (t.cell.y + 0.5 - _game.board.selected_range) * Board.CELL
+	var cx := _game.board.position.x + (t.cell.x + 0.5) * Board.CELL
+	var bg: Control = hud.get_node("Background")
+	if ring_top < Game.BOARD_ORIGIN.y:
+		assert_bool(bg.get_global_rect().has_point(Vector2(cx, maxf(ring_top, 0.0) + 1.0))).is_true()
+	assert_bool(bg.get_global_rect().has_point(Vector2(cx, Game.BOARD_ORIGIN.y - 1.0))).is_true()

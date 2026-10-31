@@ -81,7 +81,7 @@ func test_clicking_buildable_cell_opens_picker_and_choosing_tower_builds_it() ->
 	await _click_cell(cell)
 	assert_bool(_game.picker.visible).is_true()
 	assert_vector(_game.picker.cell).is_equal(cell)
-	assert_bool(_game.sell_panel.visible).is_false()
+	assert_bool(_game.tower_panel.visible).is_false()
 	await _click_control(_game.picker.buttons[RIFLE])
 	assert_bool(_game.sim.state.tower_at.has(cell)).is_true()
 	assert_int(_game.sim.state.gold).is_equal(gold - _cost(RIFLE))
@@ -117,7 +117,7 @@ func test_picker_enables_every_buildable_tower_and_disables_unaffordable_ones() 
 	assert_int(_game.sim.state.gold).is_equal(_cost(RIFLE) - 1)
 
 
-func test_clicking_a_tower_opens_sell_panel_and_selling_refunds() -> void:
+func test_clicking_a_tower_opens_tower_view_and_selling_refunds() -> void:
 	await _start_game()
 	var cell := _buildable_cell()
 	await _build_via_ui(cell)
@@ -125,14 +125,14 @@ func test_clicking_a_tower_opens_sell_panel_and_selling_refunds() -> void:
 	var refund := _game.sim.sell_refund(tower)
 	assert_int(refund).is_greater(0)
 	await _click_cell(cell)
-	assert_bool(_game.sell_panel.visible).is_true()
+	assert_bool(_game.tower_panel.visible).is_true()
 	assert_bool(_game.picker.visible).is_false()
-	assert_str(_game.sell_panel.sell_button.text).contains("+%d gold" % refund)
+	assert_str(_game.tower_panel.sell_button.text).contains("+%d gold" % refund)
 	var gold := _game.sim.state.gold
-	await _click_control(_game.sell_panel.sell_button)
+	await _click_control(_game.tower_panel.sell_button)
 	assert_bool(_game.sim.state.tower_at.has(cell)).is_false()
 	assert_int(_game.sim.state.gold).is_equal(gold + refund)
-	assert_bool(_game.sell_panel.visible).is_false()
+	assert_bool(_game.tower_panel.visible).is_false()
 
 
 func test_clicking_water_closes_open_panels_and_opens_nothing() -> void:
@@ -143,7 +143,7 @@ func test_clicking_water_closes_open_panels_and_opens_nothing() -> void:
 	assert_bool(_game.sim.state.map.is_buildable(water)).is_false()
 	await _click_cell(water)
 	assert_bool(_game.picker.visible).is_false()
-	assert_bool(_game.sell_panel.visible).is_false()
+	assert_bool(_game.tower_panel.visible).is_false()
 
 
 func test_building_while_paused_works_and_tick_does_not_advance() -> void:

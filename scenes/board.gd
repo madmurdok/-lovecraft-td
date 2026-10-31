@@ -76,7 +76,7 @@ const MARK_VULN := Color(1.6, 0.7, 2.2)
 
 var game: Game
 var alpha := 0.0  ## render interpolation between the last two ticks
-var selected_cell := Vector2i(-1, -1)  ## outlined while the picker or sell panel is open
+var selected_cell := Vector2i(-1, -1)  ## outlined while the build or tower view is open
 var selected_range := 0.0  ## range ring (cells) for a selected tower; 0 = none
 ## Short-lived effects: {kind, from, to, ttl, ...} in cell units. Attack effects (LT-25)
 ## also carry tower, end, hits, hit_pos, miss, astray, dur (initial ttl), seed.
@@ -405,6 +405,12 @@ func _draw_tower(t: SimTower) -> void:
 	draw_rect(r, c, false, 2.0)
 	draw_string(ThemeDB.fallback_font, r.position + Vector2(8, 20), t.def.name.left(1),
 		HORIZONTAL_ALIGNMENT_LEFT, -1, 16, c)
+	# LT-24 level mark: one pip per level along the bottom, the branch letter at L3.
+	for i in t.level + 1:
+		draw_rect(Rect2(r.position + Vector2(3 + i * 6, r.size.y - 6), Vector2(4, 4)), Color.BLACK)
+	if not t.branch.is_empty():
+		draw_string(ThemeDB.fallback_font, r.position + Vector2(r.size.x - 9, 11), t.branch,
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color.BLACK)
 
 
 ## Elder Sign wards (LT-25 §1.3): a faint ring at the aura radius with 5 slowly turning

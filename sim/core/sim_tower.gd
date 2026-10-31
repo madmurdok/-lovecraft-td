@@ -1,12 +1,14 @@
 class_name SimTower
 extends RefCounted
 ## One placed tower in the simulation (LT-6; design note LT-4 §1.4, §6).
-## L1 only for now: upgrades and branches (later content) change `level` and add to `spent`.
+## Upgrades (LT-24, Simulation.upgrade_tower) raise `level`, set `branch` at L3 and add to
+## `spent`.
 
 var id: int  ## shared entity id counter (SimState.next_id)
 var def: TowerDef
 var cell: Vector2i
-var level := 0  ## index into def.levels (0 = L1)
+var level := 0  ## 0 = L1, 1 = L2 (indices into def.levels), 2 = L3 (def.branches[branch])
+var branch := ""  ## "" below L3; "a" or "b" at L3
 var spent := 0  ## total gold paid for this tower (build + upgrades); the sell refund base
 var build_tick := 0
 ## Ticks until the tower may fire again; 0 = ready. A new tower is ready at once.
@@ -17,6 +19,8 @@ var status: Dictionary = {}
 
 
 func stats() -> TowerDef.Level:
+	if level >= TowerDef.LEVEL_COUNT:
+		return def.branches[branch]
 	return def.levels[level]
 
 
