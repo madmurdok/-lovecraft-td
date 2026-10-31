@@ -43,3 +43,50 @@ Must confirm (§6), checked against the code:
 29. Board: one pip per level (1-3) along the bottom of the tower square, the branch letter (`a`/`b`) top-right at L3 — `Board._draw_tower` (render-only, check by screenshot).
 
 UI tests updated in S3 (spec changed popups → side panel): `tests/scene_game_test.gd` — `_game.sell_panel` → `_game.tower_panel` everywhere, `test_clicking_a_tower_opens_sell_panel_and_selling_refunds` renamed `..._opens_tower_view_and_selling_refunds`. `picker.visible` keeps meaning "build view shown", so the other picker assertions and `tests/window_scale_test.gd` are unchanged.
+
+## Tests (S5)
+
+New suites: `tests/upgrade_test.gd` (1-10, 26 cases), `tests/tower_role_test.gd` (11-12, 7),
+`tests/bot_upgrade_test.gd` (13-14, 14), `tests/tower_info_test.gd` (15-19, 20),
+`tests/side_panel_test.gd` (20-28 + HUD fix 22a9d9c, 20).
+Not pinned by a test: 29 (render-only, screenshot); 14's byte-for-byte comparison with the
+pre-LT-24 harness (pinned instead: the exact pre-LT-24 RUN key list with `--upgrades=0`
+and a repeatable RUN line); 16's "removing a key from `PENDING` drops the suffix"
+(`PENDING` is a const; pinned as "(coming soon)" present iff `has_pending()`).
+`bot_upgrade_test.gd` compiles a copy of `tools/bot_runs.gd` with `_init` renamed (the
+harness `_init` plays every run and quits), then calls `_next_upgrade` / `_act` / `_play`
+on constructed sims, per the orchestrator's decision on 13.
+
+## Controls (S5)
+
+Each: the production revert (never the test) and the test that must fail. Grouped by test
+file, so one Godot run per group: `--add res://tests/<file>`.
+
+**Group A — `tests/upgrade_test.gd`**
+1. `sim/core/simulation.gd` `can_upgrade`: delete the `if state.phase == SimState.Phase.WAVE:
+   return CommandResult.NOT_BUILD_PHASE` check -> `test_upgrade_is_refused_during_a_wave_even_with_gold`
+   and `test_not_build_phase_beats_not_enough_gold` fail (behaviour 4, Decision 3).
+2. `simulation.gd` `upgrade_tower`: delete `t.spent += target.upgrade_cost` ->
+   `test_sell_refunds_the_ratio_of_build_plus_upgrades` fails (behaviour 8, Decision 4).
+3. `simulation.gd` `upgrade_tower`: add `t.cooldown_ticks = 0` after `t.level += 1` ->
+   `test_upgrade_keeps_the_running_cooldown_and_the_next_shot_uses_the_new_stats` fails (behaviour 9).
+
+**Group B — `tests/bot_upgrade_test.gd`**
+4. `tools/bot_runs.gd` `_next_upgrade`: `if target == null or target.has_pending():` ->
+   `if target == null:` -> `test_mundane_stops_at_l2_while_both_picks_are_pending` and
+   `test_madness_buys_the_corrupted_rite_and_skips_the_pending_seal` fail (behaviour 13, Decision 1).
+5. `bot_runs.gd` `_act`: `if _upgrades and sim.state.towers.size() >= BUILD_FIRST:` ->
+   `if _upgrades:` -> `test_no_upgrade_before_five_towers` fails (behaviour 13, Decision 6).
+
+**Group C — `tests/tower_info_test.gd`**
+6. `ui/tower_info.gd` `effect_lines`: `+ (COMING_SOON if pending else "")` -> drop it (plain
+   `_effect_text(...)`) -> `test_every_tower_level_and_branch_gets_lines_and_coming_soon_iff_pending`
+   and `test_harpooner_shows_the_line_shot_and_barbed_the_pending_bleed` fail (behaviour 16).
+
+**Group D — `tests/side_panel_test.gd`**
+7. `ui/hud.gd` `_ready`: `set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)` ->
+   `set_anchors_preset(Control.PRESET_TOP_WIDE)` (the pre-22a9d9c line) ->
+   `test_hud_bar_spans_the_full_width_above_the_board` fails (HUD fix).
+8. `ui/tower_panel.gd` `_refresh_upgrade`: delete the `elif _drives_mad(...): text +=
+   MADNESS_WARNING` branch -> `test_an_upgrade_that_empties_sanity_warns_but_stays_enabled`
+   fails (behaviour 26).
