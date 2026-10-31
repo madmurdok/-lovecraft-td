@@ -4,7 +4,7 @@ extends RefCounted
 ## time by step(); scenes read `state` directly and drain one-shot events.
 ## Same config + seed + command log -> same events and state (§4).
 
-## Result of a player command (build/sell/upgrade). OK = applied; anything else = rejected
+## Result of a player command (build/sell/upgrade/set_target_priority). OK = applied; anything else = rejected
 ## and nothing changed (no gold, no event, no command_log entry).
 enum CommandResult {
 	OK,
@@ -14,7 +14,7 @@ enum CommandResult {
 	NOT_BUILDABLE,  ## path, water, the lighthouse or out of bounds
 	OCCUPIED,  ## another tower stands on the cell
 	NOT_ENOUGH_GOLD,
-	NO_SUCH_TOWER,  ## sell/upgrade: unknown or already sold tower id
+	NO_SUCH_TOWER,  ## sell/upgrade/set_target_priority: unknown or already sold tower id
 	## call_wave: not in the build phase (or no WaveDirector); upgrade: during a wave
 	NOT_BUILD_PHASE,
 	NO_BUYOUT,  ## buy_sanity: madness.exit_rule is not "buyout"
@@ -22,6 +22,8 @@ enum CommandResult {
 	MAX_LEVEL,  ## upgrade: the tower is at L3
 	NEED_BRANCH,  ## upgrade: L2 -> L3 needs branch "a" or "b"
 	BAD_BRANCH,  ## upgrade: branch is not ""/"a"/"b", or non-empty for L1 -> L2
+	NO_TARGETING,  ## set_target_priority: the tower picks no target (aura, Elder Sign)
+	BAD_PRIORITY,  ## set_target_priority: mode is not one of SimTower.TARGET_PRIORITIES
 }
 
 ## Sanity change reasons that may move sanity while in MADNESS (LT-13): the exit rules.
@@ -280,6 +282,44 @@ func upgrade_tower(tower_id: int, branch := "") -> CommandResult:
 	_add_gold(-target.upgrade_cost, "upgrade", t.id)
 	if target.upgrade_sanity_cost > 0.0:
 		_add_sanity(-target.upgrade_sanity_cost, "upgrade", t.id)
+	return CommandResult.OK
+
+
+## Whether `t` picks a target when it fires (LT-31): its current level deals damage.
+## False for an aura tower (Elder Sign), which has no target priority to switch.
+func has_targeting(t: SimTower) -> bool:
+	return t.stats().damage > 0.0
+
+
+## Whether set_target_priority(tower_id, mode) would be applied now; OK or the first
+## failing reason in this order: OUTCOME_REACHED, NO_SUCH_TOWER, NO_TARGETING,
+## BAD_PRIORITY. Any phase (it costs nothing). Changes nothing.
+func can_set_target_priority(tower_id: int, mode: String) -> CommandResult:
+	if state.outcome != SimState.Outcome.NONE:
+		return CommandResult.OUTCOME_REACHED
+	var t := tower_by_id(tower_id)
+	if t == null:
+		return CommandResult.NO_SUCH_TOWER
+	if not has_targeting(t):
+		return CommandResult.NO_TARGETING
+	if not SimTower.TARGET_PRIORITIES.has(mode):
+		return CommandResult.BAD_PRIORITY
+	return CommandResult.OK
+
+
+## Player command (LT-31): sets whom tower `tower_id` shoots from its next shot on, in
+## any phase, for free. Re-setting the current mode is applied too (logged, event).
+## Emits TARGET_PRIORITY_SET {def, cell, mode}; logs [tick, "set_target_priority", id,
+## mode]. The tower's cooldown is not touched.
+func set_target_priority(tower_id: int, mode: String) -> CommandResult:
+	var result := can_set_target_priority(tower_id, mode)
+	if result != CommandResult.OK:
+		return result
+	var t := tower_by_id(tower_id)
+	t.target_priority = mode
+	state.command_log.append([state.tick, "set_target_priority", tower_id, mode])
+	_emit(SimEvent.Type.TARGET_PRIORITY_SET, t.id, {"def": t.def.id, "cell": t.cell,
+		"mode": mode})
 	return CommandResult.OK
 
 
@@ -571,7 +611,8 @@ func _apply_auras() -> void:
 
 
 ## Slot 5 (§3.3): every tower in id order counts down its cooldown and, when ready, fires
-## at the live enemy in range nearest the end of its route (ties: lower id). Instant hit.
+## at the live enemy (fakes too) in range its target_priority picks (_pick_target; default
+## nearest the end of its route; ties: lower id). Instant hit.
 ## A level with a `pierce` effect fires a line shot (_line_hits) instead of a single shot;
 ## one with an `aoe_radius` effect casts a blast centred on that target, hitting every live
 ## enemy (fakes too) within aoe_radius of it (Necronomicon). No enemy in range: no shot, no
@@ -590,7 +631,7 @@ func _fire_towers() -> void:
 		if s.damage <= 0.0:
 			continue
 		var in_range := enemies_in_range(t.cell, s.range_cells)
-		var target := _first_along_route(in_range)
+		var target := _pick_target(t, in_range)
 		if target == null:
 			continue
 		# LT-13: a madness_affected tower in MADNESS deals x damage_multiplier and its shot
@@ -639,6 +680,32 @@ func _fire_towers() -> void:
 		for e in hits:
 			apply_damage(e.id, damage, t.def.id)
 		t.cooldown_ticks = maxi(1, SimTime.ticks(s.fire_interval))
+
+
+## The target `t` fires at among `candidates` (id order) by its target_priority (LT-31):
+## "first" -> _first_along_route, "strongest" -> highest current hp, "fastest" -> highest
+## units moved this tick (base_units_per_tick x speed_mult, as _move rounds it, so auras'
+## slow counts). Every tie -> lower id. Null if empty.
+func _pick_target(t: SimTower, candidates: Array[SimEnemy]) -> SimEnemy:
+	match t.target_priority:
+		"strongest":
+			return _best_by(candidates, func(e: SimEnemy) -> float: return e.hp)
+		"fastest":
+			return _best_by(candidates, func(e: SimEnemy) -> float:
+				return float(roundi(e.base_units_per_tick * e.speed_mult)))
+	return _first_along_route(candidates)
+
+
+## The candidate with the highest `key`; the first (lower id) on a tie. Null if empty.
+func _best_by(candidates: Array[SimEnemy], key: Callable) -> SimEnemy:
+	var best: SimEnemy = null
+	var best_key := 0.0
+	for e in candidates:
+		var k: float = key.call(e)
+		if best == null or k > best_key:
+			best = e
+			best_key = k
+	return best
 
 
 ## "First" = least route distance left to the lighthouse; ties by lower id. Null if empty.
