@@ -106,7 +106,8 @@ func test_a_harpoon_flies_to_the_line_end_and_marks_each_pierced_enemy() -> void
 	assert_vector(fx["to"]).is_equal(to)
 	assert_array(fx["hits"]).contains_exactly([a.id, b.id])
 	assert_int((fx["hit_pos"] as Array).size()).is_equal(2)
-	assert_int((fx["pass_t"] as Array).size()).is_equal(2)
+	assert_bool(fx.has("pass_t")).is_true()
+	assert_int((fx.get("pass_t", []) as Array).size()).is_equal(2)
 
 
 func test_a_necronomicon_shot_is_a_wave_of_its_aoe_radius() -> void:
@@ -266,7 +267,8 @@ func test_a_missed_harpoon_flies_its_line_with_no_hit_ticks() -> void:
 	assert_bool(fx["miss"]).is_true()
 	assert_vector(fx["to"]).is_equal(to)
 	assert_array(fx["hit_pos"]).is_empty()
-	assert_array(fx["pass_t"]).is_empty()
+	assert_bool(fx.has("pass_t")).is_true()
+	assert_array(fx.get("pass_t", [])).is_empty()
 
 
 # --- 10: per-tower cap ----------------------------------------------------------------

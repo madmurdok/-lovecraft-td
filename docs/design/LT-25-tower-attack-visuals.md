@@ -67,7 +67,7 @@ lights is untouched).
 
 - Shape: a harpoon head (filled triangle, 0.3 cell long, 0.18 wide) pointing along the
   line, trailing a 1 px rope back to the tower.
-- Colour: cold steel `Color(1.3, 1.6, 1.9)`; rope at alpha 0.6.
+- Colour: cold steel `Color(0.4, 1.3, 2.6)` (saturated blue, apart from the rifleman's warm yellow); rope at alpha 0.6.
 - Motion: the head travels tower -> line end (`to`, full range) in 0.22 s at constant
   speed; as it passes each enemy in `hits`, a cross tick (0.25 cell, 3 px) appears on that
   enemy and stays 0.3 s ("pierced"). The rope fades over the last 0.1 s. Total ~0.32 s.
@@ -80,8 +80,7 @@ lights is untouched).
   that rotate slowly (one turn in 12 s), centred on the tower.
 - Colour: pale sea-green `Color(0.9, 2.0, 1.6)`.
 - Motion: idle alpha 0.25 (dashes 0.4); while at least one drawn enemy is inside the radius
-  (by `_last_pos`, presentation only) the ring rises to alpha 0.6 and pulses
-  (0.45-0.6 at 1.5 Hz). Two overlapping signs draw two rings; the enemy marker (§2) is not
+  (by `_last_pos`, presentation only) the ring rises to alpha 0.75-1.0 (pulse at 1.5 Hz) and the ring thickens from 2 px to 4 px. Two overlapping signs draw two rings; the enemy marker (§2) is not
   doubled, which matches the sim (auras do not stack).
 - Reads as: a zone, never a shot. Independent of game speed (rotation uses effects time).
 

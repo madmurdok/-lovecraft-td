@@ -46,15 +46,15 @@ const TRACER_SECONDS := 0.18  ## travel + hit spark
 const TRACER_DASH_CELLS := 0.35
 const TRACER_MISS_SIDE_CELLS := 0.4  ## a miss ends this far to the side of the aim point
 const TRACER_MISS_PAST_CELLS := 0.5  ## and this far past it
-const HARPOON_COLOR := Color(1.3, 1.6, 1.9)
+const HARPOON_COLOR := Color(0.4, 1.3, 2.6)
 const HARPOON_TRAVEL := 0.22
 const HARPOON_SECONDS := 0.32  ## travel + rope fade
 const HARPOON_FADE := 0.1
 const HARPOON_TICK_SECONDS := 0.3  ## a cross tick stays this long on each pierced enemy
 const WARD_COLOR := Color(0.9, 2.0, 1.6)
 const WARD_IDLE_ALPHA := 0.25
-const WARD_PULSE_LOW := 0.45  ## active ring pulses between this and WARD_ACTIVE_ALPHA
-const WARD_ACTIVE_ALPHA := 0.6
+const WARD_PULSE_LOW := 0.75  ## active ring pulses between this and WARD_ACTIVE_ALPHA
+const WARD_ACTIVE_ALPHA := 1.0
 const WARD_PULSE_HZ := 1.5
 const WARD_TURN_SECONDS := 12.0
 const WAVE_FILL := Color(0.05, 0, 0.08, 0.55)
@@ -416,7 +416,8 @@ func _draw_auras(s: SimState) -> void:
 		var c := t.centre() * CELL
 		var r := t.stats().range_cells * CELL
 		var a := ward_alpha(t)
-		draw_arc(c, r, 0, TAU, 64, Color(WARD_COLOR, a), 2.0)
+		var bright := a > WARD_IDLE_ALPHA
+		draw_arc(c, r, 0, TAU, 64, Color(WARD_COLOR, a), 4.0 if bright else 2.0)
 		var rot := _time * TAU / WARD_TURN_SECONDS
 		for i in 5:
 			var st := rot + i * TAU / 5.0
