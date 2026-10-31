@@ -5,8 +5,9 @@
 #   scripts/test.sh tests/foo_test.gd tests/bar_test.gd   # only these suites (or directories)
 #   scripts/test.sh tests/foo_test.gd -i foo_test:test_x  # args starting with '-' go to gdUnit
 #
-# A path argument is one starting with res:// or naming an existing file or directory
-# (relative to the repo root); every other argument is passed to GdUnitCmdTool unchanged.
+# A path argument (res://, relative to the repo root, or absolute inside the repo; also after
+# -a/--add) becomes a suite to run; a missing path or one outside the repo exits 2. Arguments
+# starting with '-', and a non-path value right after one, go to GdUnitCmdTool unchanged.
 # gdUnit always runs with -c (continue), so every failing test is reported, not only the
 # first one per suite.
 #
@@ -65,15 +66,36 @@ if [ ! -d .godot ]; then
   guarded "$GODOT" --headless --path . --import >/dev/null 2>&1 || true
 fi
 
+root="$PWD"
+# Turns a path argument into a res:// path; exits 2 on one outside the repo or not existing.
+to_res() {
+  local p="$1"
+  if [[ "$p" == res://* ]]; then echo "$p"; return; fi
+  if [ ! -e "$p" ]; then echo "test.sh: no such test file or directory: $p" >&2; exit 2; fi
+  if [[ "$p" == /* ]]; then
+    if [[ "$p" != "$root"/* ]]; then echo "test.sh: path outside the project: $p" >&2; exit 2; fi
+    p="${p#"$root"/}"
+  fi
+  echo "res://${p#./}"
+}
+
 adds=()
 extra=()
-for a in "$@"; do
-  if [[ "$a" == res://* ]]; then
-    adds+=(-a "$a")
-  elif [[ "$a" != -* && -e "$a" ]]; then
-    adds+=(-a "res://${a#./}")
+prev_opt=0  # the previous argument was a gdUnit option, so this one may be its value
+while [ $# -gt 0 ]; do
+  a="$1"; shift
+  if [[ "$a" == -a || "$a" == --add ]]; then
+    # gdUnit's own form: the next argument is the path.
+    if [ $# -eq 0 ]; then echo "test.sh: $a needs a path" >&2; exit 2; fi
+    r="$(to_res "$1")" || exit 2; shift
+    adds+=(-a "$r"); prev_opt=0
+  elif [[ "$a" == -* ]]; then
+    extra+=("$a"); prev_opt=1
+  elif [[ "$a" == res://* || -e "$a" || $prev_opt -eq 0 ]]; then
+    r="$(to_res "$a")" || exit 2
+    adds+=(-a "$r"); prev_opt=0
   else
-    extra+=("$a")
+    extra+=("$a"); prev_opt=0  # value of the preceding option, e.g. -i suite:test
   fi
 done
 [ ${#adds[@]} -eq 0 ] && adds=(-a res://tests)
