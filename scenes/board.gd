@@ -12,6 +12,7 @@ extends Node2D
 ## fake from a real enemy: every look depends only on SHOT fields and aura state.
 
 signal cell_clicked(cell: Vector2i)
+signal outside_clicked  ## LT-28: a left click no control took that misses the grid
 
 const CELL := 40.0  ## pixels per cell
 const FLASH_SECONDS := 0.25
@@ -33,6 +34,8 @@ const COLOR_LEAK := Color(1, 0.1, 0.1)
 const COLOR_DISSOLVE := Color(0.6, 0.6, 0.75)
 const COLOR_DEBUG_FAKE := Color(1, 0, 1)  ## debug outline (--reveal-fakes), LT-12 §1
 const COLOR_SELECT := Color(1, 1, 1, 0.8)
+const COLOR_LETTER_PLATE := Color(0.06, 0.05, 0.08)  ## LT-28: contrast plate under the letter
+const LETTER_PLATE := Rect2(4, 4, 15, 19)  ## in the tower tile, under the 16 px letter
 const COLOR_ASTRAY := Color(2.0, 1.5, 2.6)  ## over 1: stays bright under the darkness
 const ASTRAY_SECONDS := 0.3
 const ASTRAY_MIN_CELLS := 0.7  ## how far off the aim point an empty astray shot lands
@@ -102,6 +105,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	if game.sim.state.map.in_bounds(cell):
 		get_viewport().set_input_as_handled()
 		cell_clicked.emit(cell)
+	else:
+		outside_clicked.emit()
 
 
 ## Local pixel position -> grid cell (may be out of bounds).
@@ -405,6 +410,9 @@ func _draw_tower(t: SimTower) -> void:
 	var c := attack_color(shot_kind(t))
 	draw_rect(r, COLOR_TOWER)
 	draw_rect(r, c, false, 2.0)
+	# LT-28: a dark plate under the letter keeps it readable where the beam washes the
+	# light tile out (the plate stays dark under the light; the letter's colour is over 1).
+	draw_rect(Rect2(r.position + LETTER_PLATE.position, LETTER_PLATE.size), COLOR_LETTER_PLATE)
 	draw_string(ThemeDB.fallback_font, r.position + Vector2(8, 20), t.def.name.left(1),
 		HORIZONTAL_ALIGNMENT_LEFT, -1, 16, c)
 	# LT-24 level mark: one pip per level along the bottom, the branch letter at L3.

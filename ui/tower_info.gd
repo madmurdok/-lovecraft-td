@@ -10,6 +10,7 @@ const DASH := " — "  ## between a name and its cost: "Rifleman — $50"
 const COMING_SOON := " (coming soon)"  ## appended to lines whose key is in Level.PENDING
 const MINUS := "−"  ## U+2212, for sanity drains
 const MADNESS_WARNING := " (drives you mad!)"  ## LT-23 Q3: build/upgrade takes the cap to 0
+const REMOVED := "Loses: "  ## LT-28: before the old line of an effect an upgrade removes
 
 ## Player-facing text for a refused build or upgrade (presentation only).
 const REASONS := {
@@ -85,9 +86,20 @@ static func lines(def: TowerDef, s: TowerDef.Level, sanity: SanityConfig) -> Pac
 	return out
 
 
-## One line per effect group present (non-zero) in `effects`, then `key: value` for any
-## key no group reads; pending keys get COMING_SOON.
-static func effect_lines(effects: Dictionary) -> PackedStringArray:
+## The value of an effect key that means "no effect": 1 for a multiplier, 0 otherwise.
+static func neutral(key: String) -> float:
+	return 1.0 if key.ends_with("_multiplier") else 0.0
+
+
+## LT-28: an effect key with a value other than its neutral one (a x1 multiplier does nothing).
+static func is_active(effects: Dictionary, key: String) -> bool:
+	return effects.has(key) and effects[key] != neutral(key)
+
+
+## One line per effect group present (a key off its neutral value) in `effects`, then
+## `key: value` for any key no group reads; pending keys get COMING_SOON unless `suffix`
+## is false.
+static func effect_lines(effects: Dictionary, suffix := true) -> PackedStringArray:
 	var out := PackedStringArray()
 	var seen := {}
 	for group: Array in EFFECT_GROUPS:
@@ -95,15 +107,16 @@ static func effect_lines(effects: Dictionary) -> PackedStringArray:
 		var pending := false
 		for key: String in group:
 			seen[key] = true
-			if effects.get(key, 0.0) != 0.0:
+			if is_active(effects, key):
 				present = true
 			if is_pending(key):
 				pending = true
 		if present:
-			out.append(_effect_text(group[0], effects) + (COMING_SOON if pending else ""))
+			out.append(_effect_text(group[0], effects) + (COMING_SOON if pending and suffix else ""))
 	for key: String in effects:
-		if not seen.has(key) and effects[key] != 0.0:
-			out.append("%s: %s" % [key, num(effects[key])] + (COMING_SOON if is_pending(key) else ""))
+		if not seen.has(key) and is_active(effects, key):
+			out.append("%s: %s" % [key, num(effects[key])]
+				+ (COMING_SOON if is_pending(key) and suffix else ""))
 	return out
 
 
@@ -129,7 +142,8 @@ static func kind_lines(def: TowerDef, s: TowerDef.Level, sanity: SanityConfig) -
 
 
 ## What changes from `from` to `to`: one "Stat a → b · ..." line for changed stats, then
-## the effect lines that are new or changed, then a madness line if that flag flips.
+## the effect lines that are new or changed, then REMOVED + the old line for each effect
+## `to` no longer has (LT-28), then a madness line if that flag flips.
 static func delta_lines(from: TowerDef.Level, to: TowerDef.Level) -> PackedStringArray:
 	var out := PackedStringArray()
 	var stats := PackedStringArray()
@@ -145,20 +159,46 @@ static func delta_lines(from: TowerDef.Level, to: TowerDef.Level) -> PackedStrin
 	if reserve != 0.0:
 		out.append("Reserve %s%s" % ["+" if reserve > 0.0 else MINUS, num(absf(reserve))])
 	var changed := {}
-	for key: String in to.effects:
-		if to.effects[key] != from.effects.get(key, 0.0):
-			changed[key] = to.effects[key]
-	# Whole groups: a pair line needs both values even if only one of them changed.
-	var shown := changed.duplicate()
+	for key: String in to.effects.keys() + from.effects.keys():
+		if to.effects.get(key, neutral(key)) != from.effects.get(key, neutral(key)):
+			changed[key] = true
+	# Whole groups: a pair line needs both values even if only one of them changed. A group
+	# still active in `to` shows its new line; one active only in `from` was removed.
+	var shown := {}
+	var removed := {}
+	var grouped := {}
 	for group: Array in EFFECT_GROUPS:
-		if group.any(func(k: String) -> bool: return changed.has(k)):
+		grouped.merge(_keys_dict(group))
+		if not group.any(func(k: String) -> bool: return changed.has(k)):
+			continue
+		if group.any(func(k: String) -> bool: return is_active(to.effects, k)):
 			for key: String in group:
 				if to.effects.has(key):
 					shown[key] = to.effects[key]
+		elif group.any(func(k: String) -> bool: return is_active(from.effects, k)):
+			for key: String in group:
+				if from.effects.has(key):
+					removed[key] = from.effects[key]
+	for key: String in changed:
+		if grouped.has(key):
+			continue
+		if is_active(to.effects, key):
+			shown[key] = to.effects[key]
+		elif is_active(from.effects, key):
+			removed[key] = from.effects[key]
 	out.append_array(effect_lines(shown))
+	for line in effect_lines(removed, false):
+		out.append(REMOVED + line)
 	if from.madness_affected != to.madness_affected and to.damage > 0.0:
 		out.append("Affected by madness" if to.madness_affected else "Unaffected by madness")
 	return out
+
+
+static func _keys_dict(keys: Array) -> Dictionary:
+	var d := {}
+	for k: String in keys:
+		d[k] = true
+	return d
 
 
 static func _damage_text(s: TowerDef.Level) -> String:

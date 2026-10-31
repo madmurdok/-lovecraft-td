@@ -67,6 +67,7 @@ func _ready() -> void:
 	board.game = self
 	add_child(board)
 	board.cell_clicked.connect(_on_cell_clicked)
+	board.outside_clicked.connect(close_panels)
 	lighting = Lighting.new()
 	lighting.name = "Lighting"
 	lighting.setup(self, self)
@@ -208,9 +209,14 @@ func _consume_events() -> void:
 				star_stones_found)
 
 
-func _on_cell_clicked(cell: Vector2i) -> void:
+## LT-28: closes the build and tower views (a click on a cell, or one off the grid).
+func close_panels() -> void:
 	picker.close()
 	tower_panel.close()
+
+
+func _on_cell_clicked(cell: Vector2i) -> void:
+	close_panels()
 	if sim.state.outcome != SimState.Outcome.NONE:
 		return
 	if sim.state.tower_at.has(cell):

@@ -21,30 +21,43 @@ var pause_button: Button
 var sanity_bar: SanityBar  ## LT-14: sanity with threshold marks
 var buyout_button: Button  ## LT-13/14: madness buyout, only with exit_rule "buyout", in madness
 var hostile_label: Label  ## LT-23 Q10: the madness enemy buff, only in madness
+var footer: ColorRect  ## LT-28: covers the strip below the board (range rings end there)
 
 const COLOR_LUCK := Color(0.75, 0.9, 1.0)
 const FONT_SIZE := 14  ## LT-27: the bar fits the 1152 px base width, buyout included
 const SEPARATION := 10
+const MARGIN := 8  ## bar inset from the right edge
+const RELIC_SLOT := 22.0  ## LT-28: left inset; relic tokens land in it, beside the counter
 
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
-	theme = Theme.new()
-	theme.default_font_size = FONT_SIZE
+	theme = UiStyle.theme(FONT_SIZE)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var base_w := float(ProjectSettings.get_setting("display/window/size/viewport_width"))
 	var bg := ColorRect.new()
 	bg.name = "Background"
-	bg.color = Color(0.08, 0.08, 0.1)
+	bg.color = UiStyle.COLOR_BG
 	bg.custom_minimum_size = Vector2(0, Game.BOARD_ORIGIN.y)
 	bg.set_anchors_preset(Control.PRESET_TOP_WIDE)
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(bg)
+	footer = ColorRect.new()
+	footer.name = "Footer"
+	footer.color = UiStyle.COLOR_BG
+	footer.mouse_filter = Control.MOUSE_FILTER_IGNORE  # a click there reaches the board
+	footer.position = Vector2(0, board_rect().end.y)
+	footer.size = Vector2(base_w,
+		float(ProjectSettings.get_setting("display/window/size/viewport_height")) - footer.position.y)
+	add_child(footer)
 	var bar := HBoxContainer.new()
 	bar.name = "Bar"
 	# LT-27: two-line columns (money over relics, phase over lighthouse HP) keep the bar
 	# inside the 1152 px base width with every button shown; children centre vertically.
-	bar.position = Vector2(8, 2)
-	bar.custom_minimum_size = Vector2(0, Game.BOARD_ORIGIN.y - 4)
+	# LT-28: the bar spans the width in three groups (purse | day and night | speed, pause
+	# and sanity) split by expanding gaps, so spare width goes between groups.
+	bar.position = Vector2(RELIC_SLOT, 2)
+	bar.custom_minimum_size = Vector2(base_w - RELIC_SLOT - MARGIN, Game.BOARD_ORIGIN.y - 4)
 	bar.add_theme_constant_override("separation", SEPARATION)
 	add_child(bar)
 	var purse := _column(bar, "Purse")
@@ -52,6 +65,7 @@ func _ready() -> void:
 	relics_label = _label(purse, "RelicsLabel")
 	relics_label.mouse_filter = Control.MOUSE_FILTER_PASS  # for the per-kind tooltip
 	sell_relics_button = _button(bar, "SellRelicsButton", game.sell_relics)
+	_gap(bar, "GapLeft")
 	var status := _column(bar, "Status")
 	phase_label = _label(status, "PhaseLabel")
 	phase_label.custom_minimum_size = Vector2(176, 0)  # day text; no jump at dusk
@@ -61,6 +75,7 @@ func _ready() -> void:
 	luck_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	luck_label.visible = false
 	call_wave_button = _button(bar, "CallWaveButton", game.call_wave)
+	_gap(bar, "GapRight")
 	speed_button = _button(bar, "SpeedButton", game.toggle_speed)
 	pause_button = _button(bar, "PauseButton", game.toggle_pause)
 	sanity_bar = SanityBar.new()
@@ -177,6 +192,28 @@ static func relics_tooltip(sim: Simulation) -> String:
 		lines.append("%s: %d × %s" % [k.name, sim.state.relics.get(k.id, 0),
 			TowerInfo.money(sim.relic_price(k.id))])
 	return "\n".join(lines)
+
+
+## The board in this layer's base pixels.
+func board_rect() -> Rect2:
+	var m := game.sim.state.map
+	return Rect2(Game.BOARD_ORIGIN, Vector2(m.width, m.height) * Board.CELL)
+
+
+## LT-28: where relic tokens land, in the slot left of the relic counter, so a landing
+## token never covers its digits.
+func relic_landing() -> Vector2:
+	var r := relics_label.get_global_rect()
+	return Vector2(r.position.x - RELIC_SLOT * 0.5, r.get_center().y)
+
+
+## An expanding empty gap between bar groups.
+func _gap(parent: Node, node_name: String) -> void:
+	var c := Control.new()
+	c.name = node_name
+	c.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	parent.add_child(c)
 
 
 func _label(parent: Node, node_name: String) -> Label:

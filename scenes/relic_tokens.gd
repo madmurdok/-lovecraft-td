@@ -85,9 +85,9 @@ func board_to_layer(cells: Vector2) -> Vector2:
 	return game.board.global_position + cells * Board.CELL
 
 
-## Where tokens land: the centre of the HUD relic counter.
+## Where tokens land: beside the HUD relic counter (LT-28: its centre hid the digits).
 func target() -> Vector2:
-	return game.hud.relics_label.get_global_rect().get_center()
+	return game.hud.relic_landing()
 
 
 ## 0 at the drop, 1 at arrive_tick, from the sim tick plus the clock's alpha.
