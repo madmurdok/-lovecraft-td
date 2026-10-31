@@ -1,8 +1,9 @@
 class_name BotUpgradeTest
 extends SimTestBase
 ## LT-24 §5 bot "wide then deep" (Decision 6): build BUILD_FIRST towers first, then the
-## cheapest upgrade (ties -> lower id), L3 from BRANCH_PICK, pending branches skipped, the
-## occult sanity guard, no upgrade during a wave, and `--upgrades=0`.
+## cheapest upgrade (ties -> lower id), L3 from BRANCH_PICK (or `--branch=`, LT-29), pending
+## branches skipped (none since LT-29), the occult sanity guard, no upgrade during a wave, and
+## `--upgrades=0`.
 ## tools/bot_runs.gd is a SceneTree script whose _init plays every run and quits, so the
 ## suite compiles a copy of its source with _init renamed and calls the bot's functions on
 ## constructed sims (real res://data config). The L3 pick is pinned here, not on full runs:
@@ -122,36 +123,70 @@ func _next(sim: Simulation, strat: String) -> Array:
 
 # --- _next_upgrade: L3 picks ---------------------------------------------------------------
 
-func test_occult_buys_the_pure_branches_and_skips_the_pending_marksman() -> void:
+## LT-29: the Marksman is wired (not pending), so the occult bot buys it too, cheapest first.
+func test_occult_buys_the_marksman_and_the_pure_branches_cheapest_first() -> void:
 	var sim := _sim()
 	var rifle := _place(sim, RIFLE, 1)
 	var sign := _place(sim, SIGN, 1)
 	var necro := _place(sim, NECRO, 1)
-	var branches := real_config().towers[SIGN].branches
-	assert_int(branches["a"].upgrade_cost).is_less(real_config().towers[NECRO].branches["a"].upgrade_cost)
+	var cfg := real_config()
+	assert_bool(cfg.towers[RIFLE].branches["a"].has_pending()).is_false()
+	assert_int(cfg.towers[RIFLE].branches["a"].upgrade_cost) \
+		.is_less(cfg.towers[SIGN].branches["a"].upgrade_cost)
+	assert_int(cfg.towers[SIGN].branches["a"].upgrade_cost) \
+		.is_less(cfg.towers[NECRO].branches["a"].upgrade_cost)
+	assert_array(_next(sim, "occult")).is_equal([rifle.id, "a"])
+	sim.state.towers.erase(rifle)
 	assert_array(_next(sim, "occult")).is_equal([sign.id, "a"])
-	# Without the sign the next pick is the Pure Rite, never the (pending) Marksman.
 	sim.state.towers.erase(sign)
 	assert_array(_next(sim, "occult")).is_equal([necro.id, "a"])
 	sim.state.towers.erase(necro)
-	assert_bool(real_config().towers[RIFLE].branches["a"].has_pending()).is_true()
 	assert_array(_next(sim, "occult")).is_empty()
-	assert_int(rifle.level).is_equal(1)
 
 
-func test_madness_buys_the_corrupted_rite_and_skips_the_pending_seal() -> void:
+## LT-29: the Corrupted Seal is wired, so the madness bot buys it (cheaper than the Rite).
+func test_madness_buys_the_corrupted_seal_then_the_corrupted_rite() -> void:
 	var sim := _sim()
-	_place(sim, SIGN, 1)
+	var sign := _place(sim, SIGN, 1)
 	var necro := _place(sim, NECRO, 1)
-	assert_bool(real_config().towers[SIGN].branches["b"].has_pending()).is_true()
+	assert_bool(real_config().towers[SIGN].branches["b"].has_pending()).is_false()
+	assert_int(real_config().towers[SIGN].branches["b"].upgrade_cost) \
+		.is_less(real_config().towers[NECRO].branches["b"].upgrade_cost)
+	assert_array(_next(sim, "madness")).is_equal([sign.id, "b"])
+	sim.state.towers.erase(sign)
 	assert_array(_next(sim, "madness")).is_equal([necro.id, "b"])
 
 
-func test_mundane_stops_at_l2_while_both_picks_are_pending() -> void:
+## LT-29: both mundane picks (Marksman, Barbed) are wired, so the bot takes them to L3.
+func test_mundane_buys_the_marksman_then_barbed() -> void:
 	var sim := _sim()
-	_place(sim, RIFLE, 1)
-	_place(sim, HARP, 1)
-	assert_array(_next(sim, "mundane")).is_empty()
+	var rifle := _place(sim, RIFLE, 1)
+	var harp := _place(sim, HARP, 1)
+	assert_int(real_config().towers[RIFLE].branches["a"].upgrade_cost) \
+		.is_less(real_config().towers[HARP].branches["a"].upgrade_cost)
+	assert_array(_next(sim, "mundane")).is_equal([rifle.id, "a"])
+	sim.state.towers.erase(rifle)
+	assert_array(_next(sim, "mundane")).is_equal([harp.id, "a"])
+
+
+## LT-29 §4.3: `--branch=<tower>:<a|b>` wins over BRANCH_PICK for that tower (in every
+## strategy, even one without a pick for it); other towers keep the strategy's pick.
+func test_branch_override_wins_over_branch_pick() -> void:
+	var sim := _sim()
+	var rifle := _place(sim, RIFLE, 1)
+	var harp := _place(sim, HARP, 1)
+	var b := _bot()
+	b.set("_branch_override", {RIFLE: "b"})
+	assert_array(b.call("_next_upgrade", sim, "mundane")).is_equal([rifle.id, "b"])
+	sim.state.towers.erase(rifle)
+	assert_array(b.call("_next_upgrade", sim, "mundane")).is_equal([harp.id, "a"])
+	b.set("_branch_override", {HARP: "b"})
+	assert_array(b.call("_next_upgrade", sim, "mundane")).is_equal([harp.id, "b"])
+	# madness has no harpooner pick: the override alone makes it buyable.
+	assert_array(b.call("_next_upgrade", sim, "madness")).is_equal([harp.id, "b"])
+	# The strategy table itself is untouched.
+	var picks: Dictionary = b.get_script().get_script_constant_map()["BRANCH_PICK"]
+	assert_str(picks["mundane"][HARP]).is_equal("a")
 
 
 func test_a_tower_missing_from_branch_pick_stays_at_l2() -> void:
@@ -203,7 +238,7 @@ func test_occult_cap_guard_skips_an_upgrade_leaving_the_cap_below_30() -> void:
 	var top := cfg.sanity.max_sanity
 	var sim := _sim(0, cfg)
 	var sign := _place(sim, SIGN)
-	var rifle := _place(sim, RIFLE, 1)  # pending Marksman: nothing else to buy
+	var rifle := _place(sim, RIFLE, 2, "a")  # L3 (LT-29: no pending branch left): nothing to buy
 	cfg.towers[SIGN].levels[1].sanity_reserve = top - 30.0  # leaves exactly 30: allowed
 	assert_array(_next(sim, "occult")).is_equal([sign.id, ""])
 	cfg.towers[SIGN].levels[1].sanity_reserve = top - 29.5  # leaves 29.5: skipped
@@ -211,7 +246,7 @@ func test_occult_cap_guard_skips_an_upgrade_leaving_the_cap_below_30() -> void:
 	# The guard skips only that upgrade: another candidate is still bought.
 	var necro := _place(sim, NECRO)
 	assert_array(_next(sim, "occult")).is_equal([necro.id, ""])
-	assert_int(rifle.level).is_equal(1)
+	assert_int(rifle.level).is_equal(2)
 
 
 func test_madness_has_no_cap_guard() -> void:
@@ -300,10 +335,11 @@ func test_run_lines_carry_upgrade_keys_only_with_upgrades_on() -> void:
 		.is_less_equal(oil.start + on["oil_bought"])
 	assert_int(on["lit_shots"]).is_between(0, on["shots"])
 	assert_int(on["lighthouse_level"]).is_between(0, real_config().economy.beam.levels.size() - 1)
-	# Mundane today: L2s only (both of its L3 picks are pending).
+	# LT-29: L2s and the mundane L3 picks (branch "a" for both), never another branch.
 	assert_dict(on["upgrades"]).is_not_empty()
+	var allowed := [RIFLE + "_L2", HARP + "_L2", RIFLE + "_a", HARP + "_a"]
 	for k: String in on["upgrades"]:
-		assert_bool(k.ends_with("_L2")).override_failure_message(k).is_true()
+		assert_bool(k in allowed).override_failure_message(k).is_true()
 	assert_int(on["upgrade_gold"]).is_greater_equal(0)
 	# Same strategy and seed twice: the same RUN line.
 	var again: Dictionary = _bot(true).call("_play", "mundane", 1000)
@@ -517,11 +553,12 @@ func test_night_fires_the_flare_at_three_lit_enemies() -> void:
 	assert_int(few.state.oil).is_equal(4)
 
 
-## Five L2 riflemen: mundane has no tower upgrade left (both L3 picks pending).
-func _five_l2_rifles(gold: int) -> Simulation:
+## Five L3 Marksmen: mundane has no tower upgrade left (LT-29: L2 riflemen now buy the
+## Marksman, cheaper than a lighthouse level).
+func _five_l3_rifles(gold: int) -> Simulation:
 	var sim := _sim(gold)
 	for i in 5:
-		_place(sim, RIFLE, 1)
+		_place(sim, RIFLE, 2, "a")
 	sim.state.oil = 4  # no oil top-up in the way
 	return sim
 
@@ -529,14 +566,14 @@ func _five_l2_rifles(gold: int) -> Simulation:
 func test_bot_buys_lighthouse_levels_when_no_tower_upgrade_is_cheaper() -> void:
 	var levels := real_config().economy.beam.levels
 	var both := levels[1].upgrade_cost + levels[2].upgrade_cost
-	var sim := _five_l2_rifles(both)
+	var sim := _five_l3_rifles(both)
 	_bot().call("_act", sim, "mundane", 5, {})
 	assert_int(sim.state.lighthouse_level).is_equal(2)
 	var names: Array = sim.state.command_log.map(func(c: Array) -> String: return c[1])
 	assert_int(names.count("upgrade_lighthouse")).is_equal(2)
 	# --lighthouse=0 and --upgrades=0 never buy it.
 	for flags: Array in [[true, false], [false, true]]:
-		var off := _five_l2_rifles(both)
+		var off := _five_l3_rifles(both)
 		_bot(flags[0], flags[1]).call("_act", off, "mundane", 5, {})
 		assert_int(off.state.lighthouse_level).override_failure_message(str(flags)).is_equal(0)
 		assert_bool(off.state.command_log.any(func(c: Array) -> bool:

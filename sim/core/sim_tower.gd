@@ -20,6 +20,9 @@ var build_tick := 0
 var cooldown_ticks := 0
 ## One of TARGET_PRIORITIES; whom _fire_towers picks among the live enemies in range.
 var target_priority := DEFAULT_TARGET_PRIORITY
+## LT-29 §1.2 (Gangsters): round-robin position over the ranked `burst_targets`; persists
+## between shots, wraps to the ranked set's size at each shot.
+var burst_index := 0
 ## LT-30: inside a lighthouse beam (centre test, slot 2); persists between ticks, a flip
 ## emits TOWER_LIT {lit}.
 var lit := false

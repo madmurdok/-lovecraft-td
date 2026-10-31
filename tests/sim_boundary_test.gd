@@ -20,7 +20,7 @@ const PRESENTATION_DIRS := ["res://scenes", "res://ui", "res://tools"]
 const SIMULATION := "res://sim/core/simulation.gd"
 ## Engine types sim/ may name today (computed from the code once and pinned, LT-34/S2).
 const ENGINE_ALLOWLIST := [
-	"Array", "Callable", "Dictionary", "FileAccess", "JSON", "PackedByteArray", "PackedInt64Array",
+	"Array", "Dictionary", "FileAccess", "JSON", "PackedByteArray", "PackedInt64Array",
 	"PackedStringArray", "RandomNumberGenerator", "RefCounted", "RegEx", "String", "Variant",
 	"Vector2", "Vector2i",
 ]

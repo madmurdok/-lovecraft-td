@@ -8,7 +8,8 @@ extends Node2D
 ## hits drawn off-target into an empty spot. Its randomness is presentation-only.
 ## LT-25: each attack kind has its own look, chosen from the tower's current stats
 ## (shot_kind): rifle tracer, piercing harpoon, Elder Sign ward aura, Necronomicon dark
-## wave; slow and damage-taken markers on enemies (enemy_markers). Nothing here tells a
+## wave; slow, damage-taken and (LT-29) bleed markers on enemies (enemy_markers), a longer
+## hit spark on a crit and a dashed chain for a pull. Nothing here tells a
 ## fake from a real enemy: every look depends only on SHOT fields and aura state.
 ## LT-41 (LT-38 P2): the static map (cells, grid, start, lighthouse) lives in a child
 ## MapLayer drawn behind the board's own draw and redrawn only when the map changes, not
@@ -76,6 +77,11 @@ const WAVE_FLASH := 0.2
 const WAVE_FIZZLE_CELLS := 0.5  ## max ring of an empty astray wave (not aoe_radius)
 const MARK_SLOW_CELLS := 0.34
 const MARK_VULN := Color(1.6, 0.7, 2.2)
+const MARK_BLEED := Color(1.7, 0.2, 0.15)  ## LT-29: bleed drops below the body
+const BLEED_DROP_SECONDS := 0.5  ## one drip loop (decoration, real time)
+const CHAIN_SECONDS := 0.3  ## LT-29: the pull chain, one shot
+const CHAIN_DASH := 6.0  ## px per dash and per gap
+const CRIT_SPARK_SCALE := 2.0  ## a crit's hit spark rays are this much longer
 
 ## LT-14 visual tunables.
 @export var flicker_rate := 13.0  ## flicker steps per second
@@ -180,6 +186,8 @@ static func enemy_markers(e: SimEnemy) -> PackedStringArray:
 		out.append("slow")
 	if e.damage_taken_mult > 1.001:
 		out.append("vuln")
+	if e.status.get("bleed_ticks", 0) > 0:  # LT-29: state, per tick
+		out.append("bleed")
 	return out
 
 
@@ -207,7 +215,15 @@ func _shot_fx(t: SimTower, data: Dictionary) -> Dictionary:
 	var fx := {"kind": kind, "tower": t.id, "from": t.centre(), "to": to, "end": to,
 		"hits": hits.duplicate(), "hit_pos": _hit_positions(hits),
 		"miss": data.get("miss", false), "astray": data.get("astray", false),
-		"seed": _fx_rng.randi()}
+		"seed": _fx_rng.randi(), "crit": data.get("crit", false)}
+	var pulled: Array = data.get("pulled", [])
+	if not pulled.is_empty():  # LT-29: chain from each pulled enemy back to the tower
+		var chain := {}
+		for id: int in pulled:
+			var e := game.sim.enemy_by_id(id)
+			if e != null:
+				chain[id] = game.sim.enemy_position(e, 1.0)
+		fx["chain"] = chain
 	if fx["astray"] and hits.is_empty():
 		# An empty astray shot lands off its aim point (LT-14); a wave tower fizzles there
 		# with a small ring, not a full blast (LT-25 §3).
@@ -471,6 +487,12 @@ func _draw_enemies(s: SimState) -> void:
 				var st := i * TAU / 6.0
 				draw_arc(px, CELL * MARK_SLOW_CELLS, st, st + TAU / 12.0, 4, sc, 2.0)
 		draw_circle(px, CELL * 0.25, color)
+		if marks.has("bleed"):  # two red drops dripping below the body
+			for i in 2:
+				var ph := fposmod(_time / BLEED_DROP_SECONDS + i * 0.5, 1.0)
+				var dc := Color(MARK_BLEED, color.a * (1.0 - ph * 0.7))
+				draw_circle(px + Vector2((i - 0.5) * CELL * 0.22, CELL * (0.3 + 0.2 * ph)),
+					CELL * 0.09, dc)
 		if mad > 0.0:
 			draw_arc(px, CELL * 0.25, 0, TAU, 24, Color(COLOR_ENEMY_OUTLINE, color.a * mad), 3.0)
 		if marks.has("vuln"):  # body outline
@@ -554,10 +576,11 @@ func _draw_tracer(fx: Dictionary) -> void:
 	elif not fx["miss"]:
 		var fade := clampf(1.0 - (el - TRACER_TRAVEL) / (TRACER_SECONDS - TRACER_TRAVEL),
 			0.0, 1.0)
+		var ray := CRIT_SPARK_SCALE if fx.get("crit", false) else 1.0  # LT-29
 		for p: Vector2 in fx["hit_pos"]:
 			for i in 4:
 				var v := Vector2.from_angle(PI * 0.25 + i * PI * 0.5)
-				draw_line(p * CELL + v * CELL * 0.05, p * CELL + v * CELL * 0.2,
+				draw_line(p * CELL + v * CELL * 0.05, p * CELL + v * CELL * 0.2 * ray,
 					Color(TRACER_COLOR, fade), 2.0)
 
 
@@ -578,6 +601,12 @@ func _draw_harpoon(fx: Dictionary) -> void:
 		var w := dir.orthogonal() * CELL * 0.09
 		draw_colored_polygon(PackedVector2Array([head, base + w, base - w]),
 			Color(HARPOON_COLOR, fade))
+	if el < CHAIN_SECONDS:  # LT-29: dashed steel chain from each pulled enemy to the tower
+		var cc := Color(HARPOON_COLOR, 1.0 - el / CHAIN_SECONDS * 0.7)
+		var chain: Dictionary = fx.get("chain", {})
+		for id: int in chain:
+			var p: Vector2 = _last_pos.get(id, chain[id])
+			draw_dashed_line(p * CELL, a, cc, 2.0, CHAIN_DASH)
 	var pos: Array = fx["hit_pos"]
 	var passes: Array = fx.get("pass_t", [])
 	for i in mini(pos.size(), passes.size()):

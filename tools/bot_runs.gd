@@ -5,6 +5,9 @@ extends SceneTree
 ##   [--upgrades=0] (never upgrade: the pre-LT-24 baseline; RUN lines then carry no
 ##   "upgrades"/"upgrade_gold" keys. Since LT-27 the economy differs, so no run compares
 ##   byte for byte with a pre-LT-27 harness; only the key set does)
+##   [--branch=<tower>:<a|b>[,<tower>:<a|b>...]] (LT-29: override BRANCH_PICK for these
+##   tower def ids in every strategy, e.g. --branch=rifleman:b,harpooner:b; other towers keep
+##   the strategy's pick; a branch other than a or b is an error)
 ## For each strategy x seed it plays one full run on data/ with a fresh Simulation +
 ## WaveDirector and prints one "RUN {json}" line per run, then a "SUMMARY {json}" line.
 ##
@@ -26,7 +29,7 @@ extends SceneTree
 ## Upgrades (LT-24 §5, "wide then deep"): while the board has fewer than BUILD_FIRST towers
 ## the next purchase is the next build; after that it is the cheapest upgrade (gold; ties
 ## -> lower tower id) among the towers, L3 branch from BRANCH_PICK. A tower whose picked
-## branch is missing or has_pending() stays at L2; the cap guard (occult, mixed) skips an
+## branch is missing or has_pending() (none since LT-29) stays at L2; the cap guard (occult, mixed) skips an
 ## upgrade whose reserve delta would leave the cap below CAP_FLOOR. With no upgrade left the next purchase is a build. The
 ## bot buys the next purchase or stops for the round (it saves, never skips to something
 ## cheaper).
@@ -71,6 +74,7 @@ var _score_cache := {}  ## def id -> Array of [score, cell] sorted best first
 var _upgrades := true  ## false with --upgrades=0
 var _lighthouse := true  ## false with --lighthouse=0
 var _flare := true  ## false with --flare=0
+var _branch_override := {}  ## tower def id -> branch from --branch=, wins over BRANCH_PICK
 
 
 func _init() -> void:
@@ -90,6 +94,14 @@ func _init() -> void:
 			_lighthouse = a.substr(13) != "0"
 		elif a.begins_with("--flare="):
 			_flare = a.substr(8) != "0"
+		elif a.begins_with("--branch="):
+			for pair in a.substr(9).split(",", false):
+				var kv := pair.split(":")
+				if kv.size() != 2 or kv[1] not in ["a", "b"]:
+					printerr("bad --branch pair: ", pair)
+					quit(1)
+					return
+				_branch_override[kv[0]] = kv[1]
 	var res := GameConfig.load_from_dir(data_dir) if data_dir != "" else GameConfig.load_from_dir()
 	if not res.ok:
 		printerr("config errors: ", res.errors)
@@ -341,7 +353,8 @@ func _night_flare(sim: Simulation) -> void:
 ## whose L3 pick is missing from BRANCH_PICK or has_pending(), and (occult, mixed) an
 ## upgrade whose reserve delta fails the cap guard (_cap_allows).
 func _next_upgrade(sim: Simulation, strat: String) -> Array:
-	var picks: Dictionary = BRANCH_PICK.get(strat, {})
+	var picks: Dictionary = BRANCH_PICK.get(strat, {}).duplicate()
+	picks.merge(_branch_override, true)
 	var best: Array = []
 	var best_cost := 0
 	for t in sim.state.towers:
