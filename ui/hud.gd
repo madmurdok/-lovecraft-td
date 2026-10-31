@@ -58,7 +58,7 @@ func _ready() -> void:
 	footer.size = Vector2(base_w,
 		float(ProjectSettings.get_setting("display/window/size/viewport_height")) - footer.position.y)
 	add_child(footer)
-	# LT-44: in the footer strip (nothing else lives there); not in the jitter list below.
+	# LT-44: bottom-left of the footer strip (LT-30 oil + flare sit at its right end); not in the jitter list below.
 	fps_label = Label.new()
 	fps_label.name = "FpsLabel"
 	fps_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
