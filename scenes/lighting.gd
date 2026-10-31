@@ -20,9 +20,6 @@ const NIGHT_EASE_SECONDS := 0.6  ## time constant of the day <-> night fade
 const FOG_DAY_ALPHA := 0.45  ## fog opacity by day, relative to the night fog
 const BEAM_COLOR := Color(1.0, 0.94, 0.72)
 const BEAM_ENERGY := 1.6
-const BEAM_SPEED := 0.45  ## radians per second (about one turn every 14 s)
-const BEAM_REACH_CELLS := 16.0
-const BEAM_HALF_ANGLE := 0.24  ## radians
 const LIGHTHOUSE_GLOW_CELLS := 3.0
 const TOWER_LIGHT_COLOR := Color(1.0, 0.78, 0.48)
 const TOWER_LIGHT_ENERGY := 0.9
@@ -32,12 +29,13 @@ const TOWER_LIGHT_CELLS := 2.2  ## radius
 const MAX_TOWER_LIGHTS := 12
 const BEAM_TEX_SIZE := 256
 
-static var _beam_tex: ImageTexture
+static var _beam_texs: Dictionary[int, ImageTexture] = {}  ## half angle (milli-rad) -> cone
 static var _glow_tex: GradientTexture2D
 
 var game: Game
 var modulate_node: CanvasModulate
-var beam: PointLight2D
+var beam: PointLight2D  ## the first beam (always present)
+var beams: Array[PointLight2D] = []  ## LT-30: one per sim.beam_count(), beam is beams[0]
 var glow: PointLight2D
 var fog: Node2D
 var _tower_lights: Dictionary[int, PointLight2D] = {}  ## tower id -> light
@@ -79,15 +77,13 @@ func _ready() -> void:
 	glow = _light("LighthouseGlow", _glow_texture(), BEAM_COLOR, 1.0,
 		LIGHTHOUSE_GLOW_CELLS * 2.0 * Board.CELL / 256.0)
 	glow.position = lh_center
-	beam = _light("Beam", _beam_texture(), BEAM_COLOR, BEAM_ENERGY,
-		BEAM_REACH_CELLS * 2.0 * Board.CELL / BEAM_TEX_SIZE)
-	beam.position = lh_center
-	beam.rotation = PI  # starts pointing left; sweeps up over the land first
+	_sync_beams()
+	beam = beams[0]
 	_apply_night()
 
 
 func _process(delta: float) -> void:
-	beam.rotation = wrapf(beam.rotation + BEAM_SPEED * delta, -PI, PI)
+	_sync_beams()
 	_sync_tower_lights()
 	ease_night(delta)
 
@@ -104,14 +100,45 @@ func ease_night(delta: float) -> void:
 
 func _apply_night() -> void:
 	modulate_node.color = ambient(night)
-	beam.energy = BEAM_ENERGY * night
+	for b: PointLight2D in beams:
+		b.energy = BEAM_ENERGY * night
+		b.visible = night > 0.0
 	glow.energy = night
-	beam.visible = night > 0.0
 	glow.visible = night > 0.0
 	for l: PointLight2D in _tower_lights.values():
 		l.energy = TOWER_LIGHT_ENERGY * night
 		l.visible = night > 0.0
 	fog.modulate.a = lerpf(FOG_DAY_ALPHA, 1.0, night)
+
+
+## LT-30 §3.2: the beams follow the sim. Count from beam_count() (a lighthouse upgrade adds
+## beams), rotation from beam_directions(alpha) (tick + alpha, no timer of its own; empty by
+## day, then the last rotation stays), cone width from the config, widened while a flare
+## burns (state.flare_ticks_left, a read).
+func _sync_beams() -> void:
+	var sim := game.sim
+	var lh_center := (Vector2(sim.state.map.lighthouse) + Vector2(0.5, 0.5)) * Board.CELL
+	var cfg := sim.config.economy
+	var k := cfg.beam.half_width_ratio
+	if cfg.flare != null and sim.state.flare_ticks_left > 0:
+		k *= cfg.flare.width_mult
+	var tex := _beam_texture(atan(k))
+	var tex_scale := cfg.beam.reach_cells * 2.0 * Board.CELL / BEAM_TEX_SIZE
+	var want := sim.beam_count()
+	while beams.size() < want:
+		var b := _light("Beam%d" % beams.size(), tex, BEAM_COLOR, BEAM_ENERGY * night, tex_scale)
+		b.position = lh_center
+		b.rotation = PI  # starts pointing left (the sim's first direction)
+		b.visible = night > 0.0
+		beams.append(b)
+	while beams.size() > want:
+		beams.pop_back().queue_free()
+	var dirs := sim.beam_directions(game.clock.alpha())
+	for i in beams.size():
+		beams[i].texture = tex
+		beams[i].texture_scale = tex_scale
+		if i < dirs.size():
+			beams[i].rotation = dirs[i].angle()
 
 
 func _sync_tower_lights() -> void:
@@ -162,10 +189,11 @@ static func _glow_texture() -> GradientTexture2D:
 	return _glow_tex
 
 
-## A cone pointing along +x from the texture centre (the light's position), with soft
-## edges and a falloff along its length. Built once on the CPU: no shader needed.
-static func _beam_texture() -> ImageTexture:
-	if _beam_tex == null:
+## A cone of half angle `half_angle` (radians) pointing along +x from the texture centre
+## (the light's position), cached per angle, with soft edges and a falloff along its length. Built once on the CPU: no shader needed.
+static func _beam_texture(half_angle: float) -> ImageTexture:
+	var key := roundi(half_angle * 1000.0)
+	if not _beam_texs.has(key):
 		var n := BEAM_TEX_SIZE
 		var half := n * 0.5
 		var img := Image.create(n, n, false, Image.FORMAT_LA8)
@@ -175,13 +203,13 @@ static func _beam_texture() -> ImageTexture:
 				var d := v.length() / half
 				var a := 0.0
 				if d < 1.0 and v.x > 0.0:
-					var edge := 1.0 - smoothstep(BEAM_HALF_ANGLE * 0.55, BEAM_HALF_ANGLE,
+					var edge := 1.0 - smoothstep(half_angle * 0.55, half_angle,
 						absf(v.angle()))
 					a = edge * pow(1.0 - d, 0.8) * smoothstep(0.0, 0.04, d)
 				a = maxf(a, 0.0)
 				img.set_pixel(x, y, Color(a, a, a, a))
-		_beam_tex = ImageTexture.create_from_image(img)
-	return _beam_tex
+		_beam_texs[key] = ImageTexture.create_from_image(img)
+	return _beam_texs[key]
 
 
 ## Fog quads over every water cell; the shader does the noise.
