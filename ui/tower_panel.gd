@@ -132,7 +132,7 @@ func _refresh_upgrade(b: Button, info: Label, t: SimTower, s: TowerDef.Level, br
 	var text := label + TowerInfo.DASH + TowerInfo.cost_text(target.upgrade_cost)
 	if b.disabled:
 		text += " (%s)" % TowerInfo.reason(r)
-	elif _drives_mad(game.sim.reserve_delta(t.def.id, s, target)):
+	elif game.sim.would_drive_mad_upgrade(t.id, branch):
 		text += MADNESS_WARNING
 	b.text = text
 	var lines := PackedStringArray()
@@ -167,12 +167,6 @@ func _refresh_priority(t: SimTower) -> void:
 			b.add_theme_color_override("font_disabled_color", SidePanel.COLOR_ROLE)
 		else:
 			b.remove_theme_color_override("font_disabled_color")
-
-
-## An enabled upgrade reserving `delta` more sanity would take the cap to 0 (and so start
-## madness, LT-23 Q3).
-func _drives_mad(delta: float) -> bool:
-	return TowerInfo.drives_mad(game.sim.state, delta)
 
 
 func _on_upgrade_pressed(branch: String) -> void:

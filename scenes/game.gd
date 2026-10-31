@@ -42,7 +42,7 @@ func setup(config: GameConfig, p_seed: int) -> void:
 	if OS.is_debug_build():
 		var forced := debug_sanity_arg(OS.get_cmdline_user_args())
 		if forced >= 0.0:
-			sim._add_sanity(forced - sim.state.sanity, "debug", 0)
+			sim.debug_set_sanity(forced)
 
 
 ## The `--sanity=<v>` / `--sanity <v>` value clamped to >= 0, or -1 when absent or not a
