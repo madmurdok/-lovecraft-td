@@ -101,7 +101,7 @@ func test_has_pending_on_the_shipped_branches_and_levels() -> void:
 				.override_failure_message("%s.%s" % [id, b]).is_equal(pending[id][b])
 
 
-func test_has_pending_reads_effects_and_the_sanity_per_second_stat() -> void:
+func test_has_pending_reads_only_effect_keys() -> void:
 	var l := TowerDef.Level.new()
 	assert_bool(l.has_pending()).is_false()
 	l.effects = {"pierce": 1.0, "slow": 0.3, "aoe_radius": 1.5, "damage_taken_multiplier": 1.25}
@@ -110,8 +110,19 @@ func test_has_pending_reads_effects_and_the_sanity_per_second_stat() -> void:
 	assert_bool(l.has_pending()).is_false()  # a zero value is not an effect
 	for key: String in TowerDef.Level.PENDING:
 		var k := TowerDef.Level.new()
-		if key == "sanity_per_second":
-			k.sanity_per_second = 0.2
-		else:
-			k.effects[key] = 1.0
+		k.effects[key] = 1.0
 		assert_bool(k.has_pending()).override_failure_message(key).is_true()
+
+
+## LT-23 pin 18: the drain stat left the schema and PENDING; a reserve is not pending, and
+## the Corrupted Seal stays pending through strip_armor alone.
+func test_sanity_per_second_left_pending_and_the_seal_is_pending_by_strip_armor() -> void:
+	assert_bool(TowerDef.Level.PENDING.has("sanity_per_second")).is_false()
+	var k := TowerDef.Level.new()
+	k.sanity_reserve = 15.0
+	assert_bool(k.has_pending()).is_false()
+	var seal: TowerDef.Level = _real().towers["elder_sign"].branches["b"]
+	assert_float(seal.sanity_reserve).is_greater(0.0)
+	assert_bool(seal.has_pending()).is_true()
+	seal.effects.erase("strip_armor")
+	assert_bool(seal.has_pending()).is_false()

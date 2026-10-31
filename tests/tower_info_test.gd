@@ -68,19 +68,22 @@ func test_elder_sign_is_support_with_aura_and_effects_and_no_kind_line() -> void
 	assert_array(_lines("elder_sign", l1)).is_equal([
 		"Support (no damage)",
 		"Aura radius %s cells" % _n(l1.range_cells),
+		"Reserves %s sanity" % _n(l1.sanity_reserve),
 		"Slows enemies inside by %s%%" % _n(l1.effects["slow"] * 100.0),
 		"Enemies inside take +%s%% damage" % _n((l1.effects["damage_taken_multiplier"] - 1.0) * 100.0),
 	])
 
 
-func test_corrupted_seal_shows_its_pending_drain_and_armor_strip() -> void:
+## LT-23: the Seal's drain line became its reserve line; the strip stays pending.
+func test_corrupted_seal_shows_its_reserve_and_pending_armor_strip() -> void:
 	var seal := _def("elder_sign").branches["b"]
 	var got := _lines("elder_sign", seal)
-	assert_array(got).contains([
-		"−%s sanity/s while on the board%s" % [_n(seal.sanity_per_second), CS],
+	var reserve := "Reserves %s sanity" % _n(seal.sanity_reserve)
+	assert_array(got).contains([reserve,
 		"Enemies inside lose %s armor%s" % [_n(seal.effects["strip_armor"]), CS]])
-	# Drains come before effects; the strip is the last effect group.
-	assert_int(got.find("−%s sanity/s while on the board%s" % [_n(seal.sanity_per_second), CS])) \
+	assert_bool(got.any(func(x: String) -> bool: return x.contains("sanity/s"))).is_false()
+	# The reserve comes before effects; the strip is the last effect group.
+	assert_int(got.find(reserve)) \
 		.is_less(got.find("Slows enemies inside by %s%%" % _n(seal.effects["slow"] * 100.0)))
 	assert_str(got[got.size() - 1]).is_equal(
 		"Enemies inside lose %s armor%s" % [_n(seal.effects["strip_armor"]), CS])
@@ -90,7 +93,7 @@ func test_necronomicon_lines_and_the_madness_kind_line() -> void:
 	var n := _def("necronomicon_reader")
 	var l1 := n.levels[0]
 	assert_array(_lines("necronomicon_reader", l1)).is_equal(_attack(l1) + [
-		"−%s sanity per cast" % _n(l1.sanity_per_cast),
+		"Reserves %s sanity" % _n(l1.sanity_reserve),
 		"Blast: hits all enemies within %s cells of the target" % _n(l1.effects["aoe_radius"]),
 		"In madness: x%s damage, shots go astray" % _n(_cfg.sanity.madness.damage_multiplier)])
 	var rite := n.branches["a"]
@@ -192,9 +195,27 @@ func test_num_prints_up_to_two_decimals_without_trailing_zeros() -> void:
 
 func test_cost_text_and_the_currency_word() -> void:
 	assert_str(TowerInfo.CURRENCY).is_equal("gold")
-	assert_str(TowerInfo.cost_text(80, 8.0)).is_equal("80 gold + 8 sanity")
-	assert_str(TowerInfo.cost_text(40, 0.0)).is_equal("40 gold")
-	assert_str(TowerInfo.cost_text(140, 2.5)).is_equal("140 gold + 2.5 sanity")
+	# LT-23 Q5: sanity is reserved, never paid, so a cost is gold only.
+	assert_str(TowerInfo.cost_text(80)).is_equal("80 gold")
+	assert_str(TowerInfo.cost_text(40)).is_equal("40 gold")
+	assert_str(TowerInfo.cost_text(0)).is_equal("0 gold")
+
+
+## LT-23 §1.4: a level without a reserve has no reserve line, and no line names a per-cast
+## or per-second sanity cost any more.
+func test_reserve_line_iff_the_level_reserves_and_no_cost_lines() -> void:
+	for id: String in _cfg.towers:
+		var def := _def(id)
+		var all: Array = def.levels.duplicate()
+		for b: String in TowerDef.BRANCH_IDS:
+			all.append(def.branches[b])
+		for s: TowerDef.Level in all:
+			var got := _lines(id, s)
+			var want := "Reserves %s sanity" % _n(s.sanity_reserve)
+			assert_bool(got.has(want)).override_failure_message("%s %s" % [id, got]) \
+				.is_equal(s.sanity_reserve > 0.0)
+			assert_bool(got.any(func(x: String) -> bool:
+				return x.contains("per cast") or x.contains("sanity/s"))).is_false()
 
 
 # --- 19: delta lines -----------------------------------------------------------------------
@@ -231,8 +252,9 @@ func test_support_delta_uses_aura_radius_and_unchanged_effects_are_left_out() ->
 	var s := _def("elder_sign")
 	var a := s.levels[1]
 	var b := s.branches["a"]
-	assert_array(Array(TowerInfo.delta_lines(a, b))) \
-		.is_equal([_arrow("Aura radius", a.range_cells, b.range_cells)])
+	assert_array(Array(TowerInfo.delta_lines(a, b))).is_equal([
+		_arrow("Aura radius", a.range_cells, b.range_cells),
+		"Reserve +%s" % _n(b.sanity_reserve - a.sanity_reserve)])
 
 
 func test_same_stats_give_only_the_new_effect_line() -> void:
@@ -246,8 +268,10 @@ func test_same_stats_give_only_the_new_effect_line() -> void:
 func test_pure_rite_delta_ends_with_unaffected_by_madness() -> void:
 	var n := _def("necronomicon_reader")
 	var got := Array(TowerInfo.delta_lines(n.levels[1], n.branches["a"]))
-	assert_int(got.size()).is_equal(2)
-	assert_str(got[1]).is_equal("Unaffected by madness")
+	assert_int(got.size()).is_equal(3)
+	assert_str(got[1]).is_equal("Reserve +%s" % _n(n.branches["a"].sanity_reserve
+		- n.levels[1].sanity_reserve))
+	assert_str(got[2]).is_equal("Unaffected by madness")
 	assert_array(Array(TowerInfo.delta_lines(n.levels[1], n.branches["b"]))) \
 		.not_contains(["Unaffected by madness"])
 
@@ -256,3 +280,35 @@ func test_identical_levels_give_no_delta() -> void:
 	for id: String in _cfg.towers:
 		var l := _def(id).levels[1]
 		assert_array(Array(TowerInfo.delta_lines(l, l))).is_empty()
+
+
+## LT-23 §1.4: the reserve delta line, with the sign; none when the reserve is the same.
+func test_reserve_delta_line_signs_and_absence() -> void:
+	var a := TowerDef.Level.new()
+	var b := TowerDef.Level.new()
+	a.sanity_reserve = 10.0
+	b.sanity_reserve = 15.0
+	assert_array(Array(TowerInfo.delta_lines(a, b))).is_equal(["Reserve +5"])
+	assert_array(Array(TowerInfo.delta_lines(b, a))).is_equal(["Reserve %s5" % TowerInfo.MINUS])
+	b.sanity_reserve = 10.0
+	assert_array(Array(TowerInfo.delta_lines(a, b))).is_empty()
+
+
+## LT-23 Q3 / pin 25: drives_mad iff a positive delta takes the cap to 0 or below, never in
+## MADNESS.
+func test_drives_mad_on_a_cap_taken_to_zero_outside_madness_only() -> void:
+	var st := SimState.new()
+	st.sanity_cap = 10.0
+	st.sanity = 10.0
+	st.sanity_state = SimState.SanityState.FRAYING
+	assert_bool(TowerInfo.drives_mad(st, 10.0)).is_true()
+	assert_bool(TowerInfo.drives_mad(st, 12.0)).is_true()
+	assert_bool(TowerInfo.drives_mad(st, 9.5)).is_false()
+	assert_bool(TowerInfo.drives_mad(st, 0.0)).is_false()
+	assert_bool(TowerInfo.drives_mad(st, -5.0)).is_false()
+	st.sanity_cap = 0.0  # a reserve of 0 never warns, even with no room left
+	assert_bool(TowerInfo.drives_mad(st, 0.0)).is_false()
+	st.sanity_cap = 10.0
+	st.sanity_state = SimState.SanityState.MADNESS
+	assert_bool(TowerInfo.drives_mad(st, 12.0)).is_false()
+	assert_str(TowerInfo.MADNESS_WARNING).is_equal(" (drives you mad!)")

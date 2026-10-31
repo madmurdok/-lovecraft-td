@@ -1,7 +1,7 @@
 class_name UpgradeTest
 extends WaveTestBase
 ## LT-24 §2 upgrade command (sim): L1 -> L2 -> L3 branch, the refusal order, build phase
-## only (Decision 3), events, command log + replay, sanity cost, the refund over everything
+## only (Decision 3), events, command log + replay, the sanity reserve (LT-23), the refund over everything
 ## spent (Decision 4), cooldown kept, branch stats through the existing combat code.
 ## Balance numbers are read from config.
 
@@ -35,7 +35,7 @@ func _up(sim: Simulation, t: SimTower, branch := "") -> void:
 
 ## Snapshot of everything a refused upgrade must leave alone.
 func _snap(sim: Simulation, t: SimTower) -> Array:
-	return [sim.state.gold, sim.state.sanity, t.level, t.branch, t.spent,
+	return [sim.state.gold, sim.state.sanity, sim.state.sanity_cap, t.level, t.branch, t.spent,
 		sim.state.command_log.duplicate(true), t.cooldown_ticks]
 
 
@@ -273,22 +273,69 @@ func test_upgrade_emits_tower_upgraded_then_gold_changed() -> void:
 	assert_int(ev[0].data["cost"]).is_equal(sim.config.towers[RIFLE].branches["b"].upgrade_cost)
 
 
-func test_elder_sign_upgrade_also_pays_sanity_after_the_gold() -> void:
+## LT-23 pin 6: at full sanity the upgrade lowers the cap by target - current reserve after
+## the gold, and sanity above the new cap drops to it.
+func test_elder_sign_upgrade_moves_the_cap_by_the_reserve_delta_after_the_gold() -> void:
 	var sim := _rich(tsim())
 	var t := build(sim, SIGN)
 	sim.drain_events()
-	var lvl := sim.config.towers[SIGN].levels[1]
-	assert_float(lvl.upgrade_sanity_cost).is_greater(0.0)
-	var sanity := sim.state.sanity
+	var l1 := sim.config.towers[SIGN].levels[0]
+	var l2 := sim.config.towers[SIGN].levels[1]
+	var delta := l2.sanity_reserve - l1.sanity_reserve
+	assert_float(delta).is_greater(0.0)
+	var cap := sim.state.sanity_cap
+	assert_float(sim.state.sanity).is_equal(cap)
 	_up(sim, t)
 	var ev := sim.drain_events()
-	assert_int(ev.size()).is_equal(3)
-	assert_array([ev[0].type, ev[1].type, ev[2].type]) \
-		.is_equal([T.TOWER_UPGRADED, T.GOLD_CHANGED, T.SANITY_CHANGED])
-	assert_str(ev[2].data["reason"]).is_equal("upgrade")
+	assert_array(ev.map(func(e: SimEvent) -> int: return e.type)).is_equal(
+		[T.TOWER_UPGRADED, T.GOLD_CHANGED, T.SANITY_CAP_CHANGED, T.SANITY_CHANGED])
 	assert_int(ev[2].id).is_equal(t.id)
-	assert_float(ev[2].data["delta"]).is_equal_approx(-lvl.upgrade_sanity_cost, 0.0001)
-	assert_float(sim.state.sanity).is_equal_approx(sanity - lvl.upgrade_sanity_cost, 0.0001)
+	assert_float(ev[2].data["delta"]).is_equal_approx(-delta, 0.0001)
+	assert_float(ev[2].data["cap"]).is_equal_approx(cap - delta, 0.0001)
+	assert_str(ev[2].data["reason"]).is_equal("upgrade")
+	assert_str(ev[3].data["reason"]).is_equal("reserve")
+	assert_int(ev[3].id).is_equal(t.id)
+	assert_float(ev[3].data["delta"]).is_equal_approx(-delta, 0.0001)
+	assert_float(sim.state.sanity_cap).is_equal_approx(sim.config.sanity.max_sanity
+		- l2.sanity_reserve, 0.0001)
+	assert_float(sim.state.sanity).is_equal_approx(sim.state.sanity_cap, 0.0001)
+
+
+## LT-23 pin 6 (Q1): sanity at or below the new cap is untouched by an upgrade.
+func test_upgrade_below_the_new_cap_moves_only_the_cap() -> void:
+	var sim := _rich(tsim())
+	var t := build(sim, SIGN)
+	_set_sanity(sim, 50.0)
+	var delta := sim.config.towers[SIGN].levels[1].sanity_reserve \
+		- sim.config.towers[SIGN].levels[0].sanity_reserve
+	var cap := sim.state.sanity_cap
+	_up(sim, t)
+	assert_float(sim.state.sanity).is_equal(50.0)
+	assert_float(sim.state.sanity_cap).is_equal_approx(cap - delta, 0.0001)
+	var ev := sim.drain_events()
+	assert_int(of_type(ev, T.SANITY_CAP_CHANGED).size()).is_equal(1)
+	assert_array(of_type(ev, T.SANITY_CHANGED)).is_empty()
+
+
+## LT-23 pin 6: a target holding less reserve than the current level raises the cap
+## ("upgrade", positive delta) and leaves sanity alone.
+func test_an_upgrade_to_a_lower_reserve_raises_the_cap() -> void:
+	var sim := _rich(tsim())
+	var l2 := sim.config.towers[SIGN].levels[1]
+	var ward := sim.config.towers[SIGN].branches["a"]
+	ward.sanity_reserve = l2.sanity_reserve - 4.0
+	var t := build(sim, SIGN)
+	_up(sim, t)
+	_set_sanity(sim, 50.0)
+	var cap := sim.state.sanity_cap
+	_up(sim, t, "a")
+	assert_float(sim.state.sanity_cap).is_equal_approx(cap + 4.0, 0.0001)
+	assert_float(sim.state.sanity).is_equal(50.0)
+	var ev := sim.drain_events()
+	var caps := of_type(ev, T.SANITY_CAP_CHANGED)
+	assert_int(caps.size()).is_equal(1)
+	assert_dict(caps[0].data).is_equal({"delta": 4.0, "cap": cap + 4.0, "reason": "upgrade"})
+	assert_array(of_type(ev, T.SANITY_CHANGED)).is_empty()
 
 
 # --- 6: command log + replay -------------------------------------------------------------
@@ -351,35 +398,51 @@ func test_replaying_a_log_with_upgrades_gives_the_same_run() -> void:
 
 # --- 7: sanity cost and madness ----------------------------------------------------------
 
-func test_upgrade_sanity_cost_clamps_at_zero_and_enters_madness() -> void:
+## LT-23 pin 7: an upgrade whose reserve takes the cap to 0 empties sanity and enters
+## MADNESS; the cap event reports the change actually applied (floored at 0).
+func test_upgrade_taking_the_cap_to_zero_empties_sanity_and_enters_madness() -> void:
 	var sim := _rich(tsim())
+	sim.config.towers[SIGN].levels[1].sanity_reserve = sim.config.sanity.max_sanity + 20.0
 	var t := build(sim, SIGN)
-	var cost := sim.config.towers[SIGN].levels[1].upgrade_sanity_cost
-	_set_sanity(sim, cost - 3.0)
+	_set_sanity(sim, 50.0)
+	var cap := sim.state.sanity_cap
 	_up(sim, t)
 	assert_int(t.level).is_equal(1)
+	assert_float(sim.state.sanity_cap).is_equal(0.0)
 	assert_float(sim.state.sanity).is_equal(0.0)
 	assert_int(sim.state.sanity_state).is_equal(S.MADNESS)
 	var ev := sim.drain_events()
+	var caps := of_type(ev, T.SANITY_CAP_CHANGED)
+	assert_int(caps.size()).is_equal(1)
+	assert_float(caps[0].data["delta"]).is_equal_approx(-cap, 0.0001)
 	var ch := of_type(ev, T.SANITY_CHANGED)
 	assert_int(ch.size()).is_equal(1)
-	assert_float(ch[0].data["delta"]).is_equal_approx(-(cost - 3.0), 0.0001)
+	assert_str(ch[0].data["reason"]).is_equal("reserve")
+	assert_float(ch[0].data["delta"]).is_equal_approx(-50.0, 0.0001)
 	var st := of_type(ev, T.SANITY_STATE_CHANGED)
 	assert_int(st.size()).is_equal(1)
 	assert_int(st[0].data["new"]).is_equal(S.MADNESS)
+	# Latched: the next ticks keep MADNESS.
+	run(sim, 5)
+	assert_int(sim.state.sanity_state).is_equal(S.MADNESS)
 
 
-func test_upgrade_in_madness_applies_but_moves_no_sanity() -> void:
+func test_upgrade_in_madness_applies_moves_only_the_cap_and_no_sanity() -> void:
 	var sim := _rich(tsim())
 	var t := build(sim, SIGN)
 	_set_sanity(sim, 0.0)
 	assert_int(sim.state.sanity_state).is_equal(S.MADNESS)
 	var gold := sim.state.gold
+	var cap := sim.state.sanity_cap
 	_up(sim, t)
 	assert_int(t.level).is_equal(1)
 	assert_int(sim.state.gold).is_equal(gold - sim.config.towers[SIGN].levels[1].upgrade_cost)
 	assert_float(sim.state.sanity).is_equal(0.0)
-	assert_array(of_type(sim.drain_events(), T.SANITY_CHANGED)).is_empty()
+	assert_float(sim.state.sanity_cap).is_less(cap)
+	assert_int(sim.state.sanity_state).is_equal(S.MADNESS)
+	var ev := sim.drain_events()
+	assert_int(of_type(ev, T.SANITY_CAP_CHANGED).size()).is_equal(1)
+	assert_array(of_type(ev, T.SANITY_CHANGED)).is_empty()
 
 
 # --- 8: refund over everything spent -----------------------------------------------------
@@ -505,6 +568,9 @@ func test_pure_rite_in_madness_is_not_doubled_and_never_astray() -> void:
 	var sim: Simulation = pair[0]
 	var rite := sim.config.towers[NECRO].branches["a"]
 	assert_bool(rite.madness_affected).is_false()
+	# The LT-23 madness enemy buff is pinned in madness_buff_test; off here so the
+	# not-doubled damage stays exact.
+	sim.config.sanity.madness.enemy_damage_taken_multiplier = 1.0
 	_set_sanity(sim, 0.0)
 	assert_int(sim.state.sanity_state).is_equal(S.MADNESS)
 	var e := put(sim, "cultist", 7.0)
@@ -524,18 +590,20 @@ func test_pure_rite_in_madness_is_not_doubled_and_never_astray() -> void:
 	assert_float(HUGE_HP - e.hp).is_equal_approx(n * maxf(rite.damage - armor, 0.0), 0.0001)
 
 
-func test_corrupted_rite_cast_costs_its_branch_sanity_per_cast() -> void:
+## LT-23 pin 10 (L3): a Corrupted Rite cast costs no sanity; the branch holds its own
+## total reserve.
+func test_corrupted_rite_cast_costs_no_sanity_and_holds_its_branch_reserve() -> void:
 	var pair := _necro_l3("b")
 	var sim: Simulation = pair[0]
 	var t: SimTower = pair[1]
 	var rite := sim.config.towers[NECRO].branches["b"]
-	assert_float(rite.sanity_per_cast).is_not_equal(sim.config.towers[NECRO].levels[1].sanity_per_cast)
+	assert_float(sim.state.sanity_cap).is_equal_approx(
+		sim.config.sanity.max_sanity - rite.sanity_reserve, 0.0001)
+	assert_float(sim.reserve_of(t)).is_equal(rite.sanity_reserve)
 	put(sim, "cultist", 7.0)
 	sim.drain_events()
-	var casts: Array[SimEvent] = []
-	for c in of_type(run(sim, 1), T.SANITY_CHANGED):
-		if c.data["reason"] == "cast":
-			casts.append(c)
-	assert_int(casts.size()).is_equal(1)
-	assert_int(casts[0].id).is_equal(t.id)
-	assert_float(casts[0].data["delta"]).is_equal_approx(-rite.sanity_per_cast, 0.0001)
+	var sanity := sim.state.sanity
+	var ev := run(sim, 1)
+	assert_int(of_type(ev, T.SHOT).size()).is_equal(1)
+	assert_array(of_type(ev, T.SANITY_CHANGED)).is_empty()
+	assert_float(sim.state.sanity).is_equal(sanity)

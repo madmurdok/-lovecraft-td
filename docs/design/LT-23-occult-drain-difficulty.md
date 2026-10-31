@@ -370,6 +370,30 @@ C3 add the reserve back to sanity on sell (5); C4 restore `restore_sanity` witho
 (9); C5 skip fakes in `_apply_madness_buff` (14); C6 apply the buff only at spawn (13);
 C7 remove the occult-only reserve check (11).
 
+### Controls (S9)
+
+Each reverts production code only (never a test); the named test must fail. 9 controls,
+one over the 6-8 budget: C1-C7 are the design's, C8 (bots) and C9 (UI warning) pin
+behaviours in two other areas that none of C1-C7 touches. Grouping for one build: C1-C7
+all edit `sim/` (one at a time), C8 edits `tools/bot_runs.gd`, C9 `ui/tower_info.gd`;
+apply C8 + C9 together with any one sim control, since their tests are in other files.
+
+| # | Pin | Revert (production code) | Must fail | Test file |
+|---|---|---|---|---|
+| C1 | 2, 6 | `Simulation._change_reserve`: replace the `if state.sanity > state.sanity_cap` clamp with `_add_sanity(-applied, "reserve", t.id)` when `applied < 0` (pay the reserve from current sanity too) | `test_build_below_the_new_cap_costs_no_sanity`; `test_upgrade_below_the_new_cap_moves_only_the_cap` | `tests/occult_tower_test.gd`; `tests/upgrade_test.gd` |
+| C2 | 4 | `Simulation._add_sanity`: clamp to `config.sanity.max_sanity` instead of `state.sanity_cap` | `test_mundane_kill_regen_stops_at_the_cap`, `test_between_waves_regen_stops_at_the_cap` | `tests/sanity_reserve_test.gd` |
+| C3 | 5 | `Simulation.sell_tower`: after `_change_reserve(t, -reserve, "sell")` add `_add_sanity(reserve, "sell", t.id)` | `test_sell_raises_the_cap_by_the_reserve_after_the_gold_and_keeps_sanity` | `tests/sanity_reserve_test.gd` |
+| C4 | 9 | `Simulation.restore_target`: return `config.sanity.madness.restore_sanity` (no `minf` with the cap) | `test_buyout_at_cap_zero_is_no_sanity_room_and_pays_nothing`, `test_buyout_restores_only_up_to_a_lower_cap` | `tests/sanity_reserve_test.gd` |
+| C5 | 14 | `Simulation._apply_madness_buff`: `continue` also when `e.is_fake` | `test_a_fake_and_a_real_of_one_def_have_identical_modifiers_in_madness` | `tests/madness_buff_test.gd` |
+| C6 | 13 | `Simulation._apply_madness_buff`: `continue` when `e.spawn_tick != state.tick` (buff only on the spawn tick) | `test_the_buff_reaches_an_enemy_already_on_the_map_and_one_spawned_after` | `tests/madness_buff_test.gd` |
+| C7 | 11 | `TowerDef.Level.parse`: delete the `if l.sanity_reserve > 0.0 and not occult` error block | `test_a_positive_reserve_on_a_mundane_level_or_branch_is_rejected` | `tests/reserve_config_test.gd` |
+| C8 | 20 | `tools/bot_runs.gd` `_order` "occult": blocked item returns `"rifleman"` unconditionally (drop the `OCCULT_MAX_RIFLEMEN` check) | `test_occult_order_falls_back_to_riflemen_below_three_then_saves` | `tests/bot_upgrade_test.gd` |
+| C9 | 19, 25 | `TowerInfo.drives_mad`: read `st.sanity - delta <= 0.0` instead of `st.sanity_cap - delta` (the pre-LT-23 rule) | `test_an_upgrade_that_takes_the_cap_to_zero_warns_but_stays_enabled` | `tests/side_panel_test.gd` |
+
+Not pinned by S9 (render only, no seam without a production change): pin 21 (enemy tint
+and outline in `Board._draw_enemies`) and the drawn reserved block of pin 22
+(`SanityBar._draw_reserved`); `cap_ratio()` and `label_text()` are pinned.
+
 ---
 
 ## 7. Decisions (owner, 2026-10-31)

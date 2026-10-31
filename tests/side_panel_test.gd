@@ -213,11 +213,14 @@ func test_build_buttons_show_name_cost_and_role_first() -> void:
 		var def: TowerDef = _config.towers[id]
 		var b: Button = _game.picker.buttons[id]
 		if not b.disabled:
-			assert_str(b.text).is_equal("%s - %s" % [def.name, TowerInfo.cost_text(def.cost, def.sanity_cost)])
+			assert_str(b.text).is_equal("%s - %s" % [def.name, TowerInfo.cost_text(def.cost)])
 		assert_str(_first_line(_game.picker.infos[id])).is_equal(def.role)
+	# LT-23 Q5: an occult build costs gold only; its info names the reserve instead.
 	var sign: TowerDef = _config.towers[SIGN]
-	assert_float(sign.sanity_cost).is_greater(0.0)
-	assert_str(_game.picker.buttons[SIGN].text).contains("+ %s sanity" % TowerInfo.num(sign.sanity_cost))
+	assert_float(sign.levels[0].sanity_reserve).is_greater(0.0)
+	assert_str(_game.picker.buttons[SIGN].text).not_contains("sanity")
+	assert_str(_game.picker.infos[SIGN].text).contains(
+		"Reserves %s sanity" % TowerInfo.num(sign.levels[0].sanity_reserve))
 
 
 func test_build_buttons_are_disabled_with_the_reason() -> void:
@@ -257,7 +260,7 @@ func test_l1_view_shows_only_the_l2_upgrade() -> void:
 	assert_str(p.role_label.text).is_equal(def.role)
 	assert_array(_visible_ups()).is_equal([""])
 	assert_str(_ups()[""].text).is_equal("Upgrade to L2 - %s" % TowerInfo.cost_text(
-		def.levels[1].upgrade_cost, def.levels[1].upgrade_sanity_cost))
+		def.levels[1].upgrade_cost))
 	assert_bool(p.max_label.visible).is_false()
 
 
@@ -272,7 +275,7 @@ func test_l2_view_shows_the_two_named_branches_with_role_first() -> void:
 	for b: String in ["a", "b"]:
 		var br := def.branches[b]
 		assert_str(_ups()[b].text).is_equal("%s - %s" % [br.name,
-			TowerInfo.cost_text(br.upgrade_cost, br.upgrade_sanity_cost)])
+			TowerInfo.cost_text(br.upgrade_cost)])
 		assert_str(_first_line(p.upgrade_infos[b])).is_equal(br.role)
 	assert_bool(p.max_label.visible).is_false()
 
@@ -342,28 +345,67 @@ func _sign_sanity(v: float) -> void:
 	_game.tower_panel.refresh()
 
 
-func test_an_upgrade_that_empties_sanity_warns_but_stays_enabled() -> void:
+## LT-23 Q3: the warning follows the cap: an upgrade whose reserve delta takes the cap to 0
+## warns but stays enabled; one that leaves it above 0 does not; none in MADNESS.
+func test_an_upgrade_that_takes_the_cap_to_zero_warns_but_stays_enabled() -> void:
 	await _start_game()
 	await _open_tower(SIGN)
-	var cost: float = _config.towers[SIGN].levels[1].upgrade_sanity_cost
-	assert_float(cost).is_greater(0.0)
-	_sign_sanity(cost)  # leaves exactly 0
+	var l2 := _config.towers[SIGN].levels[1]
+	var top := _config.sanity.max_sanity
+	l2.sanity_reserve = top  # cap after the upgrade: exactly 0
+	_game.tower_panel.refresh()
 	assert_bool(_ups()[""].disabled).is_false()
-	assert_str(_ups()[""].text).ends_with(" (drives you mad!)")
-	_sign_sanity(cost + 1.0)
+	assert_str(_ups()[""].text).ends_with(TowerInfo.MADNESS_WARNING)
+	l2.sanity_reserve = top - 1.0  # cap after: 1
+	_game.tower_panel.refresh()
 	assert_str(_ups()[""].text).not_contains("drives you mad")
+	# Current sanity does not matter (Q1): low sanity with room in the cap never warns.
+	_sign_sanity(0.5)
+	assert_str(_ups()[""].text).not_contains("drives you mad")
+	l2.sanity_reserve = top
 	_sign_sanity(0.0)  # already mad: nothing more to lose
 	assert_int(_game.sim.state.sanity_state).is_equal(SimState.SanityState.MADNESS)
 	assert_bool(_ups()[""].disabled).is_false()
 	assert_str(_ups()[""].text).not_contains("drives you mad")
 
 
-func test_a_tower_without_upgrade_sanity_cost_never_warns() -> void:
+func test_a_tower_without_a_reserve_never_warns() -> void:
+	_config.towers[SIGN].levels[0].sanity_reserve = _config.sanity.max_sanity - 0.5
 	await _start_game()
+	_game.sim.state.gold = 10000
+	assert_int(_game.build(SIGN, _buildable_cell())).is_equal(Simulation.CommandResult.OK)
+	assert_float(_game.sim.state.sanity_cap).is_equal_approx(0.5, 0.0001)
 	await _open_tower(RIFLE)
-	assert_float(_config.towers[RIFLE].levels[1].upgrade_sanity_cost).is_equal(0.0)
-	_sign_sanity(0.5)
+	assert_float(_game.sim.reserve_delta(RIFLE, _config.towers[RIFLE].levels[0],
+		_config.towers[RIFLE].levels[1])).is_equal(0.0)
 	assert_str(_ups()[""].text).not_contains("drives you mad")
+
+
+## LT-23 pin 25: an enabled build button warns when the L1 reserve would take the cap to 0;
+## never for a reserve of 0, in MADNESS, or on a disabled button.
+func test_build_button_warns_when_its_reserve_takes_the_cap_to_zero() -> void:
+	var l1 := _config.towers[SIGN].levels[0]
+	l1.sanity_reserve = _config.sanity.max_sanity
+	await _start_game()
+	_game.sim.state.gold = 10000
+	await _click_cell(_buildable_cell())
+	_game.picker.refresh()
+	assert_bool(_game.picker.buttons[SIGN].disabled).is_false()
+	assert_str(_game.picker.buttons[SIGN].text).ends_with(TowerInfo.MADNESS_WARNING)
+	assert_str(_game.picker.buttons[RIFLE].text).not_contains("drives you mad")
+	l1.sanity_reserve = _config.sanity.max_sanity - 1.0
+	_game.picker.refresh()
+	assert_str(_game.picker.buttons[SIGN].text).not_contains("drives you mad")
+	l1.sanity_reserve = _config.sanity.max_sanity
+	_game.sim.state.gold = 0
+	_game.picker.refresh()
+	assert_str(_game.picker.buttons[SIGN].text).ends_with(" (not enough gold)")
+	assert_str(_game.picker.buttons[SIGN].text).not_contains("drives you mad")
+	_game.sim.state.gold = 10000
+	_game.sim.state.sanity = 0.0
+	_game.sim.state.sanity_state = SimState.SanityState.MADNESS
+	_game.picker.refresh()
+	assert_str(_game.picker.buttons[SIGN].text).not_contains("drives you mad")
 
 
 # --- 27: upgrading from the panel -------------------------------------------------------------

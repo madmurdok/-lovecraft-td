@@ -233,7 +233,7 @@ func _act(sim: Simulation, strat: String, idx: int, built: Dictionary) -> int:
 			idx += 1  # blocked occult item: skip to the next one in the order
 			continue
 		if id == "":
-			# Occult bot, blocked and out of riflemen: an occult upgrade that passes the
+			# Occult bot, blocked and out of riflemen: any upgrade that passes the cap
 			# guard if there is one (even below BUILD_FIRST towers), else save.
 			var up := _next_upgrade(sim, strat) if _upgrades else []
 			if up.is_empty() or sim.upgrade_tower(up[0], up[1]) != Simulation.CommandResult.OK:
