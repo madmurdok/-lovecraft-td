@@ -196,3 +196,19 @@ Final run: load 131.90 117.24 63.38; real 208.80, user 196.32, sys 1.59 (user 94
 ### Tests
 
 `config_valid_test` (20), `occult_tower_test` (26), `upgrade_test` (29), `bot_upgrade_test` (21): 0 failures.
+
+## Owner playtest 0.2.1 (LT-39, 2026-10-31)
+
+Build: `release-0.2.1` at 6774f64, run with `-- --frame-stats` (LT-38 overlay). Machine load
+~230 during the session (`uptime` 20:27). Owner verdicts, verbatim:
+
+- **Tower descriptions (LT-37):** "Можно еще короче, возможно сделать унифицированную таблицу так
+  чтобы у всех башен было одинакого: дамаг/тип дамага/санити при убийстве/санити требуемое и тп"
+- **Frame rate at low sanity (LT-38):** "Такое впечатление что кадр таки дольше, можешь выводить
+  показатель фпс где-нибудь в углу?" This disagrees with the LT-38 S1 diagnosis (sanity 0 vs 100
+  ~1-2 ms/frame on a quiet machine); no overlay numbers were given yet.
+- **Tension after 0.2.0 tuning (LT-26 confirmation):** "Всё ещё довольно легко, но напряжение
+  появляется"
+
+Follow-ups: a unified tower stats table, an always-visible FPS readout plus a re-check of frame
+time vs sanity with the owner's numbers, and another difficulty pass (tasks filed from LT-39).

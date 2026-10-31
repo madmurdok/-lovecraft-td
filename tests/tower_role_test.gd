@@ -82,6 +82,33 @@ func test_shipped_config_has_a_role_on_every_tower_and_branch() -> void:
 				.is_not_empty()
 
 
+func test_role_budget_is_24_chars_and_every_shipped_role_fits_it() -> void:
+	# LT-37: one short panel line (168 px at 1280x720).
+	assert_int(TowerDef.ROLE_MAX_CHARS).is_equal(24)
+	var cfg := _real()
+	var checked := 0
+	for id: String in cfg.towers:
+		var def: TowerDef = cfg.towers[id]
+		assert_int(def.role.length()).override_failure_message("%s: '%s'" % [id, def.role]) \
+			.is_less_equal(TowerDef.ROLE_MAX_CHARS)
+		checked += 1
+		for b: String in TowerDef.BRANCH_IDS:
+			var role: String = def.branches[b].role
+			assert_int(role.length()).override_failure_message("%s.%s: '%s'" % [id, b, role]) \
+				.is_less_equal(TowerDef.ROLE_MAX_CHARS)
+			checked += 1
+	assert_int(checked).is_greater(0)
+
+
+func test_a_25_char_role_is_rejected_naming_the_path() -> void:
+	var text := "x".repeat(25)
+	assert_rejected(load_json_edit(T, func(d: Dictionary) -> void: _tower(d)["role"] = text),
+		T, "towers.rifleman.role", "at most 24")
+	assert_rejected(load_json_edit(T, func(d: Dictionary) -> void:
+		_tower(d, "harpooner")["branches"]["b"]["role"] = text),
+		T, "towers.harpooner.branches.b.role", "at most 24")
+
+
 # --- 12: pending effects -------------------------------------------------------------------
 
 func test_has_pending_on_the_shipped_branches_and_levels() -> void:

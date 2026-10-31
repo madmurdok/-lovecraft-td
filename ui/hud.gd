@@ -21,6 +21,8 @@ var pause_button: Button
 var sanity_bar: SanityBar  ## LT-14: sanity with threshold marks
 var buyout_button: Button  ## LT-13/14: madness buyout, only with exit_rule "buyout", in madness
 var hostile_label: Label  ## LT-23 Q10: the madness enemy buff, only in madness
+var frame_label: Label  ## LT-38 P1: only with `--frame-stats` (debug builds)
+var _frame_label_msec := 0
 var footer: ColorRect  ## LT-28: covers the strip below the board (range rings end there)
 
 const COLOR_LUCK := Color(0.75, 0.9, 1.0)
@@ -101,6 +103,14 @@ func _ready() -> void:
 	box.content_margin_bottom = 2
 	hostile_label.add_theme_stylebox_override("normal", box)
 	add_child(hostile_label)
+	if game.frame_stats != null:
+		frame_label = Label.new()
+		frame_label.name = "FrameLabel"
+		frame_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		frame_label.add_theme_font_size_override("font_size", 13)
+		frame_label.add_theme_color_override("font_color", Color(0.6, 1.0, 0.6))
+		frame_label.position = Vector2(RELIC_SLOT, Game.BOARD_ORIGIN.y + 2)
+		add_child(frame_label)
 	# LT-14 Whispers jitter: the shader moves only the drawing, so click areas stay put.
 	if game.sanity_fx != null:
 		for c: CanvasItem in [gold_label, relics_label, hp_label, phase_label,
@@ -125,9 +135,8 @@ func refresh() -> void:
 	luck_label.text = "Luck " + luck_text(s.night_luck)
 	speed_button.text = "x%d" % game.chosen_speed
 	pause_button.text = "Resume" if game.paused else "Pause"
-	# Visible only while it could ever apply: exit rule "buyout" and the player in madness.
-	buyout_button.visible = (game.sim.config.sanity.madness.exit_rule == "buyout"
-		and s.sanity_state == SimState.SanityState.MADNESS)
+	# Visible only while it could ever apply (sim query, LT-36): exit rule "buyout", in madness.
+	buyout_button.visible = game.sim.buyout_applies()
 	buyout_button.text = "Restore (%s)" % TowerInfo.money(game.sim.config.sanity.madness.buyout_cost)
 	buyout_button.disabled = game.sim.can_buy_sanity() != Simulation.CommandResult.OK
 	hostile_label.visible = s.sanity_state == SimState.SanityState.MADNESS
@@ -140,6 +149,11 @@ func refresh() -> void:
 			board_right - w - 4.0)
 		hostile_label.position = Vector2(x, Game.BOARD_ORIGIN.y + 2)
 	sanity_bar.queue_redraw()
+	if frame_label != null:
+		var now := Time.get_ticks_msec()
+		if now - _frame_label_msec >= 250:  # a few times per second, readable
+			_frame_label_msec = now
+			frame_label.text = game.frame_stats.text()
 
 
 ## LT-23 Q10: "The world turns hostile: enemies +20 % speed, −20 % damage taken" from the

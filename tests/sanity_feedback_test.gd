@@ -106,6 +106,29 @@ func test_buyout_button_follows_the_exit_rule_and_can_buy_sanity() -> void:
 	assert_int(_game.sim.state.gold).is_equal(1000 - _config.sanity.madness.buyout_cost)
 
 
+## LT-36: the HUD shows the buyout button exactly while the sim query buyout_applies() holds,
+## for every exit rule, in and out of madness, and does not re-derive the rule itself.
+func test_buyout_button_visibility_is_the_sim_buyout_query() -> void:
+	await _start_game()
+	var b := _game.hud.buyout_button
+	var m := _game.sim.config.sanity.madness
+	for mad: bool in [false, true]:
+		if mad:
+			m.exit_rule = "buyout"
+			_set_sanity(0.0)
+			assert_int(_game.sim.state.sanity_state).is_equal(SimState.SanityState.MADNESS)
+		for rule: String in ["permanent", "buyout", "auto_restore"]:
+			m.exit_rule = rule
+			_game.hud.refresh()
+			assert_bool(b.visible).override_failure_message("%s mad=%s" % [rule, mad]) \
+				.is_equal(_game.sim.buyout_applies())
+			assert_bool(b.visible).override_failure_message("%s mad=%s" % [rule, mad]) \
+				.is_equal(mad and rule == "buyout")
+	var hud := FileAccess.get_file_as_string("res://ui/hud.gd")
+	assert_str(hud).contains("buyout_button.visible = game.sim.buyout_applies()")
+	assert_str(hud).not_contains(".exit_rule")  # no own copy of the rule
+
+
 func test_an_empty_astray_shot_lands_off_its_aim_point() -> void:
 	await _start_game()
 	assert_int(_game.build("rifleman", _first_buildable()) as int) \

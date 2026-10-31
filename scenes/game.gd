@@ -12,6 +12,9 @@ const REVEAL_FAKES_ARG := "--reveal-fakes"  ## `-- --reveal-fakes` (debug builds
 ## the start of the run through the sim's own sanity path, so SANITY_CHANGED /
 ## SANITY_STATE_CHANGED fire as usual. User args must follow a bare `--`.
 const SANITY_ARG := "--sanity"
+## `-- --frame-stats` (debug builds only, LT-38 P1): shows the wall-clock frame time
+## (median / p90 over the last FrameStats.CAPACITY frames) in the HUD.
+const FRAME_STATS_ARG := "--frame-stats"
 const UI_LAYER := 2  ## above SanityFx.SCREEN_LAYER, so the HUD is never distorted
 
 var sim: Simulation
@@ -19,6 +22,8 @@ var clock := SimClock.new()
 var chosen_speed := 1  ## x1 / x2; the clock runs at 0 while paused
 var paused := false
 var run_seed := 0
+var frame_stats: FrameStats  ## LT-38 P1: null unless `--frame-stats` in a debug build
+var _last_frame_usec := 0
 
 var board: Board
 var lighting: Lighting  ## LT-8: darkness, beam, tower lights, sea fog (visual only)
@@ -43,6 +48,8 @@ func setup(config: GameConfig, p_seed: int) -> void:
 		var forced := debug_sanity_arg(OS.get_cmdline_user_args())
 		if forced >= 0.0:
 			sim.debug_set_sanity(forced)
+		if OS.get_cmdline_user_args().has(FRAME_STATS_ARG):
+			frame_stats = FrameStats.new()
 
 
 ## The `--sanity=<v>` / `--sanity <v>` value clamped to >= 0, or -1 when absent or not a
@@ -110,6 +117,11 @@ func _process(delta: float) -> void:
 
 ## One frame: runs the steps SimClock grants, consumes the events, redraws.
 func advance(delta: float) -> void:
+	if frame_stats != null:
+		var now := Time.get_ticks_usec()
+		if _last_frame_usec > 0:
+			frame_stats.push((now - _last_frame_usec) / 1000.0)
+		_last_frame_usec = now
 	var steps := clock.advance(delta)
 	for i in steps:
 		sim.step()
