@@ -79,8 +79,8 @@ func refresh() -> void:
 	hp_label.text = "Lighthouse: %d / %d" % [s.lighthouse_hp, game.sim.config.economy.lighthouse_hp]
 	wave_label.text = "Wave %d / %d" % [s.wave_index, s.waves_total]
 	phase_label.text = phase_text(s)
-	var bonus := game.sim.early_call_bonus()
-	call_wave_button.text = "Call wave (+%d gold)" % bonus
+	# LT-27/S5 stopgap: the early call sets the night luck now; S6 renames the button.
+	call_wave_button.text = "Call wave (luck x%.2f)" % game.sim.early_night_luck()
 	call_wave_button.disabled = (s.phase != SimState.Phase.BUILD
 		or s.outcome != SimState.Outcome.NONE)
 	speed_button.text = "x%d" % game.chosen_speed
@@ -118,7 +118,7 @@ static func hostile_text(m: SanityConfig.Madness) -> String:
 
 
 ## The build timer shows whole seconds rounded down, the same seconds the early-call
-## bonus is paid for (Simulation.early_call_bonus).
+## night luck is set from (Simulation.early_night_luck).
 static func phase_text(s: SimState) -> String:
 	match s.phase:
 		SimState.Phase.BUILD:

@@ -1,50 +1,46 @@
 class_name GoldTest
 extends TowerTestBase
-## LT-6 gold economy: kill rewards, wave bonus, sell refund (behaviours 10-15).
+## LT-6 gold (money) economy: kills (no money since LT-27), wave bonus, sell refund
+## (behaviours 10-15).
 
 const R := Simulation.CommandResult
 
 
-# --- kill rewards ------------------------------------------------------------
+# --- kills (LT-27: kills drop relic tokens, never money) ---------------------
 
-func test_tower_kill_pays_the_enemy_reward_right_after_died() -> void:
+func test_tower_kill_drops_one_token_right_after_died_and_pays_no_money() -> void:
 	for enemy_id: String in ["cultist", "hybrid"]:
 		var sim := tsim()
 		build(sim, "rifleman")
-		var reward: int = sim.config.enemies[enemy_id].reward
 		var e := put(sim, enemy_id, 8.0, 1.0)
 		var gold := sim.state.gold
 		sim.drain_events()
 		var events := run(sim, 1)
 		var died := of_type(events, SimEvent.Type.DIED)
-		var paid := of_type(events, SimEvent.Type.GOLD_CHANGED)
+		var dropped := of_type(events, SimEvent.Type.RELIC_DROPPED)
 		assert_int(died.size()).is_equal(1)
-		assert_int(paid.size()).is_equal(1)
-		assert_int(events.find(paid[0])).is_equal(events.find(died[0]) + 1)
-		assert_int(paid[0].id).is_equal(e.id)
-		assert_dict(paid[0].data).is_equal({"delta": reward, "gold": gold + reward,
-			"reason": "kill"})
-		assert_int(sim.state.gold).is_equal(gold + reward)
+		assert_int(dropped.size()).is_equal(1)
+		assert_int(events.find(dropped[0])).is_equal(events.find(died[0]) + 1)
+		assert_int(died[0].id).is_equal(e.id)
+		assert_array(of_type(events, SimEvent.Type.GOLD_CHANGED)).is_empty()
+		assert_int(sim.state.gold).is_equal(gold)
 
 
-func test_two_towers_killing_one_enemy_in_a_tick_pay_one_reward() -> void:
+func test_two_towers_killing_one_enemy_in_a_tick_drop_one_token() -> void:
 	var sim := tsim()
 	build(sim, "rifleman", TOWER)
 	build(sim, "harpooner", TOWER + Vector2i.RIGHT)
-	var reward: int = sim.config.enemies["cultist"].reward
 	put(sim, "cultist", 8.0, 1.0)
 	var gold := sim.state.gold
 	sim.drain_events()
 	var events := run(sim, 1)
 	assert_array(of_type(events, SimEvent.Type.DIED)).has_size(1)
-	var paid := of_type(events, SimEvent.Type.GOLD_CHANGED)
-	assert_int(paid.size()).is_equal(1)
-	assert_int(sim.state.gold).is_equal(gold + reward)
+	assert_array(of_type(events, SimEvent.Type.RELIC_DROPPED)).has_size(1)
+	assert_int(sim.state.gold).is_equal(gold)
 
 
 func test_a_second_damage_source_in_the_same_tick_cannot_kill_again() -> void:
 	var sim := tsim()
-	var reward: int = sim.config.enemies["cultist"].reward
 	var e := put(sim, "cultist", 8.0, 1.0)
 	var gold := sim.state.gold
 	sim.drain_events()
@@ -52,8 +48,8 @@ func test_a_second_damage_source_in_the_same_tick_cannot_kill_again() -> void:
 	assert_float(sim.apply_damage(e.id, 100.0, "test")).is_equal(0.0)
 	var events := sim.drain_events()
 	assert_array(of_type(events, SimEvent.Type.DIED)).has_size(1)
-	assert_array(of_type(events, SimEvent.Type.GOLD_CHANGED)).has_size(1)
-	assert_int(sim.state.gold).is_equal(gold + reward)
+	assert_array(of_type(events, SimEvent.Type.RELIC_DROPPED)).has_size(1)
+	assert_int(sim.state.gold).is_equal(gold)
 
 
 func test_fake_kill_pays_nothing_but_still_emits_died() -> void:

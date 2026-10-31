@@ -604,6 +604,7 @@ func _play(run_seed: int, commands: Array, ticks: int) -> Array:
 					"build": sim.build_tower(c[2], c[3])
 					"call_wave": sim.call_wave()
 					"buy_sanity": sim.buy_sanity()
+					"sell_relics": sim.sell_relics(c[2])
 		sim.step()
 		out.append_array(strings_of(sim.drain_events()))
 	out.append("tick=%d gold=%d sanity=%s madness=%d" % [sim.state.tick, sim.state.gold,

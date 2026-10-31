@@ -1,5 +1,5 @@
 {
-  "build_phase_seconds": 25,
+  "build_phase_seconds": 40,
   "waves": [
     { "groups": [
       { "type": "cultist", "count": 8, "interval": 1.2 },

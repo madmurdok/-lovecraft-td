@@ -15,7 +15,8 @@ enum CommandResult {
 	OCCUPIED,  ## another tower stands on the cell
 	NOT_ENOUGH_GOLD,
 	NO_SUCH_TOWER,  ## sell/upgrade: unknown or already sold tower id
-	## call_wave: not in the build phase (or no WaveDirector); upgrade: during a wave
+	## call_wave: not in the build phase (or no WaveDirector); build, sell, upgrade,
+	## sell_relics: at night (during a wave, _day_only)
 	NOT_BUILD_PHASE,
 	NO_BUYOUT,  ## buy_sanity: madness.exit_rule is not "buyout"
 	NOT_IN_MADNESS,  ## buy_sanity: sanity state is not MADNESS
@@ -23,6 +24,7 @@ enum CommandResult {
 	NEED_BRANCH,  ## upgrade: L2 -> L3 needs branch "a" or "b"
 	BAD_BRANCH,  ## upgrade: branch is not ""/"a"/"b", or non-empty for L1 -> L2
 	NO_SANITY_ROOM,  ## buy_sanity: the sanity cap is 0, a buyout would restore nothing (LT-23)
+	NO_RELICS,  ## sell_relics: unknown kind or nothing of it in the stash (LT-27)
 }
 
 ## Sanity change reasons that may move sanity while in MADNESS (LT-13): the exit rules.
@@ -39,6 +41,9 @@ var _spawner: SimSpawner
 var _rng: SimRng
 var _ground_route: SimRoute
 var _hallucinations := HallucinationSystem.new()
+## LT-27 §1.3: token id -> true for tokens dropped by fakes. Sim-private: the render must
+## never tell a ghost token from a real one before it vanishes.
+var _ghost_tokens: Dictionary[int, bool] = {}
 
 
 func _init(p_config: GameConfig, run_seed: int) -> void:
@@ -48,6 +53,8 @@ func _init(p_config: GameConfig, run_seed: int) -> void:
 	state.map = config.map
 	state.lighthouse_hp = config.economy.lighthouse_hp
 	state.gold = config.economy.starting_gold
+	for kind in config.economy.relic_ids():
+		state.relics[kind] = 0
 	state.sanity_cap = config.sanity.max_sanity
 	state.sanity = clampf(config.sanity.start, 0.0, state.sanity_cap)
 	state.sanity_state = sanity_state_for(state.sanity)  # initial state: no event
@@ -82,11 +89,14 @@ func step() -> void:
 	# 4. Leaks.
 	_leak()
 	# 5. Towers fire / damage: single and line shots (LT-6), AoE casts (LT-11, no sanity
-	# cost since LT-23); madness damage and astray shots (LT-13).
+	# cost since LT-23); madness damage and astray shots (LT-13). Kills drop relic tokens
+	# (LT-27 §1.3).
 	_fire_towers()
 	# 6. Sanity (LT-10): horror drain. Kill regen is paid in slot 5 (_on_enemy_killed),
 	# between-waves regen in slot 8 (wave system), each through _add_sanity.
 	_horror_drain()
+	# 6b. Relic tokens (LT-27 §1.3): ghosts vanish, real tokens are credited on arrival.
+	_settle_tokens()
 	# 7. Spawning, then fakes (LT-12) from the spawner's candidates.
 	if _spawner != null:
 		_spawner.tick(self)
@@ -152,7 +162,7 @@ func apply_damage(enemy_id: int, amount: float, source: String) -> float:
 	e.hp -= taken
 	if e.hp <= 0.0:
 		e.dead = true
-		_emit(SimEvent.Type.DIED, e.id, {"source": source, "reward": e.def.reward})
+		_emit(SimEvent.Type.DIED, e.id, {"source": source})
 		_on_enemy_killed(e, source)
 	return removed
 
@@ -171,14 +181,14 @@ func can_build(def_id: String, cell: Vector2i) -> CommandResult:
 		return CommandResult.OCCUPIED
 	if state.gold < def.cost:
 		return CommandResult.NOT_ENOUGH_GOLD
-	return CommandResult.OK
+	return _day_only()  # last: keeps "first failing reason in CommandResult order" (LT-27 §3)
 
 
 ## Player command (§1.3, applied at once between ticks): builds an L1 `def_id` on `cell`
 ## for its cost. On OK the tower gets the next entity id, is ready to fire on the next
 ## tick, and TOWER_BUILT + GOLD_CHANGED are emitted. Its L1 sanity_reserve then lowers the
 ## cap (_change_reserve "build", LT-23 §1.2); a cap taken to 0 empties sanity and so starts
-## MADNESS. Only gold is checked.
+## MADNESS. Only gold is checked. Day only (LT-27 §3): refused at night with NOT_BUILD_PHASE.
 func build_tower(def_id: String, cell: Vector2i) -> CommandResult:
 	var result := can_build(def_id, cell)
 	if result != CommandResult.OK:
@@ -203,13 +213,17 @@ func build_tower(def_id: String, cell: Vector2i) -> CommandResult:
 ## Player command: sells tower `tower_id` for economy.sell_refund_ratio of everything spent
 ## on it, build and upgrades (rounded once, on the total) and frees its cell. Emits
 ## TOWER_SOLD + GOLD_CHANGED, then the cap rises by the tower's reserve (_change_reserve
-## "sell", LT-23 Q4); current sanity does not change, in MADNESS too.
+## "sell", LT-23 Q4); current sanity does not change, in MADNESS too. Day only (LT-27 §3):
+## OUTCOME_REACHED, NO_SUCH_TOWER, then NOT_BUILD_PHASE at night.
 func sell_tower(tower_id: int) -> CommandResult:
 	if state.outcome != SimState.Outcome.NONE:
 		return CommandResult.OUTCOME_REACHED
 	var t := tower_by_id(tower_id)
 	if t == null:
 		return CommandResult.NO_SUCH_TOWER
+	var day := _day_only()
+	if day != CommandResult.OK:
+		return day
 	var refund := sell_refund(t)
 	var reserve := reserve_of(t)
 	state.towers.erase(t)
@@ -243,7 +257,7 @@ func upgrade_target(t: SimTower, branch := "") -> TowerDef.Level:
 
 ## Whether upgrade_tower(tower_id, branch) would be applied now; OK or the first failing
 ## reason in this order: OUTCOME_REACHED, NO_SUCH_TOWER, MAX_LEVEL, NEED_BRANCH,
-## BAD_BRANCH, NOT_BUILD_PHASE (during a wave), NOT_ENOUGH_GOLD. Only gold is checked,
+## BAD_BRANCH, NOT_BUILD_PHASE (at night, _day_only), NOT_ENOUGH_GOLD. Only gold is checked,
 ## not the sanity cap. Changes nothing.
 func can_upgrade(tower_id: int, branch := "") -> CommandResult:
 	if state.outcome != SimState.Outcome.NONE:
@@ -258,15 +272,16 @@ func can_upgrade(tower_id: int, branch := "") -> CommandResult:
 	var target := upgrade_target(t, branch)
 	if target == null:
 		return CommandResult.BAD_BRANCH
-	if state.phase == SimState.Phase.WAVE:
-		return CommandResult.NOT_BUILD_PHASE
+	var day := _day_only()
+	if day != CommandResult.OK:
+		return day
 	if state.gold < target.upgrade_cost:
 		return CommandResult.NOT_ENOUGH_GOLD
 	return CommandResult.OK
 
 
 ## Player command (LT-24): raises tower `tower_id` one level (L1 -> L2 with branch "", L2 ->
-## L3 with "a"/"b") for the target's upgrade_cost, outside a wave only. The tower keeps its
+## L3 with "a"/"b") for the target's upgrade_cost, by day only. The tower keeps its
 ## id, cell, build_tick, status and running cooldown; the new stats apply from its next
 ## shot. Emits TOWER_UPGRADED {def, cell, level, branch, cost} + GOLD_CHANGED "upgrade";
 ## the cap then moves by target reserve - current reserve (_change_reserve "upgrade",
@@ -289,20 +304,20 @@ func upgrade_tower(tower_id: int, branch := "") -> CommandResult:
 	return CommandResult.OK
 
 
-## Player command: ends the build phase now; the next wave spawns from the next tick on.
-## Pays economy.early_call_gold_per_second x whole seconds left on the build timer
-## (seconds rounded down from ticks, the product rounded down). Emits WAVE_STARTED
-## {early: true} + GOLD_CHANGED {reason: "early_call"} (none when the bonus is 0).
+## Player command ("Light the lamp", LT-27 §1.2): ends the day now; the next wave spawns
+## from the next tick on. Sets state.night_luck to early_night_luck() (1 +
+## economy.early_night_luck_per_second x whole seconds left on the day timer) for this
+## night; pays no money. Emits WAVE_STARTED {early: true}.
 func call_wave() -> CommandResult:
 	if state.outcome != SimState.Outcome.NONE:
 		return CommandResult.OUTCOME_REACHED
 	var director := _spawner as WaveDirector
 	if director == null or state.phase != SimState.Phase.BUILD:
 		return CommandResult.NOT_BUILD_PHASE
-	var bonus := early_call_bonus()
+	var luck := early_night_luck()
 	state.command_log.append([state.tick, "call_wave"])
 	director.start_wave(self, true)
-	_add_gold(bonus, "early_call", 0)
+	state.night_luck = luck
 	return CommandResult.OK
 
 
@@ -325,7 +340,8 @@ func can_buy_sanity() -> CommandResult:
 
 
 ## Player command (LT-13, exit rule "buyout"): pays madness.buyout_cost gold and sets sanity
-## to restore_target() (min of madness.restore_sanity and the cap), in any phase. Emits GOLD_CHANGED {reason: "buyout"}, then
+## to restore_target() (min of madness.restore_sanity and the cap), in any phase (also at
+## night, LT-27 §3). Emits GOLD_CHANGED {reason: "buyout"}, then
 ## SANITY_CHANGED {reason: "buyout"} and SANITY_STATE_CHANGED (MADNESS -> the new state).
 func buy_sanity() -> CommandResult:
 	var result := can_buy_sanity()
@@ -335,6 +351,60 @@ func buy_sanity() -> CommandResult:
 	state.command_log.append([state.tick, "buy_sanity"])
 	_add_gold(-m.buyout_cost, "buyout", 0)
 	_add_sanity(restore_target() - state.sanity, "buyout", 0)
+	return CommandResult.OK
+
+
+## LT-27 §1.4: the money one relic of `kind` sells for (economy.relics price); 0 for an
+## unknown kind. The only place a relic price is read.
+func relic_price(kind: String) -> int:
+	var k := config.economy.relic(kind)
+	return 0 if k == null else k.price
+
+
+## The stash at today's prices: sum of relic_price x count.
+func relics_value() -> int:
+	var total := 0
+	for kind: String in state.relics:
+		total += relic_price(kind) * state.relics[kind]
+	return total
+
+
+## Whether sell_relics(kind) would be applied now; OK or the first failing reason in this
+## order: OUTCOME_REACHED, NOT_BUILD_PHASE (at night), NO_RELICS (unknown kind, or nothing
+## of `kind` / nothing at all for "" in the stash). Changes nothing.
+func can_sell_relics(kind := "") -> CommandResult:
+	if state.outcome != SimState.Outcome.NONE:
+		return CommandResult.OUTCOME_REACHED
+	var day := _day_only()
+	if day != CommandResult.OK:
+		return day
+	if kind != "":
+		return CommandResult.OK if state.relics.get(kind, 0) > 0 else CommandResult.NO_RELICS
+	for k: String in state.relics:
+		if state.relics[k] > 0:
+			return CommandResult.OK
+	return CommandResult.NO_RELICS
+
+
+## Player command (LT-27 §1.4, day only): sells the whole stack of `kind`, or of every kind
+## for "", at the fixed relic_price. Logs [tick, "sell_relics", kind]; emits one
+## RELICS_CHANGED {kind, delta: -n, count: 0, reason: "sell"} per non-empty kind in config
+## order, then one GOLD_CHANGED {reason: "relic_sale"} for the sum (none when it is 0).
+func sell_relics(kind := "") -> CommandResult:
+	var result := can_sell_relics(kind)
+	if result != CommandResult.OK:
+		return result
+	state.command_log.append([state.tick, "sell_relics", kind])
+	var total := 0
+	for k in config.economy.relic_ids():
+		if kind != "" and k != kind:
+			continue
+		var n: int = state.relics[k]
+		if n <= 0:
+			continue
+		total += relic_price(k) * n
+		_add_relics(k, -n, "sell", 0)
+	_add_gold(total, "relic_sale", 0)
 	return CommandResult.OK
 
 
@@ -391,16 +461,16 @@ func _change_reserve(t: SimTower, delta: float, reason: String) -> void:
 		_add_sanity(state.sanity_cap - state.sanity, "reserve", t.id)
 
 
-## Gold call_wave() would pay if called now: economy.early_call_gold_per_second x whole
-## seconds left on the build timer (seconds rounded down from ticks, the product rounded
-## down); 0 when call_wave() would be refused. Changes nothing.
-func early_call_bonus() -> int:
+## The night luck call_wave() would set now (LT-27 §1.2): 1 +
+## economy.early_night_luck_per_second x whole seconds left on the day timer (seconds
+## rounded down from ticks); 1.0 when call_wave() would be refused. Changes nothing.
+func early_night_luck() -> float:
 	if state.outcome != SimState.Outcome.NONE or state.phase != SimState.Phase.BUILD:
-		return 0
+		return 1.0
 	if not (_spawner is WaveDirector):
-		return 0
+		return 1.0
 	var seconds_left := SimTime.whole_seconds(state.build_ticks_left)
-	return floori(config.economy.early_call_gold_per_second * seconds_left)
+	return 1.0 + config.economy.early_night_luck_per_second * seconds_left
 
 
 ## Gold a sell of `t` would return now: sell_refund_ratio x t.spent (build + upgrades),
@@ -409,9 +479,10 @@ func sell_refund(t: SimTower) -> int:
 	return roundi(t.spent * config.economy.sell_refund_ratio)
 
 
-## Wave completion bonus for 1-based `wave_number`: base + per_wave * wave_number
-## (economy.json). Called by the wave system (LT-5); not a player command, so not logged.
-## Returns the gold added; 0 (and nothing changes) once the outcome is set.
+## The dawn wage (LT-27 §2; the wave completion bonus) for 1-based `wave_number`: base +
+## per_wave * wave_number money (economy.json wave_bonus). Called by the wave system (LT-5);
+## not a player command, so not logged. Returns the money added; 0 (and nothing changes)
+## once the outcome is set.
 func award_wave_bonus(wave_number: int) -> int:
 	if state.outcome != SimState.Outcome.NONE:
 		return 0
@@ -507,8 +578,9 @@ func _emit(type: SimEvent.Type, id: int, data: Dictionary) -> void:
 	events.append(SimEvent.new(type, state.tick, id, data))
 
 
-## Every gold change goes through here: GOLD_CHANGED {delta, gold, reason}; `id` is the
-## enemy (kill) or tower (build/sell/upgrade) it is about, 0 for the wave bonus.
+## Every money change ("gold" internally, LT-27 §2) goes through here: GOLD_CHANGED {delta,
+## gold, reason}; `id` is the tower (build/sell/upgrade) it is about, 0 for the dawn wage
+## ("wave_bonus"), a relic sale ("relic_sale") or the buyout. Kills pay no money since LT-27.
 func _add_gold(delta: int, reason: String, id: int) -> void:
 	if delta == 0:
 		return
@@ -567,17 +639,125 @@ func _horror_drain() -> void:
 		_add_sanity(-total, "horror", 0)
 
 
-## Kill hook, called once per enemy when apply_damage kills it. Real enemies pay their
-## reward; fakes (LT-12) pay nothing. `source` is the damage source; for towers it is the
-## tower def id. A real enemy killed by a mundane tower restores regen.mundane_kill sanity
-## (only damage-dealing levels fire, so a tower kill is always by a damage level).
+## Kill hook, called once per enemy when apply_damage kills it. Every kill, real or fake,
+## drops one relic token (LT-27 §1.3); only a real one is ever credited. `source` is the
+## damage source; for towers it is the tower def id. A real enemy killed by a mundane tower
+## restores regen.mundane_kill sanity (only damage-dealing levels fire, so a tower kill is
+## always by a damage level).
 func _on_enemy_killed(e: SimEnemy, source: String) -> void:
+	_drop_token(e)
 	if e.is_fake:
 		return
-	_add_gold(e.def.reward, "kill", e.id)
 	var tower_def: TowerDef = config.towers.get(source)
 	if tower_def != null and tower_def.kind == "mundane":
 		_add_sanity(config.sanity.regen_mundane_kill, "mundane_kill", e.id)
+
+
+## LT-27 §3: NOT_BUILD_PHASE at night (phase WAVE), else OK. Not `!= BUILD`, so a sim
+## without a WaveDirector (phase NONE) allows everything. The one seam for day-only rules
+## (build, sell tower, upgrade, sell relics; later the crew layer, §7).
+func _day_only() -> CommandResult:
+	if state.phase == SimState.Phase.WAVE:
+		return CommandResult.NOT_BUILD_PHASE
+	return CommandResult.OK
+
+
+## LT-27 §1.2: one draw on `stream` picks a relic kind from `def.drops` (config order).
+## Every kind's weight is multiplied by state.night_luck except the table's cheapest kind
+## (lowest price among the kinds with weight > 0; ties -> the first in config order).
+func _roll_drop(def: EnemyDef, stream: SimRng.Stream) -> String:
+	var cheapest := ""
+	for kind: String in def.drops:
+		if def.drops[kind] > 0 and (cheapest == "" or relic_price(kind) < relic_price(cheapest)):
+			cheapest = kind
+	var weights: Array[float] = []
+	var total := 0.0
+	for kind: String in def.drops:
+		var w := float(def.drops[kind])
+		if kind != cheapest:
+			w *= state.night_luck
+		weights.append(w)
+		total += w
+	var r := rng(stream).randf() * total
+	var i := 0
+	var last := cheapest
+	for kind: String in def.drops:
+		var w := weights[i]
+		i += 1
+		if w <= 0.0:
+			continue
+		last = kind
+		if r < w:
+			return kind
+		r -= w
+	return last  # float rounding at the very top of the range
+
+
+## LT-27 §1.3: the kill of `e` drops one token, rolled on LOOT (real) or GHOST_LOOT (fake)
+## with the same table and luck. Emits RELIC_DROPPED {token, kind, at, arrive_tick}, the
+## same shape and timing for both; only _ghost_tokens remembers a ghost.
+func _drop_token(e: SimEnemy) -> void:
+	var tok := RelicToken.new()
+	tok.id = state.next_token_id
+	state.next_token_id += 1
+	tok.kind = _roll_drop(e.def, SimRng.Stream.GHOST_LOOT if e.is_fake else SimRng.Stream.LOOT)
+	tok.at = e.route.position_at(e.distance)
+	tok.drop_tick = state.tick
+	tok.arrive_tick = state.tick + SimTime.ticks(config.economy.token_fly_seconds)
+	state.relic_tokens.append(tok)
+	if e.is_fake:
+		_ghost_tokens[tok.id] = true
+	_emit(SimEvent.Type.RELIC_DROPPED, tok.id, {"token": tok.id, "kind": tok.kind,
+		"at": tok.at, "arrive_tick": tok.arrive_tick})
+
+
+## Slot 6b (LT-27 §1.3), tokens in id order: a ghost vanishes at drop_tick +
+## ticks(ghost_vanish_seconds) (RELIC_VANISHED, credits nothing); a real token is credited at
+## its arrive_tick (RELICS_CHANGED {reason: "kill"}). Both leave state.relic_tokens.
+func _settle_tokens() -> void:
+	if state.relic_tokens.is_empty():
+		return
+	var vanish := SimTime.ticks(config.economy.ghost_vanish_seconds)
+	var kept: Array[RelicToken] = []
+	for tok in state.relic_tokens:
+		if _ghost_tokens.has(tok.id):
+			if state.tick >= tok.drop_tick + vanish:
+				_vanish_token(tok)
+				continue
+		elif state.tick >= tok.arrive_tick:
+			_add_relics(tok.kind, 1, "kill", tok.id)
+			continue
+		kept.append(tok)
+	state.relic_tokens = kept
+
+
+## Dawn (LT-27 §1.3, called by the wave director right after dissolve_fakes): every token in
+## flight settles now, in id order: ghosts vanish, real tokens are credited. A day starts with
+## no token in flight.
+func settle_all_tokens() -> void:
+	for tok in state.relic_tokens:
+		if _ghost_tokens.has(tok.id):
+			_vanish_token(tok)
+		else:
+			_add_relics(tok.kind, 1, "kill", tok.id)
+	state.relic_tokens = []
+
+
+func _vanish_token(tok: RelicToken) -> void:
+	_ghost_tokens.erase(tok.id)
+	_emit(SimEvent.Type.RELIC_VANISHED, tok.id, {"token": tok.id})
+
+
+## Every stash change goes through here: RELICS_CHANGED {kind, delta, count, reason} (+ token
+## for a kill); id = the token (kill) or 0 (sell).
+func _add_relics(kind: String, delta: int, reason: String, token: int) -> void:
+	if delta == 0:
+		return
+	state.relics[kind] = state.relics.get(kind, 0) + delta
+	var data := {"kind": kind, "delta": delta, "count": state.relics[kind], "reason": reason}
+	if token > 0:
+		data["token"] = token
+	_emit(SimEvent.Type.RELICS_CHANGED, token, data)
 
 
 ## Slot 2 (§3.3): aura towers (Elder Sign) set this tick's modifiers. An aura tower is a

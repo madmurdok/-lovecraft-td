@@ -3,7 +3,9 @@ extends RefCounted
 ## One RandomNumberGenerator per stream, all seeded from the run seed (design note LT-4 §4).
 ## Streams keep features independent: a new roll on COMBAT does not reshuffle SPAWN.
 
-enum Stream {SPAWN, COMBAT, SANITY, MADNESS}
+## New streams are appended so existing ones keep their seeds. LOOT rolls real relic drops,
+## GHOST_LOOT the tokens of fakes (LT-27 §1.2), so hallucinations never shift real loot.
+enum Stream {SPAWN, COMBAT, SANITY, MADNESS, LOOT, GHOST_LOOT}
 
 const STREAM_SEED_STRIDE := 16
 

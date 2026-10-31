@@ -21,6 +21,8 @@ const BASELINE_KEYS := ["strategy", "seed", "outcome", "waves_survived", "gold",
 ## RUN keys LT-23 §4 appends to every line, upgrades on or off.
 const LT23_KEYS := ["min_sanity", "final_cap", "cap_per_wave", "madness_tick", "reserve_peak",
 	"free_reserve", "hp_lost_per_wave", "towers_final"]
+## RUN keys LT-27 §5 appends to every line, upgrades on or off.
+const LT27_KEYS := ["relics_sold", "drops", "star_stones", "wage"]
 
 var _bot_script: GDScript
 var _bots: Array[Object] = []
@@ -272,9 +274,10 @@ func test_upgrades_off_keeps_building_and_never_upgrades() -> void:
 
 func test_run_lines_carry_upgrade_keys_only_with_upgrades_on() -> void:
 	var off: Dictionary = _bot(false).call("_play", "mundane", 1000)
-	assert_array(off.keys()).is_equal(BASELINE_KEYS + LT23_KEYS)
+	assert_array(off.keys()).is_equal(BASELINE_KEYS + LT23_KEYS + LT27_KEYS)
 	var on: Dictionary = _bot(true).call("_play", "mundane", 1000)
-	assert_array(on.keys()).is_equal(BASELINE_KEYS + LT23_KEYS + ["upgrades", "upgrade_gold"])
+	assert_array(on.keys()).is_equal(BASELINE_KEYS + LT23_KEYS + LT27_KEYS
+		+ ["upgrades", "upgrade_gold"])
 	# Mundane today: L2s only (both of its L3 picks are pending).
 	assert_dict(on["upgrades"]).is_not_empty()
 	for k: String in on["upgrades"]:

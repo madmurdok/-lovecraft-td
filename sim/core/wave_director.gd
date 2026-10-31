@@ -11,8 +11,10 @@ extends SimSpawner
 ## ticks(delay) + k * ticks(interval); events due on one tick fire in group order, then
 ## event order. A pack enemy expands into its pack inside Simulation.spawn_enemy.
 ##
+## Day = BUILD, night = WAVE (LT-27 §3). Dawn (clearing a wave) dissolves fakes, settles
+## every relic token in flight and resets the night luck.
 ## A wave is cleared when every group has fired all its events and no real enemy is alive
-## (fakes do not count). Clearing pays award_wave_bonus(n) before the outcome check, so the
+## (fakes do not count). Clearing pays award_wave_bonus(n) (the dawn wage) before the outcome check, so the
 ## last wave's bonus is paid in the same tick WON is set; the between-waves sanity regen
 ## (award_wave_sanity) follows the bonus the same way.
 
@@ -128,10 +130,12 @@ func _clear_wave(sim: Simulation) -> void:
 	var s := sim.state
 	var n := s.wave_index
 	sim.dissolve_fakes("wave_end")  # LT-12 §5: before the bonus, so BUILD starts with none
+	sim.settle_all_tokens()  # LT-27 §1.3: dawn credits real tokens, ghosts vanish
 	var bonus := sim.award_wave_bonus(n)
 	sim.award_wave_sanity()  # LT-10: regen.between_waves, also for the last wave
 	sim.auto_restore_sanity()  # LT-13: exit rule auto_restore; regen above is 0 in madness
 	sim.emit_event(SimEvent.Type.WAVE_CLEARED, 0, {"wave": n, "bonus": bonus})
+	s.night_luck = 1.0  # LT-27 §1.2: the dawn resets the luck of an early night
 	if n < s.waves_total:
 		_begin_build(sim)
 	else:

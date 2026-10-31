@@ -62,6 +62,8 @@ static func load_from_dir(dir: String = DEFAULT_DIR) -> ConfigLoadResult:
 	if economy_root != null:
 		c.economy = EconomyConfig.parse(r, economy_root)
 	result.errors.append_array(r.errors)
+	if c.economy != null and not c.economy.relics.is_empty():
+		result.errors.append_array(_check_drops(c))
 
 	r = ConfigReader.new(SANITY_FILE)
 	var sanity_root: Variant = _read_json(dir, r)
@@ -78,6 +80,26 @@ static func load_from_dir(dir: String = DEFAULT_DIR) -> ConfigLoadResult:
 	if result.ok:
 		result.config = c
 	return result
+
+
+## LT-27 §1.1 cross-file check: every enemy's `drops` key is a relic kind of economy.json
+## (reported in enemies.json). Also reorders each enemy's drops into economy.relics order
+## (the roll walks that order). Returns the errors.
+static func _check_drops(c: GameConfig) -> Array[String]:
+	var r := ConfigReader.new(ENEMIES_FILE)
+	var kinds := c.economy.relic_ids()
+	for id: String in c.enemies:
+		var def := c.enemies[id]
+		var ordered: Dictionary[String, int] = {}
+		for kind in kinds:
+			if def.drops.has(kind):
+				ordered[kind] = def.drops[kind]
+		for kind: String in def.drops:
+			if not kinds.has(kind):
+				r.error(ConfigReader.join(ConfigReader.join(ConfigReader.join("enemies", id),
+					"drops"), kind), "unknown relic kind \"%s\"" % kind)
+		def.drops = ordered
+	return r.errors
 
 
 ## Reads `<dir>/<r.file>` and returns its root object, or null after recording why not.

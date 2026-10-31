@@ -2,7 +2,7 @@ class_name EnemyDef
 extends RefCounted
 ## One enemy type from enemies.json (GDD §7).
 
-const FIELDS := ["name", "hp", "speed", "armor", "leak_damage", "reward", "flying",
+const FIELDS := ["name", "hp", "speed", "armor", "leak_damage", "drops", "flying",
 	"horror_drain", "traits"]
 
 var id: String
@@ -11,7 +11,9 @@ var hp: float  ## > 0
 var speed: float  ## cells per second, > 0
 var armor: float  ## flat damage reduction per hit, >= 0
 var leak_damage: int  ## lighthouse HP lost when it leaks, >= 0
-var reward: int  ## gold per kill, >= 0
+## LT-27 §1.1: relic kind -> integer weight (>= 0, sum > 0) of the one drop rolled per kill;
+## kinds are known economy relics, ordered as economy.relics (GameConfig.load_from_dir).
+var drops: Dictionary[String, int] = {}
 var flying: bool  ## ignores the path, flies straight to the lighthouse
 var horror_drain: float  ## sanity per second near towers, >= 0 (GDD §5.3)
 ## Known traits and their required parameters (schema, not balance).
@@ -35,7 +37,19 @@ static func parse(r: ConfigReader, id: String, obj: Dictionary, path: String) ->
 	e.speed = r.req_number(obj, "speed", path, 0.0, INF, true)
 	e.armor = r.req_number(obj, "armor", path, 0.0)
 	e.leak_damage = r.req_int(obj, "leak_damage", path, 0)
-	e.reward = r.req_int(obj, "reward", path, 0)
+	var drops: Variant = r.req_object(obj, "drops", path)
+	if drops != null:
+		var dp := ConfigReader.join(path, "drops")
+		if drops.is_empty():
+			r.error(dp, "must not be empty")
+		var n := r.errors.size()
+		var total := 0
+		for kind: Variant in drops:
+			var w := r.as_int(drops[kind], ConfigReader.join(dp, str(kind)), 0)
+			e.drops[str(kind)] = w
+			total += w
+		if not drops.is_empty() and r.errors.size() == n and total <= 0:
+			r.error(dp, "weights must sum to > 0")
 	e.flying = r.opt_bool(obj, "flying", path, false)
 	e.horror_drain = r.opt_number(obj, "horror_drain", path, 0.0, 0.0)
 	var traits: Variant = r.opt_object(obj, "traits", path)

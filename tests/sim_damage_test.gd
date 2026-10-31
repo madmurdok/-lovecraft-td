@@ -44,7 +44,7 @@ func test_damage_taken_multiplier_applies_after_armor() -> void:
 
 # --- death ------------------------------------------------------------------
 
-func test_kill_emits_died_with_source_and_reward_and_removes_after_the_tick() -> void:
+func test_kill_emits_died_with_source_and_removes_after_the_tick() -> void:
 	var sim := _sim()
 	var id := sim.spawn_enemy("cultist")
 	run(sim, 5)
@@ -55,8 +55,7 @@ func test_kill_emits_died_with_source_and_reward_and_removes_after_the_tick() ->
 	assert_int(died.size()).is_equal(1)
 	assert_int(died[0].id).is_equal(id)
 	assert_int(died[0].tick).is_equal(5)
-	assert_dict(died[0].data).is_equal({"source": "harpoon", "reward": e.def.reward})
-	assert_int(e.def.reward).is_equal(5)
+	assert_dict(died[0].data).is_equal({"source": "harpoon"})
 
 	# A second hit on the dead enemy does nothing and emits nothing.
 	assert_float(sim.apply_damage(id, 10.0, "harpoon")).is_equal(0.0)

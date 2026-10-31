@@ -34,19 +34,24 @@ func test_economy_fields() -> void:
 	assert_int(e.wave_bonus_base).is_equal(50)
 	assert_int(e.wave_bonus_per_wave).is_equal(10)
 	assert_float(e.sell_refund_ratio).is_equal(0.7)
-	assert_float(e.early_call_gold_per_second).is_equal(2.0)
+	assert_array(Array(e.relic_ids())).is_equal(["bone", "amber", "idol", "star_stone"])
+	var prices: Array = e.relics.map(func(k: EconomyConfig.RelicKind) -> int: return k.price)
+	assert_array(prices).is_equal([5, 15, 50, 200])
+	assert_float(e.token_fly_seconds).is_equal(2.0)
+	assert_float(e.ghost_vanish_seconds).is_equal(1.0)
+	assert_float(e.early_night_luck_per_second).is_equal(0.02)
 	assert_int(e.lighthouse_hp).is_equal(20)
 
 
 func test_enemy_stats() -> void:
 	var en := _real().enemies
-	# id: [hp, speed, armor, leak_damage, reward]
+	# id: [hp, speed, armor, leak_damage, drops (LT-27 §1.1: bone, amber, idol, star_stone)]
 	var expected := {
-		"cultist": [60.0, 1.0, 0.0, 1, 5],
-		"hybrid": [140.0, 0.9, 2.0, 1, 10],
-		"deep_one": [90.0, 1.6, 0.0, 1, 8],
-		"night_gaunt": [110.0, 1.3, 0.0, 2, 15],
-		"shoggoth": [900.0, 0.5, 5.0, 5, 60],
+		"cultist": [60.0, 1.0, 0.0, 1, [999, 0, 0, 1]],
+		"hybrid": [140.0, 0.9, 2.0, 1, [699, 250, 50, 1]],
+		"deep_one": [90.0, 1.6, 0.0, 1, [749, 250, 0, 1]],
+		"night_gaunt": [110.0, 1.3, 0.0, 2, [399, 500, 100, 1]],
+		"shoggoth": [900.0, 0.5, 5.0, 5, [0, 0, 999, 1]],
 	}
 	for id: String in expected:
 		var e: EnemyDef = en[id]
@@ -56,7 +61,8 @@ func test_enemy_stats() -> void:
 		assert_float(e.speed).is_equal(x[1])
 		assert_float(e.armor).is_equal(x[2])
 		assert_int(e.leak_damage).is_equal(x[3])
-		assert_int(e.reward).is_equal(x[4])
+		assert_array(e.drops.keys()).is_equal(["bone", "amber", "idol", "star_stone"])
+		assert_array(e.drops.values()).is_equal(x[4])
 
 
 func test_enemy_defaults_and_traits() -> void:
@@ -150,7 +156,7 @@ func test_occult_tower_may_opt_out_of_madness() -> void:
 
 func test_waves() -> void:
 	var w := _real().waves
-	assert_float(w.build_phase_seconds).is_equal(25.0)
+	assert_float(w.build_phase_seconds).is_equal(40.0)
 	assert_int(w.waves.size()).is_equal(5)
 	var g0: WavesConfig.SpawnGroup = w.waves[0].groups[0]
 	assert_str(g0.enemy_id).is_equal("cultist")

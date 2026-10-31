@@ -261,8 +261,8 @@ func _play(commands: Array, ticks: int) -> Array:
 
 func test_same_seed_and_reserve_command_log_replay_identically() -> void:
 	var cmds := [[1, "build", SIGN, _cell(6)], [2, "build", NECRO, _cell(8)],
-		[3, "upgrade_at", _cell(6), ""], [4, "call_wave"], [60, "sell_at", _cell(8)],
-		[90, "build", NECRO, _cell(10)]]
+		[3, "upgrade_at", _cell(6), ""], [20, "sell_at", _cell(8)],
+		[40, "build", NECRO, _cell(10)], [50, "call_wave"]]  # LT-27: sell/build by day
 	var first := _play(cmds, 300)
 	var replay := _play(first[1], 300)
 	assert_array(replay[0]).is_equal(first[0])
@@ -270,7 +270,7 @@ func test_same_seed_and_reserve_command_log_replay_identically() -> void:
 	# The log really moved the cap three ways (build, upgrade, sell).
 	var log: Array = first[1]
 	assert_array(log.map(func(c: Array) -> String: return c[1])).is_equal(
-		["build", "build", "upgrade", "call_wave", "sell", "build"])
+		["build", "build", "upgrade", "sell", "build", "call_wave"])
 	var caps: Array = first[0].filter(func(x: String) -> bool:
 		return x.begins_with("SANITY_CAP_CHANGED"))
 	assert_int(caps.size()).is_equal(5)

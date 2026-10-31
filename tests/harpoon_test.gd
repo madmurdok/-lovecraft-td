@@ -88,17 +88,15 @@ func test_harpoon_line_to_point_is_the_range_long_endpoint() -> void:
 		(Vector2(10.5, 0.5) - origin).normalized())).is_less(0.001)
 
 
-func test_harpoon_kills_pay_one_reward_each_on_a_multi_kill() -> void:
+func test_harpoon_kills_drop_one_token_each_on_a_multi_kill() -> void:
 	var sim := tsim()
 	build(sim, "harpooner")
-	var reward: int = sim.config.enemies["cultist"].reward
 	put(sim, "cultist", 9.0, 1.0)
 	put(sim, "cultist", 10.0, 1.0)
-	var gold := sim.state.gold
 	sim.drain_events()
 	var events := run(sim, 1)
 	assert_array(of_type(events, SimEvent.Type.DIED)).has_size(2)
-	assert_int(sim.state.gold).is_equal(gold + 2 * reward)
+	assert_array(of_type(events, SimEvent.Type.RELIC_DROPPED)).has_size(2)
 
 
 func test_rifleman_hits_only_its_target_while_the_harpoon_pierces() -> void:

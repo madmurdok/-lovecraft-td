@@ -7,7 +7,11 @@ enum Type {SPAWNED, LEAKED, DIED, OUTCOME, TOWER_BUILT, TOWER_SOLD, GOLD_CHANGED
 		BUILD_STARTED, WAVE_STARTED, WAVE_CLEARED, SANITY_CHANGED, SANITY_STATE_CHANGED,
 		FAKE_DISSOLVED, TOWER_UPGRADED,
 		## LT-23 {delta, cap, reason: "build" | "upgrade" | "sell"}; id = the tower
-		SANITY_CAP_CHANGED}
+		SANITY_CAP_CHANGED,
+		## LT-27 §1.3, id = the token: {token, kind, at, arrive_tick} (same for real and fake);
+		## {token} (a ghost token dissolved); {kind, delta, count, reason: "kill" | "sell",
+		## token (kill only)}
+		RELIC_DROPPED, RELIC_VANISHED, RELICS_CHANGED}
 
 var type: Type
 var tick: int

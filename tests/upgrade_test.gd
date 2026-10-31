@@ -214,12 +214,13 @@ func test_upgrade_is_refused_during_a_wave_even_with_gold() -> void:
 	_assert_refused(sim, t, "", R.NOT_BUILD_PHASE)
 
 
-func test_build_and_sell_still_work_during_a_wave() -> void:
+func test_build_and_sell_are_refused_during_a_wave_too() -> void:
+	# LT-27 §3: build and sell are day only, like upgrades.
 	var pair := _wave_sim()
 	var sim: Simulation = pair[0]
 	var t: SimTower = pair[1]
-	assert_int(sim.build_tower(RIFLE, Vector2i(3, 1))).is_equal(R.OK)
-	assert_int(sim.sell_tower(t.id)).is_equal(R.OK)
+	assert_int(sim.build_tower(RIFLE, Vector2i(3, 1))).is_equal(R.NOT_BUILD_PHASE)
+	assert_int(sim.sell_tower(t.id)).is_equal(R.NOT_BUILD_PHASE)
 
 
 func test_upgrade_is_allowed_in_build_and_in_phase_none() -> void:

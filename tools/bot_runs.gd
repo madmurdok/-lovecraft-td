@@ -3,7 +3,8 @@ extends SceneTree
 ##   $GODOT --headless --path . -s res://tools/bot_runs.gd -- [--seeds=10] [--out=<file>]
 ##   [--data=<dir>] (a config directory other than res://data, e.g. a tuning variant)
 ##   [--upgrades=0] (never upgrade: the pre-LT-24 baseline; RUN lines then carry no
-##   "upgrades"/"upgrade_gold" keys, so they compare byte for byte with the old harness)
+##   "upgrades"/"upgrade_gold" keys. Since LT-27 the economy differs, so no run compares
+##   byte for byte with a pre-LT-27 harness; only the key set does)
 ## For each strategy x seed it plays one full run on data/ with a fresh Simulation +
 ## WaveDirector and prints one "RUN {json}" line per run, then a "SUMMARY {json}" line.
 ##
@@ -28,9 +29,14 @@ extends SceneTree
 ## branch is missing or has_pending() stays at L2; the cap guard (occult, mixed) skips an
 ## upgrade whose reserve delta would leave the cap below CAP_FLOOR. With no upgrade left the next purchase is a build. The
 ## bot buys the next purchase or stops for the round (it saves, never skips to something
-## cheaper); upgrades are refused during a wave, so it waits for BUILD.
-## Timing: in BUILD, spend what the next purchase allows then call_wave() at once (waiting
-## earns nothing but a smaller early-call bonus); during a wave, re-check every second.
+## cheaper).
+## Day/night (LT-27 §5): in BUILD (day), sell_relics() first, spend what the next purchase
+## allows, then call_wave() at once (lighting the lamp at once gives the night its maximum
+## luck). During a wave (night) building, upgrades and sales are refused, so the bot only
+## tries buy_sanity() (occult, mixed), re-checking every second.
+## Loot is random (seeded LOOT stream): compare strategies over the default 10 seeds.
+## RUN lines add "relics_sold" ($ from sales), "drops" (real relics credited per kind, config
+## order), "star_stones" and "wage" ($ of dawn wages).
 ## A run is capped at 30 simulated minutes (outcome "timeout").
 
 const STRATEGIES := ["mundane", "occult", "mixed", "madness"]
@@ -116,6 +122,12 @@ func _play(strat: String, run_seed: int) -> Dictionary:
 	var free_reserve := 0.0  ## reserve taken from the cap but not from current sanity
 	var hp_lost_per_wave: Array = []
 	var hp_before := st.lighthouse_hp
+	# LT-27 §5 metrics.
+	var relics_sold := 0
+	var wage := 0
+	var drops := {}
+	for kind in _cfg.economy.relic_ids():
+		drops[kind] = 0
 	while st.outcome == SimState.Outcome.NONE and st.tick < MAX_TICKS:
 		if st.tick % 30 == 0:
 			idx = _act(sim, strat, idx, built)
@@ -149,6 +161,13 @@ func _play(strat: String, run_seed: int) -> Dictionary:
 					missed += 1
 				if ev.data.get("astray", false):
 					astray += 1
+			elif ev.type == SimEvent.Type.GOLD_CHANGED:
+				if ev.data["reason"] == "relic_sale":
+					relics_sold += ev.data["delta"]
+				elif ev.data["reason"] == "wave_bonus":
+					wage += ev.data["delta"]
+			elif ev.type == SimEvent.Type.RELICS_CHANGED and ev.data["reason"] == "kill":
+				drops[ev.data["kind"]] += ev.data["delta"]
 			elif ev.type == SimEvent.Type.TOWER_UPGRADED:
 				var b: String = ev.data["branch"]
 				var key := "%s_%s" % [ev.data["def"], b if b != "" else "L%d" % (ev.data["level"] + 1)]
@@ -180,6 +199,8 @@ func _play(strat: String, run_seed: int) -> Dictionary:
 		"cap_per_wave": cap_per_wave, "madness_tick": madness_tick,
 		"reserve_peak": snappedf(reserve_peak, 0.1), "free_reserve": snappedf(free_reserve, 0.1),
 		"hp_lost_per_wave": hp_lost_per_wave, "towers_final": towers_final,
+		"relics_sold": relics_sold, "drops": drops, "star_stones": drops.get("star_stone", 0),
+		"wage": wage,
 	}
 	if _upgrades:
 		run["upgrades"] = upgrades
@@ -215,11 +236,15 @@ func _cap_allows(sim: Simulation, strat: String, delta: float) -> bool:
 	return sim.state.sanity_cap - delta >= CAP_FLOOR[strat]
 
 
-## Buys as many purchases (builds, then upgrades per the header) as affordable; in BUILD
+## At night (a wave) only tries buy_sanity() (occult, mixed). By day sells every relic,
+## buys as many purchases (builds, then upgrades per the header) as affordable, and in BUILD
 ## then calls the wave. Returns the new build-order index.
 func _act(sim: Simulation, strat: String, idx: int, built: Dictionary) -> int:
 	if strat == "occult" or strat == "mixed":
 		sim.buy_sanity()  # refused unless exit_rule is "buyout" and state is MADNESS
+	if sim.state.phase == SimState.Phase.WAVE:
+		return idx  # LT-27 §3: night; builds, upgrades and sales are day only
+	sim.sell_relics()  # refused with an empty stash
 	while true:
 		if _upgrades and sim.state.towers.size() >= BUILD_FIRST:
 			var up := _next_upgrade(sim, strat)

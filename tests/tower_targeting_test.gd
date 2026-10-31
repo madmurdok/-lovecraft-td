@@ -177,7 +177,7 @@ func test_shot_event_precedes_the_died_and_gold_events_it_causes() -> void:
 	for ev in events:
 		types.append(ev.type)
 	assert_array(types).is_equal([SimEvent.Type.SHOT, SimEvent.Type.DIED,
-		SimEvent.Type.GOLD_CHANGED])
+		SimEvent.Type.RELIC_DROPPED])  # LT-27: a kill drops a relic token, no money
 	assert_str(of_type(events, SimEvent.Type.DIED)[0].data["source"]).is_equal("rifleman")
 	assert_int(events[1].id).is_equal(e.id)
 

@@ -1,58 +1,51 @@
 class_name BuildPhaseTest
 extends WaveTestBase
-## LT-5 build phase: early call (GDD 5.1: bonus = rate x seconds left), refusals, command
+## LT-5 build phase: early call (LT-27: night luck = 1 + rate x seconds left), refusals, command
 ## log + replay, speed x1/x2 and pause with building (GDD 8).
 
 
 func _rate(sim: Simulation) -> float:
-	return sim.config.economy.early_call_gold_per_second
+	return sim.config.economy.early_night_luck_per_second
 
 
-# --- early call -----------------------------------------------------------------
+# --- early call (LT-27: sets the night luck, pays no money) ----------------------------
 
-func test_early_call_pays_rate_times_whole_seconds_left() -> void:
+func test_early_call_sets_luck_from_whole_seconds_left_and_pays_nothing() -> void:
 	var sim := wsim([[group("cultist", 1)]], 25)
 	run(sim, 1)  # 749 ticks left = 24 whole seconds
 	var gold := sim.state.gold
 	sim.drain_events()
+	assert_float(sim.early_night_luck()).is_equal_approx(1.0 + _rate(sim) * 24, 1e-9)
 	assert_int(sim.call_wave()).is_equal(R.OK)
-	var bonus := floori(_rate(sim) * 24)
-	assert_int(sim.state.gold).is_equal(gold + bonus)
+	assert_float(sim.state.night_luck).is_equal_approx(1.0 + _rate(sim) * 24, 1e-9)
+	assert_int(sim.state.gold).is_equal(gold)
 	var ev := sim.drain_events()
-	assert_int(ev.size()).is_equal(2)
+	assert_int(ev.size()).is_equal(1)
 	assert_int(ev[0].type).is_equal(SimEvent.Type.WAVE_STARTED)
 	assert_dict(ev[0].data).is_equal({"wave": 1, "early": true, "ticks_left": 749})
-	assert_int(ev[1].type).is_equal(SimEvent.Type.GOLD_CHANGED)
-	assert_int(ev[1].id).is_equal(0)
-	assert_dict(ev[1].data).is_equal({"delta": bonus, "gold": gold + bonus,
-		"reason": "early_call"})
 	assert_int(sim.state.phase).is_equal(SimState.Phase.WAVE)
 	assert_int(sim.state.wave_index).is_equal(1)
 	assert_int(sim.state.build_ticks_left).is_equal(0)
+	assert_float(sim.early_night_luck()).is_equal(1.0)  # outside BUILD
 
 
-func test_early_call_on_the_first_tick_pays_the_full_timer() -> void:
+func test_early_call_on_the_first_tick_gets_the_full_timer_luck() -> void:
 	var sim := wsim([[group("cultist", 1)]], 25)
-	var gold := sim.state.gold
 	assert_int(sim.call_wave()).is_equal(R.OK)
-	assert_int(sim.state.gold).is_equal(gold + floori(_rate(sim) * 25))
+	assert_float(sim.state.night_luck).is_equal_approx(1.0 + _rate(sim) * 25, 1e-9)
 
 
 func test_early_call_rounds_seconds_down() -> void:
 	var sim := wsim([[group("cultist", 1)]], 2)
 	run(sim, 60 - 59)  # 59 ticks left: 1 whole second
-	var gold := sim.state.gold
 	sim.call_wave()
-	assert_int(sim.state.gold).is_equal(gold + floori(_rate(sim) * 1))
-	# Under one second left: no bonus and no GOLD_CHANGED.
+	assert_float(sim.state.night_luck).is_equal_approx(1.0 + _rate(sim) * 1, 1e-9)
+	# Under one second left: luck 1.0.
 	var sim2 := wsim([[group("cultist", 1)]], 2)
 	run(sim2, 60 - 29)
 	assert_int(sim2.state.build_ticks_left).is_equal(29)
-	var gold2 := sim2.state.gold
-	sim2.drain_events()
 	assert_int(sim2.call_wave()).is_equal(R.OK)
-	assert_int(sim2.state.gold).is_equal(gold2)
-	assert_array(of_type(sim2.drain_events(), SimEvent.Type.GOLD_CHANGED)).is_empty()
+	assert_float(sim2.state.night_luck).is_equal(1.0)
 
 
 func test_first_spawn_after_an_early_call_is_on_the_next_tick() -> void:
@@ -74,6 +67,7 @@ func test_early_call_is_logged_with_its_tick() -> void:
 func test_early_call_works_in_a_later_build_phase_too() -> void:
 	var sim := wsim([[group("cultist", 1)], [group("cultist", 1)]], 3)
 	run(sim, SimTime.ticks(3))
+	assert_float(sim.state.night_luck).is_equal(1.0)  # the timer ran out: no early night
 	kill_real(sim)
 	run(sim, 1)
 	run(sim, 31)  # part of the second build phase has run
@@ -81,7 +75,9 @@ func test_early_call_works_in_a_later_build_phase_too() -> void:
 	var gold := sim.state.gold
 	assert_int(sim.call_wave()).is_equal(R.OK)
 	assert_int(sim.state.wave_index).is_equal(2)
-	assert_int(sim.state.gold).is_equal(gold + floori(_rate(sim) * SimTime.whole_seconds(left)))
+	assert_int(sim.state.gold).is_equal(gold)
+	assert_float(sim.state.night_luck).is_equal_approx(
+		1.0 + _rate(sim) * SimTime.whole_seconds(left), 1e-9)
 
 
 func test_call_wave_is_refused_outside_build_and_changes_nothing() -> void:
@@ -144,6 +140,7 @@ func _apply(sim: Simulation, c: Array) -> void:
 		"build": sim.build_tower(c[2], c[3])
 		"sell": sim.sell_tower(c[2])
 		"call_wave": sim.call_wave()
+		"sell_relics": sim.sell_relics(c[2])
 
 
 func test_replaying_the_command_log_with_the_same_seed_gives_the_same_run() -> void:

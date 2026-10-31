@@ -12,6 +12,8 @@ const FORBIDDEN := [
 	"\\bspawn_fake\\b",
 	"\\b_hallucinations\\b",
 	"\\bHallucinationSystem\\b",
+	"\\b_ghost_tokens\\b",  # LT-27 §1.3: which relic tokens are ghosts
+	"\\bGHOST_LOOT\\b",
 ]
 const REVEAL_SET := "\\bdebug_reveal_fakes\\s*=(?!=)"
 

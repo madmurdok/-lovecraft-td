@@ -375,13 +375,12 @@ func test_blast_hits_every_enemy_within_the_radius_of_the_target() -> void:
 	assert_float(beyond.hp).is_equal(HUGE_HP)
 
 
-func test_cast_event_order_shot_then_deaths_and_kill_pays_gold_only() -> void:
+func test_cast_event_order_shot_then_deaths_and_kill_drops_a_relic_only() -> void:
 	var sim := tsim()
 	sim.state.gold = 1000
 	build(sim, NECRO)
 	var l := _l1(sim, NECRO)
 	var e := put(sim, "cultist", 7.0, l.damage)
-	var reward: int = sim.config.enemies["cultist"].reward
 	var gold := sim.state.gold
 	var sanity := sim.state.sanity
 	sim.drain_events()
@@ -390,9 +389,8 @@ func test_cast_event_order_shot_then_deaths_and_kill_pays_gold_only() -> void:
 	var order: Array = []
 	for x in ev:
 		order.append(x.type)
-	assert_array(order).is_equal([T.SHOT, T.DIED, T.GOLD_CHANGED])
-	assert_str(ev[2].data["reason"]).is_equal("kill")
-	assert_int(sim.state.gold).is_equal(gold + reward)
+	assert_array(order).is_equal([T.SHOT, T.DIED, T.RELIC_DROPPED])
+	assert_int(sim.state.gold).is_equal(gold)
 	assert_float(sim.state.sanity).is_equal(sanity)
 	assert_str(ev[1].data["source"]).is_equal(NECRO)
 	assert_int(ev[1].id).is_equal(e.id)
