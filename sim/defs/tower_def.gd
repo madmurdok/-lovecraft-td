@@ -90,16 +90,17 @@ class Level:
 	var madness_affected: bool
 	## Known effect parameters (schema, not balance): key -> max value (min is 0).
 	const EFFECTS := {
-		"crit_chance": 1.0, "crit_multiplier": INF, "shooters": INF, "pierce": INF,
-		"bleed_dps": INF, "bleed_seconds": INF, "pull_cells": INF, "slow": 1.0,
-		"damage_taken_multiplier": INF, "strip_armor": INF, "aoe_radius": INF,
+		"crit_chance": 1.0, "crit_multiplier": INF, "burst_targets": INF, "pierce": INF,
+		"bleed_dps": INF, "bleed_seconds": INF, "pull_cells": INF, "pull_max_hp": INF,
+		"pull_immune_seconds": INF, "slow": 1.0, "damage_taken_multiplier": INF,
+		"strip_armor": INF, "aoe_radius": INF,
 	}
 
 	## Config keys (EFFECTS or stats) that parse but the sim does not apply yet (LT-24
 	## Decision 1). The UI marks them "(coming soon)" and bots skip branches using them;
-	## the task that wires a key removes it from here.
-	const PENDING: PackedStringArray = ["crit_chance", "crit_multiplier", "shooters",
-		"bleed_dps", "bleed_seconds", "pull_cells", "strip_armor"]
+	## the task that wires a key removes it from here. Empty since LT-29 wired the L3
+	## branch effects; a later task that adds a key ahead of its sim code lists it here.
+	const PENDING: PackedStringArray = []
 
 	## Branch/level-specific numeric parameters (String -> float), keys from EFFECTS.
 	var effects: Dictionary = {}

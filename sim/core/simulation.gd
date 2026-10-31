@@ -93,12 +93,15 @@ func step() -> void:
 	for e in state.enemies:
 		e.reset_modifiers()
 	# 2. Effect systems: the lighthouse beam first (LT-30: turn, `lit` of towers and enemies),
-	# then Elder Sign auras (LT-11), the madness buff (LT-23 §3) and the flare's slow;
-	# later slows/stuns add theirs here. The flare timers count down last.
+	# then Elder Sign auras (LT-11; Corrupted Seal's armor strip, LT-29), the madness buff
+	# (LT-23 §3) and the flare's slow; then enemy status timers (LT-29 P6: bleed pulses see
+	# this tick's auras and buff; pull immunity counts down); later slows/stuns add theirs
+	# here. The flare timers count down last.
 	_update_beam()
 	_apply_auras()
 	_apply_madness_buff()
 	_apply_flare_slow()
+	_tick_statuses()
 	_count_down_flare()
 	# 3. Movement.
 	_move()
@@ -1242,7 +1245,8 @@ func _count_down_flare() -> void:
 
 
 ## Slot 2 (§3.3): aura towers (Elder Sign) set this tick's modifiers. An aura tower is a
-## support level (damage 0) with a `slow` and/or `damage_taken_multiplier` effect; its aura
+## support level (damage 0) with a `slow`, `damage_taken_multiplier` and/or `strip_armor`
+## (LT-29 §1.5: armor_bonus -= strip, so apply_damage sees armor - strip) effect; its aura
 ## radius is the level's range, measured like enemies_in_range from the enemy's position at
 ## the start of the tick (before movement). Every live enemy inside (fakes too) gets
 ## speed_mult x (1 - slow) and damage_taken_mult x multiplier. Auras do not stack: inside
@@ -1253,7 +1257,8 @@ func _apply_auras() -> void:
 	var auras: Array[SimTower] = []
 	for t in state.towers:
 		var s := t.stats()
-		if s.damage <= 0.0 and (s.effects.has("slow") or s.effects.has("damage_taken_multiplier")):
+		if s.damage <= 0.0 and (s.effects.has("slow") or s.effects.has("damage_taken_multiplier")
+				or s.effects.has("strip_armor")):
 			auras.append(t)
 	if auras.is_empty():
 		return
@@ -1264,6 +1269,7 @@ func _apply_auras() -> void:
 		var inside := false
 		var slow := 0.0
 		var mult := 1.0
+		var strip := 0.0
 		for t in auras:
 			var s := t.stats()
 			var c := t.centre()
@@ -1274,17 +1280,21 @@ func _apply_auras() -> void:
 			inside = true
 			var t_slow: float = s.effects.get("slow", 0.0)
 			var t_mult: float = s.effects.get("damage_taken_multiplier", 1.0)
+			var t_strip: float = s.effects.get("strip_armor", 0.0)
 			if t.lit and t.def.kind == "occult":
-				# LT-30 §2: a lit occult aura works at beam.occult.power_mult strength.
+				# LT-30 §2: a lit occult aura works at beam.occult.power_mult strength
+				# (LT-29 §2: the armor strip too).
 				var pm := config.economy.beam.occult_power_mult
 				t_slow *= pm
 				t_mult = 1.0 + (t_mult - 1.0) * pm
+				t_strip *= pm
 			slow = maxf(slow, t_slow)
 			mult = maxf(mult, t_mult)
-			# Corrupted Seal's strip_armor is not wired yet: it is in TowerDef.Level.PENDING.
+			strip = maxf(strip, t_strip)
 		if inside:
 			e.speed_mult *= 1.0 - slow
 			e.damage_taken_mult *= mult
+			e.armor_bonus -= strip
 
 
 ## Slot 2, after _apply_auras (LT-23 §3): in MADNESS every live enemy, real and fake alike,
@@ -1322,6 +1332,11 @@ func _madness_buff_blocked(e: SimEnemy) -> bool:
 ## (LT-23: occult towers reserve the cap instead).
 ## In MADNESS a madness_affected level shoots astray (LT-13): SHOT {astray: true}, centre
 ## rolled by shot_split on MADNESS, damage x madness.damage_multiplier.
+## LT-29: a `burst_targets` level (Gangsters) fires each shot at the next of the top N
+## ranked targets (round robin, SimTower.burst_index). A shot that hits and whose level has
+## `crit_chance` rolls once on CRIT after the miss roll (lit towers skip the miss roll but
+## still crit): damage x crit_multiplier on every hit, before armor; SHOT {crit: true}.
+## After the damage, _on_hit_effects applies bleed and the chain pull.
 func _fire_towers() -> void:
 	for t in state.towers:
 		if t.cooldown_ticks > 0:
@@ -1332,7 +1347,18 @@ func _fire_towers() -> void:
 		if s.damage <= 0.0:
 			continue
 		var in_range := enemies_in_range(t.cell, s.range_cells)
-		var target := _pick_target(t, in_range)
+		var target: SimEnemy = null
+		var burst := int(s.effects.get("burst_targets", 0.0))
+		if burst > 0:
+			# LT-29 §1.2: round robin over the top `burst` by target_priority; a miss moves on
+			# too. The ranked set may shrink between shots: nothing is locked.
+			var ranked := _ranked_targets(t, in_range, burst)
+			if not ranked.is_empty():
+				var m := ranked.size()
+				target = ranked[t.burst_index % m]
+				t.burst_index = (t.burst_index % m + 1) % m
+		else:
+			target = _pick_target(t, in_range)
 		if target == null:
 			continue
 		# LT-13: a madness_affected tower in MADNESS deals x damage_multiplier and its shot
@@ -1373,6 +1399,11 @@ func _fire_towers() -> void:
 			and _roll_miss()
 		if miss or astray == "empty":
 			hits = []
+		# LT-29 §1.1: one CRIT roll per shot that hits, after the miss roll; all before armor
+		# (power_mult x madness x crit), so apply_damage subtracts armor from the crit.
+		var crit := not hits.is_empty() and _roll_crit(float(s.effects.get("crit_chance", 0.0)))
+		if crit:
+			damage *= float(s.effects.get("crit_multiplier", 1.0))
 		var ids: Array[int] = []
 		for e in hits:
 			ids.append(e.id)
@@ -1381,51 +1412,64 @@ func _fire_towers() -> void:
 			# A bool, not the outcome: a shot centred on a fake must look like any other
 			# (LT-12 §1). An empty one is told by its empty "hits".
 			shot["astray"] = true
+		if crit:
+			shot["crit"] = true
 		_emit(SimEvent.Type.SHOT, t.id, shot)
 		for e in hits:
 			apply_damage(e.id, damage, t.def.id)
+		_on_hit_effects(t, s, target, hits, shot)
 		var interval := s.fire_interval
 		if lit_mundane:
 			interval *= beam.mundane_fire_interval_mult  # LT-30: decided at the shot
 		t.cooldown_ticks = maxi(1, SimTime.ticks(interval))
 
 
-## The target `t` fires at among `candidates` (id order) by its target_priority (LT-31):
-## "first" -> _first_along_route, "strongest" -> highest current hp, "fastest" -> highest
-## units moved this tick (base_units_per_tick x speed_mult, as _move rounds it, so auras'
-## slow counts). Every tie -> lower id. Null if empty.
+## The target `t` fires at among `candidates` by its target_priority: the top of
+## _ranked_targets. Null if empty.
 func _pick_target(t: SimTower, candidates: Array[SimEnemy]) -> SimEnemy:
-	match t.target_priority:
+	var ranked := _ranked_targets(t, candidates, 1)
+	return null if ranked.is_empty() else ranked[0]
+
+
+## Up to `n` of `candidates`, best first, by t.target_priority (LT-31): "first" = least
+## route distance left to the lighthouse, "strongest" = highest current hp, "fastest" =
+## highest units moved this tick (base_units_per_tick x speed_mult, as _move rounds it, so
+## auras' slow counts). Every tie -> lower id. One ranking rule for single shots and
+## bursts (LT-29 P12).
+func _ranked_targets(t: SimTower, candidates: Array[SimEnemy], n: int) -> Array[SimEnemy]:
+	var out: Array[SimEnemy] = []
+	if n <= 0 or candidates.is_empty():
+		return out
+	var mode := t.target_priority
+	if n == 1:
+		# One pick: a linear scan, the same order as the sort below.
+		var best: SimEnemy = null
+		var best_key := 0.0
+		for e in candidates:
+			var k := _rank_key(mode, e)
+			if best == null or k > best_key or (k == best_key and e.id < best.id):
+				best = e
+				best_key = k
+		out.append(best)
+		return out
+	out = candidates.duplicate()
+	out.sort_custom(func(a: SimEnemy, b: SimEnemy) -> bool:
+		var ka := _rank_key(mode, a)
+		var kb := _rank_key(mode, b)
+		return ka > kb or (ka == kb and a.id < b.id))
+	if out.size() > n:
+		out.resize(n)
+	return out
+
+
+## Higher = ranked first under `mode` (see _ranked_targets).
+func _rank_key(mode: String, e: SimEnemy) -> float:
+	match mode:
 		"strongest":
-			return _best_by(candidates, func(e: SimEnemy) -> float: return e.hp)
+			return e.hp
 		"fastest":
-			return _best_by(candidates, func(e: SimEnemy) -> float:
-				return float(roundi(e.base_units_per_tick * e.speed_mult)))
-	return _first_along_route(candidates)
-
-
-## The candidate with the highest `key`; the first (lower id) on a tie. Null if empty.
-func _best_by(candidates: Array[SimEnemy], key: Callable) -> SimEnemy:
-	var best: SimEnemy = null
-	var best_key := 0.0
-	for e in candidates:
-		var k: float = key.call(e)
-		if best == null or k > best_key:
-			best = e
-			best_key = k
-	return best
-
-
-## "First" = least route distance left to the lighthouse; ties by lower id. Null if empty.
-func _first_along_route(candidates: Array[SimEnemy]) -> SimEnemy:
-	var best: SimEnemy = null
-	var best_left := 0
-	for e in candidates:
-		var left := e.route.length - e.distance
-		if best == null or left < best_left:
-			best = e
-			best_left = left
-	return best
+			return float(roundi(e.base_units_per_tick * e.speed_mult))
+	return -float(e.route.length - e.distance)
 
 
 ## End of a line shot: from `origin` through `aim`, `length` cells long. If `aim` is
@@ -1473,6 +1517,82 @@ func _move() -> void:
 		e.prev_distance = e.distance
 		var step_units := roundi(e.base_units_per_tick * e.speed_mult)
 		e.distance = clampi(e.distance + step_units, 0, e.route.length)
+
+
+## LT-29 P5: moves `e` `cells` back along its own route (path walkers along the path,
+## flyers along their straight line), never before its start. prev_distance follows, so the
+## render does not slide it backwards through the tick. Distance only decreases, so _leak
+## and _check_outcome are unaffected.
+func _push_back(e: SimEnemy, cells: float) -> void:
+	e.distance = maxi(0, e.distance - roundi(cells * SimTime.UNITS_PER_CELL))
+	e.prev_distance = e.distance
+
+
+## Slot 5, after a shot's damage (LT-29 §1.3-1.4): bleed on every hit still live; the chain
+## pull on the shot's primary target only (Q4), if it was hit, is still live, has max_hp <=
+## pull_max_hp (0 = no cap) and no pull immunity. SHOT was emitted before the damage (the
+## pinned SHOT -> DIED order), so `pulled` is written into the same `shot` Dictionary
+## already passed to _emit: events are drained only after step(), and SimEvent keeps the
+## Dictionary by reference.
+func _on_hit_effects(t: SimTower, s: TowerDef.Level, target: SimEnemy, hits: Array[SimEnemy],
+		shot: Dictionary) -> void:
+	var bleed_dps: float = s.effects.get("bleed_dps", 0.0)
+	var bleed_seconds: float = s.effects.get("bleed_seconds", 0.0)
+	if bleed_dps > 0.0 and bleed_seconds > 0.0:
+		for e in hits:
+			if e.is_live():
+				_apply_bleed(e, bleed_dps, bleed_seconds, t.def.id)
+	var pull: float = s.effects.get("pull_cells", 0.0)
+	if pull <= 0.0:
+		return
+	var pulled: Array[int] = []
+	var cap: float = s.effects.get("pull_max_hp", 0.0)
+	if hits.has(target) and target.is_live() and (cap <= 0.0 or target.max_hp <= cap) \
+			and int(target.status.get("pull_immune_ticks", 0)) <= 0:
+		_push_back(target, pull)
+		var immune := SimTime.ticks(float(s.effects.get("pull_immune_seconds", 0.0)))
+		if immune > 0:
+			target.status["pull_immune_ticks"] = immune
+		pulled.append(target.id)
+	shot["pulled"] = pulled
+
+
+## LT-29 §1.3 (shared with later bleeders): refresh, never stack. The duration restarts
+## (max of what is left and `seconds`), the higher dps wins (its source too; a tie -> the
+## newest), and a new bleed's first pulse comes one second after the hit.
+func _apply_bleed(e: SimEnemy, dps: float, seconds: float, source: String) -> void:
+	var st := e.status
+	var left := int(st.get("bleed_ticks", 0))
+	st["bleed_ticks"] = maxi(left, SimTime.ticks(seconds))
+	if left <= 0 or dps >= float(st.get("bleed_dps", 0.0)):
+		st["bleed_dps"] = dps
+		st["bleed_source"] = source
+	if left <= 0:
+		st["bleed_pulse"] = SimTime.TICK_RATE
+
+
+## Slot 2 (LT-29 P6): every live enemy (fakes too) in id order counts its status timers down.
+## Bleed: each second one pulse of bleed_dps through apply_damage (armor once per pulse,
+## Q1; this tick's strip, vuln and madness buff apply), credited to bleed_source; the keys
+## are erased when the duration ends. Pull immunity: erased at 0.
+func _tick_statuses() -> void:
+	for e in state.enemies:
+		if not e.is_live() or e.status.is_empty():
+			continue
+		var st := e.status
+		if st.has("pull_immune_ticks"):
+			st["pull_immune_ticks"] = int(st["pull_immune_ticks"]) - 1
+			if int(st["pull_immune_ticks"]) <= 0:
+				st.erase("pull_immune_ticks")
+		if st.has("bleed_ticks"):
+			st["bleed_ticks"] = int(st["bleed_ticks"]) - 1
+			st["bleed_pulse"] = int(st["bleed_pulse"]) - 1
+			if int(st["bleed_pulse"]) <= 0:
+				st["bleed_pulse"] = SimTime.TICK_RATE
+				apply_damage(e.id, float(st["bleed_dps"]), String(st["bleed_source"]))
+			if int(st["bleed_ticks"]) <= 0:
+				for key: String in ["bleed_ticks", "bleed_dps", "bleed_pulse", "bleed_source"]:
+					st.erase(key)
 
 
 ## Every enemy at the end of its route leaks; all leaks of the tick are processed (§5).
@@ -1529,6 +1649,13 @@ func _roll_miss() -> bool:
 	if chance <= 0.0:
 		return false
 	return rng(SimRng.Stream.COMBAT).randf() < chance
+
+
+## LT-29 §1.1 crit hook: one roll on CRIT against `chance`; no roll (no CRIT draw) at 0.
+func _roll_crit(chance: float) -> bool:
+	if chance <= 0.0:
+		return false
+	return rng(SimRng.Stream.CRIT).randf() < chance
 
 
 ## LT-13 shot_split: one MADNESS roll per astray shot -> "real" | "fake" | "empty".
