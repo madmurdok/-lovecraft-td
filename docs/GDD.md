@@ -162,7 +162,7 @@ Mundane towers' L3 branches are "specialisations"; occult towers' L3 branches ar
 | Harpooner | mundane | 70 | piercing line shot, good vs packs | Barbed: bleed DoT | Chain harpoon: pulls target back along the path |
 | Searchlight | mundane | 80 | beam that slows 40%, no damage | Blinding: stuns 1 s every 6 s | Revealing: fake enemies in the beam are shown as fake |
 | Elder Sign | occult | 100, reserves 5 | aura: −35% speed, +50% damage taken | Pure Ward: larger aura | Corrupted Seal: enemies inside lose armor, reserves 30 |
-| Necronomicon Reader | occult | 150, reserves 10 | AoE blast every 3 s | Pure Rite: slower, unaffected by madness (no ×2, no astray shots) | Corrupted Rite: ×1.5 damage, reserves 45 |
+| Necronomicon Reader | occult | 150, reserves 10 | AoE blast every 3 s | Pure Rite: slower, unaffected by madness (no ×2, no astray shots) | Corrupted Rite: stronger blasts (damage 150, no longer ×1.5 of L2, owner decision LT-23 S17), reserves 45 |
 
 Note: the Revealing branch is the only counter to hallucinations in the MVP, and it is gated behind L3.
 

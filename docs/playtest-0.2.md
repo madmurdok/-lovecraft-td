@@ -159,3 +159,40 @@ No other value changed. Same command and seeds as S13: `tools/bot_runs.gd --seed
 The three non-madness rows are identical to S13. **The madness bot now wins 5/10 (was 0/10), above the <= 2/10 target**;
 it reaches MADNESS in 10/10 runs at the same ticks (6841-8537). Not re-tuned: an owner decision.
 Machine: `uptime` load 43.65 19.07 35.62; `/usr/bin/time -p` real 288.96, user 199.64, sys 1.88.
+
+## S17: soften Reader L3 (LT-23)
+
+Owner decision: "Смягчить третий уровень Чтеца". S15 left the madness bot at 5/10 wins (target <= 2/10). Only the Reader L3
+`damage` changes (Pure Rite a, fire_interval 4; Corrupted Rite b, fire_interval 3); madness multipliers stay 1.7 / 0.37.
+Ordering pins: Pure Rite >= 130 per shot (slower branch), Corrupted Rite DPS >= L2 (130/3). Scan: same command and seeds as S13,
+3 variants in parallel (`--data=<copy>`), madness bot read from the full 4-bot output.
+
+| Pair (a / b) | Madness bot wins | Mean HP left |
+|---|---|---|
+| 164 / 195 (S15) | 5/10 | 1.7 |
+| 140 / 165 | 4/10 | 1.5 |
+| 135 / 150 | 1/10 | 0.4 |
+| 132 / 140 | 0/10 | 0.0 |
+
+**Chosen: Pure Rite 135, Corrupted Rite 150** (strongest pair with <= 2/10). Corrupted Rite is no longer x1.5 of L2, by owner decision.
+Applied to `data/towers.json`; nothing else changed.
+
+### Final table (10 seeds, data/ as committed)
+
+| Bot | Wins | Mean HP | Runs losing >= 1 HP | Cap after wave 4 | Runs reaching MADNESS | Lowest final cap | Fakes/run |
+|---|---|---|---|---|---|---|---|
+| mundane | 10/10 | 16.5 | 6 | 100 | 0 | 100 | 0 |
+| occult | 10/10 | 19.0 | 10 | 36-56 | 0 | 32 | 20.5 |
+| mixed | 10/10 | 20.0 | 0 | 64-76 | 0 | 64 | 9.9 |
+| madness | 1/10 | 0.4 | 10 | 3-46 | 10 | 0 | 18.5 |
+
+The three non-madness rows are identical to S15. The "Lowest final cap" column is the minimum `final_cap` over runs.
+
+### Machine state
+
+Scan: `uptime` load 18.48 8.89 11.81; `/usr/bin/time -p` per process real 270.1-270.5, user 225.1-225.6, sys 1.7 (3 in parallel).
+Final run: load 131.90 117.24 63.38; real 208.80, user 196.32, sys 1.59 (user 94 % of real: computing).
+
+### Tests
+
+`config_valid_test` (20), `occult_tower_test` (26), `upgrade_test` (29), `bot_upgrade_test` (21): 0 failures.

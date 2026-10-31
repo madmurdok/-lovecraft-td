@@ -135,8 +135,8 @@ Reader: cap 80, sanity 70, regen continues.
 |---|---|---|---|
 | Necronomicon L1 | damage / fire_interval / reserve | 40 / 4 s / (2 per cast) | **100 / 3 s / 10** (33.3 DPS per target; was 70 in the first proposal, scaled in S10) |
 | Necronomicon L2 | same | 55 / 4 / (2 per cast) | **130 / 3 / 18** |
-| Pure Rite (a) | same | 70 / 5 / (2 per cast) | **164 / 4 / 22** (not madness_affected; slower, DPS 41 vs L2 43.3; S15: L2 ratio ×130/95 restored) |
-| Corrupted Rite (b) | same | 82.5 / 4 / (4 per cast) | **195 / 3 / 45** (×1.5 of L2, GDD) |
+| Pure Rite (a) | same | 70 / 5 / (2 per cast) | **135 / 4 / 22** (not madness_affected; slower, DPS 33.8 vs L2 43.3, per-shot 135 >= L2 130; S17: softened from 164 by owner decision) |
+| Corrupted Rite (b) | same | 82.5 / 4 / (4 per cast) | **150 / 3 / 45** (S17: no longer ×1.5 of L2 (was 195), by owner decision "Смягчить третий уровень Чтеца"; DPS 50 vs L2 43.3) |
 | Elder Sign L1 | range / slow / damage_taken_multiplier / reserve | 2 / 0.3 / 1.25 / (8 once) | **2.5 / 0.35 / 1.5 / 5** |
 | Elder Sign L2 | same | 2.5 / 0.3 / 1.25 / (8 once) | **3 / 0.35 / 1.5 / 8** |
 | Pure Ward (a) | same | 3.5 / 0.3 / 1.25 / (8 once) | **4 / 0.35 / 1.5 / 14** |
@@ -398,7 +398,7 @@ Not run in S15 (the verify slice runs them).
 
 | # | Pin | Revert (data) | Must fail |
 |---|---|---|---|
-| C10 | damage never drops on upgrade | Pure Rite `damage` 164 back to 120 (below L2's 130) | `test_an_upgrade_never_lowers_damage` |
+| C10 | damage never drops on upgrade | Pure Rite `damage` 135 back to 120 (below L2's 130) | `test_an_upgrade_never_lowers_damage` |
 | C11 | Corrupted Rite reserve > Pure Rite | Corrupted Rite `sanity_reserve` 45 down to 22 | `test_corrupted_branches_reserve_more_sanity_than_pure_ones` |
 | C12 | Corrupted Seal reserve > Pure Ward | Corrupted Seal `sanity_reserve` 30 down to 14 | `test_corrupted_branches_reserve_more_sanity_than_pure_ones` |
 | C13 | madness speed multiplier > 1 | `sanity.json` `enemy_speed_multiplier` 1.7 to 0.9 | `test_madness_multipliers_are_a_buff_for_enemies` |
