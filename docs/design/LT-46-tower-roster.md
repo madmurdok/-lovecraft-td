@@ -1,6 +1,6 @@
 # LT-46 — Tower roster: 5 mundane + 5 occult, two branches each (design note)
 
-Status: draft for owner review · 2026-11-01 · branch `docs/LT-46-tower-roster`. Line numbers
+Status: approved by the owner 2026-11-01 ("Утверждаю (Recommended)") · branch `docs/LT-46-tower-roster`. Line numbers
 are `main` at `10eea26` (0.3.0 bump).
 
 Source: owner, 0.3 planning: "Нужна вариативность, штук 5 обычных башен и штук 5
@@ -387,6 +387,15 @@ GDScript is not indexed by g-mesh; all by grep: `damage <= 0|damage > 0|has_targ
 ---
 
 ## 7. Open questions for the owner
+
+**Owner decisions (2026-11-01, verbatim option labels):**
+- Q1: "Гангстеры-ветка, Прожектор (Recommended)" — Gangsters replace Militia as Rifleman
+  branch b (`burst_targets`, LT-29); LT-49 is the Coast Guard searchlight.
+- Q2: "Текущий рассудок на полной шкале (Recommended)"
+- Q3: "HP + контактный урон (Recommended)"
+- Q4: "Лимит HP по уровню (Recommended)"
+- Q5: "Упреждение (Recommended)"
+- Q6: "Бьёт летунов (Recommended)"
 
 ### Q1. Fifth mundane tower (LT-49)
 
