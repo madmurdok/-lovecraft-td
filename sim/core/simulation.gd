@@ -4,8 +4,8 @@ extends RefCounted
 ## time by step(); scenes read `state` directly and drain one-shot events.
 ## Same config + seed + command log -> same events and state (§4).
 
-## Result of a player command (build/sell). OK = applied; anything else = rejected and
-## nothing changed (no gold, no event, no command_log entry).
+## Result of a player command (build/sell/upgrade). OK = applied; anything else = rejected
+## and nothing changed (no gold, no event, no command_log entry).
 enum CommandResult {
 	OK,
 	OUTCOME_REACHED,  ## the run is over; every command is refused
@@ -14,10 +14,14 @@ enum CommandResult {
 	NOT_BUILDABLE,  ## path, water, the lighthouse or out of bounds
 	OCCUPIED,  ## another tower stands on the cell
 	NOT_ENOUGH_GOLD,
-	NO_SUCH_TOWER,  ## sell: unknown or already sold tower id
-	NOT_BUILD_PHASE,  ## call_wave: not in the build phase (or no WaveDirector)
+	NO_SUCH_TOWER,  ## sell/upgrade: unknown or already sold tower id
+	## call_wave: not in the build phase (or no WaveDirector); upgrade: during a wave
+	NOT_BUILD_PHASE,
 	NO_BUYOUT,  ## buy_sanity: madness.exit_rule is not "buyout"
 	NOT_IN_MADNESS,  ## buy_sanity: sanity state is not MADNESS
+	MAX_LEVEL,  ## upgrade: the tower is at L3
+	NEED_BRANCH,  ## upgrade: L2 -> L3 needs branch "a" or "b"
+	BAD_BRANCH,  ## upgrade: branch is not ""/"a"/"b", or non-empty for L1 -> L2
 }
 
 ## Sanity change reasons that may move sanity while in MADNESS (LT-13): the exit rules.
@@ -194,8 +198,8 @@ func build_tower(def_id: String, cell: Vector2i) -> CommandResult:
 
 
 ## Player command: sells tower `tower_id` for economy.sell_refund_ratio of everything spent
-## on it (rounded to the nearest gold) and frees its cell. Emits TOWER_SOLD + GOLD_CHANGED.
-## Sanity paid to build an occult tower is not refunded.
+## on it, build and upgrades (rounded once, on the total) and frees its cell. Emits
+## TOWER_SOLD + GOLD_CHANGED. Sanity paid to build or upgrade is not refunded.
 func sell_tower(tower_id: int) -> CommandResult:
 	if state.outcome != SimState.Outcome.NONE:
 		return CommandResult.OUTCOME_REACHED
@@ -208,6 +212,74 @@ func sell_tower(tower_id: int) -> CommandResult:
 	state.command_log.append([state.tick, "sell", tower_id])
 	_emit(SimEvent.Type.TOWER_SOLD, t.id, {"def": t.def.id, "cell": t.cell, "refund": refund})
 	_add_gold(refund, "sell", t.id)
+	return CommandResult.OK
+
+
+## Branches upgrade_tower accepts for `t` now (LT-24 §2): [""] at L1, ["a", "b"] at L2,
+## [] at L3.
+func upgrade_branches(t: SimTower) -> PackedStringArray:
+	if t.level >= TowerDef.LEVEL_COUNT:
+		return PackedStringArray()
+	if t.level == TowerDef.LEVEL_COUNT - 1:
+		return TowerDef.BRANCH_IDS
+	return PackedStringArray([""])
+
+
+## The level `t` would become with `branch`: def.levels[level + 1] below L2, the branch
+## at L2; null at L3 or when `branch` is not one upgrade_branches(t) accepts.
+func upgrade_target(t: SimTower, branch := "") -> TowerDef.Level:
+	if not upgrade_branches(t).has(branch):
+		return null
+	if t.level == TowerDef.LEVEL_COUNT - 1:
+		return t.def.branches[branch]
+	return t.def.levels[t.level + 1]
+
+
+## Whether upgrade_tower(tower_id, branch) would be applied now; OK or the first failing
+## reason in this order: OUTCOME_REACHED, NO_SUCH_TOWER, MAX_LEVEL, NEED_BRANCH,
+## BAD_BRANCH, NOT_BUILD_PHASE (during a wave), NOT_ENOUGH_GOLD. Only gold is checked,
+## not sanity. Changes nothing.
+func can_upgrade(tower_id: int, branch := "") -> CommandResult:
+	if state.outcome != SimState.Outcome.NONE:
+		return CommandResult.OUTCOME_REACHED
+	var t := tower_by_id(tower_id)
+	if t == null:
+		return CommandResult.NO_SUCH_TOWER
+	if t.level >= TowerDef.LEVEL_COUNT:
+		return CommandResult.MAX_LEVEL
+	if t.level == TowerDef.LEVEL_COUNT - 1 and branch.is_empty():
+		return CommandResult.NEED_BRANCH
+	var target := upgrade_target(t, branch)
+	if target == null:
+		return CommandResult.BAD_BRANCH
+	if state.phase == SimState.Phase.WAVE:
+		return CommandResult.NOT_BUILD_PHASE
+	if state.gold < target.upgrade_cost:
+		return CommandResult.NOT_ENOUGH_GOLD
+	return CommandResult.OK
+
+
+## Player command (LT-24): raises tower `tower_id` one level (L1 -> L2 with branch "", L2 ->
+## L3 with "a"/"b") for the target's upgrade_cost, outside a wave only. The tower keeps its
+## id, cell, build_tick, status and running cooldown; the new stats apply from its next
+## shot. Emits TOWER_UPGRADED {def, cell, level, branch, cost} + GOLD_CHANGED "upgrade";
+## the target's upgrade_sanity_cost is then paid through _add_sanity (SANITY_CHANGED
+## "upgrade"), like a build: any sanity, clamped at 0, can push into MADNESS.
+func upgrade_tower(tower_id: int, branch := "") -> CommandResult:
+	var result := can_upgrade(tower_id, branch)
+	if result != CommandResult.OK:
+		return result
+	var t := tower_by_id(tower_id)
+	var target := upgrade_target(t, branch)
+	t.level += 1
+	t.branch = branch
+	t.spent += target.upgrade_cost
+	state.command_log.append([state.tick, "upgrade", tower_id, branch])
+	_emit(SimEvent.Type.TOWER_UPGRADED, t.id, {"def": t.def.id, "cell": t.cell,
+		"level": t.level, "branch": branch, "cost": target.upgrade_cost})
+	_add_gold(-target.upgrade_cost, "upgrade", t.id)
+	if target.upgrade_sanity_cost > 0.0:
+		_add_sanity(-target.upgrade_sanity_cost, "upgrade", t.id)
 	return CommandResult.OK
 
 
@@ -282,7 +354,8 @@ func early_call_bonus() -> int:
 	return floori(config.economy.early_call_gold_per_second * seconds_left)
 
 
-## Gold a sell of `t` would return now.
+## Gold a sell of `t` would return now: sell_refund_ratio x t.spent (build + upgrades),
+## rounded once.
 func sell_refund(t: SimTower) -> int:
 	return roundi(t.spent * config.economy.sell_refund_ratio)
 
@@ -386,7 +459,7 @@ func _emit(type: SimEvent.Type, id: int, data: Dictionary) -> void:
 
 
 ## Every gold change goes through here: GOLD_CHANGED {delta, gold, reason}; `id` is the
-## enemy (kill) or tower (build/sell) it is about, 0 for the wave bonus.
+## enemy (kill) or tower (build/sell/upgrade) it is about, 0 for the wave bonus.
 func _add_gold(delta: int, reason: String, id: int) -> void:
 	if delta == 0:
 		return
@@ -491,7 +564,7 @@ func _apply_auras() -> void:
 			inside = true
 			slow = maxf(slow, s.effects.get("slow", 0.0))
 			mult = maxf(mult, s.effects.get("damage_taken_multiplier", 1.0))
-			# Corrupted Seal's strip_armor (L3 branch) is not wired yet: L1 only in LT-11.
+			# Corrupted Seal's strip_armor is not wired yet: it is in TowerDef.Level.PENDING.
 		if inside:
 			e.speed_mult *= 1.0 - slow
 			e.damage_taken_mult *= mult

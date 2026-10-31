@@ -2,13 +2,17 @@ class_name TowerDef
 extends RefCounted
 ## One tower from towers.json (GDD §6): L1 and L2 in `levels`, L3 as branch "a" or "b".
 
-const FIELDS := ["name", "kind", "cost", "sanity_cost", "levels", "branches"]
+const FIELDS := ["name", "role", "kind", "cost", "sanity_cost", "levels", "branches"]
 const KINDS: PackedStringArray = ["mundane", "occult"]
 const LEVEL_COUNT := 2  ## L1, L2; L3 is a branch
 const BRANCH_IDS: PackedStringArray = ["a", "b"]
+## Max length of a `role` line (tower or branch), after strip_edges (LT-24 §1).
+const ROLE_MAX_CHARS := 60
 
 var id: String
 var name: String
+## One-line player-facing role (no numbers); "" when absent (LT-24 §1).
+var role: String
 var kind: String  ## "mundane" | "occult"
 var cost: int  ## gold to build (L1), >= 0
 var sanity_cost: float  ## sanity to build (L1), >= 0
@@ -21,6 +25,7 @@ static func parse(r: ConfigReader, id: String, obj: Dictionary, path: String) ->
 	var t := TowerDef.new()
 	t.id = id
 	t.name = r.req_string(obj, "name", path)
+	t.role = parse_role(r, obj, path)
 	t.kind = r.req_string(obj, "kind", path, KINDS)
 	t.cost = r.req_int(obj, "cost", path, 0)
 	t.sanity_cost = r.opt_number(obj, "sanity_cost", path, 0.0, 0.0)
@@ -34,7 +39,7 @@ static func parse(r: ConfigReader, id: String, obj: Dictionary, path: String) ->
 			var ip := ConfigReader.index(lp, i)
 			var lv: Variant = r.as_object(levels[i], ip)
 			if lv != null:
-				t.levels.append(Level.parse(r, lv, ip, i > 0, t.kind))
+				t.levels.append(Level.parse(r, lv, ip, i > 0, t.kind, false))
 
 	var branches: Variant = r.req_object(obj, "branches", path)
 	if branches != null:
@@ -43,19 +48,39 @@ static func parse(r: ConfigReader, id: String, obj: Dictionary, path: String) ->
 		for b in BRANCH_IDS:
 			var bo: Variant = r.req_object(branches, b, bp)
 			if bo != null:
-				t.branches[b] = Level.parse(r, bo, ConfigReader.join(bp, b), true, t.kind)
+				t.branches[b] = Level.parse(r, bo, ConfigReader.join(bp, b), true, t.kind, true)
 	return t
+
+
+## Optional `role` of `obj`: a non-blank string of at most ROLE_MAX_CHARS characters
+## (stripped); "" when absent or rejected.
+static func parse_role(r: ConfigReader, obj: Dictionary, path: String) -> String:
+	if not obj.has("role"):
+		return ""
+	var rp := ConfigReader.join(path, "role")
+	if typeof(obj["role"]) != TYPE_STRING:
+		r.error(rp, "expected string, got %s" % ConfigReader.type_name(obj["role"]))
+		return ""
+	var s: String = (obj["role"] as String).strip_edges()
+	if s.is_empty():
+		r.error(rp, "must not be empty")
+		return ""
+	if s.length() > ROLE_MAX_CHARS:
+		r.error(rp, "must be at most %d characters, got %d" % [ROLE_MAX_CHARS, s.length()])
+		return ""
+	return s
 
 
 ## Stats of one tower level or L3 branch.
 class Level:
 	extends RefCounted
 
-	const LEVEL_FIELDS := ["name", "upgrade_cost", "upgrade_sanity_cost", "range", "damage",
-		"fire_interval", "sanity_per_cast", "sanity_per_second", "madness_affected",
+	const LEVEL_FIELDS := ["name", "role", "upgrade_cost", "upgrade_sanity_cost", "range",
+		"damage", "fire_interval", "sanity_per_cast", "sanity_per_second", "madness_affected",
 		"effects"]
 
 	var name: String
+	var role: String  ## branches only (L3); "" on levels and when absent (LT-24 §1)
 	var upgrade_cost: int  ## gold to upgrade into this level; 0 on L1 (use TowerDef.cost)
 	var upgrade_sanity_cost: float  ## sanity to upgrade into this level
 	var range_cells: float  ## JSON "range"; cells, > 0 (attack range or aura radius)
@@ -73,14 +98,36 @@ class Level:
 		"damage_taken_multiplier": INF, "strip_armor": INF, "aoe_radius": INF,
 	}
 
+	## Config keys (EFFECTS or stats) that parse but the sim does not apply yet (LT-24
+	## Decision 1). The UI marks them "(coming soon)" and bots skip branches using them;
+	## the task that wires a key removes it from here.
+	const PENDING: PackedStringArray = ["crit_chance", "crit_multiplier", "shooters",
+		"bleed_dps", "bleed_seconds", "pull_cells", "strip_armor", "sanity_per_second"]
+
 	## Branch/level-specific numeric parameters (String -> float), keys from EFFECTS.
 	var effects: Dictionary = {}
 
+	## True when any PENDING key is non-zero on this level (an effect or a stat field).
+	func has_pending() -> bool:
+		for key in PENDING:
+			if key == "sanity_per_second":
+				if sanity_per_second != 0.0:
+					return true
+			elif effects.get(key, 0.0) != 0.0:
+				return true
+		return false
+
+	## `is_branch`: an L3 branch, the only place `role` is allowed.
 	static func parse(r: ConfigReader, obj: Dictionary, path: String, is_upgrade: bool,
-			kind: String) -> Level:
+			kind: String, is_branch: bool) -> Level:
 		r.check_keys(obj, LEVEL_FIELDS, path)
 		var l := Level.new()
 		l.name = r.opt_string(obj, "name", path)
+		if is_branch:
+			l.role = TowerDef.parse_role(r, obj, path)
+		elif obj.has("role"):
+			r.error(ConfigReader.join(path, "role"),
+				"not allowed on levels (only on the tower and its branches)")
 		if is_upgrade:
 			l.upgrade_cost = r.req_int(obj, "upgrade_cost", path, 0)
 			l.upgrade_sanity_cost = r.opt_number(obj, "upgrade_sanity_cost", path, 0.0, 0.0)
