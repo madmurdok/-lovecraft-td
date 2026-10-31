@@ -2,7 +2,12 @@ class_name SimTower
 extends RefCounted
 ## One placed tower in the simulation (LT-6; design note LT-4 §1.4, §6).
 ## Upgrades (LT-24, Simulation.upgrade_tower) raise `level`, set `branch` at L3 and add to
-## `spent`.
+## `spent`. Simulation.set_target_priority (LT-31) sets `target_priority`.
+
+## Target priority modes (LT-31), in panel order: "first" = closest to the lighthouse
+## (least route left), "strongest" = highest current hp, "fastest" = highest current speed.
+const TARGET_PRIORITIES: PackedStringArray = ["first", "strongest", "fastest"]
+const DEFAULT_TARGET_PRIORITY := "first"
 
 var id: int  ## shared entity id counter (SimState.next_id)
 var def: TowerDef
@@ -13,6 +18,8 @@ var spent := 0  ## total gold paid for this tower (build + upgrades); the sell r
 var build_tick := 0
 ## Ticks until the tower may fire again; 0 = ready. A new tower is ready at once.
 var cooldown_ticks := 0
+## One of TARGET_PRIORITIES; whom _fire_towers picks among the live enemies in range.
+var target_priority := DEFAULT_TARGET_PRIORITY
 
 ## Disable/harass timers (tower_harass, tower_lift, ...) added by later tasks.
 var status: Dictionary = {}

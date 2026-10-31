@@ -2,12 +2,14 @@ class_name TowerPanel
 extends VBoxContainer
 ## Tower view of the side panel for a clicked tower (LT-7, LT-24 §4): name and level, role
 ## (the branch role at L3), current stats (TowerInfo), the upgrade button (L1) or the two
-## branch buttons (L2) with their deltas, "Max level" at L3, and Sell with the refund
+## branch buttons (L2) with their deltas, the target priority switch (LT-31; hidden for an
+## aura tower), "Max level" at L3, and Sell with the refund
 ## Simulation.sell_refund reports now. Buttons are disabled with the reason whenever
 ## Simulation.can_upgrade refuses them; refresh() re-reads everything each frame.
 ## `visible` is "the tower view is shown"; SidePanel shows its idle text otherwise.
 
 const MADNESS_WARNING := TowerInfo.MADNESS_WARNING
+const PRIORITY_MARK := "▸ "  ## prefixes the current target priority (LT-31)
 
 var game: Game
 var tower_id := 0
@@ -21,6 +23,9 @@ var max_label: Label
 var upgrade_buttons: Dictionary[String, Button] = {}
 var upgrade_infos: Dictionary[String, Label] = {}
 var sell_button: Button
+var priority_title: Label
+## SimTower.TARGET_PRIORITIES mode -> its button; the current mode is marked and disabled.
+var priority_buttons: Dictionary[String, Button] = {}
 
 
 func _ready() -> void:
@@ -31,6 +36,14 @@ func _ready() -> void:
 	add_child(role_label)
 	stats_label = SidePanel.make_label("Stats", SidePanel.COLOR_INFO)
 	add_child(stats_label)
+	priority_title = SidePanel.make_label("PriorityTitle")
+	priority_title.text = "── Target ──"
+	priority_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	add_child(priority_title)
+	for mode: String in SimTower.TARGET_PRIORITIES:
+		var pb := SidePanel.make_button("Priority_" + mode, _on_priority_pressed.bind(mode))
+		add_child(pb)
+		priority_buttons[mode] = pb
 	upgrade_title = SidePanel.make_label("UpgradeTitle")
 	upgrade_title.text = "── Upgrade ──"
 	upgrade_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -87,6 +100,7 @@ func refresh() -> void:
 	role_label.text = s.role if at_max else t.def.role
 	role_label.visible = not role_label.text.is_empty()
 	stats_label.text = "\n".join(TowerInfo.lines(t.def, s, game.sim.config.sanity))
+	_refresh_priority(t)
 	var branches := game.sim.upgrade_branches(t)
 	upgrade_title.visible = not branches.is_empty()
 	max_label.visible = branches.is_empty()
@@ -128,6 +142,33 @@ func _refresh_upgrade(b: Button, info: Label, t: SimTower, s: TowerDef.Level, br
 	info.text = "\n".join(lines)
 
 
+## LT-31: shown only when the tower picks targets (Simulation.has_targeting). The current
+## mode is marked and disabled; the others are disabled with the reason when
+## can_set_target_priority refuses (run over).
+func _refresh_priority(t: SimTower) -> void:
+	var shown := game.sim.has_targeting(t)
+	priority_title.visible = shown
+	for mode: String in priority_buttons:
+		var b := priority_buttons[mode]
+		b.visible = shown
+		if not shown:
+			continue
+		var current := mode == t.target_priority
+		var r := game.sim.can_set_target_priority(t.id, mode)
+		var text: String = TowerInfo.PRIORITY_NAMES.get(mode, mode)
+		if current:
+			text = PRIORITY_MARK + text
+		elif r != Simulation.CommandResult.OK:
+			text += " (%s)" % TowerInfo.reason(r)
+		b.text = text
+		b.disabled = current or r != Simulation.CommandResult.OK
+		# The current mode is disabled but must read as selected, not as unavailable.
+		if current:
+			b.add_theme_color_override("font_disabled_color", SidePanel.COLOR_ROLE)
+		else:
+			b.remove_theme_color_override("font_disabled_color")
+
+
 ## An enabled upgrade reserving `delta` more sanity would take the cap to 0 (and so start
 ## madness, LT-23 Q3).
 func _drives_mad(delta: float) -> bool:
@@ -136,6 +177,10 @@ func _drives_mad(delta: float) -> bool:
 
 func _on_upgrade_pressed(branch: String) -> void:
 	game.upgrade(tower_id, branch)
+
+
+func _on_priority_pressed(mode: String) -> void:
+	game.set_target_priority(tower_id, mode)
 
 
 func _on_sell_pressed() -> void:

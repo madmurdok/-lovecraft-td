@@ -143,6 +143,13 @@ func upgrade(tower_id: int, branch := "") -> Simulation.CommandResult:
 	return r
 
 
+## LT-31: mode is one of SimTower.TARGET_PRIORITIES; allowed in any phase.
+func set_target_priority(tower_id: int, mode: String) -> Simulation.CommandResult:
+	var r := sim.set_target_priority(tower_id, mode)
+	_after_command()
+	return r
+
+
 func call_wave() -> Simulation.CommandResult:
 	var r := sim.call_wave()
 	_after_command()

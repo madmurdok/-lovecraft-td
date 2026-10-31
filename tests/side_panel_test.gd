@@ -430,6 +430,101 @@ func test_clicking_upgrade_and_branch_keeps_the_view_and_updates_ring_and_refund
 		assert_int(refund).is_equal(119)  # LT-24 §2: Rifleman L3 at today's config
 
 
+# --- LT-31: target priority switch -------------------------------------------------------------
+
+const PRIORITY_TEXTS := {"first": "Closest to the lighthouse", "strongest": "Strongest",
+	"fastest": "Fastest"}
+
+
+func _prio(mode: String) -> Button:
+	return _game.tower_panel.get_node("Priority_" + mode) as Button
+
+
+func _prio_title() -> Label:
+	return _game.tower_panel.get_node("PriorityTitle") as Label
+
+
+## The switch is shown with `current` marked "▸ ", disabled and in the role colour; the
+## other modes read their plain name and are enabled.
+func _assert_switch(current: String) -> void:
+	assert_bool(_prio_title().visible).is_true()
+	assert_str(_prio_title().text).is_equal("── Target ──")
+	for mode: String in PRIORITY_TEXTS:
+		var b := _prio(mode)
+		assert_bool(b.visible).override_failure_message(mode).is_true()
+		if mode == current:
+			assert_str(b.text).is_equal("▸ " + PRIORITY_TEXTS[mode])
+			assert_bool(b.disabled).override_failure_message(mode).is_true()
+			assert_that(b.get_theme_color("font_disabled_color")).is_equal(SidePanel.COLOR_ROLE)
+		else:
+			assert_str(b.text).is_equal(PRIORITY_TEXTS[mode])
+			assert_bool(b.disabled).override_failure_message(mode).is_false()
+			assert_bool(b.has_theme_color_override("font_disabled_color")).is_false()
+
+
+func test_targeting_towers_show_the_switch_between_stats_and_upgrade_first_marked() -> void:
+	await _start_game()
+	for def_id: String in [RIFLE, "harpooner", "necronomicon_reader"]:
+		await _open_tower(def_id)
+		_assert_switch("first")
+	var p := _game.tower_panel
+	var order := ["Stats", "PriorityTitle", "Priority_first", "Priority_strongest",
+		"Priority_fastest", "UpgradeTitle"]
+	var idx := order.map(func(n: String) -> int: return p.get_node(n).get_index())
+	var sorted := idx.duplicate()
+	sorted.sort()
+	assert_array(idx).is_equal(sorted)
+
+
+func test_elder_sign_hides_the_switch_at_every_level() -> void:
+	await _start_game()
+	for path: Array in [[], [""], ["", "a"]]:
+		await _open_tower(SIGN, path)
+		assert_bool(_prio_title().visible).override_failure_message(str(path)).is_false()
+		for mode: String in PRIORITY_TEXTS:
+			assert_bool(_prio(mode).visible).override_failure_message(mode).is_false()
+	# Opening a targeting tower afterwards shows it again.
+	await _open_tower(RIFLE)
+	_assert_switch("first")
+
+
+func test_clicking_a_mode_sets_it_marks_it_and_keeps_the_view() -> void:
+	await _start_game()
+	var t := await _open_tower(RIFLE)
+	var log_size := _game.sim.state.command_log.size()
+	await _click_control(_prio("fastest"))
+	assert_str(t.target_priority).is_equal("fastest")
+	assert_array(_game.sim.state.command_log.slice(log_size)) \
+		.is_equal([[_game.sim.state.tick, "set_target_priority", t.id, "fastest"]])
+	assert_bool(_game.tower_panel.visible).is_true()
+	assert_int(_game.tower_panel.tower_id).is_equal(t.id)
+	_assert_switch("fastest")
+	await _click_control(_prio("first"))
+	assert_str(t.target_priority).is_equal("first")
+	_assert_switch("first")
+
+
+func test_the_switch_stays_enabled_mid_wave() -> void:
+	await _start_game()
+	await _open_tower(RIFLE)
+	_run_into_wave()
+	_game.tower_panel.refresh()
+	_assert_switch("first")
+
+
+func test_after_the_outcome_the_other_modes_read_run_over() -> void:
+	await _start_game()
+	var t := await _open_tower(RIFLE)
+	assert_int(_game.set_target_priority(t.id, "strongest")).is_equal(Simulation.CommandResult.OK)
+	_game.sim.state.outcome = SimState.Outcome.LOST
+	_game.tower_panel.refresh()
+	assert_str(_prio("strongest").text).is_equal("▸ Strongest")
+	assert_bool(_prio("strongest").disabled).is_true()
+	for mode: String in ["first", "fastest"]:
+		assert_bool(_prio(mode).disabled).override_failure_message(mode).is_true()
+		assert_str(_prio(mode).text).is_equal(PRIORITY_TEXTS[mode] + " (run over)")
+
+
 # --- HUD fix 22a9d9c ---------------------------------------------------------------------------
 
 func test_hud_bar_spans_the_full_width_above_the_board() -> void:

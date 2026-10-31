@@ -416,3 +416,17 @@ func test_occult_run_line_metrics_are_consistent() -> void:
 	# The occult bot keeps the cap at or above its floor.
 	assert_float(run_line["final_cap"]).is_greater_equal(30.0)
 	assert_int(run_line["towers"].get(RIFLE, 0)).is_less_equal(3)
+
+
+## LT-31 decision 12: bots never switch target priority, so their towers keep "first" and
+## their runs are those of before LT-31.
+func test_bots_never_set_target_priority() -> void:
+	var src := FileAccess.get_file_as_string(BOT_PATH)
+	assert_bool(src.contains("set_target_priority")).is_false()
+	var sim := _sim(_mundane_builds(7) + 1000)
+	_bot().call("_act", sim, "mundane", 0, {})
+	assert_int(sim.state.towers.size()).is_greater(0)
+	for t in sim.state.towers:
+		assert_str(t.target_priority).is_equal(SimTower.DEFAULT_TARGET_PRIORITY)
+	assert_bool(sim.state.command_log.any(
+		func(c: Array) -> bool: return c[1] == "set_target_priority")).is_false()
