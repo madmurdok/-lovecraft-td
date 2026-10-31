@@ -394,8 +394,11 @@ func test_unknown_command_is_a_distinct_result() -> void:
 	for k: String in R2:
 		assert_bool(seen.has(R2[k])).is_false()
 		seen[R2[k]] = true
-	assert_int(R2.UNKNOWN_COMMAND).is_equal(R2.size() - 2)
-	assert_int(R2.BAD_ARGS).is_equal(R2.size() - 1)  # LT-36: appended, values never shift
+	# LT-36/LT-30: appended, values never shift.
+	assert_int(R2.UNKNOWN_COMMAND).is_equal(R2.NO_RELICS + 1)
+	assert_int(R2.BAD_ARGS).is_equal(R2.UNKNOWN_COMMAND + 1)
+	assert_int(R2.NOT_NIGHT).is_equal(R2.BAD_ARGS + 1)
+	assert_int(R2.OIL_FULL).is_equal(R2.size() - 1)
 	assert_int(R2.OK).is_equal(0)
 
 
@@ -415,6 +418,9 @@ const BAD_ENTRIES := {
 	"sell_relics": [[0, "sell_relics"], [0, "sell_relics", 3], [0, "sell_relics", "star_stone", 1]],
 	"debug_set_sanity": [[0, "debug_set_sanity"], [0, "debug_set_sanity", "40"],
 		[0, "debug_set_sanity", true], [0, "debug_set_sanity", 1.0, 2.0]],
+	"upgrade_lighthouse": [[0, "upgrade_lighthouse", 1], [0, "upgrade_lighthouse", ""]],
+	"buy_oil": [[0, "buy_oil", 1], [0, "buy_oil", null]],
+	"fire_flare": [[0, "fire_flare", ""], [0, "fire_flare", 1, 2]],
 }
 
 

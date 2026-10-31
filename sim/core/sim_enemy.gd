@@ -24,6 +24,7 @@ var dissolved := false  ## fake gone at the lighthouse or at wave end (LT-12)
 var speed_mult := 1.0
 var damage_taken_mult := 1.0
 var armor_bonus := 0.0
+var lit := false  ## LT-30: inside a lighthouse beam this tick (slot 2)
 
 ## Trait timers (stun, harass stop, ...) added by later tasks.
 var status: Dictionary = {}
@@ -33,6 +34,7 @@ func reset_modifiers() -> void:
 	speed_mult = 1.0
 	damage_taken_mult = 1.0
 	armor_bonus = 0.0
+	lit = false
 
 
 ## Still in play: neither killed, leaked nor dissolved.
