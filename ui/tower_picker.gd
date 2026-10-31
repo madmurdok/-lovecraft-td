@@ -66,14 +66,9 @@ func refresh() -> void:
 		var text := def.name + TowerInfo.DASH + TowerInfo.cost_text(def.cost)
 		if b.disabled:
 			text += " (%s)" % TowerInfo.reason(r)
-		elif _drives_mad(def):
+		elif game.sim.would_drive_mad_build(def_id):
 			text += TowerInfo.MADNESS_WARNING
 		b.text = text
-
-
-## LT-23 Q3: building `def` (its L1 reserve) would take the cap to 0 and start madness.
-func _drives_mad(def: TowerDef) -> bool:
-	return TowerInfo.drives_mad(game.sim.state, def.levels[0].sanity_reserve)
 
 
 func _on_tower_pressed(def_id: String) -> void:
