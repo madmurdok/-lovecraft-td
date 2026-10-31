@@ -18,6 +18,7 @@ var scroll: ScrollContainer
 var idle_label: Label
 var picker: TowerPicker
 var tower_panel: TowerPanel
+var lighthouse_panel: LighthousePanel  ## LT-30
 
 
 ## A word-wrapping label at the panel width.
@@ -83,6 +84,11 @@ func _ready() -> void:
 	tower_panel.name = "TowerPanel"
 	tower_panel.game = game
 	views.add_child(tower_panel)
+	lighthouse_panel = LighthousePanel.new()
+	lighthouse_panel.name = "LighthousePanel"
+	lighthouse_panel.game = game
+	views.add_child(lighthouse_panel)
+	lighthouse_panel.visibility_changed.connect(_update_idle)
 	picker.visibility_changed.connect(_update_idle)
 	tower_panel.visibility_changed.connect(_update_idle)
 	_update_idle()
@@ -90,5 +96,6 @@ func _ready() -> void:
 
 ## Idle text while neither view is shown; a newly shown view starts scrolled to the top.
 func _update_idle() -> void:
-	idle_label.visible = not picker.visible and not tower_panel.visible
+	idle_label.visible = not picker.visible and not tower_panel.visible \
+		and not lighthouse_panel.visible
 	scroll.scroll_vertical = 0

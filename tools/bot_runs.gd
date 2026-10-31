@@ -34,12 +34,22 @@ extends SceneTree
 ## allows, then call_wave() at once (lighting the lamp at once gives the night its maximum
 ## luck). During a wave (night) building, upgrades and sales are refused, so the bot only
 ## tries buy_sanity() (occult, mixed), re-checking every second.
+## Lighthouse (LT-30 §3.2/§3.4): by day, after sell_relics(), the bot tops the lamp oil up to
+## BOT_OIL_TARGET (buy_oil() until the stock is there or a call is refused), and in the
+## purchase loop buys the next lighthouse level when its cost is at most the cheapest tower
+## upgrade's (or no tower upgrade is left); at night it fires the flare when at least
+## FLARE_MIN_LIT live enemies are lit. [--lighthouse=0] never upgrades the lighthouse,
+## [--flare=0] never buys oil and never fires. A beam-off arm is a --data=<dir> variant.
+## RUN lines add "lighthouse_level", "flares", "oil_bought", "oil_gold" and "lit_shots"
+## (shots by a tower inside a beam).
 ## Loot is random (seeded LOOT stream): compare strategies over the default 10 seeds.
 ## RUN lines add "relics_sold" ($ from sales), "drops" (real relics credited per kind, config
 ## order), "star_stones" and "wage" ($ of dawn wages).
 ## A run is capped at 30 simulated minutes (outcome "timeout").
 
 const STRATEGIES := ["mundane", "occult", "mixed", "madness"]
+const BOT_OIL_TARGET := 4  ## oil the bot keeps by day: two flares (tunable)
+const FLARE_MIN_LIT := 3  ## live lit enemies that make the bot fire the flare (tunable)
 const MAX_TICKS := 30 * 60 * 30
 ## Strategy -> lowest sanity_cap an occult build/upgrade may leave (LT-23 §4, tunable).
 const CAP_FLOOR := {"occult": 30.0, "mixed": 60.0}
@@ -59,6 +69,8 @@ const BRANCH_PICK := {
 var _cfg: GameConfig
 var _score_cache := {}  ## def id -> Array of [score, cell] sorted best first
 var _upgrades := true  ## false with --upgrades=0
+var _lighthouse := true  ## false with --lighthouse=0
+var _flare := true  ## false with --flare=0
 
 
 func _init() -> void:
@@ -74,6 +86,10 @@ func _init() -> void:
 			data_dir = a.substr(7)
 		elif a.begins_with("--upgrades="):
 			_upgrades = a.substr(11) != "0"
+		elif a.begins_with("--lighthouse="):
+			_lighthouse = a.substr(13) != "0"
+		elif a.begins_with("--flare="):
+			_flare = a.substr(8) != "0"
 	var res := GameConfig.load_from_dir(data_dir) if data_dir != "" else GameConfig.load_from_dir()
 	if not res.ok:
 		printerr("config errors: ", res.errors)
@@ -126,6 +142,10 @@ func _play(strat: String, run_seed: int) -> Dictionary:
 	var relics_sold := 0
 	var wage := 0
 	var drops := {}
+	var flares := 0
+	var oil_bought := 0
+	var oil_gold := 0
+	var lit_shots := 0
 	for kind in _cfg.economy.relic_ids():
 		drops[kind] = 0
 	while st.outcome == SimState.Outcome.NONE and st.tick < MAX_TICKS:
@@ -157,6 +177,9 @@ func _play(strat: String, run_seed: int) -> Dictionary:
 				free_reserve += ev.data["delta"]  # negative: the part paid from sanity
 			elif ev.type == SimEvent.Type.SHOT:
 				shots += 1
+				var shooter := sim.tower_by_id(ev.id)
+				if shooter != null and shooter.lit:
+					lit_shots += 1
 				if ev.data.get("miss", false):
 					missed += 1
 				if ev.data.get("astray", false):
@@ -166,6 +189,12 @@ func _play(strat: String, run_seed: int) -> Dictionary:
 					relics_sold += ev.data["delta"]
 				elif ev.data["reason"] == "wave_bonus":
 					wage += ev.data["delta"]
+				elif ev.data["reason"] == "oil":
+					oil_gold -= ev.data["delta"]
+			elif ev.type == SimEvent.Type.FLARE_FIRED:
+				flares += 1
+			elif ev.type == SimEvent.Type.OIL_CHANGED and ev.data["reason"] == "buy":
+				oil_bought += ev.data["delta"]
 			elif ev.type == SimEvent.Type.RELICS_CHANGED and ev.data["reason"] == "kill":
 				drops[ev.data["kind"]] += ev.data["delta"]
 			elif ev.type == SimEvent.Type.TOWER_UPGRADED:
@@ -200,7 +229,8 @@ func _play(strat: String, run_seed: int) -> Dictionary:
 		"reserve_peak": snappedf(reserve_peak, 0.1), "free_reserve": snappedf(free_reserve, 0.1),
 		"hp_lost_per_wave": hp_lost_per_wave, "towers_final": towers_final,
 		"relics_sold": relics_sold, "drops": drops, "star_stones": drops.get("star_stone", 0),
-		"wage": wage,
+		"wage": wage, "lighthouse_level": st.lighthouse_level, "flares": flares,
+		"oil_bought": oil_bought, "oil_gold": oil_gold, "lit_shots": lit_shots,
 	}
 	if _upgrades:
 		run["upgrades"] = upgrades
@@ -243,9 +273,18 @@ func _act(sim: Simulation, strat: String, idx: int, built: Dictionary) -> int:
 	if strat == "occult" or strat == "mixed":
 		sim.buy_sanity()  # refused unless exit_rule is "buyout" and state is MADNESS
 	if sim.state.phase == SimState.Phase.WAVE:
+		_night_flare(sim)
 		return idx  # LT-27 §3: night; builds, upgrades and sales are day only
 	sim.sell_relics()  # refused with an empty stash
+	if _flare:
+		while sim.state.oil < BOT_OIL_TARGET and sim.buy_oil() == Simulation.CommandResult.OK:
+			pass  # refused: no oil block, full, or too poor
 	while true:
+		if _upgrades and _lighthouse and sim.state.towers.size() >= BUILD_FIRST \
+				and _lighthouse_next(sim, strat):
+			if sim.upgrade_lighthouse() != Simulation.CommandResult.OK:
+				break
+			continue
 		if _upgrades and sim.state.towers.size() >= BUILD_FIRST:
 			var up := _next_upgrade(sim, strat)
 			if not up.is_empty():
@@ -272,6 +311,29 @@ func _act(sim: Simulation, strat: String, idx: int, built: Dictionary) -> int:
 	if sim.state.phase == SimState.Phase.BUILD:
 		sim.call_wave()
 	return idx
+
+
+## Whether the lighthouse level is the next purchase: one is left and its cost is at most
+## the cheapest tower upgrade's (or no tower upgrade is left).
+func _lighthouse_next(sim: Simulation, strat: String) -> bool:
+	var cost := sim.lighthouse_upgrade_cost()
+	if cost == 0:
+		return false
+	var up := _next_upgrade(sim, strat)
+	return up.is_empty() or cost <= sim.upgrade_target(sim.tower_by_id(up[0]), up[1]).upgrade_cost
+
+
+## Night: fires the flare when at least FLARE_MIN_LIT live enemies are lit (refused on
+## cooldown or without oil).
+func _night_flare(sim: Simulation) -> void:
+	if not _flare:
+		return
+	var lit := 0
+	for e in sim.state.enemies:
+		if e.lit:
+			lit += 1
+	if lit >= FLARE_MIN_LIT:
+		sim.fire_flare()
 
 
 ## The bot's next upgrade as [tower_id, branch], or [] when no tower can go further for it:

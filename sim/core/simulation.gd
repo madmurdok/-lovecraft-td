@@ -29,6 +29,11 @@ enum CommandResult {
 	NO_RELICS,  ## sell_relics: unknown kind or nothing of it in the stash (LT-27)
 	UNKNOWN_COMMAND,  ## replay_command: the entry names no command (LT-34)
 	BAD_ARGS,  ## replay_command: a known command with missing, extra or wrong-typed args (LT-36)
+	NOT_NIGHT,  ## fire_flare: by day (phase BUILD) or after the last wave (DONE) (LT-30)
+	ON_COOLDOWN,  ## fire_flare: the previous flare's cooldown is still running (LT-30)
+	NO_FLARE,  ## fire_flare / buy_oil: no lighthouse.flare / lighthouse.oil block (LT-30)
+	NO_OIL,  ## fire_flare: less oil in stock than flare.cost_oil (LT-30)
+	OIL_FULL,  ## buy_oil: the stock is at oil.cap (LT-30)
 }
 
 ## Sanity change reasons that may move sanity while in MADNESS (LT-13): the exit rules.
@@ -62,6 +67,9 @@ func _init(p_config: GameConfig, run_seed: int) -> void:
 	state.sanity_cap = config.sanity.max_sanity
 	state.sanity = clampf(config.sanity.start, 0.0, state.sanity_cap)
 	state.sanity_state = sanity_state_for(state.sanity)  # initial state: no event
+	if config.economy.oil != null:
+		state.oil = config.economy.oil.start
+	_start_beam()
 	_ground_route = SimRoute.from_cells(config.map.path)
 
 
@@ -84,10 +92,14 @@ func step() -> void:
 	state.tick += 1
 	for e in state.enemies:
 		e.reset_modifiers()
-	# 2. Effect systems: Elder Sign auras (LT-11), then the madness buff (LT-23 §3);
-	# later slows/stuns add theirs here.
+	# 2. Effect systems: the lighthouse beam first (LT-30: turn, `lit` of towers and enemies),
+	# then Elder Sign auras (LT-11), the madness buff (LT-23 §3) and the flare's slow;
+	# later slows/stuns add theirs here. The flare timers count down last.
+	_update_beam()
 	_apply_auras()
 	_apply_madness_buff()
+	_apply_flare_slow()
+	_count_down_flare()
 	# 3. Movement.
 	_move()
 	# 4. Leaks.
@@ -465,6 +477,141 @@ func debug_set_sanity(value: float) -> CommandResult:
 	return CommandResult.OK
 
 
+# --- LT-30: lighthouse levels, lamp oil and the flare (player commands) -----------------
+
+## LT-30 (LT-26 §1.2): beams of the current lighthouse level (1, 2, 4 or 8).
+func beam_count() -> int:
+	return config.economy.beam.levels[state.lighthouse_level].beams
+
+
+## Money for the next lighthouse level; 0 at the top level.
+func lighthouse_upgrade_cost() -> int:
+	var levels := config.economy.beam.levels
+	if state.lighthouse_level + 1 >= levels.size():
+		return 0
+	return levels[state.lighthouse_level + 1].upgrade_cost
+
+
+## Whether upgrade_lighthouse() would be applied now; OK or the first failing reason, in
+## this order: OUTCOME_REACHED, MAX_LEVEL, NOT_BUILD_PHASE (at night, _day_only),
+## NOT_ENOUGH_GOLD. Changes nothing.
+func can_upgrade_lighthouse() -> CommandResult:
+	if state.outcome != SimState.Outcome.NONE:
+		return CommandResult.OUTCOME_REACHED
+	if state.lighthouse_level + 1 >= config.economy.beam.levels.size():
+		return CommandResult.MAX_LEVEL
+	var day := _day_only()
+	if day != CommandResult.OK:
+		return day
+	if state.gold < lighthouse_upgrade_cost():
+		return CommandResult.NOT_ENOUGH_GOLD
+	return CommandResult.OK
+
+
+## Player command (LT-30 §0, LT-27 D7): raises the lighthouse one level for money, by day
+## only. The new beams light from the next night tick on, evenly spaced from the current
+## base direction. Emits LIGHTHOUSE_UPGRADED {level, beams, cost} (id 0), then GOLD_CHANGED
+## {reason: "lighthouse"}. No refund: the lighthouse is never sold.
+func upgrade_lighthouse() -> CommandResult:
+	var result := can_upgrade_lighthouse()
+	if result != CommandResult.OK:
+		return result
+	var cost := lighthouse_upgrade_cost()
+	state.lighthouse_level += 1
+	state.command_log.append([state.tick, "upgrade_lighthouse"])
+	_emit(SimEvent.Type.LIGHTHOUSE_UPGRADED, 0, {"level": state.lighthouse_level,
+		"beams": beam_count(), "cost": cost})
+	_add_gold(-cost, "lighthouse", 0)
+	return CommandResult.OK
+
+
+## Whether buy_oil() would be applied now; OK or the first failing reason, in this order
+## (LT-30 §1.2): OUTCOME_REACHED, NO_FLARE (no lighthouse.oil block), NOT_BUILD_PHASE (at
+## night, _day_only), OIL_FULL, NOT_ENOUGH_GOLD. Changes nothing.
+func can_buy_oil() -> CommandResult:
+	if state.outcome != SimState.Outcome.NONE:
+		return CommandResult.OUTCOME_REACHED
+	var oil := config.economy.oil
+	if oil == null:
+		return CommandResult.NO_FLARE
+	var day := _day_only()
+	if day != CommandResult.OK:
+		return day
+	if state.oil >= oil.cap:
+		return CommandResult.OIL_FULL
+	if state.gold < oil.price:
+		return CommandResult.NOT_ENOUGH_GOLD
+	return CommandResult.OK
+
+
+## Player command (LT-30 §1.2): buys one unit of lamp oil for oil.price money, by day only.
+## Emits OIL_CHANGED {delta: 1, oil, reason: "buy"}, then GOLD_CHANGED {reason: "oil"}.
+## Oil stays across nights and is never sold back.
+func buy_oil() -> CommandResult:
+	var result := can_buy_oil()
+	if result != CommandResult.OK:
+		return result
+	state.command_log.append([state.tick, "buy_oil"])
+	_add_oil(1, "buy")
+	_add_gold(-config.economy.oil.price, "oil", 0)
+	return CommandResult.OK
+
+
+## Whether fire_flare() would be applied now; OK or the first failing reason, in this order
+## (LT-30 §1.1): OUTCOME_REACHED, NO_FLARE (no lighthouse.flare block), NOT_NIGHT (phase
+## BUILD or DONE; NONE allowed, like _day_only), ON_COOLDOWN, NO_OIL. Changes nothing.
+func can_fire_flare() -> CommandResult:
+	if state.outcome != SimState.Outcome.NONE:
+		return CommandResult.OUTCOME_REACHED
+	var flare := config.economy.flare
+	if flare == null:
+		return CommandResult.NO_FLARE
+	if not _beam_on():
+		return CommandResult.NOT_NIGHT
+	if state.flare_cooldown_ticks > 0:
+		return CommandResult.ON_COOLDOWN
+	if state.oil < flare.cost_oil:
+		return CommandResult.NO_OIL
+	return CommandResult.OK
+
+
+## Player command (LT-30 §1.1): for flare.seconds the beams widen (half_width_ratio x
+## width_mult), stop turning when hold_beams, and every lit enemy moves at
+## x enemy_speed_mult; the cooldown runs from now. Emits FLARE_FIRED {ticks, cooldown}
+## (id 0), then OIL_CHANGED {delta: -cost_oil, oil, reason: "flare"}.
+func fire_flare() -> CommandResult:
+	var result := can_fire_flare()
+	if result != CommandResult.OK:
+		return result
+	var flare := config.economy.flare
+	state.flare_ticks_left = maxi(1, SimTime.ticks(flare.seconds))
+	state.flare_cooldown_ticks = maxi(1, SimTime.ticks(flare.cooldown_seconds))
+	state.command_log.append([state.tick, "fire_flare"])
+	_emit(SimEvent.Type.FLARE_FIRED, 0, {"ticks": state.flare_ticks_left,
+		"cooldown": state.flare_cooldown_ticks})
+	_add_oil(-flare.cost_oil, "flare")
+	return CommandResult.OK
+
+
+## Render only (LT-30 §3.2): the direction of every beam, interpolated between the previous
+## and the current tick's base direction by `alpha` (0..1) and normalised; empty by day.
+## Trig is fine in the render; the sim never reads this.
+func beam_directions(alpha: float) -> Array[Vector2]:
+	var out: Array[Vector2] = []
+	if not _beam_on():
+		return out
+	var x := lerpf(state.prev_beam_dx, state.beam_dx, alpha)
+	var y := lerpf(state.prev_beam_dy, state.beam_dy, alpha)
+	var n := sqrt(x * x + y * y)
+	if n <= 0.0:
+		x = state.beam_dx
+		y = state.beam_dy
+		n = 1.0
+	for d: Array in _dirs_of(x / n, y / n, beam_count()):
+		out.append(Vector2(d[0], d[1]))
+	return out
+
+
 ## LT-36: the argument types of each command_log entry name, after [tick, name]; the order
 ## of the public command's parameters. TYPE_STRING also takes a StringName, TYPE_FLOAT an int.
 const REPLAY_ARGS: Dictionary[String, Array] = {
@@ -476,6 +623,9 @@ const REPLAY_ARGS: Dictionary[String, Array] = {
 	"buy_sanity": [],
 	"sell_relics": [TYPE_STRING],
 	"debug_set_sanity": [TYPE_FLOAT],
+	"upgrade_lighthouse": [],
+	"buy_oil": [],
+	"fire_flare": [],
 }
 
 
@@ -501,6 +651,9 @@ func replay_command(entry: Array) -> CommandResult:
 		"buy_sanity": return buy_sanity()
 		"sell_relics": return sell_relics(entry[2])
 		"debug_set_sanity": return debug_set_sanity(entry[2])
+		"upgrade_lighthouse": return upgrade_lighthouse()
+		"buy_oil": return buy_oil()
+		"fire_flare": return fire_flare()
 	return CommandResult.UNKNOWN_COMMAND  # unreachable: every REPLAY_ARGS key has an arm
 
 
@@ -752,6 +905,15 @@ func _add_gold(delta: int, reason: String, id: int) -> void:
 	_emit(SimEvent.Type.GOLD_CHANGED, id, {"delta": delta, "gold": state.gold, "reason": reason})
 
 
+## LT-30 §1.2: the one writer of state.oil (buy_oil +1, fire_flare -cost_oil); emits
+## OIL_CHANGED {delta, oil, reason} (id 0). Callers keep it within 0..oil.cap.
+func _add_oil(delta: int, reason: String) -> void:
+	if delta == 0:
+		return
+	state.oil += delta
+	_emit(SimEvent.Type.OIL_CHANGED, 0, {"delta": delta, "oil": state.oil, "reason": reason})
+
+
 ## Every sanity change goes through here: clamps to [0, sanity_cap], then emits SANITY_CHANGED
 ## {delta, sanity, reason} with the delta actually applied (nothing when it is 0, e.g. regen
 ## at the cap), and SANITY_STATE_CHANGED {old, new} (SimState.SanityState values) when the
@@ -924,6 +1086,161 @@ func _add_relics(kind: String, delta: int, reason: String, token: int) -> void:
 	_emit(SimEvent.Type.RELICS_CHANGED, token, data)
 
 
+# --- LT-30: the lighthouse beam in the sim (LT-26 §1.1; trig-free: + - * / sqrt only) ----
+
+## LT-30 Q3 "Только ночью": the beam turns and lights only at night (phase WAVE) or without
+## a WaveDirector (phase NONE, unit tests). By day (BUILD) and after the last wave (DONE)
+## it is dark: nothing lit, direction held.
+func _beam_on() -> bool:
+	return state.phase != SimState.Phase.BUILD and state.phase != SimState.Phase.DONE
+
+
+## A flare burns this tick (LT-30 §1.1).
+func _flaring() -> bool:
+	return state.flare_ticks_left > 0 and config.economy.flare != null
+
+
+## tan of the beams' half angle this tick: half_width_ratio, x flare.width_mult while a
+## flare burns.
+func _beam_half_width() -> float:
+	var k := config.economy.beam.half_width_ratio
+	if _flaring():
+		k *= config.economy.flare.width_mult
+	return k
+
+
+## Slot 2, first (LT-30 §3.1): saves prev_beam_* (also when held, so the render does not
+## jump), turns the base direction (night only, not while a flare holds it), then sets `lit`
+## of every tower (centre; TOWER_LIT {lit} on a flip, id order) and of every live enemy
+## (route position at the start of the tick, as auras). By day every flag is false.
+func _update_beam() -> void:
+	state.prev_beam_dx = state.beam_dx
+	state.prev_beam_dy = state.beam_dy
+	var on := _beam_on()
+	if on and not (_flaring() and config.economy.flare.hold_beams):
+		_turn_beam()
+	var dirs := _beam_dirs() if on else []
+	var k := _beam_half_width()
+	for t in state.towers:
+		var c := t.centre()
+		var lit := on and _lit_by(dirs, k, c.x, c.y)
+		if lit != t.lit:
+			t.lit = lit
+			_emit(SimEvent.Type.TOWER_LIT, t.id, {"lit": lit})
+	if not on:
+		return
+	for e in state.enemies:
+		if not e.is_live():
+			continue
+		var p := e.route.position_at(e.distance)
+		e.lit = _lit_by(dirs, k, p.x, p.y)
+
+
+## Run start: "rotate" points the base direction left (SimState default); "sweep" starts at
+## sweep_edges[0] (normalised), so the beam begins inside its arc and _turn_beam's edge
+## checks reverse it once per edge (LT-30 review F1).
+func _start_beam() -> void:
+	var b := config.economy.beam
+	if b.pattern != "sweep" or b.sweep_edges.size() != 2:
+		return
+	var x: float = b.sweep_edges[0][0]
+	var y: float = b.sweep_edges[0][1]
+	var n := sqrt(x * x + y * y)
+	state.beam_dx = x / n
+	state.beam_dy = y / n
+	state.prev_beam_dx = state.beam_dx
+	state.prev_beam_dy = state.beam_dy
+
+
+## Rotates the base direction by the exact rational rotation of beam.turn_t (x beam_sign):
+## c = (1 - t²)/(1 + t²), s = 2t/(1 + t²), then renormalises. "sweep" reverses beam_sign once
+## the direction passes the arc edge it is heading for.
+func _turn_beam() -> void:
+	var b := config.economy.beam
+	var t := b.turn_t * state.beam_sign
+	if t == 0.0:
+		return
+	var q := 1.0 + t * t
+	var c := (1.0 - t * t) / q
+	var s := 2.0 * t / q
+	var x := state.beam_dx * c - state.beam_dy * s
+	var y := state.beam_dx * s + state.beam_dy * c
+	var n := sqrt(x * x + y * y)
+	state.beam_dx = x / n
+	state.beam_dy = y / n
+	if b.pattern == "sweep" and b.sweep_edges.size() == 2:
+		var edge: Array = b.sweep_edges[1] if t > 0.0 else b.sweep_edges[0]
+		var cross: float = edge[0] * state.beam_dy - edge[1] * state.beam_dx
+		if (t > 0.0 and cross > 0.0) or (t < 0.0 and cross < 0.0):
+			state.beam_sign = -state.beam_sign
+
+
+## Every beam's direction as [x, y] pairs: the base direction rotated by i x 360° / count.
+func _beam_dirs() -> Array:
+	return _dirs_of(state.beam_dx, state.beam_dy, beam_count())
+
+
+## Directions of `count` (1, 2, 4 or 8) evenly spaced beams from (x, y), counter-clockwise,
+## without trig: negation, the perpendiculars (-y, x) / (y, -x) and the 45° rotation with
+## c = s = sqrt(0.5).
+static func _dirs_of(x: float, y: float, count: int) -> Array:
+	if count == 1:
+		return [[x, y]]
+	if count == 2:
+		return [[x, y], [-x, -y]]
+	if count == 4:
+		return [[x, y], [-y, x], [-x, -y], [y, -x]]
+	var r := sqrt(0.5)
+	var hx := (x - y) * r
+	var hy := (x + y) * r
+	return [[x, y], [hx, hy], [-y, x], [-hy, hx], [-x, -y], [-hx, -hy], [y, -x], [hy, -hx]]
+
+
+## Whether the point (px, py) (cell units, the frame of SimTower.centre) is inside any beam
+## now (LT-26 §1.1), with the flare's width when one burns. False by day.
+func _is_lit(px: float, py: float) -> bool:
+	return _beam_on() and _lit_by(_beam_dirs(), _beam_half_width(), px, py)
+
+
+## LT-26 §1.1 lit test against the lighthouse cell centre L, v = p - L: |v|² <= reach²,
+## v·d > 0 and cross(v, d)² <= k² (v·d)² for some beam d. Overlaps do not stack.
+func _lit_by(dirs: Array, k: float, px: float, py: float) -> bool:
+	var lh := config.map.lighthouse
+	var vx := px - (lh.x + 0.5)
+	var vy := py - (lh.y + 0.5)
+	var reach := config.economy.beam.reach_cells
+	if vx * vx + vy * vy > reach * reach:
+		return false
+	for d: Array in dirs:
+		var dot: float = vx * d[0] + vy * d[1]
+		if dot <= 0.0:
+			continue
+		var cross: float = vx * d[1] - vy * d[0]
+		if cross * cross <= k * k * dot * dot:
+			return true
+	return false
+
+
+## Slot 2, after the madness buff (LT-30 §1.1): while a flare burns, every lit live enemy
+## (fakes alike) gets speed_mult x flare.enemy_speed_mult this tick. The passive beam never
+## slows.
+func _apply_flare_slow() -> void:
+	if not _flaring():
+		return
+	var m := config.economy.flare.enemy_speed_mult
+	for e in state.enemies:
+		if e.is_live() and e.lit:
+			e.speed_mult *= m
+
+
+## Slot 2, last: the flare burns one tick less; the cooldown runs by day too.
+func _count_down_flare() -> void:
+	if state.flare_ticks_left > 0:
+		state.flare_ticks_left -= 1
+	if state.flare_cooldown_ticks > 0:
+		state.flare_cooldown_ticks -= 1
+
+
 ## Slot 2 (§3.3): aura towers (Elder Sign) set this tick's modifiers. An aura tower is a
 ## support level (damage 0) with a `slow` and/or `damage_taken_multiplier` effect; its aura
 ## radius is the level's range, measured like enemies_in_range from the enemy's position at
@@ -955,8 +1272,15 @@ func _apply_auras() -> void:
 			if dx * dx + dy * dy > s.range_cells * s.range_cells:
 				continue
 			inside = true
-			slow = maxf(slow, s.effects.get("slow", 0.0))
-			mult = maxf(mult, s.effects.get("damage_taken_multiplier", 1.0))
+			var t_slow: float = s.effects.get("slow", 0.0)
+			var t_mult: float = s.effects.get("damage_taken_multiplier", 1.0)
+			if t.lit and t.def.kind == "occult":
+				# LT-30 §2: a lit occult aura works at beam.occult.power_mult strength.
+				var pm := config.economy.beam.occult_power_mult
+				t_slow *= pm
+				t_mult = 1.0 + (t_mult - 1.0) * pm
+			slow = maxf(slow, t_slow)
+			mult = maxf(mult, t_mult)
 			# Corrupted Seal's strip_armor is not wired yet: it is in TowerDef.Level.PENDING.
 		if inside:
 			e.speed_mult *= 1.0 - slow
@@ -981,10 +1305,10 @@ func _apply_madness_buff() -> void:
 		e.damage_taken_mult *= m.enemy_damage_taken_multiplier
 
 
-## Hook for LT-30 (LT-26 D4): true when `e` must not get the madness buff (lit by the
-## lighthouse beam, real and fake alike). Nothing blocks it yet.
-func _madness_buff_blocked(_e: SimEnemy) -> bool:
-	return false
+## LT-30 (LT-26 D4): true when `e` must not get the madness buff: lit by the lighthouse beam
+## this tick (real and fake alike) and beam.enemy.cancel_madness_buff is on.
+func _madness_buff_blocked(e: SimEnemy) -> bool:
+	return config.economy.beam.cancel_madness_buff and e.lit
 
 
 ## Slot 5 (§3.3): every tower in id order counts down its cooldown and, when ready, fires
@@ -1015,6 +1339,10 @@ func _fire_towers() -> void:
 		# goes astray (shot_split on MADNESS): centred on a random real / fake in range, or
 		# on nothing. An empty shot keeps the usual target as its aim point.
 		var damage := s.damage
+		var beam := config.economy.beam
+		var lit_mundane := t.lit and t.def.kind == "mundane"
+		if t.lit and t.def.kind == "occult":
+			damage *= beam.occult_power_mult  # LT-30 §2, before the madness x2
 		var astray := ""
 		if s.madness_affected and state.sanity_state == SimState.SanityState.MADNESS:
 			damage *= config.sanity.madness.damage_multiplier
@@ -1040,7 +1368,9 @@ func _fire_towers() -> void:
 		elif aoe > 0.0:
 			hits = enemies_near(to, aoe)
 		# LT-12 §4: a mundane shot may miss as a whole (Q3: occult towers never miss).
-		var miss := t.def.kind == "mundane" and _roll_miss()
+		# LT-30: a lit mundane tower with ignore_miss never misses (no COMBAT draw).
+		var miss := t.def.kind == "mundane" and not (lit_mundane and beam.mundane_ignore_miss) \
+			and _roll_miss()
 		if miss or astray == "empty":
 			hits = []
 		var ids: Array[int] = []
@@ -1054,7 +1384,10 @@ func _fire_towers() -> void:
 		_emit(SimEvent.Type.SHOT, t.id, shot)
 		for e in hits:
 			apply_damage(e.id, damage, t.def.id)
-		t.cooldown_ticks = maxi(1, SimTime.ticks(s.fire_interval))
+		var interval := s.fire_interval
+		if lit_mundane:
+			interval *= beam.mundane_fire_interval_mult  # LT-30: decided at the shot
+		t.cooldown_ticks = maxi(1, SimTime.ticks(interval))
 
 
 ## The target `t` fires at among `candidates` (id order) by its target_priority (LT-31):

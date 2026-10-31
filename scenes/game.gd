@@ -34,6 +34,7 @@ var star_stones_found := 0  ## LT-27 §4: star-stones credited this run (end scr
 var side_panel: SidePanel  ## LT-24: fixed right panel holding the two views below
 var picker: TowerPicker  ## build view of side_panel
 var tower_panel: TowerPanel  ## tower view of side_panel
+var lighthouse_panel: LighthousePanel  ## LT-30: lighthouse view of side_panel
 var end_screen: EndScreen
 
 
@@ -102,6 +103,7 @@ func _ready() -> void:
 	ui.add_child(side_panel)
 	picker = side_panel.picker
 	tower_panel = side_panel.tower_panel
+	lighthouse_panel = side_panel.lighthouse_panel
 	end_screen = EndScreen.new()
 	end_screen.name = "EndScreen"
 	ui.add_child(end_screen)
@@ -133,6 +135,7 @@ func advance(delta: float) -> void:
 	hud.refresh()
 	picker.refresh()
 	tower_panel.refresh()
+	lighthouse_panel.refresh()
 
 
 # --- Player commands (forwarded to the sim) -------------------------------------------
@@ -182,6 +185,27 @@ func buy_sanity() -> Simulation.CommandResult:
 	return r
 
 
+## LT-30: lighthouse level, by day, paid in money.
+func upgrade_lighthouse() -> Simulation.CommandResult:
+	var r := sim.upgrade_lighthouse()
+	_after_command()
+	return r
+
+
+## LT-30: one unit of lamp oil, by day.
+func buy_oil() -> Simulation.CommandResult:
+	var r := sim.buy_oil()
+	_after_command()
+	return r
+
+
+## LT-30: the night flare, paid with oil.
+func fire_flare() -> Simulation.CommandResult:
+	var r := sim.fire_flare()
+	_after_command()
+	return r
+
+
 func toggle_speed() -> void:
 	chosen_speed = 2 if chosen_speed == 1 else 1
 	_apply_speed()
@@ -203,6 +227,7 @@ func _after_command() -> void:
 	hud.refresh()
 	picker.refresh()
 	tower_panel.refresh()
+	lighthouse_panel.refresh()
 
 
 func _consume_events() -> void:
@@ -216,6 +241,7 @@ func _consume_events() -> void:
 		if ev.type == SimEvent.Type.OUTCOME:
 			picker.close()
 			tower_panel.close()
+			lighthouse_panel.close()
 			side_panel.visible = false
 			end_screen.show_result(ev.data.get("result", "") == "won", sim.state,
 				star_stones_found)
@@ -225,13 +251,16 @@ func _consume_events() -> void:
 func close_panels() -> void:
 	picker.close()
 	tower_panel.close()
+	lighthouse_panel.close()
 
 
 func _on_cell_clicked(cell: Vector2i) -> void:
 	close_panels()
 	if sim.state.outcome != SimState.Outcome.NONE:
 		return
-	if sim.state.tower_at.has(cell):
+	if cell == sim.state.map.lighthouse:
+		lighthouse_panel.open()
+	elif sim.state.tower_at.has(cell):
 		tower_panel.open_for(sim.state.tower_at[cell])
 	elif sim.state.map.is_buildable(cell):
 		picker.open_for(cell)

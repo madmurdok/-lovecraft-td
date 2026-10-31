@@ -17,6 +17,7 @@ extends Node2D
 signal cell_clicked(cell: Vector2i)
 signal outside_clicked  ## LT-28: a left click no control took that misses the grid
 
+const LIT_MARK_COLOR := Color(1.0, 0.95, 0.6)  ## LT-30: tower inside a beam
 const CELL := 40.0  ## pixels per cell
 const FLASH_SECONDS := 0.25
 
@@ -415,6 +416,9 @@ func _draw_tower(t: SimTower) -> void:
 	draw_rect(Rect2(r.position + LETTER_PLATE.position, LETTER_PLATE.size), COLOR_LETTER_PLATE)
 	draw_string(ThemeDB.fallback_font, r.position + Vector2(8, 20), t.def.name.left(1),
 		HORIZONTAL_ALIGNMENT_LEFT, -1, 16, c)
+	# LT-30: a lit tower (a beam sweeps its centre) gets a small bright corner mark.
+	if t.lit:
+		draw_circle(r.position + Vector2(r.size.x - 6, 6), 3.5, LIT_MARK_COLOR)
 	# LT-24 level mark: one pip per level along the bottom, the branch letter at L3.
 	for i in t.level + 1:
 		draw_rect(Rect2(r.position + Vector2(3 + i * 6, r.size.y - 6), Vector2(4, 4)), Color.BLACK)

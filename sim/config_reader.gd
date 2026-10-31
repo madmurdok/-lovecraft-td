@@ -194,5 +194,11 @@ func opt_string(obj: Dictionary, key: String, path: String, default := "") -> St
 	return as_string(obj[key], join(path, key)) if obj.has(key) else default
 
 
+func req_bool(obj: Dictionary, key: String, path: String) -> bool:
+	if not _require(obj, key, path):
+		return false
+	return as_bool(obj[key], join(path, key))
+
+
 func opt_bool(obj: Dictionary, key: String, path: String, default: bool) -> bool:
 	return as_bool(obj[key], join(path, key), default) if obj.has(key) else default

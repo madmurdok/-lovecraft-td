@@ -376,6 +376,72 @@ func test_replay_command_call_wave_sell_relics_buy_sanity_debug() -> void:
 		"debug_set_sanity", "call_wave"])
 
 
+## LT-30: upgrade_lighthouse and buy_oil by day, fire_flare at night, refusals included.
+func test_replay_command_lighthouse_oil_flare() -> void:
+	var p := _twin()
+	for s: Simulation in p:
+		s.step()
+		assert_int(s.state.phase).is_equal(SimState.Phase.BUILD)
+	_same_as_direct(p, [1, "upgrade_lighthouse"], func(s: Simulation) -> int:
+		return s.upgrade_lighthouse())
+	_same_as_direct(p, [1, "buy_oil"], func(s: Simulation) -> int: return s.buy_oil())
+	_same_as_direct(p, [1, "fire_flare"], func(s: Simulation) -> int:
+		return s.fire_flare())  # NOT_NIGHT on both
+	_same_as_direct(p, [1, "call_wave"], func(s: Simulation) -> int: return s.call_wave())
+	_same_as_direct(p, [1, "fire_flare"], func(s: Simulation) -> int: return s.fire_flare())
+	_same_as_direct(p, [1, "buy_oil"], func(s: Simulation) -> int:
+		return s.buy_oil())  # NOT_BUILD_PHASE on both
+	for s: Simulation in p:
+		assert_int(s.state.lighthouse_level).is_equal(1)
+		assert_int(s.state.oil).is_equal(s.config.economy.oil.start + 1
+			- s.config.economy.flare.cost_oil)
+		assert_int(s.state.flare_ticks_left).is_greater(0)
+	var names: Array = p[0].state.command_log.map(func(e: Array) -> String: return e[1])
+	assert_array(names).is_equal(["upgrade_lighthouse", "buy_oil", "call_wave", "fire_flare"])
+
+
+## A run with the three LT-30 commands replays to the same state, beam and oil included.
+func test_a_lighthouse_run_replays_through_replay_command() -> void:
+	var a := _lighthouse_run()
+	var b := _lighthouse_twin()
+	_replay(b, a.state.command_log, a.state.tick)
+	assert_str(_lh_digest(b)).is_equal(_lh_digest(a))
+	# Control: without the flare entry the oil (and the beam's turn) differ.
+	var c := _lighthouse_twin()
+	_replay(c, a.state.command_log.filter(func(e: Array) -> bool: return e[1] != "fire_flare"),
+		a.state.tick)
+	assert_bool(_lh_digest(c) == _lh_digest(a)).is_false()
+
+
+func _lighthouse_twin() -> Simulation:
+	var sim := wsim([[group("deep_one", 3, 0.5)]], 2)
+	sim.state.gold = 10000
+	return sim
+
+
+func _lighthouse_run() -> Simulation:
+	var sim := _lighthouse_twin()
+	for i in 3:
+		sim.step()
+	assert_int(sim.upgrade_lighthouse()).is_equal(R2.OK)
+	sim.step()
+	assert_int(sim.buy_oil()).is_equal(R2.OK)
+	build(sim, RIFLE, Vector2i(6, 1))
+	assert_int(sim.call_wave()).is_equal(R2.OK)
+	for i in 20:
+		sim.step()
+	assert_int(sim.fire_flare()).is_equal(R2.OK)
+	for i in 200:
+		sim.step()
+	return sim
+
+
+func _lh_digest(sim: Simulation) -> String:
+	var s := sim.state
+	return _digest_all(sim) + " lh=%d oil=%d beam=%s,%s flare=%d/%d" % [s.lighthouse_level,
+		s.oil, s.beam_dx, s.beam_dy, s.flare_ticks_left, s.flare_cooldown_ticks]
+
+
 func test_replay_command_unknown_or_short_entries_change_nothing() -> void:
 	var sim := tsim()
 	sim.drain_events()
@@ -394,8 +460,11 @@ func test_unknown_command_is_a_distinct_result() -> void:
 	for k: String in R2:
 		assert_bool(seen.has(R2[k])).is_false()
 		seen[R2[k]] = true
-	assert_int(R2.UNKNOWN_COMMAND).is_equal(R2.size() - 2)
-	assert_int(R2.BAD_ARGS).is_equal(R2.size() - 1)  # LT-36: appended, values never shift
+	# LT-36/LT-30: appended, values never shift.
+	assert_int(R2.UNKNOWN_COMMAND).is_equal(R2.NO_RELICS + 1)
+	assert_int(R2.BAD_ARGS).is_equal(R2.UNKNOWN_COMMAND + 1)
+	assert_int(R2.NOT_NIGHT).is_equal(R2.BAD_ARGS + 1)
+	assert_int(R2.OIL_FULL).is_equal(R2.size() - 1)
 	assert_int(R2.OK).is_equal(0)
 
 
@@ -415,6 +484,9 @@ const BAD_ENTRIES := {
 	"sell_relics": [[0, "sell_relics"], [0, "sell_relics", 3], [0, "sell_relics", "star_stone", 1]],
 	"debug_set_sanity": [[0, "debug_set_sanity"], [0, "debug_set_sanity", "40"],
 		[0, "debug_set_sanity", true], [0, "debug_set_sanity", 1.0, 2.0]],
+	"upgrade_lighthouse": [[0, "upgrade_lighthouse", 1], [0, "upgrade_lighthouse", ""]],
+	"buy_oil": [[0, "buy_oil", 1], [0, "buy_oil", null]],
+	"fire_flare": [[0, "fire_flare", ""], [0, "fire_flare", 1, 2]],
 }
 
 
@@ -425,8 +497,14 @@ func _ready_sim() -> Array:
 	sim.state.gold = 100000
 	sim.state.relics["star_stone"] = 2
 	sim.config.sanity.madness.exit_rule = "buyout"
+	sim.state.oil = 4  # LT-30: room for buy_oil, enough for fire_flare
 	var t := build(sim, RIFLE, Vector2i(5, 1))
 	sim.drain_events()
+	# LT-30: a day sim, so upgrade_lighthouse and buy_oil would apply; fire_flare (night
+	# only) gets its own night sim in the bad-args test.
+	assert_int(sim.state.phase).is_equal(SimState.Phase.BUILD)
+	assert_int(sim.can_buy_oil()).is_equal(R2.OK)
+	assert_int(sim.can_upgrade_lighthouse()).is_equal(R2.OK)
 	return [sim, t.id]
 
 
@@ -450,6 +528,19 @@ func test_replay_command_known_name_with_bad_args_is_bad_args_and_changes_nothin
 			assert_int(r["v"]).override_failure_message("%s" % [entry]).is_equal(R2.BAD_ARGS)
 	assert_str(_digest_all(sim)).is_equal(before)
 	assert_array(sim.drain_events()).is_empty()
+	# LT-30: a night sim where a well-formed fire_flare would apply.
+	var night: Simulation = _ready_sim()[0]
+	assert_int(night.call_wave()).is_equal(R2.OK)
+	night.drain_events()
+	assert_int(night.can_fire_flare()).is_equal(R2.OK)
+	var at_night := _digest_all(night)
+	for entry: Array in BAD_ENTRIES["fire_flare"]:
+		var r := {"v": -1}
+		await assert_error(func() -> void: r["v"] = night.replay_command(entry)) \
+			.is_push_error("Simulation.replay_command: bad args %s" % [entry])
+		assert_int(r["v"]).override_failure_message("%s" % [entry]).is_equal(R2.BAD_ARGS)
+	assert_str(_digest_all(night)).is_equal(at_night)
+	assert_int(night.state.oil).is_equal(4)
 
 
 func test_replay_command_non_string_or_unknown_name_stays_unknown_command() -> void:
