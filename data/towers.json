@@ -41,40 +41,39 @@
       "role": "Aura: slows enemies and makes them take more damage",
       "kind": "occult",
       "cost": 100,
-      "sanity_cost": 8,
       "levels": [
-        { "range": 2, "effects": { "slow": 0.3, "damage_taken_multiplier": 1.25 } },
-        { "upgrade_cost": 80, "upgrade_sanity_cost": 8, "range": 2.5,
-          "effects": { "slow": 0.3, "damage_taken_multiplier": 1.25 } }
+        { "range": 2.5, "sanity_reserve": 5,
+          "effects": { "slow": 0.35, "damage_taken_multiplier": 1.5 } },
+        { "upgrade_cost": 80, "range": 3, "sanity_reserve": 8,
+          "effects": { "slow": 0.35, "damage_taken_multiplier": 1.5 } }
       ],
       "branches": {
         "a": { "name": "Pure Ward", "role": "Larger aura",
-               "upgrade_cost": 140, "upgrade_sanity_cost": 8, "range": 3.5,
-               "effects": { "slow": 0.3, "damage_taken_multiplier": 1.25 } },
-        "b": { "name": "Corrupted Seal", "role": "Enemies inside lose armor; drains sanity while active",
-               "upgrade_cost": 140, "upgrade_sanity_cost": 8, "range": 2.5,
-               "sanity_per_second": 0.2,
-               "effects": { "slow": 0.3, "damage_taken_multiplier": 1.25, "strip_armor": 1 } }
+               "upgrade_cost": 140, "range": 4, "sanity_reserve": 10,
+               "effects": { "slow": 0.35, "damage_taken_multiplier": 1.5 } },
+        "b": { "name": "Corrupted Seal", "role": "Enemies inside lose armor; reserves more sanity",
+               "upgrade_cost": 140, "range": 3, "sanity_reserve": 15,
+               "effects": { "slow": 0.35, "damage_taken_multiplier": 1.5, "strip_armor": 1 } }
       }
     },
     "necronomicon_reader": {
       "name": "Necronomicon Reader",
-      "role": "Area blast; every cast costs sanity",
+      "role": "Area blast; reserves sanity while it stands",
       "kind": "occult",
       "cost": 150,
       "levels": [
-        { "range": 3, "damage": 40, "fire_interval": 4, "sanity_per_cast": 2,
+        { "range": 3, "damage": 70, "fire_interval": 3, "sanity_reserve": 10,
           "effects": { "aoe_radius": 1.5 } },
-        { "upgrade_cost": 120, "range": 3.5, "damage": 55, "fire_interval": 4, "sanity_per_cast": 2,
+        { "upgrade_cost": 120, "range": 3.5, "damage": 95, "fire_interval": 3, "sanity_reserve": 15,
           "effects": { "aoe_radius": 1.5 } }
       ],
       "branches": {
         "a": { "name": "Pure Rite", "role": "Slower, but unaffected by madness",
-               "upgrade_cost": 200, "range": 3.5, "damage": 70, "fire_interval": 5,
-               "sanity_per_cast": 2, "madness_affected": false, "effects": { "aoe_radius": 1.5 } },
-        "b": { "name": "Corrupted Rite", "role": "Stronger blasts, more sanity per cast",
-               "upgrade_cost": 200, "range": 3.5, "damage": 82.5, "fire_interval": 4,
-               "sanity_per_cast": 4, "effects": { "aoe_radius": 1.5 } }
+               "upgrade_cost": 200, "range": 3.5, "damage": 120, "fire_interval": 4,
+               "sanity_reserve": 18, "madness_affected": false, "effects": { "aoe_radius": 1.5 } },
+        "b": { "name": "Corrupted Rite", "role": "Stronger blasts, more sanity reserved",
+               "upgrade_cost": 200, "range": 3.5, "damage": 142.5, "fire_interval": 3,
+               "sanity_reserve": 25, "effects": { "aoe_radius": 1.5 } }
       }
     }
   }

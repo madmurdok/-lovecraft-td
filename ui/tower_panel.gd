@@ -110,11 +110,10 @@ func _refresh_upgrade(b: Button, info: Label, t: SimTower, s: TowerDef.Level, br
 	var r := game.sim.can_upgrade(t.id, branch)
 	b.disabled = r != Simulation.CommandResult.OK
 	var label := "Upgrade to L%d" % (t.level + 2) if branch.is_empty() else target.name
-	var text := "%s - %s" % [label, TowerInfo.cost_text(target.upgrade_cost,
-		target.upgrade_sanity_cost)]
+	var text := "%s - %s" % [label, TowerInfo.cost_text(target.upgrade_cost)]
 	if b.disabled:
 		text += " (%s)" % TowerInfo.reason(r)
-	elif _drives_mad(target.upgrade_sanity_cost):
+	elif _drives_mad(game.sim.reserve_delta(t.def.id, s, target)):
 		text += MADNESS_WARNING
 	b.text = text
 	var lines := PackedStringArray()
@@ -124,10 +123,11 @@ func _refresh_upgrade(b: Button, info: Label, t: SimTower, s: TowerDef.Level, br
 	info.text = "\n".join(lines)
 
 
-## An enabled upgrade paying `sanity_cost` would empty the pool (and so start madness).
-func _drives_mad(sanity_cost: float) -> bool:
+## An enabled upgrade reserving `delta` more sanity would take the cap to 0 (and so start
+## madness, LT-23 Q3).
+func _drives_mad(delta: float) -> bool:
 	var st := game.sim.state
-	return sanity_cost > 0.0 and st.sanity - sanity_cost <= 0.0 \
+	return delta > 0.0 and st.sanity_cap - delta <= 0.0 \
 		and st.sanity_state != SimState.SanityState.MADNESS
 
 

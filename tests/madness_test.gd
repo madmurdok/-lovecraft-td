@@ -34,9 +34,18 @@ func _rule(sim: Simulation, rule: String) -> void:
 	sim.config.sanity.madness.exit_rule = rule
 
 
-## tower-test sim with plenty of gold, a Necronomicon at TOWER and sanity 0 (madness).
+## Switches off the LT-23 madness enemy buff, so the LT-13 damage numbers stay exact.
+func _no_enemy_buff(sim: Simulation) -> void:
+	var m := sim.config.sanity.madness
+	m.enemy_speed_multiplier = 1.0
+	m.enemy_damage_taken_multiplier = 1.0
+
+
+## tower-test sim with plenty of gold, a Necronomicon at TOWER and sanity 0 (madness),
+## without the LT-23 enemy buff.
 func _necro_sim(run_seed := SEED) -> Simulation:
 	var sim := Simulation.new(tconfig(), run_seed)
+	_no_enemy_buff(sim)
 	sim.state.gold = 1000000
 	build(sim, NECRO)
 	_set_sanity(sim, 0.0)
@@ -87,8 +96,11 @@ func _assert_within_sigmas(count: int, n: int, p: float) -> void:
 func test_shot_split_frequencies_follow_the_configured_split() -> void:
 	for run_seed in [3, 17, 101]:
 		var sim := _necro_sim(run_seed)
-		var real := put(sim, "cultist", REAL_CELLS)
-		var fake := put(sim, "cultist", FAR_CELLS, HUGE_HP, true)
+		# Enough HP that neither dies within CASTS casts (a dead real would turn "real"
+		# rolls into empty shots).
+		var hp := HUGE_HP * 10.0
+		var real := put(sim, "cultist", REAL_CELLS, hp)
+		var fake := put(sim, "cultist", FAR_CELLS, hp, true)
 		var m := sim.config.sanity.madness
 		var counts := {"real": 0, "fake": 0, "empty": 0}
 		for s in _casts(sim, CASTS):
@@ -97,8 +109,9 @@ func test_shot_split_frequencies_follow_the_configured_split() -> void:
 		_assert_within_sigmas(counts["real"], CASTS, m.shot_real)
 		_assert_within_sigmas(counts["fake"], CASTS, m.shot_fake)
 		_assert_within_sigmas(counts["empty"], CASTS, m.shot_empty)
-		assert_float(real.hp).is_less(HUGE_HP)
-		assert_float(fake.hp).is_less(HUGE_HP)
+		assert_float(real.hp).is_greater(0.0)
+		assert_float(real.hp).is_less(hp)
+		assert_float(fake.hp).is_less(hp)
 
 
 func test_a_real_or_fake_shot_picks_uniformly_among_those_in_range() -> void:
@@ -188,6 +201,7 @@ func test_astray_shots_never_hurt_the_player_side() -> void:
 ## HP lost by a hybrid (armor > 0) parked in range after one cast at `sanity`.
 func _hybrid_loss(sanity: float, with_sign: bool) -> float:
 	var sim := Simulation.new(tconfig(), SEED)
+	_no_enemy_buff(sim)
 	sim.state.gold = 1000000
 	if with_sign:
 		build(sim, SIGN, Vector2i(6, 1))
@@ -253,23 +267,9 @@ func test_shots_carry_astray_true_only_in_madness_and_never_name_the_outcome() -
 			assert_bool(s.data.has("astray")).override_failure_message("sanity %s" % v).is_false()
 
 
-func test_the_cast_that_drains_sanity_to_zero_is_normal_and_the_next_is_astray() -> void:
-	var sim := Simulation.new(tconfig(), SEED)
-	sim.state.gold = 1000000
-	build(sim, NECRO)
-	var per_cast := sim.config.towers[NECRO].levels[0].sanity_per_cast
-	_set_sanity(sim, per_cast)
-	put(sim, "cultist", REAL_CELLS)
-	var shots := _casts(sim, 2)
-	assert_int(sim.state.sanity_state).is_equal(S.MADNESS)
-	assert_float(sim.state.sanity).is_equal(0.0)
-	assert_bool(shots[0].data.has("astray")).is_false()
-	assert_bool(shots[1].data["astray"]).is_true()
-	assert_bool(shots[0].data["hits"].is_empty()).is_false()
-
-
 func test_mundane_towers_in_madness_keep_the_miss_roll_and_are_not_doubled() -> void:
 	var sim := Simulation.new(tconfig(), SEED)
+	_no_enemy_buff(sim)
 	sim.state.gold = 1000000
 	build(sim, "rifleman")
 	_set_sanity(sim, 0.0)
@@ -307,6 +307,7 @@ func test_an_occult_tower_that_is_not_madness_affected_shoots_as_usual() -> void
 
 func test_elder_sign_is_unaffected_by_madness() -> void:
 	var sim := Simulation.new(tconfig(), SEED)
+	_no_enemy_buff(sim)
 	sim.state.gold = 1000000
 	build(sim, SIGN)
 	_set_sanity(sim, 0.0)
@@ -325,7 +326,7 @@ func test_non_madness_runs_draw_nothing_from_the_madness_stream() -> void:
 	build(sim, "rifleman", Vector2i(8, 1))
 	put(sim, "cultist", REAL_CELLS)
 	put(sim, "cultist", FAR_CELLS, HUGE_HP, true)
-	var shots := _casts(sim, 20)  # 2 sanity per cast: 100 -> 60, still outside madness
+	var shots := _casts(sim, 20)  # casts cost no sanity (LT-23): stays outside madness
 	assert_int(sim.state.sanity_state).is_not_equal(S.MADNESS)
 	assert_int(shots.size()).is_greater(0)
 	assert_int(_madness_state(sim)).is_equal(_reference_state(SEED, 0))

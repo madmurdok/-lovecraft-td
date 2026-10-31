@@ -1,9 +1,8 @@
 class_name SanityConfig
 extends RefCounted
 ## sanity.json (GDD §5.3, §5.4): pool, regen, thresholds, hallucinations, madness.
-## Tower-specific drains live on the tower (towers.json: sanity_cost,
-## upgrade_sanity_cost, sanity_per_cast, sanity_per_second); horror drain per
-## second lives on the enemy (enemies.json: horror_drain).
+## Occult towers reserve part of the cap (towers.json: sanity_reserve, LT-23); horror
+## drain per second lives on the enemy (enemies.json: horror_drain).
 
 const FIELDS := ["max", "start", "regen", "horror_radius_cells", "thresholds", "madness"]
 ## Highest first. A state applies while sanity >= its `min` and below the previous state's.
@@ -89,7 +88,7 @@ class Madness:
 	extends RefCounted
 
 	const MADNESS_FIELDS := ["damage_multiplier", "shot_split", "exit_rule", "restore_sanity",
-		"buyout_cost"]
+		"buyout_cost", "enemy_speed_multiplier", "enemy_damage_taken_multiplier"]
 	const SPLIT_FIELDS := ["real", "fake", "empty"]
 	const EXIT_RULES: PackedStringArray = ["permanent", "buyout", "auto_restore"]
 	const SPLIT_TOLERANCE := 1e-6
@@ -101,6 +100,9 @@ class Madness:
 	var exit_rule: String  ## "permanent" | "buyout" | "auto_restore"
 	var restore_sanity: float  ## sanity after buyout / auto restore, 0..max
 	var buyout_cost: int  ## gold, >= 0
+	## LT-23 §3: every live enemy's per-tick modifiers while in MADNESS; > 0, default 1.0 (off).
+	var enemy_speed_multiplier: float
+	var enemy_damage_taken_multiplier: float
 
 	static func parse(r: ConfigReader, obj: Dictionary, path: String, top: float) -> Madness:
 		r.check_keys(obj, MADNESS_FIELDS, path)
@@ -127,4 +129,8 @@ class Madness:
 				"must be > 0 when exit_rule is %s, got %s"
 				% [m.exit_rule, ConfigReader.fmt(m.restore_sanity)])
 		m.buyout_cost = r.req_int(obj, "buyout_cost", path, 0)
+		m.enemy_speed_multiplier = r.opt_number(obj, "enemy_speed_multiplier", path, 1.0,
+			0.0, INF, true)
+		m.enemy_damage_taken_multiplier = r.opt_number(obj, "enemy_damage_taken_multiplier",
+			path, 1.0, 0.0, INF, true)
 		return m

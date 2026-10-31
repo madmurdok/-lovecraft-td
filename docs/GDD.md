@@ -55,17 +55,25 @@ only delayed. Power comes from forbidden knowledge, and knowledge costs the mind
 
 Global pool, 0..100, starts at 100.
 
+**Reserve (LT-23)**
+- Every occult tower on the board lowers the sanity **cap** by its level's
+  `sanity_reserve` (Elder Sign 5 / 8 / Pure Ward 10 / Corrupted Seal 15; Necronomicon
+  Reader 10 / 15 / Pure Rite 18 / Corrupted Rite 25; tunable). Cap = 100 − reserves,
+  floored at 0.
+- Current sanity drops only when it is above the new cap (then to the cap); selling
+  raises the cap again and leaves current sanity alone (in Madness too).
+- A cap of 0 empties sanity and so starts Madness. Thresholds stay on the full bar: a
+  reserve above 30 means no Lucid until those towers are sold.
+- Occult towers have no build, upgrade, per-cast or per-second sanity cost.
+
 **Drains**
-- Building an Elder Sign: −8 (one-off, per level).
-- Each Necronomicon cast: −2.
 - Horror: a large enemy (shoggoth, Dagon) within 3 cells of any tower drains
   `horror_drain` per second while visible (shoggoth 0.5/s, Dagon 0.6/s).
-- Corrupted level-3 branches add their own costs (§6).
 
 **Regen**
 - Between waves: +12.
 - Kill by a mundane damage tower (rifleman, harpooner): +0.5.
-- Cap 100.
+- Up to the cap (100 minus reserves).
 
 **Thresholds**
 
@@ -91,26 +99,30 @@ but deals no leak damage and gives no reward. The player cannot tell which is wh
   enemy in range, 35% hit a fake enemy, 25% hit an empty cell. Net output ≈ ×0.8,
   spread unpredictably, so crashing sanity on purpose costs damage. No friendly fire. Ratios live in `sanity.json` (`madness.shot_split`).
 - Fraying effects stay at maximum.
+- The world turns hostile (LT-23): every enemy, real and fake, moves ×1.2 and takes
+  ×0.8 damage while in Madness (`madness.enemy_speed_multiplier`,
+  `enemy_damage_taken_multiplier`); on top of Elder Sign auras; gone the tick after
+  Madness ends.
 - Duration: until the end of the game (default).
 - Exit rule is a config switch for rebalancing:
   - `permanent` (default): no exit.
-  - `buyout`: spend gold to restore sanity to 30 (cost 150).
-  - `auto_restore`: after the current wave ends, sanity resets to 30.
+  - `buyout`: spend gold to restore sanity to min(30, cap) (cost 150); refused at cap 0.
+  - `auto_restore`: after the current wave ends, sanity resets to min(30, cap).
 
 ## 6. Towers
 
 Placement: any free buildable grid cell. Path cells and water are not buildable.
 Upgrades: L1 → L2 (stat bump) → L3 with a choice of two branches.
 Mundane towers' L3 branches are "specialisations"; occult towers' L3 branches are
-"pure" (safe) vs "corrupted" (stronger, costs sanity).
+"pure" (safe) vs "corrupted" (stronger, reserves more sanity).
 
 | Tower | Kind | Cost | Role | L3 branch A | L3 branch B |
 |---|---|---|---|---|---|
 | Rifleman | mundane | 50 | single target, steady DPS | Marksman: long range, crits | Militia: two shooters, faster fire |
 | Harpooner | mundane | 70 | piercing line shot, good vs packs | Barbed: bleed DoT | Chain harpoon: pulls target back along the path |
 | Searchlight | mundane | 80 | beam that slows 40%, no damage | Blinding: stuns 1 s every 6 s | Revealing: fake enemies in the beam are shown as fake |
-| Elder Sign | occult | 100 + 8 sanity | aura: −30% speed, +25% damage taken | Pure Ward: larger aura | Corrupted Seal: enemies inside lose armor, −0.2 sanity/s while active |
-| Necronomicon Reader | occult | 150 | AoE blast every 4 s, −2 sanity per cast | Pure Rite: slower, unaffected by madness (no ×2, no astray shots) | Corrupted Rite: ×1.5 damage, −4 sanity per cast |
+| Elder Sign | occult | 100, reserves 5 | aura: −35% speed, +50% damage taken | Pure Ward: larger aura | Corrupted Seal: enemies inside lose armor, reserves 15 |
+| Necronomicon Reader | occult | 150, reserves 10 | AoE blast every 3 s | Pure Rite: slower, unaffected by madness (no ×2, no astray shots) | Corrupted Rite: ×1.5 damage, reserves 25 |
 
 Note: the Revealing branch is the only counter to hallucinations in the MVP, and it is gated behind L3.
 
@@ -218,7 +230,7 @@ Current favourite: 1 (or 4). Not a decision; the style test decides.
 
 ```
 data/
-  towers.json     # per tower: kind, cost, sanity_cost, levels[1..3], branches{a,b}
+  towers.json     # per tower: kind, cost, levels[1..2] (sanity_reserve), branches{a,b}
   enemies.json    # per enemy: hp, speed, armor, leak_damage, reward, traits
   waves.json      # per wave: spawn groups with type, count, interval, delay
   sanity.json     # thresholds, drains, regen, hallucination rates, madness.exit_rule

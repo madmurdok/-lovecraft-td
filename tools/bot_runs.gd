@@ -9,32 +9,44 @@ extends SceneTree
 ##
 ## Strategies (build orders; the bot builds the next item as soon as it can pay for it):
 ##   mundane  : rifleman, rifleman, harpooner repeated. Never builds occult.
-##   occult   : rifleman, then elder_sign / necronomicon_reader alternating. Sanity guard:
-##              an occult item that would leave sanity < 25 is replaced by a rifleman;
-##              tries buy_sanity() in madness (refused under the "permanent" exit rule).
-##   madness  : necronomicon_reader / elder_sign alternating, no guard, never buys sanity.
+##   occult   : rifleman, then elder_sign / necronomicon_reader alternating. Cap guard
+##              (LT-23 §4): an occult build or upgrade only while sanity_cap - its reserve
+##              delta >= CAP_FLOOR (30); a blocked occult build is replaced by a rifleman
+##              while the run has fewer than OCCULT_MAX_RIFLEMEN (3), otherwise the bot tries
+##              an upgrade that passes the guard and else saves its gold. Tries buy_sanity()
+##              in madness (refused under the "permanent" exit rule).
+##   mixed    : rifleman, rifleman, elder_sign, rifleman, harpooner, necronomicon_reader
+##              repeated; the same cap guard with CAP_FLOOR 60, a blocked occult item is
+##              skipped (the order moves on to the next item). Tries buy_sanity() too.
+##   madness  : necronomicon_reader / elder_sign alternating, no guard, never buys sanity:
+##              it keeps building past cap 0 (MADNESS).
 ## Placement (greedy): the free buildable cell with the most path cells whose centre is
 ## within the tower's L1 range; ties go to the lowest row-major cell. No sells.
 ## Upgrades (LT-24 §5, "wide then deep"): while the board has fewer than BUILD_FIRST towers
 ## the next purchase is the next build; after that it is the cheapest upgrade (gold; ties
 ## -> lower tower id) among the towers, L3 branch from BRANCH_PICK. A tower whose picked
-## branch is missing or has_pending() stays at L2; the occult sanity guard skips an upgrade
-## that would leave sanity < 25. With no upgrade left the next purchase is a build. The
+## branch is missing or has_pending() stays at L2; the cap guard (occult, mixed) skips an
+## upgrade whose reserve delta would leave the cap below CAP_FLOOR. With no upgrade left the next purchase is a build. The
 ## bot buys the next purchase or stops for the round (it saves, never skips to something
 ## cheaper); upgrades are refused during a wave, so it waits for BUILD.
 ## Timing: in BUILD, spend what the next purchase allows then call_wave() at once (waiting
 ## earns nothing but a smaller early-call bonus); during a wave, re-check every second.
 ## A run is capped at 30 simulated minutes (outcome "timeout").
 
-const STRATEGIES := ["mundane", "occult", "madness"]
+const STRATEGIES := ["mundane", "occult", "mixed", "madness"]
 const MAX_TICKS := 30 * 60 * 30
-const SANITY_GUARD := 25.0
+## Strategy -> lowest sanity_cap an occult build/upgrade may leave (LT-23 §4, tunable).
+const CAP_FLOOR := {"occult": 30.0, "mixed": 60.0}
+const OCCULT_MAX_RIFLEMEN := 3  ## riflemen the occult bot builds per run, the first included
+const MIXED_ORDER := ["rifleman", "rifleman", "elder_sign", "rifleman", "harpooner",
+	"necronomicon_reader"]
 const BUILD_FIRST := 5  ## towers on the board before the bot starts upgrading (tunable)
 ## Strategy -> tower def id -> L3 branch the bot buys (tunable); a tower not listed stays
 ## at L2. Pure branches for the careful bot, corrupted for the mad one.
 const BRANCH_PICK := {
 	"mundane": {"rifleman": "a", "harpooner": "a"},
 	"occult": {"rifleman": "a", "elder_sign": "a", "necronomicon_reader": "a"},
+	"mixed": {"rifleman": "a", "harpooner": "a", "elder_sign": "a", "necronomicon_reader": "a"},
 	"madness": {"elder_sign": "b", "necronomicon_reader": "b"},
 }
 
@@ -96,11 +108,26 @@ func _play(strat: String, run_seed: int) -> Dictionary:
 	var built := {}
 	var upgrades := {}  ## "<def>_L2" or "<def>_<branch>" -> count
 	var upgrade_gold := 0
+	# LT-23 §4 metrics.
+	var min_sanity := st.sanity
+	var cap_per_wave: Array = []
+	var madness_tick := -1
+	var reserve_peak := 0.0
+	var free_reserve := 0.0  ## reserve taken from the cap but not from current sanity
+	var hp_lost_per_wave: Array = []
+	var hp_before := st.lighthouse_hp
 	while st.outcome == SimState.Outcome.NONE and st.tick < MAX_TICKS:
 		if st.tick % 30 == 0:
 			idx = _act(sim, strat, idx, built)
 		sim.step()
 		ticks_in_state[st.sanity_state] += 1
+		min_sanity = minf(min_sanity, st.sanity)
+		if madness_tick < 0 and st.sanity_state == SimState.SanityState.MADNESS:
+			madness_tick = st.tick
+		var reserved := 0.0
+		for t in st.towers:
+			reserved += sim.reserve_of(t)
+		reserve_peak = maxf(reserve_peak, reserved)
 		for e in st.enemies:
 			if sim.debug_is_fake(e) and e.id > last_fake_id:
 				last_fake_id = e.id
@@ -108,6 +135,14 @@ func _play(strat: String, run_seed: int) -> Dictionary:
 		for ev in sim.drain_events():
 			if ev.type == SimEvent.Type.WAVE_CLEARED:
 				wave_end_sanity.append(snappedf(st.sanity, 0.1))
+				cap_per_wave.append(snappedf(st.sanity_cap, 0.1))
+				hp_lost_per_wave.append(hp_before - st.lighthouse_hp)
+				hp_before = st.lighthouse_hp
+			elif ev.type == SimEvent.Type.SANITY_CAP_CHANGED:
+				if ev.data["delta"] < 0.0:
+					free_reserve -= ev.data["delta"]
+			elif ev.type == SimEvent.Type.SANITY_CHANGED and ev.data["reason"] == "reserve":
+				free_reserve += ev.data["delta"]  # negative: the part paid from sanity
 			elif ev.type == SimEvent.Type.SHOT:
 				shots += 1
 				if ev.data.get("miss", false):
@@ -125,6 +160,13 @@ func _play(strat: String, run_seed: int) -> Dictionary:
 	elif st.outcome == SimState.Outcome.LOST:
 		outcome = "lost"
 	var waves_survived := wave_end_sanity.size()
+	if st.outcome != SimState.Outcome.WON:
+		hp_lost_per_wave.append(hp_before - st.lighthouse_hp)  # the wave it ended in
+	var towers_final := {}  ## "<def>_L1" / "<def>_L2" / "<def>_<branch>" -> standing count
+	for t in st.towers:
+		var key := "%s_%s" % [t.def.id, t.branch if t.level >= TowerDef.LEVEL_COUNT \
+			else "L%d" % (t.level + 1)]
+		towers_final[key] = towers_final.get(key, 0) + 1
 	var run := {
 		"strategy": strat, "seed": run_seed, "outcome": outcome,
 		"waves_survived": waves_survived, "gold": st.gold,
@@ -134,6 +176,10 @@ func _play(strat: String, run_seed: int) -> Dictionary:
 			"fraying": ticks_in_state[2] / 30.0, "madness": ticks_in_state[3] / 30.0},
 		"fakes": fakes, "astray": astray, "missed": missed, "shots": shots,
 		"towers": built, "lighthouse_hp": st.lighthouse_hp, "ticks": st.tick,
+		"min_sanity": snappedf(min_sanity, 0.1), "final_cap": snappedf(st.sanity_cap, 0.1),
+		"cap_per_wave": cap_per_wave, "madness_tick": madness_tick,
+		"reserve_peak": snappedf(reserve_peak, 0.1), "free_reserve": snappedf(free_reserve, 0.1),
+		"hp_lost_per_wave": hp_lost_per_wave, "towers_final": towers_final,
 	}
 	if _upgrades:
 		run["upgrades"] = upgrades
@@ -141,7 +187,10 @@ func _play(strat: String, run_seed: int) -> Dictionary:
 	return run
 
 
-func _order(strat: String, i: int, sim: Simulation) -> String:
+## The next build of `strat` at order index `i`, or "" when the occult bot must save (its
+## cap guard blocks the occult item and its riflemen are used up). Mixed returns its item
+## as is; _act skips a blocked one.
+func _order(strat: String, i: int, sim: Simulation, built: Dictionary) -> String:
 	match strat:
 		"mundane":
 			return "harpooner" if i % 3 == 2 else "rifleman"
@@ -149,17 +198,27 @@ func _order(strat: String, i: int, sim: Simulation) -> String:
 			if i == 0:
 				return "rifleman"
 			var d := "elder_sign" if i % 2 == 1 else "necronomicon_reader"
-			if sim.state.sanity - _cfg.towers[d].sanity_cost < SANITY_GUARD:
-				return "rifleman"
+			if not _cap_allows(sim, strat, _cfg.towers[d].levels[0].sanity_reserve):
+				return "rifleman" if built.get("rifleman", 0) < OCCULT_MAX_RIFLEMEN else ""
 			return d
+		"mixed":
+			return MIXED_ORDER[i % MIXED_ORDER.size()]
 		_:
 			return "necronomicon_reader" if i % 2 == 0 else "elder_sign"
+
+
+## The cap guard (LT-23 §4): true when `strat` has no CAP_FLOOR, or reserving `delta` more
+## leaves sanity_cap >= its floor (a delta <= 0 always passes).
+func _cap_allows(sim: Simulation, strat: String, delta: float) -> bool:
+	if not CAP_FLOOR.has(strat) or delta <= 0.0:
+		return true
+	return sim.state.sanity_cap - delta >= CAP_FLOOR[strat]
 
 
 ## Buys as many purchases (builds, then upgrades per the header) as affordable; in BUILD
 ## then calls the wave. Returns the new build-order index.
 func _act(sim: Simulation, strat: String, idx: int, built: Dictionary) -> int:
-	if strat == "occult":
+	if strat == "occult" or strat == "mixed":
 		sim.buy_sanity()  # refused unless exit_rule is "buyout" and state is MADNESS
 	while true:
 		if _upgrades and sim.state.towers.size() >= BUILD_FIRST:
@@ -168,7 +227,18 @@ func _act(sim: Simulation, strat: String, idx: int, built: Dictionary) -> int:
 				if sim.upgrade_tower(up[0], up[1]) != Simulation.CommandResult.OK:
 					break
 				continue
-		var id := _order(strat, idx, sim)
+		var id := _order(strat, idx, sim, built)
+		if strat == "mixed" and _cfg.towers[id].kind == "occult" \
+				and not _cap_allows(sim, strat, _cfg.towers[id].levels[0].sanity_reserve):
+			idx += 1  # blocked occult item: skip to the next one in the order
+			continue
+		if id == "":
+			# Occult bot, blocked and out of riflemen: an occult upgrade that passes the
+			# guard if there is one (even below BUILD_FIRST towers), else save.
+			var up := _next_upgrade(sim, strat) if _upgrades else []
+			if up.is_empty() or sim.upgrade_tower(up[0], up[1]) != Simulation.CommandResult.OK:
+				break
+			continue
 		var cell := _best_cell(sim, id)
 		if cell.x < 0 or sim.build_tower(id, cell) != Simulation.CommandResult.OK:
 			break
@@ -181,8 +251,8 @@ func _act(sim: Simulation, strat: String, idx: int, built: Dictionary) -> int:
 
 ## The bot's next upgrade as [tower_id, branch], or [] when no tower can go further for it:
 ## the cheapest target (gold) over the towers in id order, ties -> lower id. Skips a tower
-## whose L3 pick is missing from BRANCH_PICK or has_pending(), and (occult) an upgrade
-## whose sanity cost would leave sanity < SANITY_GUARD.
+## whose L3 pick is missing from BRANCH_PICK or has_pending(), and (occult, mixed) an
+## upgrade whose reserve delta fails the cap guard (_cap_allows).
 func _next_upgrade(sim: Simulation, strat: String) -> Array:
 	var picks: Dictionary = BRANCH_PICK.get(strat, {})
 	var best: Array = []
@@ -199,8 +269,7 @@ func _next_upgrade(sim: Simulation, strat: String) -> Array:
 		var target := sim.upgrade_target(t, branch)
 		if target == null or target.has_pending():
 			continue
-		if strat == "occult" and target.upgrade_sanity_cost > 0.0 \
-				and sim.state.sanity - target.upgrade_sanity_cost < SANITY_GUARD:
+		if not _cap_allows(sim, strat, sim.reserve_delta(t.def.id, t.stats(), target)):
 			continue
 		if best.is_empty() or target.upgrade_cost < best_cost \
 				or (target.upgrade_cost == best_cost and t.id < best[0]):

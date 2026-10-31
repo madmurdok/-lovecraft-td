@@ -5,7 +5,9 @@ extends RefCounted
 ## New types are appended so existing values never change.
 enum Type {SPAWNED, LEAKED, DIED, OUTCOME, TOWER_BUILT, TOWER_SOLD, GOLD_CHANGED, SHOT,
 		BUILD_STARTED, WAVE_STARTED, WAVE_CLEARED, SANITY_CHANGED, SANITY_STATE_CHANGED,
-		FAKE_DISSOLVED, TOWER_UPGRADED}
+		FAKE_DISSOLVED, TOWER_UPGRADED,
+		## LT-23 {delta, cap, reason: "build" | "upgrade" | "sell"}; id = the tower
+		SANITY_CAP_CHANGED}
 
 var type: Type
 var tick: int

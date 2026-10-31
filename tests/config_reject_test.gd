@@ -158,8 +158,8 @@ func test_range_must_be_positive() -> void:
 func test_range_must_not_be_negative() -> void:
 	var cases := [
 		[T, "towers.rifleman.cost", func(d: Dictionary) -> void: d["towers"]["rifleman"]["cost"] = -5],
-		[T, "towers.elder_sign.sanity_cost",
-			func(d: Dictionary) -> void: d["towers"]["elder_sign"]["sanity_cost"] = -1],
+		[T, "towers.elder_sign.levels[0].sanity_reserve",
+			func(d: Dictionary) -> void: d["towers"]["elder_sign"]["levels"][0]["sanity_reserve"] = -1],
 		[E, "enemies.hybrid.armor", func(d: Dictionary) -> void: d["enemies"]["hybrid"]["armor"] = -5],
 		[E, "enemies.shoggoth.horror_drain",
 			func(d: Dictionary) -> void: d["enemies"]["shoggoth"]["horror_drain"] = -0.1],
@@ -271,7 +271,7 @@ func test_tower_structure_errors() -> void:
 				d["towers"]["rifleman"]["levels"].append(d["towers"]["rifleman"]["levels"][1])],
 		[T, "towers.rifleman.levels[0].upgrade_cost", "not allowed on L1",
 			func(d: Dictionary) -> void: d["towers"]["rifleman"]["levels"][0]["upgrade_cost"] = 10],
-		[T, "towers.elder_sign.levels[0].upgrade_sanity_cost", "not allowed on L1",
+		[T, "towers.elder_sign.levels[0].upgrade_sanity_cost", "unknown field",
 			func(d: Dictionary) -> void: d["towers"]["elder_sign"]["levels"][0]["upgrade_sanity_cost"] = 1],
 		[T, "towers.rifleman.levels[1].upgrade_cost", "missing required field",
 			func(d: Dictionary) -> void: d["towers"]["rifleman"]["levels"][1].erase("upgrade_cost")],

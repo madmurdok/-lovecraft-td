@@ -287,30 +287,66 @@ owns it), gold costs, mundane range/fire_interval, thresholds, `damage_multiplie
 
 ## 6. Behaviours the tests slice pins (one line each)
 
+Confirmed against the S2 code (`sim/core/simulation.gd` unless named). S2 notes: the cap is
+recomputed from the standing towers (`max − Σ reserve_of`, floored at 0), so a test that
+wants a given cap builds towers or edits a level's `sanity_reserve` on the loaded config,
+never `state.sanity_cap` directly; `SANITY_CAP_CHANGED.delta` is the change actually applied
+(smaller than the reserve when the floor at 0 bites), and no event is emitted when the cap
+does not move.
+
 1. Build with reserve r at full sanity: cap −r, sanity clamped to the cap; events `TOWER_BUILT`,
-   `GOLD_CHANGED`, `SANITY_CAP_CHANGED {−r, "build"}`, `SANITY_CHANGED "reserve"`.
-2. Build with reserve r when sanity ≤ cap − r: cap −r, sanity unchanged, no `SANITY_CHANGED`.
-3. Mundane towers and reserve-0 levels: no cap event, no sanity change.
-4. Regen (between waves, mundane kill) stops at the cap.
-5. Sell: cap + reserve, sanity unchanged; in MADNESS the state stays MADNESS.
-6. Upgrade (build phase): cap changes by target − current reserve; clamp as in 1/2.
-7. A build/upgrade that takes the cap to 0 sets sanity 0 and enters MADNESS (latched).
-8. Thresholds are absolute: cap 60 → state never LUCID.
+   `GOLD_CHANGED`, `SANITY_CAP_CHANGED {−r, cap, "build"}` (id = tower), `SANITY_CHANGED
+   "reserve"` (id = tower) — `build_tower` → `_change_reserve`.
+2. Build with reserve r when sanity ≤ cap − r: cap −r, sanity unchanged, no `SANITY_CHANGED` —
+   `_change_reserve`.
+3. Mundane towers and reserve-0 levels: no cap event, no sanity change — `_change_reserve`
+   (returns on delta 0); config side `TowerDef.Level.parse`.
+4. Regen (between waves, mundane kill) stops at the cap — `_add_sanity` (clamp to
+   `state.sanity_cap`).
+5. Sell: cap + reserve (`SANITY_CAP_CHANGED {+r, "sell"}` after `GOLD_CHANGED`), sanity
+   unchanged; in MADNESS the state stays MADNESS — `sell_tower` → `_change_reserve`.
+6. Upgrade (build phase): cap changes by target − current reserve (`"upgrade"`); clamp as in
+   1/2; a lower target reserve raises the cap — `upgrade_tower` (`reserve_delta` read before
+   `t.level += 1`) → `_change_reserve`.
+7. A build/upgrade that takes the cap to 0 sets sanity 0 and enters MADNESS (latched);
+   reserves summing above `max` keep the cap at 0 and a sell raises it only once the sum is
+   below `max` — `_change_reserve`.
+8. Thresholds are absolute: cap 60 → state never LUCID — `sanity_state_for` (unchanged) +
+   `_add_sanity` clamp.
 9. `buyout`/`auto_restore` restore `min(restore_sanity, cap)`; at cap 0 `can_buy_sanity()` is
-   `NO_SANITY_ROOM`, no gold paid; `auto_restore` changes nothing.
-10. A Necronomicon cast changes no sanity.
-11. Config: reserve > 0 on a mundane level rejected; each removed key rejected; madness
-    multipliers ≤ 0 rejected; absent → 1.0, no buff.
+   `NO_SANITY_ROOM` (after `NOT_IN_MADNESS`, before `NOT_ENOUGH_GOLD`), no gold paid;
+   `auto_restore` changes nothing — `restore_target`, `can_buy_sanity`, `buy_sanity`,
+   `auto_restore_sanity`.
+10. A Necronomicon cast changes no sanity — `_fire_towers` (no `"cast"` reason any more).
+11. Config: `sanity_reserve` > 0 on a mundane level/branch rejected ("only occult towers
+    reserve sanity"), < 0 rejected; `sanity_cost`, `upgrade_sanity_cost`, `sanity_per_cast`,
+    `sanity_per_second` rejected as unknown fields; madness multipliers ≤ 0 rejected; absent →
+    1.0, no buff — `TowerDef.parse`, `TowerDef.Level.parse`, `SanityConfig.Madness.parse`.
 12. MADNESS: every live enemy has `speed_mult` ×1.2 and `damage_taken_mult` ×0.8 (config) and
-    moves / takes damage accordingly; outside MADNESS both are 1 without auras.
-13. The buff reaches an enemy already on the map and one spawned after.
-14. A fake and a real enemy of the same def have identical modifiers in MADNESS.
-15. With an Elder Sign the modifiers are the product.
-16. The step after a command that enters MADNESS has the buff; the step after a buyout has none.
-17. Same seed + command log (build, upgrade, sell) → identical events (determinism).
-18. `sanity_per_second` is no longer in `PENDING`; a Corrupted Seal is still pending (strip_armor).
-19. Render: in MADNESS every enemy gets the same tint (real and fake); the bar draws the
+    moves / takes damage accordingly; outside MADNESS both are 1 without auras —
+    `_apply_madness_buff` (slot 2, after `_apply_auras`), `SimEnemy.reset_modifiers`.
+13. The buff reaches an enemy already on the map and one spawned after — `_apply_madness_buff`
+    (loops over `state.enemies` every tick).
+14. A fake and a real enemy of the same def have identical modifiers in MADNESS —
+    `_apply_madness_buff` (no `is_fake` check); `_madness_buff_blocked` returns false.
+15. With an Elder Sign the modifiers are the product — `_apply_auras` then
+    `_apply_madness_buff` (both multiply).
+16. The step after a command that enters MADNESS has the buff; the step after a buyout has none
+    — `step` slot 2 reads `sanity_state`.
+17. Same seed + command log (build, upgrade, sell) → identical events (determinism) — no RNG
+    in the reserve path.
+18. `sanity_per_second` is no longer in `PENDING`; a Corrupted Seal is still pending
+    (strip_armor) — `TowerDef.Level.PENDING`, `has_pending`.
+19. Render (S3): in MADNESS every enemy gets the same tint (real and fake); the bar draws the
     reserved block when cap < max; the panel warns when a build/upgrade takes the cap to 0.
+    S2 already moved `ui/tower_panel.gd` `_drives_mad` to the cap (`cap − delta <= 0`
+    outside MADNESS) and `ui/tower_info.gd` to "Reserves N sanity" / "Reserve +N" lines.
+20. Bots (`tools/bot_runs.gd`): occult/mixed never build or upgrade an occult item that would
+    leave `sanity_cap` below 30 / 60 (`_cap_allows`); the occult bot falls back to a
+    rifleman only while it has built fewer than 3, then upgrades or saves (`_order`, `_act`);
+    the mixed bot skips a blocked occult item (`_act`); RUN lines carry `min_sanity`,
+    `final_cap`, `cap_per_wave`, `madness_tick`, `reserve_peak`, `free_reserve`,
+    `hp_lost_per_wave`, `towers_final` (`_play`).
 
 **Controls** (revert the code, the named test must fail):
 C1 also subtract r from current sanity on build (2); C2 clamp `_add_sanity` to `max` (4);

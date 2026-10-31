@@ -22,6 +22,7 @@ enum CommandResult {
 	MAX_LEVEL,  ## upgrade: the tower is at L3
 	NEED_BRANCH,  ## upgrade: L2 -> L3 needs branch "a" or "b"
 	BAD_BRANCH,  ## upgrade: branch is not ""/"a"/"b", or non-empty for L1 -> L2
+	NO_SANITY_ROOM,  ## buy_sanity: the sanity cap is 0, a buyout would restore nothing (LT-23)
 }
 
 ## Sanity change reasons that may move sanity while in MADNESS (LT-13): the exit rules.
@@ -47,7 +48,8 @@ func _init(p_config: GameConfig, run_seed: int) -> void:
 	state.map = config.map
 	state.lighthouse_hp = config.economy.lighthouse_hp
 	state.gold = config.economy.starting_gold
-	state.sanity = clampf(config.sanity.start, 0.0, config.sanity.max_sanity)
+	state.sanity_cap = config.sanity.max_sanity
+	state.sanity = clampf(config.sanity.start, 0.0, state.sanity_cap)
 	state.sanity_state = sanity_state_for(state.sanity)  # initial state: no event
 	_ground_route = SimRoute.from_cells(config.map.path)
 
@@ -71,14 +73,16 @@ func step() -> void:
 	state.tick += 1
 	for e in state.enemies:
 		e.reset_modifiers()
-	# 2. Effect systems: Elder Sign auras (LT-11); later slows/stuns add theirs here.
+	# 2. Effect systems: Elder Sign auras (LT-11), then the madness buff (LT-23 §3);
+	# later slows/stuns add theirs here.
 	_apply_auras()
+	_apply_madness_buff()
 	# 3. Movement.
 	_move()
 	# 4. Leaks.
 	_leak()
-	# 5. Towers fire / damage: single and line shots (LT-6), AoE casts and their sanity
-	# cost (LT-11); madness damage and astray shots (LT-13).
+	# 5. Towers fire / damage: single and line shots (LT-6), AoE casts (LT-11, no sanity
+	# cost since LT-23); madness damage and astray shots (LT-13).
 	_fire_towers()
 	# 6. Sanity (LT-10): horror drain. Kill regen is paid in slot 5 (_on_enemy_killed),
 	# between-waves regen in slot 8 (wave system), each through _add_sanity.
@@ -172,9 +176,9 @@ func can_build(def_id: String, cell: Vector2i) -> CommandResult:
 
 ## Player command (§1.3, applied at once between ticks): builds an L1 `def_id` on `cell`
 ## for its cost. On OK the tower gets the next entity id, is ready to fire on the next
-## tick, and TOWER_BUILT + GOLD_CHANGED are emitted. An occult tower's sanity_cost is then
-## paid through _add_sanity (SANITY_CHANGED "build"): allowed at any sanity, clamped at 0,
-## so building can push the player into MADNESS (GDD §11). Only gold is checked.
+## tick, and TOWER_BUILT + GOLD_CHANGED are emitted. Its L1 sanity_reserve then lowers the
+## cap (_change_reserve "build", LT-23 §1.2); a cap taken to 0 empties sanity and so starts
+## MADNESS. Only gold is checked.
 func build_tower(def_id: String, cell: Vector2i) -> CommandResult:
 	var result := can_build(def_id, cell)
 	if result != CommandResult.OK:
@@ -192,14 +196,14 @@ func build_tower(def_id: String, cell: Vector2i) -> CommandResult:
 	state.command_log.append([state.tick, "build", def_id, cell])
 	_emit(SimEvent.Type.TOWER_BUILT, t.id, {"def": def_id, "cell": cell, "cost": def.cost})
 	_add_gold(-def.cost, "build", t.id)
-	if def.sanity_cost > 0.0:
-		_add_sanity(-def.sanity_cost, "build", t.id)
+	_change_reserve(t, reserve_of(t), "build")
 	return CommandResult.OK
 
 
 ## Player command: sells tower `tower_id` for economy.sell_refund_ratio of everything spent
 ## on it, build and upgrades (rounded once, on the total) and frees its cell. Emits
-## TOWER_SOLD + GOLD_CHANGED. Sanity paid to build or upgrade is not refunded.
+## TOWER_SOLD + GOLD_CHANGED, then the cap rises by the tower's reserve (_change_reserve
+## "sell", LT-23 Q4); current sanity does not change, in MADNESS too.
 func sell_tower(tower_id: int) -> CommandResult:
 	if state.outcome != SimState.Outcome.NONE:
 		return CommandResult.OUTCOME_REACHED
@@ -207,11 +211,13 @@ func sell_tower(tower_id: int) -> CommandResult:
 	if t == null:
 		return CommandResult.NO_SUCH_TOWER
 	var refund := sell_refund(t)
+	var reserve := reserve_of(t)
 	state.towers.erase(t)
 	state.tower_at.erase(t.cell)
 	state.command_log.append([state.tick, "sell", tower_id])
 	_emit(SimEvent.Type.TOWER_SOLD, t.id, {"def": t.def.id, "cell": t.cell, "refund": refund})
 	_add_gold(refund, "sell", t.id)
+	_change_reserve(t, -reserve, "sell")
 	return CommandResult.OK
 
 
@@ -238,7 +244,7 @@ func upgrade_target(t: SimTower, branch := "") -> TowerDef.Level:
 ## Whether upgrade_tower(tower_id, branch) would be applied now; OK or the first failing
 ## reason in this order: OUTCOME_REACHED, NO_SUCH_TOWER, MAX_LEVEL, NEED_BRANCH,
 ## BAD_BRANCH, NOT_BUILD_PHASE (during a wave), NOT_ENOUGH_GOLD. Only gold is checked,
-## not sanity. Changes nothing.
+## not the sanity cap. Changes nothing.
 func can_upgrade(tower_id: int, branch := "") -> CommandResult:
 	if state.outcome != SimState.Outcome.NONE:
 		return CommandResult.OUTCOME_REACHED
@@ -263,14 +269,15 @@ func can_upgrade(tower_id: int, branch := "") -> CommandResult:
 ## L3 with "a"/"b") for the target's upgrade_cost, outside a wave only. The tower keeps its
 ## id, cell, build_tick, status and running cooldown; the new stats apply from its next
 ## shot. Emits TOWER_UPGRADED {def, cell, level, branch, cost} + GOLD_CHANGED "upgrade";
-## the target's upgrade_sanity_cost is then paid through _add_sanity (SANITY_CHANGED
-## "upgrade"), like a build: any sanity, clamped at 0, can push into MADNESS.
+## the cap then moves by target reserve - current reserve (_change_reserve "upgrade",
+## LT-23 §1.2), like a build: a cap taken to 0 starts MADNESS; a lower reserve raises it.
 func upgrade_tower(tower_id: int, branch := "") -> CommandResult:
 	var result := can_upgrade(tower_id, branch)
 	if result != CommandResult.OK:
 		return result
 	var t := tower_by_id(tower_id)
 	var target := upgrade_target(t, branch)
+	var delta := reserve_delta(t.def.id, t.stats(), target)
 	t.level += 1
 	t.branch = branch
 	t.spent += target.upgrade_cost
@@ -278,8 +285,7 @@ func upgrade_tower(tower_id: int, branch := "") -> CommandResult:
 	_emit(SimEvent.Type.TOWER_UPGRADED, t.id, {"def": t.def.id, "cell": t.cell,
 		"level": t.level, "branch": branch, "cost": target.upgrade_cost})
 	_add_gold(-target.upgrade_cost, "upgrade", t.id)
-	if target.upgrade_sanity_cost > 0.0:
-		_add_sanity(-target.upgrade_sanity_cost, "upgrade", t.id)
+	_change_reserve(t, delta, "upgrade")
 	return CommandResult.OK
 
 
@@ -301,7 +307,8 @@ func call_wave() -> CommandResult:
 
 
 ## Whether buy_sanity() would be applied now; OK or the first failing reason, in this
-## order: OUTCOME_REACHED, NO_BUYOUT, NOT_IN_MADNESS, NOT_ENOUGH_GOLD. Changes nothing.
+## order: OUTCOME_REACHED, NO_BUYOUT, NOT_IN_MADNESS, NO_SANITY_ROOM (the cap is 0, LT-23
+## Q6), NOT_ENOUGH_GOLD. Changes nothing.
 func can_buy_sanity() -> CommandResult:
 	if state.outcome != SimState.Outcome.NONE:
 		return CommandResult.OUTCOME_REACHED
@@ -310,13 +317,15 @@ func can_buy_sanity() -> CommandResult:
 		return CommandResult.NO_BUYOUT
 	if state.sanity_state != SimState.SanityState.MADNESS:
 		return CommandResult.NOT_IN_MADNESS
+	if restore_target() <= 0.0:
+		return CommandResult.NO_SANITY_ROOM
 	if state.gold < m.buyout_cost:
 		return CommandResult.NOT_ENOUGH_GOLD
 	return CommandResult.OK
 
 
 ## Player command (LT-13, exit rule "buyout"): pays madness.buyout_cost gold and sets sanity
-## to madness.restore_sanity, in any phase. Emits GOLD_CHANGED {reason: "buyout"}, then
+## to restore_target() (min of madness.restore_sanity and the cap), in any phase. Emits GOLD_CHANGED {reason: "buyout"}, then
 ## SANITY_CHANGED {reason: "buyout"} and SANITY_STATE_CHANGED (MADNESS -> the new state).
 func buy_sanity() -> CommandResult:
 	var result := can_buy_sanity()
@@ -325,21 +334,61 @@ func buy_sanity() -> CommandResult:
 	var m := config.sanity.madness
 	state.command_log.append([state.tick, "buy_sanity"])
 	_add_gold(-m.buyout_cost, "buyout", 0)
-	_add_sanity(m.restore_sanity - state.sanity, "buyout", 0)
+	_add_sanity(restore_target() - state.sanity, "buyout", 0)
 	return CommandResult.OK
 
 
 ## Exit rule "auto_restore" (LT-13): called by the wave system when a wave is cleared,
 ## after the bonus and between-waves regen, before WAVE_CLEARED. In MADNESS, sets sanity to
-## madness.restore_sanity (SANITY_CHANGED {reason: "auto_restore"}); otherwise, under
-## another exit rule or once the outcome is set, does nothing. Returns the applied delta.
+## restore_target() (SANITY_CHANGED {reason: "auto_restore"}; nothing at cap 0, LT-23 Q6);
+## otherwise, under another exit rule or once the outcome is set, does nothing. Returns the
+## applied delta.
 func auto_restore_sanity() -> float:
 	if state.outcome != SimState.Outcome.NONE:
 		return 0.0
 	var m := config.sanity.madness
 	if m.exit_rule != "auto_restore" or state.sanity_state != SimState.SanityState.MADNESS:
 		return 0.0
-	return _add_sanity(m.restore_sanity - state.sanity, "auto_restore", 0)
+	return _add_sanity(restore_target() - state.sanity, "auto_restore", 0)
+
+
+## Sanity a buyout / auto restore sets (LT-23 Q6): min(madness.restore_sanity, sanity_cap).
+func restore_target() -> float:
+	return minf(config.sanity.madness.restore_sanity, state.sanity_cap)
+
+
+## The sanity cap `t` holds now: its current level's (or branch's) sanity_reserve.
+func reserve_of(t: SimTower) -> float:
+	return t.stats().sanity_reserve
+
+
+## How much more cap tower `def_id` holds at `to` than at `from` (negative when it holds
+## less); for previews and upgrade_tower. `def_id` names the tower for readers of a preview.
+func reserve_delta(_def_id: String, from: TowerDef.Level, to: TowerDef.Level) -> float:
+	return to.sanity_reserve - from.sanity_reserve
+
+
+## LT-23 §1.2: tower `t` now holds `delta` more cap (negative: less). The cap is recomputed
+## as sanity.max minus every standing tower's reserve, floored at 0, and SANITY_CAP_CHANGED
+## {delta, cap, reason} (id = tower, delta = the change actually applied) is emitted when it
+## moves; then sanity above the new cap drops to it (_add_sanity "reserve", so a cap of 0
+## starts MADNESS). Sanity below the cap never changes here (Q1, Q4). Called by build,
+## upgrade and sell after their gold event; `t` is already removed on a sell.
+func _change_reserve(t: SimTower, delta: float, reason: String) -> void:
+	if delta == 0.0:
+		return
+	var reserved := 0.0
+	for tower in state.towers:
+		reserved += reserve_of(tower)
+	var before := state.sanity_cap
+	state.sanity_cap = maxf(0.0, config.sanity.max_sanity - reserved)
+	var applied := state.sanity_cap - before
+	if applied == 0.0:
+		return
+	_emit(SimEvent.Type.SANITY_CAP_CHANGED, t.id,
+		{"delta": applied, "cap": state.sanity_cap, "reason": reason})
+	if state.sanity > state.sanity_cap:
+		_add_sanity(state.sanity_cap - state.sanity, "reserve", t.id)
 
 
 ## Gold call_wave() would pay if called now: economy.early_call_gold_per_second x whole
@@ -467,11 +516,11 @@ func _add_gold(delta: int, reason: String, id: int) -> void:
 	_emit(SimEvent.Type.GOLD_CHANGED, id, {"delta": delta, "gold": state.gold, "reason": reason})
 
 
-## Every sanity change goes through here: clamps to [0, max], then emits SANITY_CHANGED
+## Every sanity change goes through here: clamps to [0, sanity_cap], then emits SANITY_CHANGED
 ## {delta, sanity, reason} with the delta actually applied (nothing when it is 0, e.g. regen
 ## at the cap), and SANITY_STATE_CHANGED {old, new} (SimState.SanityState values) when the
 ## threshold state moves. `id` is the enemy (kill) or tower (build, cast) it is about,
-## 0 otherwise. MADNESS is latched (LT-13): while in it only MADNESS_EXIT_REASONS change
+## 0 otherwise ("reserve": the cap fell below sanity). MADNESS is latched (LT-13): while in it only MADNESS_EXIT_REASONS change
 ## sanity; regen and drain apply nothing and emit nothing.
 ## Returns the applied delta.
 func _add_sanity(delta: float, reason: String, id: int) -> float:
@@ -479,7 +528,7 @@ func _add_sanity(delta: float, reason: String, id: int) -> float:
 			and not MADNESS_EXIT_REASONS.has(reason):
 		return 0.0
 	var before := state.sanity
-	state.sanity = clampf(before + delta, 0.0, config.sanity.max_sanity)
+	state.sanity = clampf(before + delta, 0.0, state.sanity_cap)
 	var applied := state.sanity - before
 	if applied == 0.0:
 		return 0.0
@@ -570,14 +619,38 @@ func _apply_auras() -> void:
 			e.damage_taken_mult *= mult
 
 
+## Slot 2, after _apply_auras (LT-23 §3): in MADNESS every live enemy, real and fake alike,
+## gets speed_mult x madness.enemy_speed_multiplier and damage_taken_mult x
+## madness.enemy_damage_taken_multiplier for this tick (on top of any aura), except those
+## _madness_buff_blocked holds back. Reset with the other modifiers in slot 1, so it ends
+## the tick after MADNESS does.
+func _apply_madness_buff() -> void:
+	if state.sanity_state != SimState.SanityState.MADNESS:
+		return
+	var m := config.sanity.madness
+	if m.enemy_speed_multiplier == 1.0 and m.enemy_damage_taken_multiplier == 1.0:
+		return
+	for e in state.enemies:
+		if not e.is_live() or _madness_buff_blocked(e):
+			continue
+		e.speed_mult *= m.enemy_speed_multiplier
+		e.damage_taken_mult *= m.enemy_damage_taken_multiplier
+
+
+## Hook for LT-30 (LT-26 D4): true when `e` must not get the madness buff (lit by the
+## lighthouse beam, real and fake alike). Nothing blocks it yet.
+func _madness_buff_blocked(_e: SimEnemy) -> bool:
+	return false
+
+
 ## Slot 5 (§3.3): every tower in id order counts down its cooldown and, when ready, fires
 ## at the live enemy in range nearest the end of its route (ties: lower id). Instant hit.
 ## A level with a `pierce` effect fires a line shot (_line_hits) instead of a single shot;
 ## one with an `aoe_radius` effect casts a blast centred on that target, hitting every live
 ## enemy (fakes too) within aoe_radius of it (Necronomicon). No enemy in range: no shot, no
-## cast and no sanity cost; the tower stays ready. A mundane shot may miss (LT-12 §4,
-## _roll_miss): cooldown spent, no damage, SHOT {miss: true, hits: []}, `to` = aim point. A level's sanity_per_cast is paid through
-## _add_sanity (SANITY_CHANGED "cast", id = tower) in the tick it fires, before its damage.
+## cast; the tower stays ready. A mundane shot may miss (LT-12 §4, _roll_miss): cooldown
+## spent, no damage, SHOT {miss: true, hits: []}, `to` = aim point. Casts cost no sanity
+## (LT-23: occult towers reserve the cap instead).
 ## In MADNESS a madness_affected level shoots astray (LT-13): SHOT {astray: true}, centre
 ## rolled by shot_split on MADNESS, damage x madness.damage_multiplier.
 func _fire_towers() -> void:
@@ -634,8 +707,6 @@ func _fire_towers() -> void:
 			# (LT-12 §1). An empty one is told by its empty "hits".
 			shot["astray"] = true
 		_emit(SimEvent.Type.SHOT, t.id, shot)
-		if s.sanity_per_cast > 0.0:
-			_add_sanity(-s.sanity_per_cast, "cast", t.id)
 		for e in hits:
 			apply_damage(e.id, damage, t.def.id)
 		t.cooldown_ticks = maxi(1, SimTime.ticks(s.fire_interval))

@@ -24,5 +24,8 @@ var phase := Phase.NONE
 var wave_index := 0  ## 1-based number of the current or last started wave; 0 before wave 1
 var waves_total := 0  ## number of waves in waves.json (0 without a WaveDirector)
 var build_ticks_left := 0  ## ticks until the next wave starts by itself; 0 outside BUILD
-var sanity := 0.0  ## global pool, 0..sanity.max; from sanity.start (LT-10)
+var sanity := 0.0  ## global pool, 0..sanity_cap; from sanity.start (LT-10)
+## LT-23 §1: sanity.max minus the sanity_reserve of every standing tower, floored at 0.
+## Changes only in build/upgrade/sell; sanity never rises above it.
+var sanity_cap := 0.0
 var sanity_state := SanityState.LUCID  ## derived from `sanity`; changes emit SANITY_STATE_CHANGED

@@ -2,7 +2,7 @@ class_name TowerDef
 extends RefCounted
 ## One tower from towers.json (GDD §6): L1 and L2 in `levels`, L3 as branch "a" or "b".
 
-const FIELDS := ["name", "role", "kind", "cost", "sanity_cost", "levels", "branches"]
+const FIELDS := ["name", "role", "kind", "cost", "levels", "branches"]
 const KINDS: PackedStringArray = ["mundane", "occult"]
 const LEVEL_COUNT := 2  ## L1, L2; L3 is a branch
 const BRANCH_IDS: PackedStringArray = ["a", "b"]
@@ -15,7 +15,6 @@ var name: String
 var role: String
 var kind: String  ## "mundane" | "occult"
 var cost: int  ## gold to build (L1), >= 0
-var sanity_cost: float  ## sanity to build (L1), >= 0
 var levels: Array[Level] = []
 var branches: Dictionary[String, Level] = {}
 
@@ -28,7 +27,6 @@ static func parse(r: ConfigReader, id: String, obj: Dictionary, path: String) ->
 	t.role = parse_role(r, obj, path)
 	t.kind = r.req_string(obj, "kind", path, KINDS)
 	t.cost = r.req_int(obj, "cost", path, 0)
-	t.sanity_cost = r.opt_number(obj, "sanity_cost", path, 0.0, 0.0)
 
 	var levels: Variant = r.req_array(obj, "levels", path)
 	if levels != null:
@@ -75,19 +73,18 @@ static func parse_role(r: ConfigReader, obj: Dictionary, path: String) -> String
 class Level:
 	extends RefCounted
 
-	const LEVEL_FIELDS := ["name", "role", "upgrade_cost", "upgrade_sanity_cost", "range",
-		"damage", "fire_interval", "sanity_per_cast", "sanity_per_second", "madness_affected",
-		"effects"]
+	const LEVEL_FIELDS := ["name", "role", "upgrade_cost", "range", "damage",
+		"fire_interval", "sanity_reserve", "madness_affected", "effects"]
 
 	var name: String
 	var role: String  ## branches only (L3); "" on levels and when absent (LT-24 §1)
 	var upgrade_cost: int  ## gold to upgrade into this level; 0 on L1 (use TowerDef.cost)
-	var upgrade_sanity_cost: float  ## sanity to upgrade into this level
 	var range_cells: float  ## JSON "range"; cells, > 0 (attack range or aura radius)
 	var damage: float  ## per hit, >= 0 (0 = support tower)
 	var fire_interval: float  ## seconds between shots; required > 0 when damage > 0
-	var sanity_per_cast: float  ## sanity drained per shot/cast
-	var sanity_per_second: float  ## sanity drained per second while active
+	## Total sanity cap this tower holds while it stands at this level (LT-23 §1), not added
+	## to lower levels; >= 0, default 0, > 0 only on occult towers.
+	var sanity_reserve: float
 	## x2 damage and astray shots in madness (GDD §5.4). Defaults to kind == "occult";
 	## only occult towers may set it true (Pure Rite sets false).
 	var madness_affected: bool
@@ -102,18 +99,15 @@ class Level:
 	## Decision 1). The UI marks them "(coming soon)" and bots skip branches using them;
 	## the task that wires a key removes it from here.
 	const PENDING: PackedStringArray = ["crit_chance", "crit_multiplier", "shooters",
-		"bleed_dps", "bleed_seconds", "pull_cells", "strip_armor", "sanity_per_second"]
+		"bleed_dps", "bleed_seconds", "pull_cells", "strip_armor"]
 
 	## Branch/level-specific numeric parameters (String -> float), keys from EFFECTS.
 	var effects: Dictionary = {}
 
-	## True when any PENDING key is non-zero on this level (an effect or a stat field).
+	## True when any PENDING effect key is non-zero on this level.
 	func has_pending() -> bool:
 		for key in PENDING:
-			if key == "sanity_per_second":
-				if sanity_per_second != 0.0:
-					return true
-			elif effects.get(key, 0.0) != 0.0:
+			if effects.get(key, 0.0) != 0.0:
 				return true
 		return false
 
@@ -130,21 +124,21 @@ class Level:
 				"not allowed on levels (only on the tower and its branches)")
 		if is_upgrade:
 			l.upgrade_cost = r.req_int(obj, "upgrade_cost", path, 0)
-			l.upgrade_sanity_cost = r.opt_number(obj, "upgrade_sanity_cost", path, 0.0, 0.0)
-		else:
-			for key in ["upgrade_cost", "upgrade_sanity_cost"]:
-				if obj.has(key):
-					r.error(ConfigReader.join(path, key),
-						"not allowed on L1 (the tower's cost/sanity_cost is the build price)")
+		elif obj.has("upgrade_cost"):
+			r.error(ConfigReader.join(path, "upgrade_cost"),
+				"not allowed on L1 (the tower's cost is the build price)")
 		l.range_cells = r.req_number(obj, "range", path, 0.0, INF, true)
 		l.damage = r.opt_number(obj, "damage", path, 0.0, 0.0)
 		if l.damage > 0.0:
 			l.fire_interval = r.req_number(obj, "fire_interval", path, 0.0, INF, true)
 		else:
 			l.fire_interval = r.opt_number(obj, "fire_interval", path, 0.0, 0.0, INF, true)
-		l.sanity_per_cast = r.opt_number(obj, "sanity_per_cast", path, 0.0, 0.0)
-		l.sanity_per_second = r.opt_number(obj, "sanity_per_second", path, 0.0, 0.0)
 		var occult := kind == "occult"
+		l.sanity_reserve = r.opt_number(obj, "sanity_reserve", path, 0.0, 0.0)
+		if l.sanity_reserve > 0.0 and not occult:
+			r.error(ConfigReader.join(path, "sanity_reserve"),
+				"only occult towers reserve sanity")
+			l.sanity_reserve = 0.0
 		l.madness_affected = r.opt_bool(obj, "madness_affected", path, occult)
 		if l.madness_affected and not occult and obj.has("madness_affected"):
 			r.error(ConfigReader.join(path, "madness_affected"),

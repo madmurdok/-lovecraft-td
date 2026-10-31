@@ -92,12 +92,19 @@ func test_tower_structure() -> void:
 			assert_int(td.branches[b].upgrade_cost).is_greater(0)
 
 
-func test_tower_sanity_cost_default_and_explicit() -> void:
+## LT-23 §2: the total reserve per level/branch; mundane towers reserve nothing.
+func test_tower_sanity_reserve_default_and_explicit() -> void:
 	var t := _real().towers
-	assert_float(t["rifleman"].sanity_cost).is_equal(0.0)
-	assert_float(t["harpooner"].sanity_cost).is_equal(0.0)
-	assert_float(t["elder_sign"].sanity_cost).is_equal(8.0)
-	assert_float(t["elder_sign"].levels[1].upgrade_sanity_cost).is_equal(8.0)
+	for id in ["rifleman", "harpooner"]:
+		for lv: TowerDef.Level in t[id].levels + t[id].branches.values():
+			assert_float(lv.sanity_reserve).is_equal(0.0)
+	var expected := {"elder_sign": [5.0, 8.0, 10.0, 15.0],
+		"necronomicon_reader": [10.0, 15.0, 18.0, 25.0]}
+	for id: String in expected:
+		var td: TowerDef = t[id]
+		var got := [td.levels[0].sanity_reserve, td.levels[1].sanity_reserve,
+			td.branches["a"].sanity_reserve, td.branches["b"].sanity_reserve]
+		assert_array(got).is_equal(expected[id])
 
 
 func test_level_range_comes_from_json_range_key() -> void:
@@ -119,7 +126,7 @@ func test_tower_effects_maps() -> void:
 	assert_float(t["rifleman"].branches["a"].effects["crit_chance"]).is_equal(0.2)
 	assert_float(t["rifleman"].branches["b"].effects["shooters"]).is_equal(2.0)
 	assert_dict(t["rifleman"].levels[0].effects).is_empty()
-	assert_float(t["elder_sign"].levels[0].effects["slow"]).is_equal(0.3)
+	assert_float(t["elder_sign"].levels[0].effects["slow"]).is_equal(0.35)
 
 
 func test_madness_affected_defaults_to_occult_kind() -> void:
@@ -183,6 +190,8 @@ func test_madness_rules() -> void:
 	assert_str(m.exit_rule).is_equal("permanent")
 	assert_float(m.restore_sanity).is_equal(30.0)
 	assert_int(m.buyout_cost).is_equal(150)
+	assert_float(m.enemy_speed_multiplier).is_equal(1.2)
+	assert_float(m.enemy_damage_taken_multiplier).is_equal(0.8)
 
 
 func test_custom_dir_is_read_via_user_and_absolute_paths() -> void:

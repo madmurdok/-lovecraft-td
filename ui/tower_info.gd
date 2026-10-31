@@ -39,12 +39,9 @@ static func num(v: float) -> String:
 	return "0" if s == "-0" else s
 
 
-## "40 gold", "80 gold + 8 sanity".
-static func cost_text(gold: int, sanity_cost: float) -> String:
-	var s := "%d %s" % [gold, CURRENCY]
-	if sanity_cost > 0.0:
-		s += " + %s sanity" % num(sanity_cost)
-	return s
+## "40 gold" (sanity is reserved, not paid: LT-23).
+static func cost_text(gold: int) -> String:
+	return "%d %s" % [gold, CURRENCY]
 
 
 ## The reason text for a refused command; a generic word for an unmapped result.
@@ -65,10 +62,8 @@ static func lines(def: TowerDef, s: TowerDef.Level, sanity: SanityConfig) -> Pac
 	else:
 		out.append("Support (no damage)")
 		out.append("Aura radius %s cells" % num(s.range_cells))
-	if s.sanity_per_cast > 0.0:
-		out.append("%s%s sanity per cast" % [MINUS, num(s.sanity_per_cast)])
-	if s.sanity_per_second > 0.0:
-		out.append(_drain_text(s.sanity_per_second))
+	if s.sanity_reserve > 0.0:
+		out.append("Reserves %s sanity" % num(s.sanity_reserve))
 	out.append_array(effect_lines(s.effects))
 	out.append_array(kind_lines(def, s, sanity))
 	return out
@@ -128,11 +123,11 @@ static func delta_lines(from: TowerDef.Level, to: TowerDef.Level) -> PackedStrin
 	if not support:
 		_delta(stats, "Interval", from.fire_interval, to.fire_interval, " s")
 		_delta(stats, "DPS", _dps(from), _dps(to))
-	_delta(stats, "Sanity per cast", from.sanity_per_cast, to.sanity_per_cast)
 	if not stats.is_empty():
 		out.append(" · ".join(stats))
-	if to.sanity_per_second != from.sanity_per_second and to.sanity_per_second > 0.0:
-		out.append(_drain_text(to.sanity_per_second))
+	var reserve := to.sanity_reserve - from.sanity_reserve
+	if reserve != 0.0:
+		out.append("Reserve %s%s" % ["+" if reserve > 0.0 else MINUS, num(absf(reserve))])
 	var changed := {}
 	for key: String in to.effects:
 		if to.effects[key] != from.effects.get(key, 0.0):
@@ -158,11 +153,6 @@ static func _damage_text(s: TowerDef.Level) -> String:
 ## shooter do not count).
 static func _dps(s: TowerDef.Level) -> float:
 	return s.damage / s.fire_interval if s.damage > 0.0 and s.fire_interval > 0.0 else 0.0
-
-
-static func _drain_text(per_second: float) -> String:
-	return "%s%s sanity/s while on the board" % [MINUS, num(per_second)] \
-		+ (COMING_SOON if is_pending("sanity_per_second") else "")
 
 
 static func _delta(out: PackedStringArray, label: String, a: float, b: float, unit := "") -> void:
