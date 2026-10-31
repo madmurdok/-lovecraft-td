@@ -355,3 +355,72 @@ func test_a_pull_shot_holds_a_chain_from_each_pulled_enemy() -> void:
 	gone["pulled"] = [999999]  # an id no longer on the board draws no chain
 	_shoot_data(t, gone)
 	assert_dict(_last_fx().get("chain", {})).is_empty()
+
+
+# --- LT-47: the Dynamite crew's lobbed charge ------------------------------------------
+
+func test_shot_kind_of_a_fuse_level_is_dynamite() -> void:
+	await _start_game()
+	var t := _tower("dynamite_crew")
+	assert_str(Board.shot_kind(t)).is_equal("dynamite")
+	t.level = TowerDef.LEVEL_COUNT
+	for b: String in TowerDef.BRANCH_IDS:
+		t.branch = b
+		assert_str(Board.shot_kind(t)).is_equal("dynamite")
+
+
+## A thrown charge (SHOT {fuse}) as of sim tick `tick`, detonating `fuse` ticks later.
+func _throw(t: SimTower, tick: int, fuse: int, miss := false) -> void:
+	_game.sim.state.tick = tick
+	_game.board.on_event(SimEvent.new(SimEvent.Type.SHOT, tick, t.id, {"def": t.def.id,
+		"target": 0, "hits": [], "to": Vector2(4.5, 2.5), "miss": miss, "fuse": true,
+		"detonate_tick": tick + fuse, "radius": 1.0, "blast": 0 if miss else 1}))
+
+
+## Whether `t`'s dynamite effect is still live after the sim clock reached `tick`.
+func _alive_at(t: SimTower, tick: int) -> bool:
+	_game.sim.state.tick = tick
+	_game.board.alpha = 0.0
+	_game.board.tick_effects(1.0 / SimTime.TICK_RATE)
+	return not _fx_of(t.id).is_empty()
+
+
+func test_a_charge_lives_in_sim_time_until_its_detonate_tick() -> void:
+	await _start_game()
+	var t := _tower("dynamite_crew")
+	_throw(t, 100, 30)
+	var fx := _last_fx()
+	assert_str(fx["kind"]).is_equal("dynamite")
+	assert_int(fx["detonate_tick"]).is_equal(130)
+	assert_int(fx["end_tick"]).is_equal(130)
+	assert_int(fx["throw_tick"]).is_equal(100)
+	# Wall-clock time alone does not end it: the sim clock is still at 100.
+	for i in 5:
+		_game.board.tick_effects(1.0)
+	assert_int(_fx_of(t.id).size()).is_equal(1)
+	assert_bool(_alive_at(t, 129)).is_true()
+	assert_bool(_alive_at(t, 130)).is_false()
+
+
+func test_a_dud_smokes_dyn_dud_ticks_past_its_detonate_tick() -> void:
+	await _start_game()
+	var t := _tower("dynamite_crew")
+	_throw(t, 100, 30, true)
+	assert_int(_last_fx()["end_tick"]).is_equal(130 + Board.DYN_DUD_TICKS)
+	assert_bool(_alive_at(t, 130)).is_true()
+	assert_bool(_alive_at(t, 129 + Board.DYN_DUD_TICKS)).is_true()
+	assert_bool(_alive_at(t, 130 + Board.DYN_DUD_TICKS)).is_false()
+
+
+func test_a_blast_event_adds_a_blast_effect_at_its_centre() -> void:
+	await _start_game()
+	var e := _enemy()
+	var before := _game.board.effects.size()
+	_game.board.on_event(SimEvent.new(SimEvent.Type.BLAST, 5, 1, {"tower": 999,
+		"def": "dynamite_crew", "at": Vector2(3.5, 2.5), "radius": 1.3, "hits": [e.id]}))
+	assert_int(_game.board.effects.size()).is_equal(before + 1)
+	var fx := _last_fx()
+	assert_str(fx["kind"]).is_equal("blast")
+	assert_vector(fx["from"]).is_equal(Vector2(3.5, 2.5))
+	assert_float(fx["radius"]).is_equal(1.3)
+	assert_float(fx["ttl"]).is_greater(0.0)
