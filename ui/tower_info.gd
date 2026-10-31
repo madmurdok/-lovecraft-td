@@ -39,8 +39,8 @@ const PRIORITY_NAMES := {
 ## Effect lines in display order: the keys one line reads (a pair shares a line).
 const EFFECT_GROUPS := [
 	["pierce"], ["aoe_radius"], ["slow"], ["damage_taken_multiplier"],
-	["crit_chance", "crit_multiplier"], ["shooters"], ["bleed_dps", "bleed_seconds"],
-	["pull_cells"], ["strip_armor"],
+	["crit_chance", "crit_multiplier"], ["burst_targets"], ["bleed_dps", "bleed_seconds"],
+	["pull_cells", "pull_max_hp", "pull_immune_seconds"], ["strip_armor"],
 ]
 
 
@@ -205,8 +205,8 @@ static func _damage_text(s: TowerDef.Level) -> String:
 	return "Damage %s every %s s (%s DPS)" % [num(s.damage), num(s.fire_interval), num(_dps(s))]
 
 
-## Damage per second from damage and fire_interval only (pending effects such as a second
-## shooter do not count).
+## Damage per second from damage and fire_interval only (crits, bleed and the like do not
+## count).
 static func _dps(s: TowerDef.Level) -> float:
 	return s.damage / s.fire_interval if s.damage > 0.0 and s.fire_interval > 0.0 else 0.0
 
@@ -230,13 +230,14 @@ static func _effect_text(first_key: String, e: Dictionary) -> String:
 		"crit_chance":
 			return "%s%% crit, x%s damage" \
 				% [num(e.get("crit_chance", 0.0) * 100.0), num(e.get("crit_multiplier", 0.0))]
-		"shooters":
-			return "%s shooters" % num(e.get("shooters", 0.0))
+		"burst_targets":
+			return "Spreads fire over %s foes" % num(e.get("burst_targets", 0.0))
 		"bleed_dps":
 			return "Bleed %s/s for %s s" \
 				% [num(e.get("bleed_dps", 0.0)), num(e.get("bleed_seconds", 0.0))]
 		"pull_cells":
-			return "Pulls back %s cells" % num(e.get("pull_cells", 0.0))
+			return "Pull %sc, ≤%s HP, %ss" % [num(e.get("pull_cells", 0.0)),
+				num(e.get("pull_max_hp", 0.0)), num(e.get("pull_immune_seconds", 0.0))]
 		"strip_armor":
 			return "Foes lose %s armor" % num(e.get("strip_armor", 0.0))
 	return "%s: %s" % [first_key, num(e.get(first_key, 0.0))]
