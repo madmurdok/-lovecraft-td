@@ -59,7 +59,9 @@ func test_fps_refresh_is_throttled_and_formats_the_integer() -> void:
 	var hud: Hud = _game.hud
 	assert_int(Hud.FPS_INTERVAL_MSEC).is_equal(250)
 	# Inside the interval: refresh leaves the text alone.
+	# _fps_shown = -1 so the change guard cannot hide a missing throttle.
 	hud.fps_label.text = "sentinel"
+	hud._fps_shown = -1
 	hud._fps_label_msec = Time.get_ticks_msec()
 	hud.refresh()
 	assert_str(hud.fps_label.text).is_equal("sentinel")
@@ -71,6 +73,7 @@ func test_fps_refresh_is_throttled_and_formats_the_integer() -> void:
 	assert_int(hud._fps_shown).is_greater_equal(0)
 	# The timestamp was reset, so an immediate second refresh does nothing.
 	hud.fps_label.text = "sentinel"
+	hud._fps_shown = -1
 	hud.refresh()
 	assert_str(hud.fps_label.text).is_equal("sentinel")
 
