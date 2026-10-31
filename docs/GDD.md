@@ -172,6 +172,21 @@ Towers have no HP in the MVP: enemy effects only disable or slow
 a tower for a few seconds. Keep the tower model open for adding HP, destruction and
 repair later (a `disable` effect today, a `damage` effect later).
 
+The 0.3 roster (5 mundane + 5 occult, LT-47..LT-52) is designed in
+`docs/design/LT-46-tower-roster.md`; this table is updated when those towers ship.
+
+### 6.1 Parked tower ideas
+
+Recorded at LT-46 (owner: "Остальные решения запиши в документы, может вернемся к ним").
+Not planned; candidates for later towers or branches.
+
+- **Tommy-gun gangsters**: short-range bursts sprayed over a sector or several targets; anti-pack. Candidate for LT-49 or a Rifleman branch (LT-46 Q1).
+- **Coast Guard searchlight**: a beam that reveals fake enemies and marks targets (more damage taken). The Searchlight row above was never added to `data/towers.json`; candidate for LT-49 (LT-46 Q1).
+- **Dagon idol**: occult; converts an enemy for a while so it fights for the player ("Идол тоже запишем на будущее").
+- **Flamethrower**: mundane; short cone that sets enemies burning (DoT), strong vs packs, weak vs armor.
+- **Shotgun**: mundane; very short range, spread of pellets, high burst up close.
+- **Fishermen's net**: mundane; thrown net roots ground enemies for a moment. Candidate for LT-49 (LT-46 Q1 C).
+
 ## 7. Enemies
 
 | Enemy | HP | Speed | Armor | Leak dmg | Drops | Trait |
