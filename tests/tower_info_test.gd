@@ -256,3 +256,17 @@ func test_identical_levels_give_no_delta() -> void:
 	for id: String in _cfg.towers:
 		var l := _def(id).levels[1]
 		assert_array(Array(TowerInfo.delta_lines(l, l))).is_empty()
+
+
+# --- LT-31 ---------------------------------------------------------------------------
+
+func test_target_priority_refusals_and_mode_names_have_texts() -> void:
+	assert_str(TowerInfo.REASONS.get(Simulation.CommandResult.NO_TARGETING, "")).is_not_empty()
+	assert_str(TowerInfo.REASONS.get(Simulation.CommandResult.BAD_PRIORITY, "")).is_not_empty()
+	assert_str(TowerInfo.reason(Simulation.CommandResult.NO_TARGETING)).is_not_equal("unavailable")
+	assert_str(TowerInfo.reason(Simulation.CommandResult.BAD_PRIORITY)).is_not_equal("unavailable")
+	assert_str(TowerInfo.reason(Simulation.CommandResult.NO_TARGETING)).is_not_equal(TowerInfo.reason(Simulation.CommandResult.BAD_PRIORITY))
+	assert_dict(TowerInfo.PRIORITY_NAMES).is_equal({"first": "Closest to the lighthouse",
+		"strongest": "Strongest", "fastest": "Fastest"})
+	for mode: String in SimTower.TARGET_PRIORITIES:
+		assert_bool(TowerInfo.PRIORITY_NAMES.has(mode)).override_failure_message(mode).is_true()

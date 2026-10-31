@@ -71,3 +71,20 @@ Each line: behaviour — implementing function.
 18. `TowerInfo.REASONS` maps NO_TARGETING and BAD_PRIORITY — `TowerInfo`.
 
 Screenshot of the switch (S1): scratchpad `lt31/side_panel_priority.png`.
+
+## Controls (S3)
+
+Each control is a production-code revert (tests untouched) that must make the named test
+fail. Tests: `tests/target_priority_test.gd` (TP), `tests/madness_test.gd` (MAD),
+`tests/upgrade_test.gd` (UP), `tests/side_panel_test.gd` (SP).
+
+| # | Behaviour | Revert (production code) | Must fail |
+|---|-----------|--------------------------|-----------|
+| C1 | 2 strongest = current hp | `Simulation._pick_target` "strongest": key `e.hp` -> `e.max_hp` | TP `test_strongest_uses_current_hp_so_a_damaged_front_enemy_loses_to_a_full_one` |
+| C2 | 3 fastest counts the slow | `_pick_target` "fastest": key `roundi(e.base_units_per_tick * e.speed_mult)` -> `e.base_units_per_tick` | TP `test_fastest_counts_the_elder_sign_slow_of_this_tick` |
+| C3 | 4 tie -> lower id | `Simulation._best_by`: `k > best_key` -> `k >= best_key` | TP `test_a_strongest_tie_goes_to_the_lower_id_not_the_one_further_along`, `test_a_fastest_tie_goes_to_the_lower_id_not_the_one_further_along` |
+| C4 | 6, 7, 12 mode drives the shot and the replay | `Simulation._fire_towers`: `_pick_target(t, in_range)` -> `_first_along_route(in_range)` | TP `test_reader_blast_centres_on_the_strongest_target`, `test_harpoon_line_goes_through_the_strongest_enemy`; UP `test_replaying_a_log_with_target_priority_switches_gives_the_same_run` (its "without differs" control) |
+| C5 | 8 astray ignores the mode | `_fire_towers` astray branch: `target = pool[rng(...).randi_range(...)]` -> `target = _pick_target(t, pool)` (keep the MADNESS draw) | MAD `test_an_astray_shot_ignores_the_target_priority` |
+| C6 | 9 rejection order | `Simulation.can_set_target_priority`: move the `BAD_PRIORITY` check above `NO_TARGETING` | TP `test_elder_sign_is_no_targeting_at_every_level_and_beats_bad_priority` |
+| C7 | 11 cooldown untouched | `Simulation.set_target_priority`: add `t.cooldown_ticks = 0` after setting the mode | TP `test_the_running_cooldown_is_kept_and_the_next_shot_uses_the_new_mode` |
+| C8 | 15 hidden for Elder Sign | `TowerPanel._refresh_priority`: `var shown := game.sim.has_targeting(t)` -> `var shown := true` | SP `test_elder_sign_hides_the_switch_at_every_level` |

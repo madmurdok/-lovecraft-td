@@ -331,6 +331,8 @@ func _apply(sim: Simulation, c: Array) -> void:
 		"call_wave": sim.call_wave()
 		"upgrade": sim.upgrade_tower(c[2], c[3])
 		"upgrade_at": sim.upgrade_tower(sim.state.tower_at[c[2]], c[3])
+		"set_target_priority": sim.set_target_priority(c[2], c[3])
+		"set_target_priority_at": sim.set_target_priority(sim.state.tower_at[c[2]], c[3])
 
 
 func test_replaying_a_log_with_upgrades_gives_the_same_run() -> void:
@@ -346,6 +348,28 @@ func test_replaying_a_log_with_upgrades_gives_the_same_run() -> void:
 	assert_array(replay[1]).is_equal(first[1])
 	# Control: without the upgrades the run differs.
 	var without := _play(SEED, [[5, "build", RIFLE, TOWER], [20, "call_wave"]], 400)
+	assert_bool(without[0] == first[0]).is_false()
+
+
+## LT-31: target priority switches mid-wave (and one across an upgrade) are logged and a
+## replay of the log gives the same run; without them the run differs.
+func test_replaying_a_log_with_target_priority_switches_gives_the_same_run() -> void:
+	var base := [[5, "build", RIFLE, TOWER], [6, "build", HARP, Vector2i(9, 1)],
+		[20, "call_wave"]]
+	var cmds := base + [[7, "set_target_priority_at", TOWER, "strongest"],
+		[8, "upgrade_at", TOWER, ""], [60, "set_target_priority_at", Vector2i(9, 1), "fastest"],
+		[90, "set_target_priority_at", TOWER, "fastest"],
+		[140, "set_target_priority_at", TOWER, "strongest"]]
+	var first := _play(SEED, cmds, 400)
+	var log: Array = first[1]
+	var stp := log.filter(func(c: Array) -> bool: return c[1] == "set_target_priority")
+	assert_array(stp.map(func(c: Array) -> Array: return [c[0], c[3]])).is_equal(
+		[[7, "strongest"], [60, "fastest"], [90, "fastest"], [140, "strongest"]])
+	var replay := _play(SEED, log, 400)
+	assert_array(replay[0]).is_equal(first[0])
+	assert_array(replay[1]).is_equal(first[1])
+	# Control: the same run without the switches differs.
+	var without := _play(SEED, base + [[8, "upgrade_at", TOWER, ""]], 400)
 	assert_bool(without[0] == first[0]).is_false()
 
 
