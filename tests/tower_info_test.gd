@@ -169,6 +169,70 @@ func test_an_unknown_effect_key_renders_as_key_and_value() -> void:
 	assert_array(Array(got)).is_equal(["Slows enemies 50%", "frost_aura: 2.5"])
 
 
+# --- LT-37: Tier B lines fit one panel line and keep their numbers ---------------------------
+
+const LINE_MAX := 24
+
+## The number strings the line of effect `key` must contain, read from the level effects `e`.
+func _numbers_for(key: String, e: Dictionary) -> Array:
+	match key:
+		"pierce": return [_n(e["pierce"])]
+		"aoe_radius": return [_n(e["aoe_radius"])]
+		"slow": return [_n(e["slow"] * 100.0) + "%"]
+		"damage_taken_multiplier": return ["+" + _n((e["damage_taken_multiplier"] - 1.0) * 100.0) + "%"]
+		"crit_chance": return [_n(e["crit_chance"] * 100.0) + "%", "x" + _n(e["crit_multiplier"])]
+		"bleed_dps": return [_n(e["bleed_dps"]) + "/s", _n(e["bleed_seconds"]) + " s"]
+		"pull_cells": return [_n(e["pull_cells"])]
+		"strip_armor": return [_n(e["strip_armor"])]
+	return []
+
+
+func test_shipped_effect_lines_fit_24_chars_and_keep_their_numbers() -> void:
+	var covered := {}
+	for id: String in _cfg.towers:
+		var def := _def(id)
+		var all: Array = def.levels.duplicate()
+		for b: String in TowerDef.BRANCH_IDS:
+			all.append(def.branches[b])
+		for s: TowerDef.Level in all:
+			var lines := TowerInfo.effect_lines(s.effects, false)
+			for line: String in lines:
+				assert_int(line.length()).override_failure_message("%s '%s'" % [id, line]) \
+					.is_less_equal(LINE_MAX)
+			for key: String in ["pierce", "aoe_radius", "slow", "damage_taken_multiplier",
+					"crit_chance", "bleed_dps", "pull_cells", "strip_armor"]:
+				if not TowerInfo.is_active(s.effects, key):
+					continue
+				var text := "|".join(lines)
+				for n: String in _numbers_for(key, s.effects):
+					assert_bool(text.contains(n)).override_failure_message(
+						"%s %s lacks '%s'" % [id, lines, n]).is_true()
+				covered[key] = true
+	# every Tier B template was actually exercised by the shipped data
+	for key: String in ["pierce", "aoe_radius", "slow", "damage_taken_multiplier",
+			"crit_chance", "bleed_dps", "pull_cells", "strip_armor"]:
+		assert_bool(covered.has(key)).override_failure_message("not in shipped data: " + key).is_true()
+
+
+func test_shipped_madness_line_fits_24_chars_and_keeps_the_multiplier() -> void:
+	var seen := 0
+	for id: String in _cfg.towers:
+		var def := _def(id)
+		if def.kind == "mundane":
+			continue
+		var all: Array = def.levels.duplicate()
+		for b: String in TowerDef.BRANCH_IDS:
+			all.append(def.branches[b])
+		for s: TowerDef.Level in all:
+			for line: String in TowerInfo.kind_lines(def, s, _cfg.sanity):
+				if not line.begins_with("Madness"):
+					continue
+				seen += 1
+				assert_int(line.length()).override_failure_message(line).is_less_equal(LINE_MAX)
+				assert_str(line).contains("x" + _n(_cfg.sanity.madness.damage_multiplier))
+	assert_int(seen).is_greater(0)
+
+
 # --- 17: kind lines ------------------------------------------------------------------------
 
 func test_kind_lines_per_tower_kind() -> void:
