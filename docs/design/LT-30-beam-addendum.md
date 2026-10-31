@@ -1,6 +1,6 @@
 # LT-30 — Lighthouse beam in the sim: design addendum (S1)
 
-Status: rev. 2, owner answers recorded (§1) · 2026-11-01 · branch `feat/LT-30-lighthouse-beam`
+Status: approved by the owner 2026-11-01 ("Утверждаю (Recommended)") · branch `feat/LT-30-lighthouse-beam`
 
 LT-30 implements `docs/design/LT-26-lighthouse-beam.md` (§7). LT-26 was written before
 LT-23, LT-24, LT-27 and LT-33/34/36 landed; this addendum records what changed since
