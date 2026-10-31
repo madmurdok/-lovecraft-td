@@ -146,6 +146,32 @@ func test_clicking_water_closes_open_panels_and_opens_nothing() -> void:
 	assert_bool(_game.tower_panel.visible).is_false()
 
 
+
+## LT-28: a left click off the grid (the strip below the board) closes the build view and
+## the tower view, and clears the board selection.
+func test_a_click_below_the_board_closes_both_panels() -> void:
+	await _start_game()
+	var m := _game.sim.state.map
+	var below := Vector2(_game.board.position.x + Board.CELL * 0.5,
+		_game.board.position.y + m.height * Board.CELL + 10.0)
+	assert_bool(m.in_bounds(_game.board.cell_at(below - _game.board.position))).is_false()
+	assert_float(below.y).is_less(648.0)
+	var cell := _buildable_cell()
+	await _click_cell(cell)
+	assert_bool(_game.picker.visible).is_true()
+	assert_that(_game.board.selected_cell).is_equal(cell)
+	await _click(below)
+	assert_bool(_game.picker.visible).is_false()
+	assert_that(_game.board.selected_cell).is_equal(Vector2i(-1, -1))
+	await _build_via_ui(cell)
+	await _click_cell(cell)
+	assert_bool(_game.tower_panel.visible).is_true()
+	await _click(below)
+	assert_bool(_game.tower_panel.visible).is_false()
+	assert_bool(_game.picker.visible).is_false()
+	assert_that(_game.board.selected_cell).is_equal(Vector2i(-1, -1))
+	assert_float(_game.board.selected_range).is_equal(0.0)
+
 func test_building_while_paused_works_and_tick_does_not_advance() -> void:
 	await _start_game()
 	await _click_control(_game.hud.pause_button)

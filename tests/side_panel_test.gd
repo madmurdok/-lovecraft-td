@@ -551,3 +551,82 @@ func test_a_range_ring_crossing_the_top_edge_is_drawn_under_the_hud() -> void:
 	if ring_top < Game.BOARD_ORIGIN.y:
 		assert_bool(bg.get_global_rect().has_point(Vector2(cx, maxf(ring_top, 0.0) + 1.0))).is_true()
 	assert_bool(bg.get_global_rect().has_point(Vector2(cx, Game.BOARD_ORIGIN.y - 1.0))).is_true()
+
+
+# --- LT-28: opaque buttons, the footer strip -------------------------------------------------
+
+const BUTTON_BOXES := ["normal", "hover", "pressed", "hover_pressed", "disabled"]
+
+
+## Every state box of `b` is an opaque flat box and its disabled text is opaque (the default
+## theme draws both see-through).
+func _assert_opaque_button(b: Button) -> void:
+	for state: String in BUTTON_BOXES:
+		var box := b.get_theme_stylebox(state) as StyleBoxFlat
+		assert_object(box).override_failure_message("%s %s not flat" % [b.name, state]) \
+			.is_not_null()
+		if box != null:
+			assert_float(box.bg_color.a).override_failure_message("%s %s" % [b.name, state]) \
+				.is_equal(1.0)
+	assert_float(b.get_theme_color("font_disabled_color").a).is_equal(1.0)
+	assert_that(b.get_theme_color("font_disabled_color")).is_equal(UiStyle.COLOR_TEXT_DISABLED)
+
+
+func test_picker_and_hud_buttons_are_opaque_and_a_disabled_one_stays_legible() -> void:
+	await _start_game()
+	await _click_cell(_buildable_cell())
+	_game.sim.state.gold = 0
+	_game.picker.refresh()
+	var b: Button = _game.picker.buttons[RIFLE]
+	assert_bool(b.disabled).is_true()
+	_assert_opaque_button(b)
+	_assert_opaque_button(_game.hud.call_wave_button)
+	_assert_opaque_button(_game.hud.pause_button)
+
+
+## The strip below the board is HUD background on the HUD layer, so a range ring crossing
+## the bottom edge is drawn under it; it never takes a click.
+func test_the_footer_covers_the_strip_below_the_board() -> void:
+	await _start_game()
+	var hud := _game.hud
+	var footer := hud.get_node_or_null("Footer") as ColorRect
+	assert_object(footer).is_not_null()
+	if footer == null or not footer.is_inside_tree():
+		return
+	var m := _game.sim.state.map
+	var bottom := Game.BOARD_ORIGIN.y + m.height * Board.CELL
+	assert_float(bottom).is_less(648.0)
+	assert_that(footer.get_global_rect()).is_equal(Rect2(0, bottom, 1152, 648 - bottom))
+	assert_that(footer.color).is_equal(UiStyle.COLOR_BG)
+	assert_float(footer.color.a).is_equal(1.0)
+	assert_int(footer.mouse_filter).is_equal(Control.MOUSE_FILTER_IGNORE)
+	assert_bool(footer.is_visible_in_tree()).is_true()
+	# A ring around a tower on the lowest buildable row reaches below the board, into the footer.
+	_game.sim.state.gold = 10000
+	var cell := Vector2i(-1, -1)
+	for y in range(m.height - 1, -1, -1):
+		for x in m.width:
+			if cell.x < 0 and m.is_buildable(Vector2i(x, y)):
+				cell = Vector2i(x, y)
+		if cell.x >= 0:
+			break
+	# The widest ring config has: an L3 branch (rifleman "a" today, 5 cells).
+	var best_def := ""
+	var best_branch := ""
+	for id: String in _config.towers:
+		var def: TowerDef = _config.towers[id]
+		for b: String in def.branches:
+			if best_def == "" or def.branches[b].range_cells \
+					> _config.towers[best_def].branches[best_branch].range_cells:
+				best_def = id
+				best_branch = b
+	assert_int(_game.build(best_def, cell)).is_equal(Simulation.CommandResult.OK)
+	var t := _game.sim.tower_by_id(_game.sim.state.tower_at[cell])
+	assert_int(_game.upgrade(t.id, "")).is_equal(Simulation.CommandResult.OK)
+	assert_int(_game.upgrade(t.id, best_branch)).is_equal(Simulation.CommandResult.OK)
+	await _click_cell(cell)
+	assert_bool(_game.tower_panel.visible).is_true()
+	var ring_bottom := _game.board.position.y + (cell.y + 0.5 + _game.board.selected_range) * Board.CELL
+	var cx := _game.board.position.x + (cell.x + 0.5) * Board.CELL
+	assert_float(ring_bottom).is_greater(bottom)
+	assert_bool(footer.get_global_rect().has_point(Vector2(cx, minf(ring_bottom, 647.0)))).is_true()
