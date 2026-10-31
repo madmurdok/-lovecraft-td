@@ -96,8 +96,8 @@ Global pool, 0..100, starts at 100.
 
 **Reserve (LT-23)**
 - Every occult tower on the board lowers the sanity **cap** by its level's
-  `sanity_reserve` (Elder Sign 5 / 8 / Pure Ward 10 / Corrupted Seal 15; Necronomicon
-  Reader 10 / 15 / Pure Rite 18 / Corrupted Rite 25; tunable). Cap = 100 − reserves,
+  `sanity_reserve` (Elder Sign 5 / 8 / Pure Ward 14 / Corrupted Seal 30; Necronomicon
+  Reader 10 / 18 / Pure Rite 22 / Corrupted Rite 45; tunable). Cap = 100 − reserves,
   floored at 0.
 - Current sanity drops only when it is above the new cap (then to the cap); selling
   raises the cap again and leaves current sanity alone (in Madness too).
@@ -138,8 +138,8 @@ but deals no leak damage and credits no relic (its token melts in flight). The p
   enemy in range, 35% hit a fake enemy, 25% hit an empty cell. Net output ≈ ×0.8,
   spread unpredictably, so crashing sanity on purpose costs damage. No friendly fire. Ratios live in `sanity.json` (`madness.shot_split`).
 - Fraying effects stay at maximum.
-- The world turns hostile (LT-23): every enemy, real and fake, moves ×1.2 and takes
-  ×0.8 damage while in Madness (`madness.enemy_speed_multiplier`,
+- The world turns hostile (LT-23): every enemy, real and fake, moves ×1.7 and takes
+  ×0.37 damage while in Madness (`madness.enemy_speed_multiplier`,
   `enemy_damage_taken_multiplier`); on top of Elder Sign auras; gone the tick after
   Madness ends.
 - Duration: until the end of the game (default).
@@ -161,8 +161,8 @@ Mundane towers' L3 branches are "specialisations"; occult towers' L3 branches ar
 | Rifleman | mundane | 50 | single target, steady DPS | Marksman: long range, crits | Militia: two shooters, faster fire |
 | Harpooner | mundane | 70 | piercing line shot, good vs packs | Barbed: bleed DoT | Chain harpoon: pulls target back along the path |
 | Searchlight | mundane | 80 | beam that slows 40%, no damage | Blinding: stuns 1 s every 6 s | Revealing: fake enemies in the beam are shown as fake |
-| Elder Sign | occult | 100, reserves 5 | aura: −35% speed, +50% damage taken | Pure Ward: larger aura | Corrupted Seal: enemies inside lose armor, reserves 15 |
-| Necronomicon Reader | occult | 150, reserves 10 | AoE blast every 3 s | Pure Rite: slower, unaffected by madness (no ×2, no astray shots) | Corrupted Rite: ×1.5 damage, reserves 25 |
+| Elder Sign | occult | 100, reserves 5 | aura: −35% speed, +50% damage taken | Pure Ward: larger aura | Corrupted Seal: enemies inside lose armor, reserves 30 |
+| Necronomicon Reader | occult | 150, reserves 10 | AoE blast every 3 s | Pure Rite: slower, unaffected by madness (no ×2, no astray shots) | Corrupted Rite: stronger blasts (damage 150, no longer ×1.5 of L2, owner decision LT-23 S17), reserves 45 |
 
 Note: the Revealing branch is the only counter to hallucinations in the MVP, and it is gated behind L3.
 
@@ -177,10 +177,10 @@ repair later (a `disable` effect today, a `damage` effect later).
 | Enemy | HP | Speed | Armor | Leak dmg | Drops | Trait |
 |---|---|---|---|---|---|---|
 | Cultist of Dagon | 60 | 1.0 | 0 | 1 | bone | Stops at an adjacent tower for 2 s and halves its fire rate for 5 s |
-| Innsmouth Hybrid | 140 | 0.9 | 2 | 1 | bone, amber, idol | Armored mid-tier walker |
-| Deep One | 90 | 1.6 | 0 | 1 | bone, amber | Spawns in packs of 4–6 |
-| Night-gaunt | 110 | 1.3 | 0 | 2 | amber, bone, idol | Flies straight to the lighthouse ignoring the path; from wave 6 on it may lift a tower and drop it 2 cells away (disabled 3 s) |
-| Shoggoth | 900 | 0.5 | 5 | 5 | idol | Horror drain 0.5/s; regenerates 1% HP/s |
+| Innsmouth Hybrid | 210 | 0.9 | 2 | 1 | bone, amber, idol | Armored mid-tier walker |
+| Deep One | 135 | 1.6 | 0 | 1 | bone, amber | Spawns in packs of 4–6 |
+| Night-gaunt | 165 | 1.3 | 0 | 2 | amber, bone, idol | Flies straight to the lighthouse ignoring the path; from wave 6 on it may lift a tower and drop it 2 cells away (disabled 3 s) |
+| Shoggoth | 3600 | 0.5 | 5 | 5 | idol | Horror drain 0.5/s; regenerates 1% HP/s |
 | Dagon (boss) | 6000 | 0.4 | 8 | 20 | — | Horror drain 0.6/s; every 15 s summons 3 Deep Ones; leaking = instant loss |
 
 Speed is in cells per second. Armor is flat damage reduction per hit. Drops: the likely
@@ -195,7 +195,7 @@ star-stone.
 | 2 | 12 cultists, 2 packs of Deep Ones |
 | 3 | 6 packs of Deep Ones, 12 hybrids |
 | 4 | 20 hybrids, 16 night-gaunts |
-| 5 | 1 shoggoth + escort: 29 cultists, 11 hybrids, 4 packs of Deep Ones, 6 night-gaunts |
+| 5 | 1 shoggoth + escort: 46 cultists, 18 hybrids, 6 Deep Ones, 10 night-gaunts |
 | 6 | 3 packs of Deep Ones, 5 night-gaunts |
 | 7 | 2 shoggoths, 8 hybrids |
 | 8 | mixed: everything except Dagon, dense |

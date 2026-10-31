@@ -42,7 +42,7 @@ Reader 0.07 single target (~0.17 with its blast on 2-3 enemies).
    level's `sanity_reserve`; current sanity is cut only when it is above the new cap; selling
    raises the cap again. Per-cast, per-second and one-off sanity costs are removed.
 2. **Stronger occult towers** (data), so occult is the better buy per gold.
-3. **Madness hostility**: in MADNESS every enemy moves ×1.2 and takes ×0.8 damage.
+3. **Madness hostility**: in MADNESS every enemy moves ×1.7 and takes ×0.37 damage (final, S13).
 4. Bot harness: a true occult bot, a `mixed` bot, a cap-aware guard, new metrics.
 
 ```
@@ -133,14 +133,14 @@ Reader: cap 80, sanity 70, regen continues.
 
 | Tower / level | Field | Before | Proposed |
 |---|---|---|---|
-| Necronomicon L1 | damage / fire_interval / reserve | 40 / 4 s / (2 per cast) | **70 / 3 s / 10** (23.3 DPS per target, ×2.3) |
-| Necronomicon L2 | same | 55 / 4 / (2 per cast) | **95 / 3 / 15** |
-| Pure Rite (a) | same | 70 / 5 / (2 per cast) | **120 / 4 / 18** (not madness_affected, unchanged) |
-| Corrupted Rite (b) | same | 82.5 / 4 / (4 per cast) | **142.5 / 3 / 25** (×1.5 of L2, GDD) |
+| Necronomicon L1 | damage / fire_interval / reserve | 40 / 4 s / (2 per cast) | **100 / 3 s / 10** (33.3 DPS per target; was 70 in the first proposal, scaled in S10) |
+| Necronomicon L2 | same | 55 / 4 / (2 per cast) | **130 / 3 / 18** |
+| Pure Rite (a) | same | 70 / 5 / (2 per cast) | **135 / 4 / 22** (not madness_affected; slower, DPS 33.8 vs L2 43.3, per-shot 135 >= L2 130; S17: softened from 164 by owner decision) |
+| Corrupted Rite (b) | same | 82.5 / 4 / (4 per cast) | **150 / 3 / 45** (S17: no longer ×1.5 of L2 (was 195), by owner decision "Смягчить третий уровень Чтеца"; DPS 50 vs L2 43.3) |
 | Elder Sign L1 | range / slow / damage_taken_multiplier / reserve | 2 / 0.3 / 1.25 / (8 once) | **2.5 / 0.35 / 1.5 / 5** |
 | Elder Sign L2 | same | 2.5 / 0.3 / 1.25 / (8 once) | **3 / 0.35 / 1.5 / 8** |
-| Pure Ward (a) | same | 3.5 / 0.3 / 1.25 / (8 once) | **4 / 0.35 / 1.5 / 10** |
-| Corrupted Seal (b) | same | 2.5 / 0.3 / 1.25 / (8 once + 0.2/s) | **3 / 0.35 / 1.5 / 15**, strip_armor 1 (still PENDING in LT-24, so bots skip it) |
+| Pure Ward (a) | same | 3.5 / 0.3 / 1.25 / (8 once) | **4 / 0.35 / 1.5 / 14** |
+| Corrupted Seal (b) | same | 2.5 / 0.3 / 1.25 / (8 once + 0.2/s) | **3 / 0.35 / 1.5 / 30**, strip_armor 1 (still PENDING in LT-24, so bots skip it) |
 
 Unchanged: gold costs (pinned), AoE radius 1.5. Rifleman/Harpooner stats start unchanged;
 S5 may lower their damage by up to 20 % (Q12).
@@ -158,11 +158,11 @@ Fraying needs a reserve above 60 or horror drain under a low cap; MADNESS needs 
 
 | Question | Decision |
 |---|---|
-| Stats (Q8) | speed ×`madness.enemy_speed_multiplier` (1.2), damage taken ×`madness.enemy_damage_taken_multiplier` (0.8 = effective HP ×1.25), both per-tick modifiers (`SimEnemy.speed_mult`, `damage_taken_mult`); flat while in MADNESS, no ramp |
+| Stats (Q8) | speed ×`madness.enemy_speed_multiplier` (1.7), damage taken ×`madness.enemy_damage_taken_multiplier` (0.37 = effective HP ×2.7), both per-tick modifiers (`SimEnemy.speed_mult`, `damage_taken_mult`); flat while in MADNESS, no ramp |
 | Not used | armor bonus (punishes Riflemen far more than Readers), max HP at spawn (misses enemies on the map, must be undone), leak damage (decides runs in one step) |
 | Who (Q9) | every live enemy, on the map and new spawns, from the first slot 2 that sees `sanity_state == MADNESS` |
 | Fakes | buffed exactly like real enemies (LT-12: behaviour never tells a fake) |
-| Stacking | product after Elder Sign: speed 0.65 × 1.2 = 0.78, damage taken 1.5 × 0.8 = 1.2 |
+| Stacking | product after Elder Sign: speed 0.65 × 1.7 = 1.1, damage taken 1.5 × 0.37 = 0.56 |
 | Beam hook (LT-26 D4, LT-30) | `_apply_madness_buff` skips `e` when `_madness_buff_blocked(e)` is true; it returns false in this task; LT-30 makes it "e is lit" (real and fake alike) |
 | Horror drain | unaffected; latched in MADNESS anyway |
 | Removal | the tick after leaving MADNESS (`reset_modifiers` in slot 1) |
@@ -173,8 +173,8 @@ Fraying needs a reserve above 60 or horror drain under a low cap; MADNESS needs 
 - Board: in MADNESS every enemy (real and fake alike) gets a hostile tint (`COLOR_ENEMY`
   lerped to a madness red by `sanity_fx.madness`, the existing smoothed grade) and a dark
   outline; this also fixes the carried-over "enemies barely visible in Madness".
-- HUD: in MADNESS a line under the sanity bar: "The world turns hostile: enemies +20 % speed,
-  −20 % damage taken" (numbers from config).
+- HUD: in MADNESS a line under the sanity bar: "The world turns hostile: enemies +70 % speed,
+  −63 % damage taken" (numbers from config).
 - Sanity bar: the reserved part (`cap..max`) as a dark hatched block at the right end;
   label `Sanity 63 / 80` when the cap is below max; threshold marks stay absolute.
 
@@ -210,7 +210,7 @@ Targets (Q11, "Как предложено (Recommended)"; sanity terms restated
 | mundane | ≥ 8/10 | 10-18, ≥ 6/10 runs lose ≥ 1 HP | stays Lucid |
 | occult | ≥ 8/10 | ≥ mundane's mean − 2 | cap ≤ 50 by wave 4; cap or sanity < 40 (Fraying) in ≥ 7/10 runs; MADNESS in ≤ 2/10; ≥ 5 fakes per run |
 | mixed | ≥ 9/10 | ≥ mundane's mean | lowest cap in [20, 70) in ≥ 7/10 runs |
-| madness | ≤ 2/10 | — | MADNESS (cap 0) by wave 3 |
+| madness | ≤ 2/10 | — | ~~MADNESS (cap 0) by wave 3~~ dropped (S13): cap 0 needs ~1090 gold of occult reserve, the bot has ~500 before wave 3 |
 
 New per-run metrics: `min_sanity`, `final_cap`, `cap_per_wave`, `madness_tick` (−1 if
 never), `reserve_peak`, `free_reserve`, HP lost per wave, towers by kind and level.
@@ -256,7 +256,7 @@ owns it), gold costs, mundane range/fire_interval, thresholds, `damage_multiplie
 | | 75-160 `Level` | `LEVEL_FIELDS`: drop `upgrade_sanity_cost`, `sanity_per_cast`, `sanity_per_second`, add `sanity_reserve`; vars; parse (`opt_number`, default 0, `>= 0`; `> 0` on non-occult → "only occult towers reserve sanity"); remove `sanity_per_second` from `PENDING` and its branch in `has_pending()`; L1 error text for `upgrade_cost` only |
 | `sim/defs/sanity_config.gd` | `Madness` | `MADNESS_FIELDS` + the two multipliers; `opt_number(..., 1.0, 0.0, INF, true)` |
 | `data/towers.json` | occult levels/branches | §2 values; remove dropped keys |
-| `data/sanity.json` | `madness` | `"enemy_speed_multiplier": 1.2, "enemy_damage_taken_multiplier": 0.8` |
+| `data/sanity.json` | `madness` | `"enemy_speed_multiplier": 1.7, "enemy_damage_taken_multiplier": 0.37` (S13 final; first proposal 1.2 / 0.8) |
 | `ui/tower_info.gd` | 42-48, 60-75, 122-140 | `cost_text` gold only; "Reserves N sanity" line; delta "Reserve +N"; remove per-cast/drain lines and `_drain_text` |
 | `ui/tower_panel.gd` | 108-131 | `_drives_mad` on the cap: `cap − delta <= 0` outside MADNESS |
 | `ui/tower_picker.gd` | 65 | cost text gold only, reserve line, same warning on build |
@@ -322,7 +322,7 @@ does not move.
     reserve sanity"), < 0 rejected; `sanity_cost`, `upgrade_sanity_cost`, `sanity_per_cast`,
     `sanity_per_second` rejected as unknown fields; madness multipliers ≤ 0 rejected; absent →
     1.0, no buff — `TowerDef.parse`, `TowerDef.Level.parse`, `SanityConfig.Madness.parse`.
-12. MADNESS: every live enemy has `speed_mult` ×1.2 and `damage_taken_mult` ×0.8 (config) and
+12. MADNESS: every live enemy has `speed_mult` ×1.7 and `damage_taken_mult` ×0.37 (config) and
     moves / takes damage accordingly; outside MADNESS both are 1 without auras —
     `_apply_madness_buff` (slot 2, after `_apply_auras`), `SimEnemy.reset_modifiers`.
 13. The buff reaches an enemy already on the map and one spawned after — `_apply_madness_buff`
@@ -357,7 +357,7 @@ S7 (UI/render) behaviours, one line each:
 23. Sanity bar label: "Sanity n  State" at cap = max, "Sanity n / cap  State" below it —
     `SanityBar.label_text`.
 24. HUD: `hostile_label` visible only in MADNESS, text "The world turns hostile: enemies
-    +20 % speed, −20 % damage taken" from the madness multipliers (a part left out at 1.0) —
+    +70 % speed, −63 % damage taken" from the madness multipliers (a part left out at 1.0) —
     `Hud.refresh`, `Hud.hostile_text`.
 25. Build preview: an enabled picker button gets `TowerInfo.MADNESS_WARNING` when the L1
     reserve would take the cap to 0, never in MADNESS or for a reserve of 0 —
@@ -380,7 +380,7 @@ apply C8 + C9 together with any one sim control, since their tests are in other 
 
 | # | Pin | Revert (production code) | Must fail | Test file |
 |---|---|---|---|---|
-| C1 | 2, 6 | `Simulation._change_reserve`: replace the `if state.sanity > state.sanity_cap` clamp with `_add_sanity(-applied, "reserve", t.id)` when `applied < 0` (pay the reserve from current sanity too) | `test_build_below_the_new_cap_costs_no_sanity`; `test_upgrade_below_the_new_cap_moves_only_the_cap` | `tests/occult_tower_test.gd`; `tests/upgrade_test.gd` |
+| C1 | 2, 6 | `Simulation._change_reserve`: replace the `if state.sanity > state.sanity_cap` clamp with `_add_sanity(applied, "reserve", t.id)` when `applied < 0` (pay the reserve from current sanity too) | `test_build_below_the_new_cap_costs_no_sanity`; `test_upgrade_below_the_new_cap_moves_only_the_cap` | `tests/occult_tower_test.gd`; `tests/upgrade_test.gd` |
 | C2 | 4 | `Simulation._add_sanity`: clamp to `config.sanity.max_sanity` instead of `state.sanity_cap` | `test_mundane_kill_regen_stops_at_the_cap`, `test_between_waves_regen_stops_at_the_cap` | `tests/sanity_reserve_test.gd` |
 | C3 | 5 | `Simulation.sell_tower`: after `_change_reserve(t, -reserve, "sell")` add `_add_sanity(reserve, "sell", t.id)` | `test_sell_raises_the_cap_by_the_reserve_after_the_gold_and_keeps_sanity` | `tests/sanity_reserve_test.gd` |
 | C4 | 9 | `Simulation.restore_target`: return `config.sanity.madness.restore_sanity` (no `minf` with the cap) | `test_buyout_at_cap_zero_is_no_sanity_room_and_pays_nothing`, `test_buyout_restores_only_up_to_a_lower_cap` | `tests/sanity_reserve_test.gd` |
@@ -389,6 +389,23 @@ apply C8 + C9 together with any one sim control, since their tests are in other 
 | C7 | 11 | `TowerDef.Level.parse`: delete the `if l.sanity_reserve > 0.0 and not occult` error block | `test_a_positive_reserve_on_a_mundane_level_or_branch_is_rejected` | `tests/reserve_config_test.gd` |
 | C8 | 20 | `tools/bot_runs.gd` `_order` "occult": blocked item returns `"rifleman"` unconditionally (drop the `OCCULT_MAX_RIFLEMEN` check) | `test_occult_order_falls_back_to_riflemen_below_three_then_saves` | `tests/bot_upgrade_test.gd` |
 | C9 | 19, 25 | `TowerInfo.drives_mad`: read `st.sanity - delta <= 0.0` instead of `st.sanity_cap - delta` (the pre-LT-23 rule) | `test_an_upgrade_that_takes_the_cap_to_zero_warns_but_stays_enabled` | `tests/side_panel_test.gd` |
+
+### Controls (S15)
+
+Data reverts (edit `data/towers.json` / `enemies.json` / `sanity.json` only, never a test); the named test
+must fail. 6 controls, one per pin, all in `tests/config_valid_test.gd`, so one build and one test binary.
+Not run in S15 (the verify slice runs them).
+
+| # | Pin | Revert (data) | Must fail |
+|---|---|---|---|
+| C10 | damage never drops on upgrade | Pure Rite `damage` 135 back to 120 (below L2's 130) | `test_an_upgrade_never_lowers_damage` |
+| C11 | Corrupted Rite reserve > Pure Rite | Corrupted Rite `sanity_reserve` 45 down to 22 | `test_corrupted_branches_reserve_more_sanity_than_pure_ones` |
+| C12 | Corrupted Seal reserve > Pure Ward | Corrupted Seal `sanity_reserve` 30 down to 14 | `test_corrupted_branches_reserve_more_sanity_than_pure_ones` |
+| C13 | madness speed multiplier > 1 | `sanity.json` `enemy_speed_multiplier` 1.7 to 0.9 | `test_madness_multipliers_are_a_buff_for_enemies` |
+| C14 | madness damage-taken multiplier < 1 | `sanity.json` `enemy_damage_taken_multiplier` 0.37 to 1.2 | `test_madness_multipliers_are_a_buff_for_enemies` |
+| C15 | shoggoth HP > every other enemy | `enemies.json` shoggoth `hp` 3600 down to 100 | `test_shoggoth_is_the_toughest_enemy` |
+
+C12 shares its test with C11 (both asserts live in one test), so it is a second revert of the same test, not a new one.
 
 Not pinned by S9 (render only, no seam without a production change): pin 21 (enemy tint
 and outline in `Board._draw_enemies`) and the drawn reserved block of pin 22

@@ -49,10 +49,10 @@
       ],
       "branches": {
         "a": { "name": "Pure Ward", "role": "Larger aura",
-               "upgrade_cost": 140, "range": 4, "sanity_reserve": 10,
+               "upgrade_cost": 140, "range": 4, "sanity_reserve": 14,
                "effects": { "slow": 0.35, "damage_taken_multiplier": 1.5 } },
         "b": { "name": "Corrupted Seal", "role": "Enemies inside lose armor; reserves more sanity",
-               "upgrade_cost": 140, "range": 3, "sanity_reserve": 15,
+               "upgrade_cost": 140, "range": 3, "sanity_reserve": 30,
                "effects": { "slow": 0.35, "damage_taken_multiplier": 1.5, "strip_armor": 1 } }
       }
     },
@@ -62,18 +62,18 @@
       "kind": "occult",
       "cost": 150,
       "levels": [
-        { "range": 3, "damage": 70, "fire_interval": 3, "sanity_reserve": 10,
+        { "range": 3, "damage": 100, "fire_interval": 3, "sanity_reserve": 10,
           "effects": { "aoe_radius": 1.5 } },
-        { "upgrade_cost": 120, "range": 3.5, "damage": 95, "fire_interval": 3, "sanity_reserve": 15,
+        { "upgrade_cost": 120, "range": 3.5, "damage": 130, "fire_interval": 3, "sanity_reserve": 18,
           "effects": { "aoe_radius": 1.5 } }
       ],
       "branches": {
         "a": { "name": "Pure Rite", "role": "Slower, but unaffected by madness",
-               "upgrade_cost": 200, "range": 3.5, "damage": 120, "fire_interval": 4,
-               "sanity_reserve": 18, "madness_affected": false, "effects": { "aoe_radius": 1.5 } },
+               "upgrade_cost": 200, "range": 3.5, "damage": 135, "fire_interval": 4,
+               "sanity_reserve": 22, "madness_affected": false, "effects": { "aoe_radius": 1.5 } },
         "b": { "name": "Corrupted Rite", "role": "Stronger blasts, more sanity reserved",
-               "upgrade_cost": 200, "range": 3.5, "damage": 142.5, "fire_interval": 3,
-               "sanity_reserve": 25, "effects": { "aoe_radius": 1.5 } }
+               "upgrade_cost": 200, "range": 3.5, "damage": 150, "fire_interval": 3,
+               "sanity_reserve": 45, "effects": { "aoe_radius": 1.5 } }
       }
     }
   }

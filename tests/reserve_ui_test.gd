@@ -86,7 +86,7 @@ func test_label_shows_the_cap_only_while_it_is_below_max() -> void:
 
 func test_hostile_text_from_the_shipped_multipliers() -> void:
 	assert_str(Hud.hostile_text(_config.sanity.madness)).is_equal(
-		"The world turns hostile: enemies +20 % speed, −20 % damage taken")
+		"The world turns hostile: enemies +70 % speed, −63 % damage taken")
 
 
 func test_hostile_text_follows_the_config_and_leaves_out_a_part_at_one() -> void:

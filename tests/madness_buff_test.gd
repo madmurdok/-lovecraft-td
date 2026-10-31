@@ -40,8 +40,14 @@ func _mad_sim() -> Simulation:
 
 func test_shipped_multipliers_are_the_q8_values() -> void:
 	var m := _m(tsim())
-	assert_float(m.enemy_speed_multiplier).is_equal(1.2)
-	assert_float(m.enemy_damage_taken_multiplier).is_equal(0.8)
+	# Tuned numbers (LT-23 S10): the file's value, and a buff by sign (Q8).
+	var raw: Dictionary = JSON.parse_string(
+		FileAccess.get_file_as_string("res://data/sanity.json"))["madness"]
+	assert_float(m.enemy_speed_multiplier).is_equal(float(raw["enemy_speed_multiplier"]))
+	assert_float(m.enemy_damage_taken_multiplier).is_equal(
+		float(raw["enemy_damage_taken_multiplier"]))
+	assert_float(m.enemy_speed_multiplier).is_greater(1.0)
+	assert_float(m.enemy_damage_taken_multiplier).is_between(0.0, 1.0)
 
 
 func test_in_madness_every_live_enemy_gets_both_modifiers() -> void:
