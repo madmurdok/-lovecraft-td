@@ -7,7 +7,7 @@ const KINDS: PackedStringArray = ["mundane", "occult"]
 const LEVEL_COUNT := 2  ## L1, L2; L3 is a branch
 const BRANCH_IDS: PackedStringArray = ["a", "b"]
 ## Max length of a `role` line (tower or branch), after strip_edges (LT-24 §1).
-const ROLE_MAX_CHARS := 60
+const ROLE_MAX_CHARS := 24
 
 var id: String
 var name: String

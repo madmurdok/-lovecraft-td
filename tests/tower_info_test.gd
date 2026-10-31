@@ -51,16 +51,16 @@ func test_rifleman_l1_reads_damage_range_then_mundane_kind_lines() -> void:
 func test_harpooner_shows_the_line_shot_and_barbed_the_pending_bleed() -> void:
 	var h := _def("harpooner")
 	var l1 := h.levels[0]
-	var line := "Line shot: hits every enemy on a %s-cell-wide line" % _n(l1.effects["pierce"])
+	var line := "Pierce: %s-cell-wide line" % _n(l1.effects["pierce"])
 	assert_array(_lines("harpooner", l1)).is_equal(_attack(l1) + [line] + _mundane_kind())
 	var b := h.branches["a"]
-	var bleed := "Bleed: %s damage/s for %s s" % [_n(b.effects["bleed_dps"]), _n(b.effects["bleed_seconds"])]
+	var bleed := "Bleed %s/s for %s s" % [_n(b.effects["bleed_dps"]), _n(b.effects["bleed_seconds"])]
 	assert_array(_lines("harpooner", b)).is_equal(_attack(b)
-		+ ["Line shot: hits every enemy on a %s-cell-wide line" % _n(b.effects["pierce"]),
+		+ ["Pierce: %s-cell-wide line" % _n(b.effects["pierce"]),
 			bleed + CS] + _mundane_kind())
 	var c := h.branches["b"]
 	assert_array(_lines("harpooner", c)).contains(
-		["Pulls the target %s cells back along the path%s" % [_n(c.effects["pull_cells"]), CS]])
+		["Pulls back %s cells%s" % [_n(c.effects["pull_cells"]), CS]])
 
 
 func test_elder_sign_is_support_with_aura_and_effects_and_no_kind_line() -> void:
@@ -69,8 +69,8 @@ func test_elder_sign_is_support_with_aura_and_effects_and_no_kind_line() -> void
 		"Support (no damage)",
 		"Aura radius %s cells" % _n(l1.range_cells),
 		"Reserves %s sanity" % _n(l1.sanity_reserve),
-		"Slows enemies inside by %s%%" % _n(l1.effects["slow"] * 100.0),
-		"Enemies inside take +%s%% damage" % _n((l1.effects["damage_taken_multiplier"] - 1.0) * 100.0),
+		"Slows enemies %s%%" % _n(l1.effects["slow"] * 100.0),
+		"Foes take +%s%% damage" % _n((l1.effects["damage_taken_multiplier"] - 1.0) * 100.0),
 	])
 
 
@@ -80,13 +80,13 @@ func test_corrupted_seal_shows_its_reserve_and_pending_armor_strip() -> void:
 	var got := _lines("elder_sign", seal)
 	var reserve := "Reserves %s sanity" % _n(seal.sanity_reserve)
 	assert_array(got).contains([reserve,
-		"Enemies inside lose %s armor%s" % [_n(seal.effects["strip_armor"]), CS]])
+		"Foes lose %s armor%s" % [_n(seal.effects["strip_armor"]), CS]])
 	assert_bool(got.any(func(x: String) -> bool: return x.contains("sanity/s"))).is_false()
 	# The reserve comes before effects; the strip is the last effect group.
 	assert_int(got.find(reserve)) \
-		.is_less(got.find("Slows enemies inside by %s%%" % _n(seal.effects["slow"] * 100.0)))
+		.is_less(got.find("Slows enemies %s%%" % _n(seal.effects["slow"] * 100.0)))
 	assert_str(got[got.size() - 1]).is_equal(
-		"Enemies inside lose %s armor%s" % [_n(seal.effects["strip_armor"]), CS])
+		"Foes lose %s armor%s" % [_n(seal.effects["strip_armor"]), CS])
 
 
 func test_necronomicon_lines_and_the_madness_kind_line() -> void:
@@ -94,12 +94,12 @@ func test_necronomicon_lines_and_the_madness_kind_line() -> void:
 	var l1 := n.levels[0]
 	assert_array(_lines("necronomicon_reader", l1)).is_equal(_attack(l1) + [
 		"Reserves %s sanity" % _n(l1.sanity_reserve),
-		"Blast: hits all enemies within %s cells of the target" % _n(l1.effects["aoe_radius"]),
-		"In madness: x%s damage, shots go astray" % _n(_cfg.sanity.madness.damage_multiplier)])
+		"Blast radius %s cells" % _n(l1.effects["aoe_radius"]),
+		"Madness: x%s, astray" % _n(_cfg.sanity.madness.damage_multiplier)])
 	var rite := n.branches["a"]
 	var got := _lines("necronomicon_reader", rite)
 	assert_str(got[got.size() - 1]).is_equal("Unaffected by madness")
-	assert_bool(got.any(func(s: String) -> bool: return s.begins_with("In madness"))).is_false()
+	assert_bool(got.any(func(s: String) -> bool: return s.begins_with("Madness"))).is_false()
 
 
 func test_dps_is_damage_over_interval_only_militia_ignores_its_pending_shooters() -> void:
@@ -110,7 +110,7 @@ func test_dps_is_damage_over_interval_only_militia_ignores_its_pending_shooters(
 		assert_str(got[0]).contains("(24 DPS)")
 	assert_array(got).contains(["%s shooters%s" % [_n(m.effects["shooters"]), CS]])
 	var mk := _def("rifleman").branches["a"]
-	assert_array(_lines("rifleman", mk)).contains(["%s%% chance to deal x%s damage%s" % [
+	assert_array(_lines("rifleman", mk)).contains(["%s%% crit, x%s damage%s" % [
 		_n(mk.effects["crit_chance"] * 100.0), _n(mk.effects["crit_multiplier"]), CS]])
 
 
@@ -149,10 +149,10 @@ func test_effect_lines_follow_effect_groups_order_and_pairs_share_a_line() -> vo
 	var got := Array(TowerInfo.effect_lines({"strip_armor": 1.0, "crit_multiplier": 3.0,
 		"pierce": 2.0, "crit_chance": 0.5, "slow": 0.1}))
 	assert_array(got).is_equal([
-		"Line shot: hits every enemy on a 2-cell-wide line",
-		"Slows enemies inside by 10%",
-		"50% chance to deal x3 damage" + CS,
-		"Enemies inside lose 1 armor" + CS,
+		"Pierce: 2-cell-wide line",
+		"Slows enemies 10%",
+		"50% crit, x3 damage" + CS,
+		"Foes lose 1 armor" + CS,
 	])
 
 
@@ -166,7 +166,7 @@ func test_non_pending_effects_have_no_suffix() -> void:
 
 func test_an_unknown_effect_key_renders_as_key_and_value() -> void:
 	var got := TowerInfo.effect_lines({"slow": 0.5, "frost_aura": 2.5})
-	assert_array(Array(got)).is_equal(["Slows enemies inside by 50%", "frost_aura: 2.5"])
+	assert_array(Array(got)).is_equal(["Slows enemies 50%", "frost_aura: 2.5"])
 
 
 # --- 17: kind lines ------------------------------------------------------------------------
@@ -177,7 +177,7 @@ func test_kind_lines_per_tower_kind() -> void:
 		.is_equal(_mundane_kind())
 	var n := _def("necronomicon_reader")
 	assert_array(Array(TowerInfo.kind_lines(n, n.levels[1], s))) \
-		.is_equal(["In madness: x%s damage, shots go astray" % _n(s.madness.damage_multiplier)])
+		.is_equal(["Madness: x%s, astray" % _n(s.madness.damage_multiplier)])
 	assert_array(Array(TowerInfo.kind_lines(n, n.branches["a"], s))).is_equal(["Unaffected by madness"])
 	var sign := _def("elder_sign")
 	for l: TowerDef.Level in [sign.levels[0], sign.levels[1], sign.branches["a"], sign.branches["b"]]:
@@ -245,7 +245,7 @@ func test_marksman_delta_skips_the_unchanged_interval_and_adds_the_new_effect() 
 		" · ".join([_arrow("Range", a.range_cells, b.range_cells),
 			_arrow("Damage", a.damage, b.damage),
 			_arrow("DPS", a.damage / a.fire_interval, b.damage / b.fire_interval)]),
-		"%s%% chance to deal x%s damage%s" % [_n(b.effects["crit_chance"] * 100.0),
+		"%s%% crit, x%s damage%s" % [_n(b.effects["crit_chance"] * 100.0),
 			_n(b.effects["crit_multiplier"]), CS]])
 
 
@@ -263,7 +263,7 @@ func test_same_stats_give_only_the_new_effect_line() -> void:
 	var a := h.levels[1]
 	var b := h.branches["a"]
 	assert_array(Array(TowerInfo.delta_lines(a, b))).is_equal([
-		"Bleed: %s damage/s for %s s%s" % [_n(b.effects["bleed_dps"]), _n(b.effects["bleed_seconds"]), CS]])
+		"Bleed %s/s for %s s%s" % [_n(b.effects["bleed_dps"]), _n(b.effects["bleed_seconds"]), CS]])
 
 
 func test_pure_rite_delta_ends_with_unaffected_by_madness() -> void:
@@ -329,9 +329,9 @@ func test_a_x1_multiplier_prints_no_effect_line() -> void:
 	assert_array(Array(TowerInfo.effect_lines({"damage_taken_multiplier": 1.0}))).is_empty()
 	assert_array(Array(TowerInfo.effect_lines({"frost_multiplier": 1.0}))).is_empty()
 	assert_array(Array(TowerInfo.effect_lines({"slow": 0.35, "damage_taken_multiplier": 1.0}))) \
-		.is_equal(["Slows enemies inside by 35%"])
+		.is_equal(["Slows enemies 35%"])
 	assert_array(Array(TowerInfo.effect_lines({"damage_taken_multiplier": 1.5}))) \
-		.is_equal(["Enemies inside take +50% damage"])
+		.is_equal(["Foes take +50% damage"])
 	assert_array(Array(TowerInfo.effect_lines({"frost_multiplier": 2.0}))) \
 		.is_equal(["frost_multiplier: 2"])
 
@@ -340,7 +340,7 @@ func test_a_x1_multiplier_prints_no_effect_line() -> void:
 ## kept effect is not repeated.
 func test_a_removed_effect_prints_loses_and_its_old_line() -> void:
 	var from := _level({"slow": 0.35, "damage_taken_multiplier": 1.5})
-	var want := [TowerInfo.REMOVED + "Enemies inside take +50% damage"]
+	var want := [TowerInfo.REMOVED + "Foes take +50% damage"]
 	assert_str(TowerInfo.REMOVED).is_equal("Loses: ")
 	assert_array(Array(TowerInfo.delta_lines(from, _level({"slow": 0.35})))).is_equal(want)
 	assert_array(Array(TowerInfo.delta_lines(from,
@@ -356,4 +356,4 @@ func test_a_removed_pending_effect_has_no_coming_soon() -> void:
 	var from := _level({"crit_chance": 0.5, "crit_multiplier": 3.0})
 	assert_bool(TowerInfo.is_pending("crit_chance")).is_true()
 	assert_array(Array(TowerInfo.delta_lines(from, _level({})))) \
-		.is_equal([TowerInfo.REMOVED + "50% chance to deal x3 damage"])
+		.is_equal([TowerInfo.REMOVED + "50% crit, x3 damage"])
