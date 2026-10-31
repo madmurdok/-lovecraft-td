@@ -355,6 +355,12 @@ C1-C4, C8 hit `simulation.gd` only; one build per worktree, `--test branch_effec
 
 ## 6. Open questions for the owner
 
+**Owner decisions (2026-11-01, verbatim option labels):**
+- Q1: "Броня раз в секунду (Recommended)"
+- Q2: "Лимит 500 HP + 3 с иммунитета (Recommended)"
+- Q3: "Округлять до тика (Recommended)"
+- Q4: "Только основную цель (Recommended)"
+
 ### Q1. Does armor reduce bleed?
 
 **Today:** every damage goes through one armor rule: `damage − armor` per hit, never below 0.
