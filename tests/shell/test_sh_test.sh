@@ -128,8 +128,8 @@ if [ "$rc" -eq 100 ]; then ok "gdUnit exit 100 is kept"; else bad "gdUnit exit 1
 CODE=0 OUT="No test cases found"; run "$S"
 if [ "$rc" -eq 1 ]; then ok "no test cases with exit 0 -> 1"; else bad "no test cases -> 1" "rc=$rc"; fi
 CODE=0 OUT="SCRIPT ERROR: boom"; run "$S"
-if [ "$rc" -eq 0 ] && [[ "$out" == *"1 SCRIPT ERROR line(s)"* ]]; then ok "SCRIPT ERROR listed, exit kept"
-else bad "SCRIPT ERROR listed, exit kept" "rc=$rc out: $out"; fi
+if [ "$rc" -eq 3 ] && [[ "$out" == *"1 SCRIPT ERROR line(s)"* ]]; then ok "SCRIPT ERROR listed, exit 0 -> 3"
+else bad "SCRIPT ERROR listed, exit 0 -> 3" "rc=$rc out: $out"; fi
 
 # --- watchdog: a hung run that ignores SIGTERM and has a child ---------------------------
 MODE=hang TIMEOUT=2; run "$S"
