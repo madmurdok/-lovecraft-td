@@ -142,3 +142,20 @@ Outcomes are deterministic per seed; timings are not comparable.
 ### Tests
 
 `tests/config_valid_test.gd` (16 cases) and `tests/madness_buff_test.gd` (11 cases): 0 failures, unchanged.
+
+## S15: final table after the Reader damage fix (LT-23)
+
+S14 verify found Pure Rite (120) and Corrupted Rite (142.5) below or near L2 (130) after S10 scaled L1/L2. S15 restores
+the original ratios to L2 (x130/95): **Pure Rite 164** (fire_interval 4, madness-proof), **Corrupted Rite 195** (x1.5 of L2).
+No other value changed. Same command and seeds as S13: `tools/bot_runs.gd --seeds=10` (1000-1009), no re-tuning.
+
+| Bot | Wins | Mean HP | Runs losing >= 1 HP | Cap after wave 4 | Runs with cap/sanity < 40 | Runs reaching MADNESS | Lowest cap | Fakes/run |
+|---|---|---|---|---|---|---|---|---|
+| mundane | 10/10 | 16.5 | 6 | 100 | 0 | 0 | 100 | 0 |
+| occult | 10/10 | 19.0 | 10 | 36-56 (8 of 10 <= 50) | 10 | 0 | 32-36 | 20.5 |
+| mixed | 10/10 | 20.0 | 0 | 64-76 | 0 | 0 | 64 | 9.9 |
+| madness | 5/10 | 1.7 | 10 | 3-46 | 10 | 10 | 0-46 | 19.9 |
+
+The three non-madness rows are identical to S13. **The madness bot now wins 5/10 (was 0/10), above the <= 2/10 target**;
+it reaches MADNESS in 10/10 runs at the same ticks (6841-8537). Not re-tuned: an owner decision.
+Machine: `uptime` load 43.65 19.07 35.62; `/usr/bin/time -p` real 288.96, user 199.64, sys 1.88.

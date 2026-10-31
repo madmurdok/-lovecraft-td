@@ -69,10 +69,10 @@
       ],
       "branches": {
         "a": { "name": "Pure Rite", "role": "Slower, but unaffected by madness",
-               "upgrade_cost": 200, "range": 3.5, "damage": 120, "fire_interval": 4,
+               "upgrade_cost": 200, "range": 3.5, "damage": 164, "fire_interval": 4,
                "sanity_reserve": 22, "madness_affected": false, "effects": { "aoe_radius": 1.5 } },
         "b": { "name": "Corrupted Rite", "role": "Stronger blasts, more sanity reserved",
-               "upgrade_cost": 200, "range": 3.5, "damage": 142.5, "fire_interval": 3,
+               "upgrade_cost": 200, "range": 3.5, "damage": 195, "fire_interval": 3,
                "sanity_reserve": 45, "effects": { "aoe_radius": 1.5 } }
       }
     }

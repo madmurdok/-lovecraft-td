@@ -125,6 +125,50 @@ func test_tower_sanity_reserve_default_and_explicit() -> void:
 		assert_array(got).is_equal(expected[id])
 
 
+# --- LT-23 S15: ordering pins (design intent; the exact numbers are tuned, these must hold) ---
+
+func test_an_upgrade_never_lowers_damage() -> void:
+	var t := _real().towers
+	for id: String in t:
+		var td: TowerDef = t[id]
+		var l1 := td.levels[0]
+		var l2 := td.levels[1]
+		assert_float(l2.damage).is_greater_equal(l1.damage)
+		if l2.damage > 0.0:
+			assert_float(l2.damage / l2.fire_interval).is_greater_equal(l1.damage / l1.fire_interval)
+		for b: String in td.branches:
+			var l3 := td.branches[b]
+			# A branch that fires at least as fast must not lose DPS (Militia hits softer but
+			# faster); a slower one must still hit harder per shot (Pure Rite trades speed
+			# for madness immunity).
+			if l3.damage > 0.0 and l3.fire_interval <= l2.fire_interval:
+				assert_float(l3.damage / l3.fire_interval).is_greater_equal(
+					l2.damage / l2.fire_interval)
+			else:
+				assert_float(l3.damage).is_greater_equal(l2.damage)
+
+
+func test_corrupted_branches_reserve_more_sanity_than_pure_ones() -> void:
+	var t := _real().towers
+	assert_float(t["necronomicon_reader"].branches["b"].sanity_reserve).is_greater(
+		t["necronomicon_reader"].branches["a"].sanity_reserve)
+	assert_float(t["elder_sign"].branches["b"].sanity_reserve).is_greater(
+		t["elder_sign"].branches["a"].sanity_reserve)
+
+
+func test_madness_multipliers_are_a_buff_for_enemies() -> void:
+	var m := _real().sanity.madness
+	assert_float(m.enemy_speed_multiplier).is_greater(1.0)
+	assert_float(m.enemy_damage_taken_multiplier).is_less(1.0)
+
+
+func test_shoggoth_is_the_toughest_enemy() -> void:
+	var en := _real().enemies
+	for id: String in en:
+		if id != "shoggoth":
+			assert_float(en["shoggoth"].hp).is_greater(en[id].hp)
+
+
 func test_level_range_comes_from_json_range_key() -> void:
 	var t := _real().towers
 	assert_float(t["rifleman"].levels[0].range_cells).is_equal(3.0)
