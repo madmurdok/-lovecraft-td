@@ -368,9 +368,12 @@ func test_replaying_a_log_with_target_priority_switches_gives_the_same_run() -> 
 	var replay := _play(SEED, log, 400)
 	assert_array(replay[0]).is_equal(first[0])
 	assert_array(replay[1]).is_equal(first[1])
-	# Control: the same run without the switches differs.
+	# Control: the same run without the switches differs in its effects, not only in the
+	# TARGET_PRIORITY_SET events the switches emit.
 	var without := _play(SEED, base + [[8, "upgrade_at", TOWER, ""]], 400)
-	assert_bool(without[0] == first[0]).is_false()
+	var effects := func(evs: Array) -> Array:
+		return evs.filter(func(s: String) -> bool: return not s.begins_with("TARGET_PRIORITY_SET"))
+	assert_bool(effects.call(without[0]) == effects.call(first[0])).is_false()
 
 
 # --- 7: sanity cost and madness ----------------------------------------------------------
