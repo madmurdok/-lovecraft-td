@@ -313,3 +313,47 @@ func test_target_priority_refusals_and_mode_names_have_texts() -> void:
 		"strongest": "Strongest", "fastest": "Fastest"})
 	for mode: String in SimTower.TARGET_PRIORITIES:
 		assert_bool(TowerInfo.PRIORITY_NAMES.has(mode)).override_failure_message(mode).is_true()
+
+
+# --- LT-28: neutral multipliers and removed effects ----------------------------------------
+
+func _level(effects: Dictionary) -> TowerDef.Level:
+	var l := TowerDef.Level.new()
+	l.effects = effects
+	return l
+
+
+## A x1 multiplier changes nothing, so it prints no line (known group or unknown key); any
+## other value still does.
+func test_a_x1_multiplier_prints_no_effect_line() -> void:
+	assert_array(Array(TowerInfo.effect_lines({"damage_taken_multiplier": 1.0}))).is_empty()
+	assert_array(Array(TowerInfo.effect_lines({"frost_multiplier": 1.0}))).is_empty()
+	assert_array(Array(TowerInfo.effect_lines({"slow": 0.35, "damage_taken_multiplier": 1.0}))) \
+		.is_equal(["Slows enemies inside by 35%"])
+	assert_array(Array(TowerInfo.effect_lines({"damage_taken_multiplier": 1.5}))) \
+		.is_equal(["Enemies inside take +50% damage"])
+	assert_array(Array(TowerInfo.effect_lines({"frost_multiplier": 2.0}))) \
+		.is_equal(["frost_multiplier: 2"])
+
+
+## An effect the next level drops (absent, or back at x1) reads "Loses: <old line>"; the
+## kept effect is not repeated.
+func test_a_removed_effect_prints_loses_and_its_old_line() -> void:
+	var from := _level({"slow": 0.35, "damage_taken_multiplier": 1.5})
+	var want := [TowerInfo.REMOVED + "Enemies inside take +50% damage"]
+	assert_str(TowerInfo.REMOVED).is_equal("Loses: ")
+	assert_array(Array(TowerInfo.delta_lines(from, _level({"slow": 0.35})))).is_equal(want)
+	assert_array(Array(TowerInfo.delta_lines(from,
+		_level({"slow": 0.35, "damage_taken_multiplier": 1.0})))).is_equal(want)
+	# An unknown key dropped reads the same way.
+	assert_array(Array(TowerInfo.delta_lines(_level({"frost_aura": 2.5}), _level({})))) \
+		.is_equal([TowerInfo.REMOVED + "frost_aura: 2.5"])
+
+
+## A removed pending effect loses its old line without " (coming soon)"; a whole pair group
+## shows once.
+func test_a_removed_pending_effect_has_no_coming_soon() -> void:
+	var from := _level({"crit_chance": 0.5, "crit_multiplier": 3.0})
+	assert_bool(TowerInfo.is_pending("crit_chance")).is_true()
+	assert_array(Array(TowerInfo.delta_lines(from, _level({})))) \
+		.is_equal([TowerInfo.REMOVED + "50% chance to deal x3 damage"])

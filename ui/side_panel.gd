@@ -8,7 +8,7 @@ extends PanelContainer
 
 const FONT_SIZE := 14  ## panel text (tunable; LT-28 owns the polish)
 const MARGIN := 8
-const COLOR_BG := Color(0.08, 0.08, 0.1)  ## opaque, same as the HUD bar
+const COLOR_BG := UiStyle.COLOR_BG  ## opaque, same as the HUD bar
 const COLOR_ROLE := Color(0.85, 0.8, 0.6)
 const COLOR_INFO := Color(0.75, 0.75, 0.78)
 const IDLE_TEXT := "Click a cell to build, a tower to upgrade."
@@ -62,9 +62,7 @@ func _ready() -> void:
 	bg.bg_color = COLOR_BG
 	bg.set_content_margin_all(MARGIN)
 	add_theme_stylebox_override("panel", bg)
-	var t := Theme.new()
-	t.default_font_size = FONT_SIZE
-	theme = t
+	theme = UiStyle.theme(FONT_SIZE)  # LT-28: opaque framed buttons, legible when disabled
 
 	scroll = ScrollContainer.new()
 	scroll.name = "Scroll"

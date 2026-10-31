@@ -133,6 +133,23 @@ func test_ghost_token_flies_like_a_real_one_then_dissolves_where_it_is() -> void
 	assert_bool(view.tokens.has(real)).is_true()
 
 
+
+## LT-28: tokens land in the slot left of the relic counter, level with it, so a landed
+## token (even a star stone) never covers the counter's text.
+func test_tokens_land_beside_the_relic_counter_not_on_its_digits() -> void:
+	var view := _game.relic_tokens
+	_game.hud.refresh()
+	await get_tree().process_frame
+	var r := _game.hud.relics_label.get_global_rect()
+	assert_str(_game.hud.relics_label.text).starts_with("Relics: ")
+	assert_float(r.size.x).is_greater(0.0)
+	var land := view.target()
+	assert_vector(land).is_equal(_game.hud.relic_landing())
+	assert_float(land.y).is_equal_approx(r.get_center().y, 0.01)
+	assert_bool(r.has_point(land)).is_false()
+	assert_float(land.x + RelicTokens.STAR_RADIUS).is_less_equal(r.position.x)
+	assert_float(land.x - RelicTokens.STAR_RADIUS).is_greater_equal(0.0)
+
 # --- HUD ------------------------------------------------------------------------------
 
 func test_hud_shows_money_and_the_relic_stash_and_sells_it_by_day() -> void:

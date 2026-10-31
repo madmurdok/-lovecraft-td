@@ -12,6 +12,7 @@ const STATE_NAMES: PackedStringArray = ["Lucid", "Whispers", "Fraying", "Madness
 const COLOR_BACK := Color(0.05, 0.05, 0.07)
 const COLOR_FRAME := Color(0.55, 0.55, 0.6)
 const COLOR_MARK := Color(0.9, 0.9, 0.95, 0.85)
+const MARK_TICK := 5.0  ## LT-28: px a threshold tick reaches into the bar from each edge
 const COLOR_RESERVED := Color(0.13, 0.07, 0.16)  ## LT-23: reserved block
 const COLOR_HATCH := Color(0.42, 0.28, 0.48, 0.9)  ## LT-23: its hatching
 const HATCH_STEP := 6.0  ## px between hatch lines
@@ -90,7 +91,9 @@ func _draw() -> void:
 	_draw_reserved(r, r.size.x * cap_ratio())
 	for m in mark_ratios():
 		var x := r.size.x * m
-		draw_line(Vector2(x, -3), Vector2(x, r.size.y + 3), COLOR_MARK, 2.0)
+		# LT-28: edge ticks only, so a mark never crosses the label in the middle.
+		draw_line(Vector2(x, -3), Vector2(x, MARK_TICK), COLOR_MARK, 2.0)
+		draw_line(Vector2(x, r.size.y - MARK_TICK), Vector2(x, r.size.y + 3), COLOR_MARK, 2.0)
 	draw_rect(r, COLOR_FRAME, false, 1.0)
 	var text := label_text()
 	var font := ThemeDB.fallback_font
