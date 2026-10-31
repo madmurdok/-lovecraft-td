@@ -104,8 +104,8 @@ func test_non_integer_where_integer_expected() -> void:
 			func(d: Dictionary) -> void: d["waves"][0]["groups"][0]["count"] = 1.5],
 		[T, "towers.rifleman.cost",
 			func(d: Dictionary) -> void: d["towers"]["rifleman"]["cost"] = 50.5],
-		[E, "enemies.cultist.reward",
-			func(d: Dictionary) -> void: d["enemies"]["cultist"]["reward"] = 5.5],
+		[E, "enemies.cultist.drops.bone",
+			func(d: Dictionary) -> void: d["enemies"]["cultist"]["drops"]["bone"] = 5.5],
 		[E, "enemies.cultist.leak_damage",
 			func(d: Dictionary) -> void: d["enemies"]["cultist"]["leak_damage"] = 0.5],
 		[EC, "starting_gold", func(d: Dictionary) -> void: d["starting_gold"] = 200.25],
@@ -123,8 +123,8 @@ func test_integer_beyond_2_pow_53_is_rejected_not_wrapped() -> void:
 	for literal in ["1e20", "9.3e18", "9007199254740993000"]:
 		var r := load_text_edit(EC, "\"starting_gold\": 200", "\"starting_gold\": " + literal)
 		assert_rejected(r, EC, "starting_gold", "must be <=")
-	var r2 := load_text_edit(E, "\"reward\": 5,", "\"reward\": 1e20,")
-	assert_rejected(r2, E, "enemies.cultist.reward")
+	var r2 := load_text_edit(E, "\"bone\": 999,", "\"bone\": 1e20,")
+	assert_rejected(r2, E, "enemies.cultist.drops.bone")
 	var r3 := load_text_edit(W, "\"count\": 8", "\"count\": 1e20")
 	assert_rejected(r3, W, "waves[0].groups[0].count")
 
@@ -158,8 +158,8 @@ func test_range_must_be_positive() -> void:
 func test_range_must_not_be_negative() -> void:
 	var cases := [
 		[T, "towers.rifleman.cost", func(d: Dictionary) -> void: d["towers"]["rifleman"]["cost"] = -5],
-		[T, "towers.elder_sign.sanity_cost",
-			func(d: Dictionary) -> void: d["towers"]["elder_sign"]["sanity_cost"] = -1],
+		[T, "towers.elder_sign.levels[0].sanity_reserve",
+			func(d: Dictionary) -> void: d["towers"]["elder_sign"]["levels"][0]["sanity_reserve"] = -1],
 		[E, "enemies.hybrid.armor", func(d: Dictionary) -> void: d["enemies"]["hybrid"]["armor"] = -5],
 		[E, "enemies.shoggoth.horror_drain",
 			func(d: Dictionary) -> void: d["enemies"]["shoggoth"]["horror_drain"] = -0.1],
@@ -271,7 +271,7 @@ func test_tower_structure_errors() -> void:
 				d["towers"]["rifleman"]["levels"].append(d["towers"]["rifleman"]["levels"][1])],
 		[T, "towers.rifleman.levels[0].upgrade_cost", "not allowed on L1",
 			func(d: Dictionary) -> void: d["towers"]["rifleman"]["levels"][0]["upgrade_cost"] = 10],
-		[T, "towers.elder_sign.levels[0].upgrade_sanity_cost", "not allowed on L1",
+		[T, "towers.elder_sign.levels[0].upgrade_sanity_cost", "unknown field",
 			func(d: Dictionary) -> void: d["towers"]["elder_sign"]["levels"][0]["upgrade_sanity_cost"] = 1],
 		[T, "towers.rifleman.levels[1].upgrade_cost", "missing required field",
 			func(d: Dictionary) -> void: d["towers"]["rifleman"]["levels"][1].erase("upgrade_cost")],
@@ -479,11 +479,11 @@ func test_several_errors_in_one_file_are_all_reported() -> void:
 	var r := load_json_edit(E, func(d: Dictionary) -> void:
 		d["enemies"]["cultist"]["hp"] = 0
 		d["enemies"]["hybrid"]["speed"] = -1
-		d["enemies"]["deep_one"].erase("reward")
+		d["enemies"]["deep_one"].erase("drops")
 		d["enemies"]["shoggoth"]["bogus"] = 1)
 	assert_rejected(r, E, "enemies.cultist.hp")
 	assert_bool(has_error(r, E, "enemies.hybrid.speed")).is_true()
-	assert_bool(has_error(r, E, "enemies.deep_one.reward")).is_true()
+	assert_bool(has_error(r, E, "enemies.deep_one.drops")).is_true()
 	assert_bool(has_error(r, E, "enemies.shoggoth.bogus")).is_true()
 	assert_int(r.errors.size()).is_equal(4)
 
@@ -507,7 +507,7 @@ func test_duplicate_field_in_tower() -> void:
 func test_duplicate_enemy_id() -> void:
 	var r := load_text_edit(E, "\"enemies\": {",
 		"\"enemies\": { \"hybrid\": {\"name\": \"x\", \"hp\": 1, \"speed\": 1, \"armor\": 0, "
-		+ "\"leak_damage\": 1, \"reward\": 1},")
+		+ "\"leak_damage\": 1, \"drops\": {\"bone\": 1}},")
 	assert_rejected(r, E, "enemies.hybrid", "duplicate key")
 
 

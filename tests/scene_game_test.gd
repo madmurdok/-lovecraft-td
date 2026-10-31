@@ -81,7 +81,7 @@ func test_clicking_buildable_cell_opens_picker_and_choosing_tower_builds_it() ->
 	await _click_cell(cell)
 	assert_bool(_game.picker.visible).is_true()
 	assert_vector(_game.picker.cell).is_equal(cell)
-	assert_bool(_game.sell_panel.visible).is_false()
+	assert_bool(_game.tower_panel.visible).is_false()
 	await _click_control(_game.picker.buttons[RIFLE])
 	assert_bool(_game.sim.state.tower_at.has(cell)).is_true()
 	assert_int(_game.sim.state.gold).is_equal(gold - _cost(RIFLE))
@@ -95,7 +95,7 @@ func test_picker_has_one_button_per_config_tower_with_name_and_cost() -> void:
 	assert_int(_game.picker.buttons.size()).is_equal(_config.towers.size())
 	for def_id: String in _config.towers:
 		var def: TowerDef = _config.towers[def_id]
-		assert_str(_game.picker.buttons[def_id].text).contains("%s - %d gold" % [def.name, def.cost])
+		assert_str(_game.picker.buttons[def_id].text).contains("%s — $%d" % [def.name, def.cost])
 
 
 func test_picker_enables_every_buildable_tower_and_disables_unaffordable_ones() -> void:
@@ -106,18 +106,18 @@ func test_picker_enables_every_buildable_tower_and_disables_unaffordable_ones() 
 	for def_id: String in _config.towers:
 		var ok := _game.sim.can_build(def_id, cell) == Simulation.CommandResult.OK
 		assert_bool(_game.picker.buttons[def_id].disabled).is_equal(not ok)
-	# Gold drops below the cost while the panel is open: re-evaluated on the next frame.
+	# Money drops below the cost while the panel is open: re-evaluated on the next frame.
 	_game.sim.state.gold = _cost(RIFLE) - 1
 	_game.advance(0.0)
 	assert_bool(_game.picker.buttons[RIFLE].disabled).is_true()
-	assert_str(_game.picker.buttons[RIFLE].text).contains("not enough gold")
+	assert_str(_game.picker.buttons[RIFLE].text).contains("not enough money")
 	# A disabled button builds nothing.
 	await _click_control(_game.picker.buttons[RIFLE])
 	assert_int(_game.sim.state.towers.size()).is_equal(0)
 	assert_int(_game.sim.state.gold).is_equal(_cost(RIFLE) - 1)
 
 
-func test_clicking_a_tower_opens_sell_panel_and_selling_refunds() -> void:
+func test_clicking_a_tower_opens_tower_view_and_selling_refunds() -> void:
 	await _start_game()
 	var cell := _buildable_cell()
 	await _build_via_ui(cell)
@@ -125,14 +125,14 @@ func test_clicking_a_tower_opens_sell_panel_and_selling_refunds() -> void:
 	var refund := _game.sim.sell_refund(tower)
 	assert_int(refund).is_greater(0)
 	await _click_cell(cell)
-	assert_bool(_game.sell_panel.visible).is_true()
+	assert_bool(_game.tower_panel.visible).is_true()
 	assert_bool(_game.picker.visible).is_false()
-	assert_str(_game.sell_panel.sell_button.text).contains("+%d gold" % refund)
+	assert_str(_game.tower_panel.sell_button.text).contains("+$%d" % refund)
 	var gold := _game.sim.state.gold
-	await _click_control(_game.sell_panel.sell_button)
+	await _click_control(_game.tower_panel.sell_button)
 	assert_bool(_game.sim.state.tower_at.has(cell)).is_false()
 	assert_int(_game.sim.state.gold).is_equal(gold + refund)
-	assert_bool(_game.sell_panel.visible).is_false()
+	assert_bool(_game.tower_panel.visible).is_false()
 
 
 func test_clicking_water_closes_open_panels_and_opens_nothing() -> void:
@@ -143,8 +143,34 @@ func test_clicking_water_closes_open_panels_and_opens_nothing() -> void:
 	assert_bool(_game.sim.state.map.is_buildable(water)).is_false()
 	await _click_cell(water)
 	assert_bool(_game.picker.visible).is_false()
-	assert_bool(_game.sell_panel.visible).is_false()
+	assert_bool(_game.tower_panel.visible).is_false()
 
+
+
+## LT-28: a left click off the grid (the strip below the board) closes the build view and
+## the tower view, and clears the board selection.
+func test_a_click_below_the_board_closes_both_panels() -> void:
+	await _start_game()
+	var m := _game.sim.state.map
+	var below := Vector2(_game.board.position.x + Board.CELL * 0.5,
+		_game.board.position.y + m.height * Board.CELL + 10.0)
+	assert_bool(m.in_bounds(_game.board.cell_at(below - _game.board.position))).is_false()
+	assert_float(below.y).is_less(648.0)
+	var cell := _buildable_cell()
+	await _click_cell(cell)
+	assert_bool(_game.picker.visible).is_true()
+	assert_that(_game.board.selected_cell).is_equal(cell)
+	await _click(below)
+	assert_bool(_game.picker.visible).is_false()
+	assert_that(_game.board.selected_cell).is_equal(Vector2i(-1, -1))
+	await _build_via_ui(cell)
+	await _click_cell(cell)
+	assert_bool(_game.tower_panel.visible).is_true()
+	await _click(below)
+	assert_bool(_game.tower_panel.visible).is_false()
+	assert_bool(_game.picker.visible).is_false()
+	assert_that(_game.board.selected_cell).is_equal(Vector2i(-1, -1))
+	assert_float(_game.board.selected_range).is_equal(0.0)
 
 func test_building_while_paused_works_and_tick_does_not_advance() -> void:
 	await _start_game()
@@ -196,55 +222,57 @@ func test_speed_button_toggles_clock_speed_and_survives_pause() -> void:
 	assert_int(_game.sim.state.tick - t0).is_equal(2)
 
 
-func test_call_wave_button_starts_wave_and_pays_the_bonus_shown_on_it() -> void:
+## LT-27 §1.2: "Light the lamp" ends the day, sets the night luck shown on it, pays nothing.
+func test_light_the_lamp_button_starts_night_and_sets_the_luck_shown_on_it() -> void:
 	await _start_game()
-	_game.advance(1.0)  # let some build time pass
+	_game.advance(1.0)  # let some day time pass
 	var s := _game.sim.state
-	var bonus := _game.sim.early_call_bonus()
-	assert_int(bonus).is_greater(0)
-	assert_str(_game.hud.call_wave_button.text).contains("+%d" % bonus)
+	var luck := _game.sim.early_night_luck()
+	assert_float(luck).is_greater(1.0)
+	assert_str(_game.hud.call_wave_button.text).is_equal(
+		"Light the lamp (luck %s)" % Hud.luck_text(luck))
 	assert_bool(_game.hud.call_wave_button.disabled).is_false()
 	var gold := s.gold
 	await _click_control(_game.hud.call_wave_button)
 	assert_int(s.phase).is_equal(SimState.Phase.WAVE)
 	assert_int(s.wave_index).is_equal(1)
-	assert_int(s.gold).is_equal(gold + bonus)
+	assert_int(s.gold).is_equal(gold)
+	assert_float(s.night_luck).is_equal(luck)
 	assert_bool(_game.hud.call_wave_button.disabled).is_true()
-	assert_int(_game.sim.early_call_bonus()).is_equal(0)
+	assert_float(_game.sim.early_night_luck()).is_equal(1.0)
 
 
 func test_hud_labels_track_sim_state() -> void:
 	await _start_game()
 	var s := _game.sim.state
 	var hud := _game.hud
-	assert_str(hud.gold_label.text).is_equal("Gold: %d" % s.gold)
-	assert_str(hud.hp_label.text).is_equal("Lighthouse: %d / %d" % [s.lighthouse_hp, _config.economy.lighthouse_hp])
-	assert_str(hud.wave_label.text).is_equal("Wave %d / %d" % [s.wave_index, s.waves_total])
+	assert_str(hud.gold_label.text).is_equal("Money: $%d" % s.gold)
+	assert_str(hud.hp_label.text).is_equal("Lighthouse %d/%d" % [s.lighthouse_hp, _config.economy.lighthouse_hp])
+	assert_str(hud.phase_label.text).starts_with("Day 1 — night falls in ")
 	assert_int(s.waves_total).is_equal(_config.waves.waves.size())
 	await _build_via_ui(_buildable_cell())
 	s.lighthouse_hp -= 3
 	_game.sim.call_wave()
 	_game.advance(0.0)
-	assert_str(hud.gold_label.text).is_equal("Gold: %d" % s.gold)
-	assert_str(hud.hp_label.text).is_equal("Lighthouse: %d / %d" % [s.lighthouse_hp, _config.economy.lighthouse_hp])
-	assert_str(hud.wave_label.text).contains("Wave 1 / %d" % s.waves_total)
-	assert_str(hud.phase_label.text).contains("in progress")
+	assert_str(hud.gold_label.text).is_equal("Money: $%d" % s.gold)
+	assert_str(hud.hp_label.text).is_equal("Lighthouse %d/%d" % [s.lighthouse_hp, _config.economy.lighthouse_hp])
+	assert_str(hud.phase_label.text).is_equal("Night 1 of %d" % s.waves_total)
 
 
-func test_build_timer_shows_floored_seconds_matching_the_bonus() -> void:
+func test_day_timer_shows_floored_seconds_matching_the_luck() -> void:
 	await _start_game()
 	var s := _game.sim.state
-	var rate := _config.economy.early_call_gold_per_second
+	var rate := _config.economy.early_night_luck_per_second
 	# One tick short of 25 whole seconds must read 24, never 25.
 	s.build_ticks_left = SimTime.ticks(25.0) - 1
 	_game.advance(0.0)
-	assert_str(_game.hud.phase_label.text).contains("in 24 s")
-	assert_int(_game.sim.early_call_bonus()).is_equal(floori(rate * 24))
-	assert_str(_game.hud.call_wave_button.text).contains("+%d" % floori(rate * 24))
+	assert_str(_game.hud.phase_label.text).is_equal("Day 1 — night falls in 24 s")
+	assert_float(_game.sim.early_night_luck()).is_equal_approx(1.0 + rate * 24, 1e-9)
+	assert_str(_game.hud.call_wave_button.text).contains(Hud.luck_text(1.0 + rate * 24))
 	s.build_ticks_left = SimTime.ticks(25.0)
 	_game.advance(0.0)
 	assert_str(_game.hud.phase_label.text).contains("in 25 s")
-	assert_int(_game.sim.early_call_bonus()).is_equal(floori(rate * 25))
+	assert_float(_game.sim.early_night_luck()).is_equal_approx(1.0 + rate * 25, 1e-9)
 
 
 func test_end_screen_appears_on_outcome_and_closes_panels() -> void:

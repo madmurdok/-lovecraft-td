@@ -24,8 +24,11 @@ var board: Board
 var lighting: Lighting  ## LT-8: darkness, beam, tower lights, sea fog (visual only)
 var sanity_fx: SanityFx  ## LT-14: screen distortion, UI jitter, whispers (visual only)
 var hud: Hud
-var picker: TowerPicker
-var sell_panel: SellPanel
+var relic_tokens: RelicTokens  ## LT-27 §4: tokens flying from kills to the HUD counter
+var star_stones_found := 0  ## LT-27 §4: star-stones credited this run (end screen)
+var side_panel: SidePanel  ## LT-24: fixed right panel holding the two views below
+var picker: TowerPicker  ## build view of side_panel
+var tower_panel: TowerPanel  ## tower view of side_panel
 var end_screen: EndScreen
 
 
@@ -39,7 +42,7 @@ func setup(config: GameConfig, p_seed: int) -> void:
 	if OS.is_debug_build():
 		var forced := debug_sanity_arg(OS.get_cmdline_user_args())
 		if forced >= 0.0:
-			sim._add_sanity(forced - sim.state.sanity, "debug", 0)
+			sim.debug_set_sanity(forced)
 
 
 ## The `--sanity=<v>` / `--sanity <v>` value clamped to >= 0, or -1 when absent or not a
@@ -64,6 +67,7 @@ func _ready() -> void:
 	board.game = self
 	add_child(board)
 	board.cell_clicked.connect(_on_cell_clicked)
+	board.outside_clicked.connect(close_panels)
 	lighting = Lighting.new()
 	lighting.name = "Lighting"
 	lighting.setup(self, self)
@@ -81,14 +85,16 @@ func _ready() -> void:
 	hud.name = "Hud"
 	hud.game = self
 	ui.add_child(hud)
-	picker = TowerPicker.new()
-	picker.name = "TowerPicker"
-	picker.game = self
-	ui.add_child(picker)
-	sell_panel = SellPanel.new()
-	sell_panel.name = "SellPanel"
-	sell_panel.game = self
-	ui.add_child(sell_panel)
+	relic_tokens = RelicTokens.new()
+	relic_tokens.name = "RelicTokens"
+	relic_tokens.game = self
+	ui.add_child(relic_tokens)
+	side_panel = SidePanel.new()
+	side_panel.name = "SidePanel"
+	side_panel.game = self
+	ui.add_child(side_panel)
+	picker = side_panel.picker
+	tower_panel = side_panel.tower_panel
 	end_screen = EndScreen.new()
 	end_screen.name = "EndScreen"
 	ui.add_child(end_screen)
@@ -110,10 +116,11 @@ func advance(delta: float) -> void:
 	_consume_events()
 	board.alpha = clock.alpha()
 	board.tick_effects(delta)
+	relic_tokens.tick(delta)
 	board.queue_redraw()
 	hud.refresh()
 	picker.refresh()
-	sell_panel.refresh()
+	tower_panel.refresh()
 
 
 # --- Player commands (forwarded to the sim) -------------------------------------------
@@ -130,8 +137,29 @@ func sell(tower_id: int) -> Simulation.CommandResult:
 	return r
 
 
+## LT-24: branch "" for L1 -> L2, "a"/"b" for L2 -> L3.
+func upgrade(tower_id: int, branch := "") -> Simulation.CommandResult:
+	var r := sim.upgrade_tower(tower_id, branch)
+	_after_command()
+	return r
+
+
+## LT-31: mode is one of SimTower.TARGET_PRIORITIES; allowed in any phase.
+func set_target_priority(tower_id: int, mode: String) -> Simulation.CommandResult:
+	var r := sim.set_target_priority(tower_id, mode)
+	_after_command()
+	return r
+
+
 func call_wave() -> Simulation.CommandResult:
 	var r := sim.call_wave()
+	_after_command()
+	return r
+
+
+## LT-27 §1.4: sells the whole stash (by day only).
+func sell_relics() -> Simulation.CommandResult:
+	var r := sim.sell_relics()
 	_after_command()
 	return r
 
@@ -162,25 +190,36 @@ func _after_command() -> void:
 	board.queue_redraw()
 	hud.refresh()
 	picker.refresh()
-	sell_panel.refresh()
+	tower_panel.refresh()
 
 
 func _consume_events() -> void:
 	for ev in sim.drain_events():
 		board.on_event(ev)
 		sanity_fx.on_event(ev)
+		relic_tokens.on_event(ev)
+		if ev.type == SimEvent.Type.RELICS_CHANGED and ev.data.get("reason", "") == "kill" \
+				and ev.data.get("kind", "") == RelicTokens.STAR_STONE:
+			star_stones_found += 1
 		if ev.type == SimEvent.Type.OUTCOME:
 			picker.close()
-			sell_panel.close()
-			end_screen.show_result(ev.data.get("result", "") == "won", sim.state)
+			tower_panel.close()
+			side_panel.visible = false
+			end_screen.show_result(ev.data.get("result", "") == "won", sim.state,
+				star_stones_found)
+
+
+## LT-28: closes the build and tower views (a click on a cell, or one off the grid).
+func close_panels() -> void:
+	picker.close()
+	tower_panel.close()
 
 
 func _on_cell_clicked(cell: Vector2i) -> void:
-	picker.close()
-	sell_panel.close()
+	close_panels()
 	if sim.state.outcome != SimState.Outcome.NONE:
 		return
 	if sim.state.tower_at.has(cell):
-		sell_panel.open_for(sim.state.tower_at[cell])
+		tower_panel.open_for(sim.state.tower_at[cell])
 	elif sim.state.map.is_buildable(cell):
 		picker.open_for(cell)

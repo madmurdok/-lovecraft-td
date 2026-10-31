@@ -75,3 +75,23 @@ func test_beam_rotates_over_time() -> void:
 	await get_tree().process_frame
 	await get_tree().process_frame
 	assert_float(_game.lighting.beam.rotation).is_not_equal(before)
+
+
+## LT-27 §4 (behaviour 15): day colour in BUILD, the night colour once the fade has run in a
+## wave, and back to day at dawn; the lamp is dark by day.
+func test_ambient_is_day_by_day_and_night_after_the_fade_at_night() -> void:
+	var l := _game.lighting
+	assert_int(_game.sim.state.phase).is_equal(SimState.Phase.BUILD)
+	assert_float(l.night).is_equal(0.0)
+	assert_that(l.modulate_node.color).is_equal(Lighting.AMBIENT_DAY)
+	assert_bool(l.beam.visible).is_false()
+	assert_int(_game.call_wave()).is_equal(Simulation.CommandResult.OK)
+	l.ease_night(0.1)
+	assert_float(l.night).is_between(0.01, 0.99)  # fading, not a jump
+	l.ease_night(10.0)
+	assert_float(l.night).is_equal(1.0)
+	assert_that(l.modulate_node.color).is_equal(Lighting.AMBIENT_NIGHT)
+	assert_bool(l.beam.visible).is_true()
+	_game.sim.state.phase = SimState.Phase.BUILD
+	l.ease_night(10.0)
+	assert_that(l.modulate_node.color).is_equal(Lighting.AMBIENT_DAY)

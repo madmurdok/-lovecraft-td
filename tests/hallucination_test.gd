@@ -443,12 +443,14 @@ func test_a_killed_fake_dies_like_a_real_but_pays_no_gold_and_no_sanity() -> voi
 	var sanity := sim.state.sanity
 	sim.apply_damage(fake.id, 10.0, "rifleman")
 	var fev := sim.drain_events()
-	assert_array(fev.map(func(e: SimEvent) -> int: return e.type)).is_equal([T.DIED])
+	# LT-27: a fake drops a (ghost) token like a real kill; neither pays money.
+	assert_array(fev.map(func(e: SimEvent) -> int: return e.type)).is_equal(
+		[T.DIED, T.RELIC_DROPPED])
 	assert_int(sim.state.gold).is_equal(gold)
 	assert_float(sim.state.sanity).is_equal(sanity)
 	sim.apply_damage(real.id, 10.0, "rifleman")
 	var rev := sim.drain_events()
-	assert_int(of_type(rev, T.GOLD_CHANGED).size()).is_equal(1)
+	assert_int(of_type(rev, T.GOLD_CHANGED).size()).is_equal(0)
 	assert_int(of_type(rev, T.SANITY_CHANGED).size()).is_equal(1)
 	assert_dict(fev[0].data).is_equal(of_type(rev, T.DIED)[0].data)
 
@@ -551,7 +553,9 @@ func test_events_of_fakes_and_reals_are_indistinguishable() -> void:
 		assert_bool(e.data.has("fake")).override_failure_message(str(e)).is_false()
 		if e.type == T.LEAKED:
 			assert_array(e.data.keys()).contains_exactly_in_any_order(["damage", "hp_after"])
-		var is_f := fake_ids.has(e.id)
+		# Relic events carry a token id (LT-27 §1.3), not an entity id.
+		var is_f := fake_ids.has(e.id) and not e.type in [T.RELIC_DROPPED, T.RELIC_VANISHED,
+			T.RELICS_CHANGED]
 		if e.type == T.SHOT:
 			is_f = fake_ids.has(int(e.data["target"]))
 		elif is_f:

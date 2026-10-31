@@ -13,6 +13,8 @@ extends Node2D
 const CONFIG_DIR_ARG := "--config-dir="
 const SEED_ARG := "--seed="
 const WINDOW_FILL := 0.85  ## share of the usable screen area the boot window may take
+## LT-28: engine flags that place or size the window; either one turns the boot fit off.
+const WINDOW_FLAGS: PackedStringArray = ["--resolution", "--position"]
 
 var config: GameConfig
 var game: Game
@@ -52,12 +54,37 @@ static func fit_window_size(usable: Vector2i, base: Vector2i, fill: float) -> Ve
 	return Vector2i((Vector2(base) * s).round())
 
 
+## True when `args` (the engine's own, before a bare `--`) hold a WINDOW_FLAGS flag.
+static func has_window_flag(args: PackedStringArray) -> bool:
+	for a in args:
+		if a == "--":
+			return false
+		for f in WINDOW_FLAGS:
+			if a == f or a.begins_with(f + "="):
+				return true
+	return false
+
+
+## The process's launch arguments. The engine consumes `--resolution` and `--position`
+## before OS.get_cmdline_args(), so they are read back from `ps` where it exists (macOS,
+## Linux); elsewhere this is OS.get_cmdline_args() and those flags go unseen.
+static func launch_args() -> PackedStringArray:
+	if OS.get_name() in ["macOS", "Linux", "FreeBSD", "NetBSD", "OpenBSD", "BSD"]:
+		var out := []
+		if OS.execute("ps", ["-o", "args=", "-p", str(OS.get_process_id())], out) == 0 \
+				and not out.is_empty():
+			return (out[0] as String).strip_edges().split(" ", false)
+	return OS.get_cmdline_args()
+
+
 ## Desktop only: no headless run, no web page (the canvas follows the page), no window
 ## embedded in the editor, and only a window still at the project's size (an explicit
-## `--resolution`, or fullscreen, wins).
+## `--resolution` or `--position`, or fullscreen, wins: LT-28).
 func _fit_window() -> void:
 	if DisplayServer.get_name() == "headless" or OS.has_feature("web") \
 			or Engine.is_embedded_in_editor():
+		return
+	if has_window_flag(launch_args()):
 		return
 	var w := get_window()
 	var project_size := Vector2i(

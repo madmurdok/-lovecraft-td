@@ -1,7 +1,7 @@
 class_name OccultTowerTest
 extends TowerTestBase
 ## LT-11 occult towers L1 (GDD §6 Elder Sign, Necronomicon Reader; §5.3 drains): build/sell
-## rules with the sanity cost, the Elder Sign aura and the Necronomicon cast. Balance numbers
+## rules with the sanity reserve (LT-23), the Elder Sign aura and the Necronomicon cast. Balance numbers
 ## are read from config, never hard-coded.
 
 const R := Simulation.CommandResult
@@ -40,55 +40,66 @@ func _sign_sim() -> Simulation:
 
 # --- building and selling ---------------------------------------------------------
 
-func test_occult_towers_are_buildable_with_gold_and_sanity_costs_from_config() -> void:
+func test_occult_towers_are_buildable_with_gold_and_lower_the_cap_by_their_reserve() -> void:
 	for def_id: String in [SIGN, NECRO]:
 		var sim := tsim()
 		var def: TowerDef = sim.config.towers[def_id]
 		assert_str(def.kind).is_equal("occult")
 		var gold := sim.state.gold
-		var sanity := sim.state.sanity
+		var top := sim.config.sanity.max_sanity
+		var reserve := def.levels[0].sanity_reserve
 		assert_int(sim.can_build(def_id, TOWER)).is_equal(R.OK)
 		assert_int(sim.build_tower(def_id, TOWER)).is_equal(R.OK)
 		assert_int(sim.state.gold).is_equal(gold - def.cost)
-		assert_float(sim.state.sanity).is_equal_approx(sanity - def.sanity_cost, 0.0001)
+		assert_float(sim.state.sanity_cap).is_equal_approx(top - reserve, 0.0001)
+		assert_float(sim.state.sanity).is_equal_approx(minf(top, top - reserve), 0.0001)
 
 
-func test_elder_sign_build_emits_gold_then_sanity_build_event() -> void:
+func test_elder_sign_build_at_full_sanity_emits_gold_then_cap_then_reserve_event() -> void:
 	var sim := tsim()
-	var cost := sim.config.towers[SIGN].sanity_cost
-	assert_float(cost).is_greater(0.0)
+	var reserve := _l1(sim, SIGN).sanity_reserve
+	assert_float(reserve).is_greater(0.0)
 	var before := sim.state.sanity
+	assert_float(before).is_equal(sim.state.sanity_cap)
 	var id := build(sim, SIGN).id
 	var ev := sim.drain_events()
 	var types: Array = []
 	for e in ev:
 		types.append(e.type)
-	assert_array(types).is_equal([T.TOWER_BUILT, T.GOLD_CHANGED, T.SANITY_CHANGED])
+	assert_array(types).is_equal([T.TOWER_BUILT, T.GOLD_CHANGED, T.SANITY_CAP_CHANGED,
+		T.SANITY_CHANGED])
 	assert_int(ev[2].id).is_equal(id)
-	assert_str(ev[2].data["reason"]).is_equal("build")
-	assert_float(ev[2].data["delta"]).is_equal_approx(-cost, 0.0001)
-	assert_float(ev[2].data["sanity"]).is_equal_approx(before - cost, 0.0001)
+	assert_dict(ev[2].data).is_equal(
+		{"delta": -reserve, "cap": before - reserve, "reason": "build"})
+	assert_int(ev[3].id).is_equal(id)
+	assert_str(ev[3].data["reason"]).is_equal("reserve")
+	assert_float(ev[3].data["delta"]).is_equal_approx(-reserve, 0.0001)
+	assert_float(ev[3].data["sanity"]).is_equal_approx(before - reserve, 0.0001)
 
 
-func test_necronomicon_build_costs_no_sanity() -> void:
+func test_build_below_the_new_cap_costs_no_sanity() -> void:
 	var sim := tsim()
-	var before := sim.state.sanity
+	_set_sanity(sim, 50.0)
 	build(sim, NECRO)
-	assert_float(sim.state.sanity).is_equal(before)
+	assert_float(sim.state.sanity).is_equal(50.0)
+	assert_float(sim.state.sanity_cap).is_equal_approx(
+		sim.config.sanity.max_sanity - _l1(sim, NECRO).sanity_reserve, 0.0001)
 	assert_array(of_type(sim.drain_events(), T.SANITY_CHANGED)).is_empty()
 
 
-func test_build_below_the_sanity_cost_succeeds_clamps_at_zero_and_enters_madness() -> void:
+func test_build_taking_the_cap_to_zero_empties_sanity_and_enters_madness() -> void:
 	var sim := tsim()
-	var cost := sim.config.towers[SIGN].sanity_cost
-	_set_sanity(sim, cost - 3.0)
+	_l1(sim, SIGN).sanity_reserve = sim.config.sanity.max_sanity
+	_set_sanity(sim, 50.0)
 	build(sim, SIGN)
+	assert_float(sim.state.sanity_cap).is_equal(0.0)
 	assert_float(sim.state.sanity).is_equal(0.0)
 	assert_int(sim.state.sanity_state).is_equal(S.MADNESS)
 	var ev := sim.drain_events()
 	var ch := of_type(ev, T.SANITY_CHANGED)
 	assert_int(ch.size()).is_equal(1)
-	assert_float(ch[0].data["delta"]).is_equal_approx(-(cost - 3.0), 0.0001)
+	assert_str(ch[0].data["reason"]).is_equal("reserve")
+	assert_float(ch[0].data["delta"]).is_equal_approx(-50.0, 0.0001)
 	var st := of_type(ev, T.SANITY_STATE_CHANGED)
 	assert_int(st.size()).is_equal(1)
 	assert_int(st[0].data["new"]).is_equal(S.MADNESS)
@@ -278,7 +289,7 @@ func test_elder_sign_never_fires() -> void:
 
 # --- Necronomicon Reader -----------------------------------------------------------
 
-func test_no_enemy_in_range_means_no_cast_and_no_cost_then_casts_the_tick_one_arrives() -> void:
+func test_no_enemy_in_range_means_no_cast_then_casts_the_tick_one_arrives() -> void:
 	var sim := tsim()
 	sim.state.gold = 1000
 	build(sim, NECRO)
@@ -293,7 +304,7 @@ func test_no_enemy_in_range_means_no_cast_and_no_cost_then_casts_the_tick_one_ar
 	sim.step()
 	var ev := sim.drain_events()
 	assert_array(shot_ticks(ev)).is_equal([sim.state.tick])
-	assert_int(_casts(ev).size()).is_equal(1)
+	assert_array(of_type(ev, T.SANITY_CHANGED)).is_empty()  # LT-23: casts cost nothing
 
 
 func test_an_enemy_out_of_range_causes_no_cast() -> void:
@@ -307,7 +318,7 @@ func test_an_enemy_out_of_range_causes_no_cast() -> void:
 	assert_array(_casts(ev)).is_empty()
 
 
-func test_casts_repeat_every_fire_interval_and_each_costs_sanity_per_cast_once() -> void:
+func test_casts_repeat_every_fire_interval_and_cost_no_sanity() -> void:
 	var sim := tsim()
 	sim.state.gold = 1000
 	build(sim, NECRO)
@@ -318,16 +329,11 @@ func test_casts_repeat_every_fire_interval_and_each_costs_sanity_per_cast_once()
 	var start := sim.state.sanity
 	var ev := run(sim, n * 2 + 1)
 	assert_array(shot_ticks(ev)).is_equal([1, 1 + n, 1 + 2 * n])
-	var casts := _casts(ev)
-	assert_int(casts.size()).is_equal(3)
-	for i in 3:
-		assert_int(casts[i].tick).is_equal(1 + i * n)
-		assert_int(casts[i].id).is_equal(sim.state.towers[0].id)
-		assert_float(casts[i].data["delta"]).is_equal_approx(-l.sanity_per_cast, 0.0001)
-	assert_float(sim.state.sanity).is_equal_approx(start - 3.0 * l.sanity_per_cast, 0.0001)
+	assert_array(of_type(ev, T.SANITY_CHANGED)).is_empty()
+	assert_float(sim.state.sanity).is_equal(start)
 
 
-func test_a_cast_hitting_several_enemies_costs_sanity_per_cast_exactly_once() -> void:
+func test_a_cast_hits_several_enemies_and_costs_no_sanity() -> void:
 	var sim := tsim()
 	sim.state.gold = 1000
 	build(sim, NECRO)
@@ -344,10 +350,8 @@ func test_a_cast_hitting_several_enemies_costs_sanity_per_cast_exactly_once() ->
 	assert_int(shots[0].data["hits"].size()).is_greater_equal(3)
 	for e in [a, b, c]:
 		assert_float(e.hp).is_equal_approx(HUGE_HP - l.damage, 0.0001)
-	var casts := _casts(ev)
-	assert_int(casts.size()).is_equal(1)
-	assert_float(casts[0].data["delta"]).is_equal_approx(-l.sanity_per_cast, 0.0001)
-	assert_float(sim.state.sanity - start).is_equal_approx(-l.sanity_per_cast, 0.0001)
+	assert_array(_casts(ev)).is_empty()
+	assert_float(sim.state.sanity).is_equal(start)
 
 
 func test_blast_hits_every_enemy_within_the_radius_of_the_target() -> void:
@@ -371,13 +375,12 @@ func test_blast_hits_every_enemy_within_the_radius_of_the_target() -> void:
 	assert_float(beyond.hp).is_equal(HUGE_HP)
 
 
-func test_cast_event_order_shot_then_sanity_then_deaths_and_kill_pays_gold_only() -> void:
+func test_cast_event_order_shot_then_deaths_and_kill_drops_a_relic_only() -> void:
 	var sim := tsim()
 	sim.state.gold = 1000
 	build(sim, NECRO)
 	var l := _l1(sim, NECRO)
 	var e := put(sim, "cultist", 7.0, l.damage)
-	var reward: int = sim.config.enemies["cultist"].reward
 	var gold := sim.state.gold
 	var sanity := sim.state.sanity
 	sim.drain_events()
@@ -386,12 +389,11 @@ func test_cast_event_order_shot_then_sanity_then_deaths_and_kill_pays_gold_only(
 	var order: Array = []
 	for x in ev:
 		order.append(x.type)
-	assert_array(order).is_equal([T.SHOT, T.SANITY_CHANGED, T.DIED, T.GOLD_CHANGED])
-	assert_str(ev[3].data["reason"]).is_equal("kill")
-	assert_int(sim.state.gold).is_equal(gold + reward)
-	assert_float(sim.state.sanity).is_equal_approx(sanity - l.sanity_per_cast, 0.0001)
-	assert_str(ev[2].data["source"]).is_equal(NECRO)
-	assert_int(ev[2].id).is_equal(e.id)
+	assert_array(order).is_equal([T.SHOT, T.DIED, T.RELIC_DROPPED])
+	assert_int(sim.state.gold).is_equal(gold)
+	assert_float(sim.state.sanity).is_equal(sanity)
+	assert_str(ev[1].data["source"]).is_equal(NECRO)
+	assert_int(ev[1].id).is_equal(e.id)
 
 
 func test_killing_a_fake_by_blast_pays_nothing() -> void:
@@ -421,20 +423,6 @@ func test_cast_at_zero_sanity_still_fires_and_deals_damage() -> void:
 	assert_array(of_type(ev, T.SANITY_CHANGED)).is_empty()
 	assert_float(sim.state.sanity).is_equal(0.0)
 	assert_float(e.hp).is_less(HUGE_HP)
-
-
-func test_cast_drives_sanity_into_madness_and_reports_the_state_change() -> void:
-	var sim := tsim()
-	sim.state.gold = 1000
-	build(sim, NECRO)
-	put(sim, "cultist", 7.0)
-	_set_sanity(sim, _l1(sim, NECRO).sanity_per_cast)
-	sim.step()
-	var ev := sim.drain_events()
-	assert_float(sim.state.sanity).is_equal(0.0)
-	var st := of_type(ev, T.SANITY_STATE_CHANGED)
-	assert_int(st.size()).is_equal(1)
-	assert_int(st[0].data["new"]).is_equal(S.MADNESS)
 
 
 func test_sign_boosts_blast_damage_after_armor() -> void:

@@ -97,6 +97,29 @@ func test_boot_window_takes_85_percent_of_the_usable_screen() -> void:
 		.is_equal(Vector2i(2176, 1224))
 
 
+
+## LT-28: an explicit window size or position turns the boot fit off. Pinned on the static
+## check over argument arrays (the headless run returns before it reads launch_args()).
+func test_window_flags_turn_the_boot_fit_off_in_both_forms() -> void:
+	assert_array(Array(MAIN.WINDOW_FLAGS)).is_equal(["--resolution", "--position"])
+	for args: PackedStringArray in [
+			PackedStringArray(["--resolution", "1600x900"]),
+			PackedStringArray(["--position", "10,10"]),
+			PackedStringArray(["--resolution=1600x900"]),
+			PackedStringArray(["--position=0,0"]),
+			PackedStringArray(["godot", "--path", ".", "--position", "5,5", "--", "--seed=1"])]:
+		assert_bool(MAIN.has_window_flag(args)).override_failure_message(str(args)).is_true()
+
+
+func test_other_flags_and_user_args_after_a_bare_dashdash_do_not_count() -> void:
+	for args: PackedStringArray in [
+			PackedStringArray([]),
+			PackedStringArray(["--path", "."]),
+			PackedStringArray(["--resolutions", "--positionx=1", "-resolution", "resolution"]),
+			PackedStringArray(["--", "--resolution", "1600x900"]),
+			PackedStringArray(["--path", ".", "--", "--position=10,10"])]:
+		assert_bool(MAIN.has_window_flag(args)).override_failure_message(str(args)).is_false()
+
 func test_distortion_and_aberration_scale_with_the_stretch() -> void:
 	await _start_game()
 	var fx := _game.sanity_fx

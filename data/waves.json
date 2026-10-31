@@ -1,5 +1,5 @@
 {
-  "build_phase_seconds": 25,
+  "build_phase_seconds": 40,
   "waves": [
     { "groups": [
       { "type": "cultist", "count": 8, "interval": 1.2 },
@@ -23,10 +23,10 @@
     ] },
     { "groups": [
       { "type": "shoggoth", "count": 1, "interval": 0 },
-      { "type": "cultist", "count": 29, "interval": 2.0, "delay": 1 },
-      { "type": "hybrid", "count": 11, "interval": 4, "delay": 10 },
-      { "type": "deep_one", "count": 4, "interval": 10, "delay": 20 },
-      { "type": "night_gaunt", "count": 6, "interval": 5, "delay": 15 }
+      { "type": "cultist", "count": 46, "interval": 2.0, "delay": 1 },
+      { "type": "hybrid", "count": 18, "interval": 4, "delay": 10 },
+      { "type": "deep_one", "count": 6, "interval": 10, "delay": 20 },
+      { "type": "night_gaunt", "count": 10, "interval": 5, "delay": 15 }
     ] }
   ]
 }

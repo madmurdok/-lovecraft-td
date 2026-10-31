@@ -2,6 +2,14 @@
   "starting_gold": 200,
   "wave_bonus": { "base": 50, "per_wave": 10 },
   "sell_refund_ratio": 0.7,
-  "early_call_gold_per_second": 2,
+  "relics": {
+    "bone":       { "name": "Bone fragment",      "price": 5 },
+    "amber":      { "name": "Amber",              "price": 15 },
+    "idol":       { "name": "Idol fragment",      "price": 50 },
+    "star_stone": { "name": "Star-stone of Mnar", "price": 200 }
+  },
+  "token_fly_seconds": 2.0,
+  "ghost_vanish_seconds": 1.0,
+  "early_night_luck_per_second": 0.02,
   "lighthouse": { "hp": 20 }
 }
