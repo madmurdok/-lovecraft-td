@@ -666,6 +666,72 @@ func test_the_write_scan_flags_nested_writes_mutator_calls_and_aliases() -> void
 			"falsely flagged:\n" + text).is_empty()
 
 
+## LT-42: one case per alias form the guard follows; each must be flagged.
+func test_the_write_scan_follows_the_lt42_alias_forms() -> void:
+	for text: String in [
+		# a state class's own mutating method (`_mutators`), on an alias and on a getter call
+		"func f() -> void:\n\tvar s := sim.state\n\ts.enemies[0].reset_modifiers()",
+		"func f() -> void:\n\tgame.sim.enemy_by_id(id).reset_modifiers()",
+		# Simulation getters (`_sim_getters`): one object, and an Array of them
+		"func f() -> void:\n\tvar t := game.sim.tower_by_id(id)\n\tt.level = 3",
+		"func f() -> void:\n\tgame.sim.tower_by_id(id).level = 3",
+		"func f() -> void:\n\tfor e in game.sim.enemies_in_range(c, 2.0):\n\t\te.hp = 0",
+		"func f() -> void:\n\tvar es := game.sim.enemies_in_range(c, 2.0)\n\tes[0].hp = 0",
+		# a getter of this file, by its return and by its declared state return type
+		"func get_s():\n\treturn sim.state\nfunc f() -> void:\n\tget_s().gold = 1",
+		"func get_t() -> SimTower:\n\treturn null\nfunc f() -> void:\n\tvar t := get_t()\n"
+			+ "\tt.level = 3",
+		# a class field assigned an alias inside a func, plain and through self
+		"var s\nfunc _ready() -> void:\n\ts = sim.state\nfunc f() -> void:\n\ts.gold = 1",
+		"var s\nfunc _ready() -> void:\n\tself.s = sim.state\nfunc f() -> void:\n\tself.s.gold = 1",
+		# typed params: a state class, an inner one, an Array of them (index, element call, for)
+		"func f(t: SimTower) -> void:\n\tt.level = 3",
+		"func f(l: TowerDef.Level) -> void:\n\tl.damage = 1.0",
+		"func f(ts: Array[SimTower]) -> void:\n\tts[0].level = 3",
+		"func f(ts: Array[SimTower]) -> void:\n\tts.back().level = 3",
+		"func f(ts: Array[SimTower]) -> void:\n\tfor t in ts:\n\t\tt.level = 3",
+		# a param of a func this file calls with an alias (`_calls`), plain and through self
+		"func f() -> void:\n\tg(sim.state)\nfunc g(x) -> void:\n\tx.gold = 1",
+		"func f() -> void:\n\tself.g(1, sim.state.towers[0])\nfunc g(a, x) -> void:\n\tx.level = 3",
+		# an inner class's field, assigned in one of its funcs and written in another
+		"class Inner:\n\tvar s\n\tfunc a() -> void:\n\t\ts = sim.state\n\tfunc b() -> void:\n"
+			+ "\t\ts.gold = 1",
+		# element tails (ELEMENT_CALL): direct, and into an alias
+		"func f() -> void:\n\tsim.state.towers.back().level = 3",
+		"func f() -> void:\n\tsim.state.towers.front().level = 3",
+		"func f() -> void:\n\tsim.state.towers.get(0).level = 3",
+		"func f() -> void:\n\tsim.state.enemies.pop_front().hp = 0",
+		"func f() -> void:\n\tvar t := sim.state.towers.back()\n\tt.level = 3",
+		# a local declared empty and assigned an alias later (`_state_aliases`)
+		"func f() -> void:\n\tvar s = null\n\ts = sim.state\n\ts.gold = 1",
+	]:
+		assert_array(_state_writes("f.gd", text)).override_failure_message(
+			"not flagged:\n" + text).is_not_empty()
+
+
+## LT-42: near misses of the forms above; none may be flagged.
+func test_the_write_scan_skips_the_lt42_near_misses() -> void:
+	for text: String in [
+		# an enum nested in a state class is not that class
+		"func f(st: SimState.SanityState) -> void:\n\tst.x = 1",
+		# ConfigReader is only a func-local in sim/, not a member of the config
+		"func f(r: ConfigReader) -> void:\n\tr.x = 1",
+		"func f() -> void:\n\tvar r: ConfigReader = ConfigReader.new(p)\n\tr.x = 1",
+		# an Array param of state objects may be a fresh Array: changing it is no state write
+		"func f(ts: Array[SimTower]) -> void:\n\tts.clear()",
+		"func f(ts: Array[SimTower]) -> void:\n\tts.append(t)",
+		# a func-local (not a class field) assigned an alias stays in its func
+		"func f() -> void:\n\tvar s\n\ts = sim.state\nfunc g() -> void:\n\ts.gold = 1",
+		# an inner class's funcs see its own fields, not the outer script's
+		"var s\nfunc a() -> void:\n\ts = sim.state\nclass Inner:\n\tvar s\n\tfunc b() -> void:\n"
+			+ "\t\ts.gold = 1",
+		# a func this file calls with no alias: its param is none
+		"func f() -> void:\n\tg(label)\nfunc g(x) -> void:\n\tx.text = \"a\"",
+	]:
+		assert_array(_state_writes("f.gd", text)).override_failure_message(
+			"falsely flagged:\n" + text).is_empty()
+
+
 func test_the_private_member_scan_includes_static_functions() -> void:
 	var text := "var _a := 1\nconst _b := 2\nfunc _c() -> void:\nstatic func _d() -> int:\n" \
 		+ "func _init() -> void:\nconst _E := 3\n\tvar _local := 4\nfunc pub() -> void:\n"

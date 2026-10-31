@@ -26,7 +26,7 @@ trap 'kill_leftovers; rm -rf "$T"' EXIT
 
 cat >"$FAKE" <<'EOF'
 #!/usr/bin/env bash
-case " $* " in *" --import "*) exit 0 ;; esac
+case " $* " in *" --import "*) echo import >>"$FAKE_DIR/imports"; exit 0 ;; esac
 printf '%s\n' "$@" >"$FAKE_DIR/args"
 case "$FAKE_MODE" in
   exit)
@@ -45,21 +45,23 @@ ok() { passes=$((passes + 1)); echo "ok - $1"; }
 bad() { fails=$((fails + 1)); echo "not ok - $1"; [ $# -gt 1 ] && printf '    %s\n' "$2"; return 0; }
 
 # Fake behaviour for the next run(); reset after each run.
-MODE=exit CODE=0 OUT="" TIMEOUT=60 GODOT_BIN="$FAKE"
+MODE=exit CODE=0 OUT="" TIMEOUT=60 GODOT_BIN="$FAKE" PROJ="$REPO"
 
-# Runs scripts/test.sh "$@" from the repo root with the fake; sets rc, out, argv ("" when
-# the fake was never run). A 40 s alarm bounds a broken watchdog (rc 142 then).
+# Runs $PROJ/scripts/test.sh "$@" (default: the repo's) with the fake; sets rc, out, argv ("" when
+# the fake was never run), imports (how many times the fake was asked to --import). A 40 s alarm bounds a broken watchdog (rc 142 then).
 run() {
   kill_leftovers
-  rm -f "$T/args" "$T/out"
-  (cd "$REPO" && exec env GODOT="$GODOT_BIN" TEST_TIMEOUT="$TIMEOUT" FAKE_DIR="$T" \
+  rm -f "$T/args" "$T/out" "$T/imports"
+  (cd "$PROJ" && exec env GODOT="$GODOT_BIN" TEST_TIMEOUT="$TIMEOUT" FAKE_DIR="$T" \
     FAKE_MODE="$MODE" FAKE_CODE="$CODE" FAKE_OUT="$OUT" \
-    perl -e 'alarm shift; exec @ARGV or die "exec: $!\n"' 40 "$REPO/scripts/test.sh" "$@") \
+    perl -e 'alarm shift; exec @ARGV or die "exec: $!\n"' 40 "$PROJ/scripts/test.sh" "$@") \
     >"$T/out" 2>&1
   rc=$?
   out="$(cat "$T/out")"
   argv="$(cat "$T/args" 2>/dev/null || true)"
-  MODE=exit CODE=0 OUT="" TIMEOUT=60 GODOT_BIN="$FAKE"
+  imports="$(grep -c import "$T/imports" 2>/dev/null || true)"
+  imports="${imports:-0}"
+  MODE=exit CODE=0 OUT="" TIMEOUT=60 GODOT_BIN="$FAKE" PROJ="$REPO"
 }
 
 # The gdUnit command line test.sh must build: expected_argv <res paths...> -- <extra...>
@@ -130,6 +132,45 @@ if [ "$rc" -eq 1 ]; then ok "no test cases with exit 0 -> 1"; else bad "no test 
 CODE=0 OUT="SCRIPT ERROR: boom"; run "$S"
 if [ "$rc" -eq 3 ] && [[ "$out" == *"1 SCRIPT ERROR line(s)"* ]]; then ok "SCRIPT ERROR listed, exit 0 -> 3"
 else bad "SCRIPT ERROR listed, exit 0 -> 3" "rc=$rc out: $out"; fi
+# LT-42: only a passing run becomes 3; a non-zero gdUnit code (101: warnings) is kept.
+CODE=101 OUT="SCRIPT ERROR: boom"; run "$S"
+if [ "$rc" -eq 101 ] && [[ "$out" == *"1 SCRIPT ERROR line(s)"* ]]; then ok "SCRIPT ERROR listed, exit 101 kept"
+else bad "SCRIPT ERROR listed, exit 101 kept" "rc=$rc out: $out"; fi
+CODE=0 OUT="all passed"; run "$S"
+if [ "$rc" -eq 0 ]; then ok "no SCRIPT ERROR, exit 0 kept"; else bad "no SCRIPT ERROR, exit 0 kept" "rc=$rc out: $out"; fi
+
+# --- LT-42: re-import when the class cache is missing or older than a .gd or a directory ---
+# A throwaway project (a copy of test.sh, one script) with every mtime set, so the repo's own
+# .godot is never touched.
+P="$T/proj"
+mkdir -p "$P/scripts" "$P/sub" "$P/.godot"
+cp "$REPO/scripts/test.sh" "$P/scripts/test.sh"
+echo "extends Node" >"$P/sub/a.gd"
+# old_tree: every file and directory 2020-01-01, the class cache 2021-01-01 (fresh).
+old_tree() {
+  find "$P" -exec touch -t 202001010000 {} +
+  touch -t 202101010000 "$P/.godot/global_script_class_cache.cfg"
+}
+# check_import <name> <want imports> <want message part, "" for none>
+check_import() {
+  if [ "$rc" -eq 0 ] && [ "$imports" -eq "$2" ] && [[ "$out" == *"$3"* ]]; then ok "$1"
+  else bad "$1" "rc=$rc imports=$imports (want $2) out: $out"; fi
+}
+R=res://tests/not_checked.gd
+rm -f "$P/.godot/global_script_class_cache.cfg"
+PROJ="$P"; run "$R"; check_import "no class cache -> import" 1 "no class cache yet"
+old_tree; PROJ="$P"; run "$R"; check_import "fresh class cache -> no import" 0 ""
+if [[ "$out" != *"Importing project"* ]]; then ok "fresh class cache -> no import message"
+else bad "fresh class cache -> no import message" "$out"; fi
+old_tree; touch "$P/sub/a.gd"; PROJ="$P"; run "$R"
+check_import "a .gd newer than the class cache -> import" 1 "a.gd is newer than the class cache"
+old_tree; mkdir "$P/new_dir"; PROJ="$P"; run "$R"
+check_import "a directory newer than the class cache -> import" 1 "is newer than the class cache"
+rmdir "$P/new_dir"
+old_tree; touch "$P/sub/notes.txt"; touch -t 202001010000 "$P/sub"
+PROJ="$P"; run "$R"; check_import "a newer non-.gd file -> no import" 0 ""
+old_tree; touch "$P/.godot/x.gd"; touch -t 202001010000 "$P/.godot"; PROJ="$P"; run "$R"
+check_import "a newer .gd under .godot (pruned) -> no import" 0 ""
 
 # --- watchdog: a hung run that ignores SIGTERM and has a child ---------------------------
 MODE=hang TIMEOUT=2; run "$S"
