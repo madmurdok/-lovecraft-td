@@ -138,7 +138,7 @@ func test_an_upgrade_never_lowers_damage() -> void:
 			assert_float(l2.damage / l2.fire_interval).is_greater_equal(l1.damage / l1.fire_interval)
 		for b: String in td.branches:
 			var l3 := td.branches[b]
-			# A branch that fires at least as fast must not lose DPS (Militia hits softer but
+			# A branch that fires at least as fast must not lose DPS (Gangsters hit softer but
 			# faster); a slower one must still hit harder per shot (Pure Rite trades speed
 			# for madness immunity).
 			if l3.damage > 0.0 and l3.fire_interval <= l2.fire_interval:
@@ -176,17 +176,25 @@ func test_level_range_comes_from_json_range_key() -> void:
 	assert_float(t["rifleman"].branches["a"].range_cells).is_equal(5.0)
 
 
-func test_militia_fires_faster_than_level_two() -> void:
+## LT-29 (LT-46 §2.2): Gangsters replaced Militia: 7 damage every 0.2 s over 3 targets.
+func test_gangsters_fire_faster_than_level_two() -> void:
 	var rifle: TowerDef = _real().towers["rifleman"]
-	assert_float(rifle.branches["b"].fire_interval).is_equal(0.5)
+	var g := rifle.branches["b"]
+	assert_str(g.name).is_equal("Gangsters")
+	assert_float(g.fire_interval).is_equal(0.2)
+	assert_float(g.damage).is_equal(7.0)
+	assert_float(g.range_cells).is_equal(3.0)
 	assert_float(rifle.levels[1].fire_interval).is_equal(0.7)
-	assert_float(rifle.branches["b"].fire_interval).is_less(rifle.levels[1].fire_interval)
+	assert_float(g.fire_interval).is_less(rifle.levels[1].fire_interval)
 
 
 func test_tower_effects_maps() -> void:
 	var t := _real().towers
 	assert_float(t["rifleman"].branches["a"].effects["crit_chance"]).is_equal(0.2)
-	assert_float(t["rifleman"].branches["b"].effects["shooters"]).is_equal(2.0)
+	assert_dict(t["rifleman"].branches["b"].effects).is_equal({"burst_targets": 3.0})
+	var chain: Dictionary = t["harpooner"].branches["b"].effects
+	assert_float(chain["pull_max_hp"]).is_equal(500.0)
+	assert_float(chain["pull_immune_seconds"]).is_equal(3.0)
 	assert_dict(t["rifleman"].levels[0].effects).is_empty()
 	assert_float(t["elder_sign"].levels[0].effects["slow"]).is_equal(0.35)
 

@@ -294,3 +294,64 @@ func test_one_tower_keeps_at_most_two_attack_effects_the_newest() -> void:
 	assert_vector(mine[0]["to"]).is_equal(Vector2(9.5, 2.5))
 	assert_vector(mine[1]["to"]).is_equal(Vector2(10.5, 2.5))
 	assert_int(_fx_of(other.id).size()).is_equal(1)
+
+
+# --- LT-29: bleed marker, crit spark, pull chain ---------------------------------------
+
+func _shoot_data(t: SimTower, data: Dictionary) -> void:
+	_game.board.on_event(SimEvent.new(SimEvent.Type.SHOT, 0, t.id, data))
+
+
+func test_bleed_marker_iff_bleed_ticks_above_zero() -> void:
+	var e := SimEnemy.new()
+	assert_array(Array(Board.enemy_markers(e))).is_empty()
+	e.status = {"bleed_ticks": 0}
+	assert_array(Array(Board.enemy_markers(e))).is_empty()
+	e.status = {"bleed_ticks": 1, "pull_immune_ticks": 30}
+	assert_array(Array(Board.enemy_markers(e))).contains_exactly(["bleed"])
+	e.status = {"pull_immune_ticks": 30}
+	assert_array(Array(Board.enemy_markers(e))).is_empty()
+	e.status = {"bleed_ticks": 45}
+	e.speed_mult = 0.7
+	e.damage_taken_mult = 1.25
+	assert_array(Array(Board.enemy_markers(e))).contains_exactly(["slow", "vuln", "bleed"])
+
+
+func test_a_crit_shot_copies_crit_into_its_effect() -> void:
+	await _start_game()
+	var t := _tower("rifleman")
+	var e := _enemy()
+	var base := {"def": "rifleman", "target": e.id, "hits": [e.id], "to": Vector2(4.5, 2.5),
+		"miss": false}
+	_shoot_data(t, base)
+	assert_bool(_last_fx()["crit"]).is_false()
+	var crit := base.duplicate()
+	crit["crit"] = true
+	_shoot_data(t, crit)
+	assert_bool(_last_fx()["crit"]).is_true()
+	assert_float(Board.CRIT_SPARK_SCALE).is_greater(1.0)  # the spark the draw lengthens
+
+
+func test_a_pull_shot_holds_a_chain_from_each_pulled_enemy() -> void:
+	await _start_game()
+	var t := _tower("harpooner")
+	var a := _enemy(false, 2.0)
+	var b := _enemy(false, 3.0)
+	var base := {"def": "harpooner", "target": b.id, "hits": [a.id, b.id],
+		"to": Vector2(7.5, 1.5), "miss": false}
+	var pull := base.duplicate()
+	pull["pulled"] = [b.id]
+	_shoot_data(t, pull)
+	var chain: Dictionary = _last_fx()["chain"]
+	assert_array(chain.keys()).is_equal([b.id])
+	assert_vector(chain[b.id]).is_equal(_game.sim.enemy_position(b, 1.0))
+	var none := base.duplicate()
+	none["pulled"] = []
+	_shoot_data(t, none)
+	assert_bool(_last_fx().has("chain")).is_false()
+	_shoot_data(t, base)
+	assert_bool(_last_fx().has("chain")).is_false()
+	var gone := base.duplicate()
+	gone["pulled"] = [999999]  # an id no longer on the board draws no chain
+	_shoot_data(t, gone)
+	assert_dict(_last_fx().get("chain", {})).is_empty()
