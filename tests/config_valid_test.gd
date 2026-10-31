@@ -45,19 +45,23 @@ func test_economy_fields() -> void:
 
 func test_enemy_stats() -> void:
 	var en := _real().enemies
+	# hp is a tuned balance number (LT-23 S10): read it from the raw JSON, not pinned here.
+	var raw: Dictionary = JSON.parse_string(
+		FileAccess.get_file_as_string("res://data/enemies.json"))["enemies"]
 	# id: [hp, speed, armor, leak_damage, drops (LT-27 §1.1: bone, amber, idol, star_stone)]
 	var expected := {
-		"cultist": [60.0, 1.0, 0.0, 1, [999, 0, 0, 1]],
-		"hybrid": [140.0, 0.9, 2.0, 1, [699, 250, 50, 1]],
-		"deep_one": [90.0, 1.6, 0.0, 1, [749, 250, 0, 1]],
-		"night_gaunt": [110.0, 1.3, 0.0, 2, [399, 500, 100, 1]],
-		"shoggoth": [900.0, 0.5, 5.0, 5, [0, 0, 999, 1]],
+		"cultist": [0.0, 1.0, 0.0, 1, [999, 0, 0, 1]],
+		"hybrid": [0.0, 0.9, 2.0, 1, [699, 250, 50, 1]],
+		"deep_one": [0.0, 1.6, 0.0, 1, [749, 250, 0, 1]],
+		"night_gaunt": [0.0, 1.3, 0.0, 2, [399, 500, 100, 1]],
+		"shoggoth": [0.0, 0.5, 5.0, 5, [0, 0, 999, 1]],
 	}
 	for id: String in expected:
 		var e: EnemyDef = en[id]
 		var x: Array = expected[id]
 		assert_str(e.id).is_equal(id)
-		assert_float(e.hp).is_equal(x[0])
+		assert_float(e.hp).is_equal(float(raw[id]["hp"]))
+		assert_float(e.hp).is_greater(0.0)
 		assert_float(e.speed).is_equal(x[1])
 		assert_float(e.armor).is_equal(x[2])
 		assert_int(e.leak_damage).is_equal(x[3])
@@ -104,8 +108,16 @@ func test_tower_sanity_reserve_default_and_explicit() -> void:
 	for id in ["rifleman", "harpooner"]:
 		for lv: TowerDef.Level in t[id].levels + t[id].branches.values():
 			assert_float(lv.sanity_reserve).is_equal(0.0)
-	var expected := {"elder_sign": [5.0, 8.0, 10.0, 15.0],
-		"necronomicon_reader": [10.0, 15.0, 18.0, 25.0]}
+	# The reserves are tuned balance numbers (LT-23 S10): read from the raw JSON.
+	var raw: Dictionary = JSON.parse_string(
+		FileAccess.get_file_as_string("res://data/towers.json"))["towers"]
+	var expected := {}
+	for id in ["elder_sign", "necronomicon_reader"]:
+		var rt: Dictionary = raw[id]
+		expected[id] = [float(rt["levels"][0]["sanity_reserve"]),
+			float(rt["levels"][1]["sanity_reserve"]),
+			float(rt["branches"]["a"]["sanity_reserve"]),
+			float(rt["branches"]["b"]["sanity_reserve"])]
 	for id: String in expected:
 		var td: TowerDef = t[id]
 		var got := [td.levels[0].sanity_reserve, td.levels[1].sanity_reserve,
@@ -196,8 +208,14 @@ func test_madness_rules() -> void:
 	assert_str(m.exit_rule).is_equal("permanent")
 	assert_float(m.restore_sanity).is_equal(30.0)
 	assert_int(m.buyout_cost).is_equal(150)
-	assert_float(m.enemy_speed_multiplier).is_equal(1.2)
-	assert_float(m.enemy_damage_taken_multiplier).is_equal(0.8)
+	# The multipliers are tuned numbers (LT-23 S10): the file's value, and a buff by sign.
+	var raw: Dictionary = JSON.parse_string(
+		FileAccess.get_file_as_string("res://data/sanity.json"))["madness"]
+	assert_float(m.enemy_speed_multiplier).is_equal(float(raw["enemy_speed_multiplier"]))
+	assert_float(m.enemy_damage_taken_multiplier).is_equal(
+		float(raw["enemy_damage_taken_multiplier"]))
+	assert_float(m.enemy_speed_multiplier).is_greater(1.0)
+	assert_float(m.enemy_damage_taken_multiplier).is_between(0.0, 1.0)
 
 
 func test_custom_dir_is_read_via_user_and_absolute_paths() -> void:
