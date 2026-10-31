@@ -19,8 +19,14 @@
 #                 at LT-34), so a loaded machine still passes but a hung run (LT-34 S3 control
 #                 5b: 56 min) is stopped in at most 30 min.
 #
+# Before the run the project is (re-)imported when .godot/global_script_class_cache.cfg is
+# missing or older than any .gd file or directory of the project (a script added, edited,
+# renamed or deleted): a stale class cache gives parse errors (LT-36 S1, LT-42). An up-to-date
+# cache costs one `find`, no Godot start.
+#
 # Exit codes: gdUnit's own (0 ok, 100 failures/errors, 101 warnings...), 1 when no test case
-# was found, 2 when Godot is missing, 124 on timeout.
+# was found, 2 when Godot is missing, 3 when the run passed but the log has a SCRIPT ERROR
+# (raised outside any test, so gdUnit did not count it; LT-42), 124 on timeout.
 set -uo pipefail
 GODOT="${GODOT:-/Applications/Godot.app/Contents/MacOS/Godot}"
 TEST_TIMEOUT="${TEST_TIMEOUT:-1800}"
@@ -61,8 +67,17 @@ guarded() {
   ' "$TEST_TIMEOUT" "$@"
 }
 
-if [ ! -d .godot ]; then
-  echo "First run: importing project..."
+class_cache=.godot/global_script_class_cache.cfg
+stale=""
+if [ ! -f "$class_cache" ]; then
+  stale="no class cache yet"
+else
+  newer="$(find . \( -path ./.godot -o -path ./.git -o -path ./reports -o -path ./build \) -prune \
+    -o \( -name '*.gd' -o -type d \) -newer "$class_cache" -print -quit)"
+  [ -n "$newer" ] && stale="$newer is newer than the class cache"
+fi
+if [ -n "$stale" ]; then
+  echo "Importing project ($stale)..."
   guarded "$GODOT" --headless --path . --import >/dev/null 2>&1 || true
 fi
 
@@ -111,11 +126,16 @@ if [ "$code" -eq 0 ] && grep -q "No test cases found" "$log"; then
   code=1
 fi
 # gdUnit reports a runtime error inside a test as a test error (exit 100). One raised outside
-# any test (a deferred call, a node's _process after its test ended) is only logged: list it.
+# any test (a deferred call, a node's _process after its test ended) is only logged: list it
+# and fail an otherwise passing run with 3 (LT-42: a full run had none, so no false alarms).
 n_script_errors=$(grep -c "SCRIPT ERROR:" "$log")
 if [ "$n_script_errors" -gt 0 ]; then
   echo "test.sh: $n_script_errors SCRIPT ERROR line(s) in the log:" >&2
   grep -A1 "SCRIPT ERROR:" "$log" | grep -v "^--$" >&2
+  if [ "$code" -eq 0 ]; then
+    echo "test.sh: failing the run (exit 3): SCRIPT ERROR outside any test" >&2
+    code=3
+  fi
 fi
 rm -f "$log"
 echo "gdUnit4 exit code: $code"
