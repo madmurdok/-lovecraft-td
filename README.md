@@ -28,6 +28,17 @@ Binary from `$GODOT` (default `/Applications/Godot.app/Contents/MacOS/Godot`).
 Does the first-time import automatically when `.godot/` is missing.
 Reports go to `reports/` (git-ignored).
 
+`scripts/test.sh tests/foo_test.gd ...` runs only the given suites; see the script header
+for `-i suite:test`, `TEST_TIMEOUT` (wall-clock watchdog, exit 124) and the exit codes.
+
+```
+tests/shell/test_sh_test.sh
+```
+
+Checks `scripts/test.sh` itself (watchdog, exit codes, argument handling) against a fake
+Godot, in about 15 s. A separate entry point: `scripts/test.sh` runs only gdUnit suites and
+does not pick it up.
+
 ## Web build
 
 Prerequisite: export templates 4.7.2 (see above).

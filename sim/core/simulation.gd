@@ -28,6 +28,7 @@ enum CommandResult {
 	NO_SANITY_ROOM,  ## buy_sanity: the sanity cap is 0, a buyout would restore nothing (LT-23)
 	NO_RELICS,  ## sell_relics: unknown kind or nothing of it in the stash (LT-27)
 	UNKNOWN_COMMAND,  ## replay_command: the entry names no command (LT-34)
+	BAD_ARGS,  ## replay_command: a known command with missing, extra or wrong-typed args (LT-36)
 }
 
 ## Sanity change reasons that may move sanity while in MADNESS (LT-13): the exit rules.
@@ -410,6 +411,14 @@ func call_wave() -> CommandResult:
 	return CommandResult.OK
 
 
+## LT-36: whether the buyout can apply at all right now: exit rule "buyout" and the player
+## in MADNESS (gold, cap room and outcome aside: can_buy_sanity says if it would be applied).
+## The HUD shows the buyout button exactly while this is true. Changes nothing.
+func buyout_applies() -> bool:
+	return config.sanity.madness.exit_rule == "buyout" \
+		and state.sanity_state == SimState.SanityState.MADNESS
+
+
 ## Whether buy_sanity() would be applied now; OK or the first failing reason, in this
 ## order: OUTCOME_REACHED, NO_BUYOUT, NOT_IN_MADNESS, NO_SANITY_ROOM (the cap is 0, LT-23
 ## Q6), NOT_ENOUGH_GOLD. Changes nothing.
@@ -456,11 +465,34 @@ func debug_set_sanity(value: float) -> CommandResult:
 	return CommandResult.OK
 
 
+## LT-36: the argument types of each command_log entry name, after [tick, name]; the order
+## of the public command's parameters. TYPE_STRING also takes a StringName, TYPE_FLOAT an int.
+const REPLAY_ARGS: Dictionary[String, Array] = {
+	"build": [TYPE_STRING, TYPE_VECTOR2I],
+	"sell": [TYPE_INT],
+	"upgrade": [TYPE_INT, TYPE_STRING],
+	"set_target_priority": [TYPE_INT, TYPE_STRING],
+	"call_wave": [],
+	"buy_sanity": [],
+	"sell_relics": [TYPE_STRING],
+	"debug_set_sanity": [TYPE_FLOAT],
+}
+
+
 ## LT-34: re-applies one command_log entry [tick, name, args...] now (the caller steps the
 ## sim to entry[0] first) through the same public command, so it is logged again.
-## UNKNOWN_COMMAND (and an error) for an entry naming no command.
+## UNKNOWN_COMMAND (and an error) for an entry naming no command; BAD_ARGS (and an error)
+## for a known name whose args do not match REPLAY_ARGS in count and type (LT-36). Never
+## raises a script error, and a refused entry changes nothing.
 func replay_command(entry: Array) -> CommandResult:
-	match entry[1] if entry.size() > 1 else "":
+	var cmd: Variant = entry[1] if entry.size() > 1 else ""
+	if typeof(cmd) not in [TYPE_STRING, TYPE_STRING_NAME] or not REPLAY_ARGS.has(String(cmd)):
+		push_error("Simulation.replay_command: unknown entry %s" % [entry])
+		return CommandResult.UNKNOWN_COMMAND
+	if not _replay_args_ok(entry, REPLAY_ARGS[String(cmd)]):
+		push_error("Simulation.replay_command: bad args %s" % [entry])
+		return CommandResult.BAD_ARGS
+	match String(cmd):
 		"build": return build_tower(entry[2], entry[3])
 		"sell": return sell_tower(entry[2])
 		"upgrade": return upgrade_tower(entry[2], entry[3])
@@ -469,8 +501,21 @@ func replay_command(entry: Array) -> CommandResult:
 		"buy_sanity": return buy_sanity()
 		"sell_relics": return sell_relics(entry[2])
 		"debug_set_sanity": return debug_set_sanity(entry[2])
-	push_error("Simulation.replay_command: unknown entry %s" % [entry])
-	return CommandResult.UNKNOWN_COMMAND
+	return CommandResult.UNKNOWN_COMMAND  # unreachable: every REPLAY_ARGS key has an arm
+
+
+## Whether entry[2..] has exactly types.size() values, each of the matching type.
+func _replay_args_ok(entry: Array, types: Array) -> bool:
+	if entry.size() != 2 + types.size():
+		return false
+	for i in types.size():
+		var t := typeof(entry[2 + i])
+		var want: int = types[i]
+		if t == want or (want == TYPE_STRING and t == TYPE_STRING_NAME) \
+				or (want == TYPE_FLOAT and t == TYPE_INT):
+			continue
+		return false
+	return true
 
 
 ## LT-27 §1.4: the money one relic of `kind` sells for (economy.relics price); 0 for an
