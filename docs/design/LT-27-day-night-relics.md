@@ -327,6 +327,32 @@ random now).
 - C7 drops kind cross-check removed from `sim/config.gd` → 13.
 - C8 lighting `night` ignores phase → 15.
 
+### Controls (S8)
+
+Nine controls, one more than the usual cap: the eight design candidates plus one per UI
+behaviour the tests slice was asked to pin (token flight on ticks; no "gold" in texts).
+Godot controls need no build; each runs one test file in seconds. Revert in a throwaway
+worktree, run only the named file; the named test must fail.
+
+| # | Production revert | Must fail |
+|---|---|---|
+| C1 | `simulation.gd` `_drop_token`: for a real enemy call `_add_relics(tok.kind, 1, "kill", tok.id)` right away and do not append the token to `state.relic_tokens` (credit at the kill) | `relic_test` `test_real_kill_drops_a_token_credited_only_at_its_arrive_tick`, `test_real_and_ghost_tokens_are_indistinguishable_before_the_vanish_tick` |
+| C2 | `simulation.gd` `_settle_tokens`: `if _ghost_tokens.has(tok.id):` → `if false:` (ghosts settle like real tokens) | `relic_test` `test_fake_kill_drops_a_ghost_token_that_vanishes_and_credits_nothing` |
+| C3 | `simulation.gd` `_drop_token`: roll on `SimRng.Stream.LOOT` for fakes too | `relic_test` `test_a_real_drop_draws_once_on_loot_and_a_fake_once_on_ghost_loot_only`, `test_fakes_never_shift_the_real_drops` |
+| C4 | `simulation.gd` `_roll_drop`: `if kind != cheapest:` → `if true:` (luck scales the cheapest kind too) | `relic_test` `test_luck_scales_every_kind_but_the_cheapest` |
+| C5 | `wave_director.gd` `_clear_wave`: delete `sim.settle_all_tokens()` | `relic_test` `test_dawn_settles_tokens_in_flight_before_the_day_starts` |
+| C6 | `simulation.gd` `can_sell_relics`: delete the `_day_only()` check | `relic_test` `test_sell_relics_refusals_change_nothing` |
+| C7 | `config.gd` `load_from_dir`: delete the `_check_drops(c)` call | `relic_test` `test_config_rejects_bad_drop_tables_with_the_path` |
+| C8 | `lighting.gd` `night_target`: `return 1.0` whatever the phase | `lighting_test` `test_ambient_is_day_by_day_and_night_after_the_fade_at_night` |
+| C9 | `relic_tokens.gd` `progress`: `var now := float(game.sim.state.tick)` (drop the clock's alpha) | `relic_ui_test` `test_token_flight_follows_sim_ticks_and_the_clock_alpha` |
+
+Also pinned without a dedicated control (each revert overlaps one above or an existing
+suite): the luck-exempt kind ignores weight-0 kinds
+(`test_the_luck_exempt_kind_is_the_cheapest_that_can_drop`), day length 40 s, replay of
+`sell_relics` + early night, and "no player-facing gold" (`relic_ui_test`
+`test_no_player_facing_text_says_gold`; a revert of `TowerInfo.REASONS` NOT_ENOUGH_GOLD to
+"not enough gold" fails it).
+
 ## 7. Future layer: crew (design only, next release; D5)
 
 Owner, verbatim: "Мне кажется что продажа только днем, и возможно имеет смысл закупать не
