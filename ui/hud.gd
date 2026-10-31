@@ -3,6 +3,7 @@ extends Control
 ## Top HUD bar (LT-7, GDD §8-§9): gold, lighthouse HP, wave n / total, phase + build
 ## timer, call-wave button with the bonus it would pay, x1/x2 speed, pause, the sanity
 ## bar (LT-14) and, with madness exit_rule "buyout", the buyout button while in madness.
+## LT-23 Q10: in madness a line under the sanity bar names the enemy buff (from config).
 ## Texts are rebuilt from sim state by refresh(); buttons call Game commands.
 
 var game: Game
@@ -16,6 +17,7 @@ var speed_button: Button
 var pause_button: Button
 var sanity_bar: SanityBar  ## LT-14: sanity with threshold marks
 var buyout_button: Button  ## LT-13/14: madness buyout, only with exit_rule "buyout", in madness
+var hostile_label: Label  ## LT-23 Q10: the madness enemy buff, only in madness
 
 
 func _ready() -> void:
@@ -49,6 +51,21 @@ func _ready() -> void:
 	# LT-13 exit rule "buyout": shown by refresh() only in madness.
 	buyout_button = _button(bar, "BuyoutButton", game.buy_sanity)
 	buyout_button.visible = false
+	# LT-23 Q10: just below the HUD strip, under the sanity bar (placed by refresh()).
+	hostile_label = Label.new()
+	hostile_label.name = "HostileLabel"
+	hostile_label.visible = false
+	hostile_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hostile_label.add_theme_font_size_override("font_size", 13)
+	hostile_label.add_theme_color_override("font_color", Color(1.0, 0.55, 0.5))
+	var box := StyleBoxFlat.new()
+	box.bg_color = Color(0.06, 0.0, 0.02, 0.85)
+	box.content_margin_left = 6
+	box.content_margin_right = 6
+	box.content_margin_top = 1
+	box.content_margin_bottom = 2
+	hostile_label.add_theme_stylebox_override("normal", box)
+	add_child(hostile_label)
 	# LT-14 Whispers jitter: the shader moves only the drawing, so click areas stay put.
 	if game.sanity_fx != null:
 		for c: CanvasItem in [gold_label, hp_label, wave_label, phase_label, call_wave_button,
@@ -73,7 +90,31 @@ func refresh() -> void:
 		and s.sanity_state == SimState.SanityState.MADNESS)
 	buyout_button.text = "Restore (%dg)" % game.sim.config.sanity.madness.buyout_cost
 	buyout_button.disabled = game.sim.can_buy_sanity() != Simulation.CommandResult.OK
+	hostile_label.visible = s.sanity_state == SimState.SanityState.MADNESS
+	if hostile_label.visible:
+		hostile_label.text = hostile_text(game.sim.config.sanity.madness)
+		# Starts under the sanity bar, shifted left so it ends before the side panel.
+		var board_right := Game.BOARD_ORIGIN.x + s.map.width * Board.CELL
+		var w := hostile_label.get_combined_minimum_size().x
+		var x := minf(sanity_bar.get_global_rect().position.x - get_global_rect().position.x,
+			board_right - w - 4.0)
+		hostile_label.position = Vector2(x, Game.BOARD_ORIGIN.y + 2)
 	sanity_bar.queue_redraw()
+
+
+## LT-23 Q10: "The world turns hostile: enemies +20 % speed, −20 % damage taken" from the
+## madness multipliers (a part is left out when its multiplier is 1).
+static func hostile_text(m: SanityConfig.Madness) -> String:
+	var parts := PackedStringArray()
+	var speed := roundi((m.enemy_speed_multiplier - 1.0) * 100.0)
+	if speed != 0:
+		parts.append("%s%d %% speed" % ["+" if speed > 0 else TowerInfo.MINUS, absi(speed)])
+	var taken := roundi((m.enemy_damage_taken_multiplier - 1.0) * 100.0)
+	if taken != 0:
+		parts.append("%s%d %% damage taken" % ["+" if taken > 0 else TowerInfo.MINUS, absi(taken)])
+	if parts.is_empty():
+		return "The world turns hostile"
+	return "The world turns hostile: enemies " + ", ".join(parts)
 
 
 ## The build timer shows whole seconds rounded down, the same seconds the early-call

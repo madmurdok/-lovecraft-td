@@ -8,6 +8,7 @@ extends RefCounted
 const CURRENCY := "gold"  ## the one currency word (LT-27 renames it here)
 const COMING_SOON := " (coming soon)"  ## appended to lines whose key is in Level.PENDING
 const MINUS := "−"  ## U+2212, for sanity drains
+const MADNESS_WARNING := " (drives you mad!)"  ## LT-23 Q3: build/upgrade takes the cap to 0
 
 ## Player-facing text for a refused build or upgrade (presentation only).
 const REASONS := {
@@ -42,6 +43,13 @@ static func num(v: float) -> String:
 ## "40 gold" (sanity is reserved, not paid: LT-23).
 static func cost_text(gold: int) -> String:
 	return "%d %s" % [gold, CURRENCY]
+
+
+## LT-23 Q3: reserving `delta` more sanity would take the cap to 0 (and so start madness);
+## never while already in madness. Shared by the build and upgrade previews.
+static func drives_mad(st: SimState, delta: float) -> bool:
+	return delta > 0.0 and st.sanity_cap - delta <= 0.0 \
+		and st.sanity_state != SimState.SanityState.MADNESS
 
 
 ## The reason text for a refused command; a generic word for an unmapped result.

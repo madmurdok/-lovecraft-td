@@ -348,6 +348,22 @@ does not move.
     `final_cap`, `cap_per_wave`, `madness_tick`, `reserve_peak`, `free_reserve`,
     `hp_lost_per_wave`, `towers_final` (`_play`).
 
+S7 (UI/render) behaviours, one line each:
+21. Board: every live enemy's colour is `COLOR_ENEMY` lerped to `COLOR_ENEMY_MAD` by
+    `game.sanity_fx.madness`, with a dark outline while that grade is above 0; the same for
+    real and fake (no fake read) — `Board._draw_enemies`.
+22. Sanity bar: `cap_ratio()` = cap / max (clamped 0..1); the reserved block is drawn from it
+    to the right end only when cap < max — `SanityBar.cap_ratio`, `SanityBar._draw_reserved`.
+23. Sanity bar label: "Sanity n  State" at cap = max, "Sanity n / cap  State" below it —
+    `SanityBar.label_text`.
+24. HUD: `hostile_label` visible only in MADNESS, text "The world turns hostile: enemies
+    +20 % speed, −20 % damage taken" from the madness multipliers (a part left out at 1.0) —
+    `Hud.refresh`, `Hud.hostile_text`.
+25. Build preview: an enabled picker button gets `TowerInfo.MADNESS_WARNING` when the L1
+    reserve would take the cap to 0, never in MADNESS or for a reserve of 0 —
+    `TowerPicker.refresh` → `TowerPicker._drives_mad` → `TowerInfo.drives_mad` (also used by
+    `TowerPanel._drives_mad` for upgrades).
+
 **Controls** (revert the code, the named test must fail):
 C1 also subtract r from current sanity on build (2); C2 clamp `_add_sanity` to `max` (4);
 C3 add the reserve back to sanity on sell (5); C4 restore `restore_sanity` without the cap

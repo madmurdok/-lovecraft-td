@@ -21,6 +21,8 @@ const COLOR_START := Color(0.45, 0.20, 0.20)
 const COLOR_LIGHTHOUSE := Color(0.95, 0.90, 0.55)
 const COLOR_TOWER := Color(0.75, 0.75, 0.80)
 const COLOR_ENEMY := Color(0.55, 0.85, 0.55)
+const COLOR_ENEMY_MAD := Color(1.0, 0.25, 0.15)  ## LT-23 Q10: hostile tint in madness
+const COLOR_ENEMY_OUTLINE := Color(0.03, 0.0, 0.02)  ## LT-23 Q10: dark outline in madness
 const COLOR_HP_BACK := Color(0.2, 0, 0)
 const COLOR_HP := Color(0.9, 0.2, 0.2)
 const COLOR_SHOT := Color(1, 1, 0.7)
@@ -252,13 +254,15 @@ func _draw_tower(t: SimTower) -> void:
 func _draw_enemies(s: SimState) -> void:
 	_last_pos.clear()
 	var fl := _flicker_strength()
+	# LT-23 Q10: the smoothed madness grade tints and outlines every enemy alike.
+	var mad := game.sanity_fx.madness if game.sanity_fx != null else 0.0
 	for e in s.enemies:
 		if not e.is_live():
 			continue
 		var p := game.sim.enemy_position(e, alpha)
 		_last_pos[e.id] = p
 		var px := p * CELL
-		var color := COLOR_ENEMY
+		var color := COLOR_ENEMY.lerp(COLOR_ENEMY_MAD, mad)
 		if e.revealed:
 			color.a = 0.35
 		var dip := fl * _flicker_dip(e.id) if fl > 0.0 else 0.0
@@ -268,6 +272,8 @@ func _draw_enemies(s: SimState) -> void:
 			ghost.a = 0.35
 			draw_circle(px + Vector2(CELL * 0.15, 0), CELL * 0.25, ghost)
 		draw_circle(px, CELL * 0.25, color)
+		if mad > 0.0:
+			draw_arc(px, CELL * 0.25, 0, TAU, 24, Color(COLOR_ENEMY_OUTLINE, color.a * mad), 3.0)
 		if game.sim.debug_is_fake(e):
 			draw_arc(px, CELL * 0.3, 0, TAU, 24, COLOR_DEBUG_FAKE, 2.0)
 		var w := CELL * 0.6

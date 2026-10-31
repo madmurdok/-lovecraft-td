@@ -4,12 +4,17 @@ extends Control
 ## from sanity.json, the value and state name on top. While Fraying (and in Madness) the
 ## bar is drawn distorted: torn slices, a wobbling fill edge and glitch stripes. Only the
 ## drawing moves; the control's rect never does. Reads sim state, never changes it.
+## LT-23: the part of the bar held by occult reserves (cap..max) is a dark hatched block at
+## the right end, and the label reads "Sanity n / cap" while the cap is below max.
 
 const SIZE := Vector2(190, 26)
 const STATE_NAMES: PackedStringArray = ["Lucid", "Whispers", "Fraying", "Madness"]
 const COLOR_BACK := Color(0.05, 0.05, 0.07)
 const COLOR_FRAME := Color(0.55, 0.55, 0.6)
 const COLOR_MARK := Color(0.9, 0.9, 0.95, 0.85)
+const COLOR_RESERVED := Color(0.13, 0.07, 0.16)  ## LT-23: reserved block
+const COLOR_HATCH := Color(0.42, 0.28, 0.48, 0.9)  ## LT-23: its hatching
+const HATCH_STEP := 6.0  ## px between hatch lines
 const STATE_COLORS: Array[Color] = [
 	Color(0.55, 0.75, 0.95),  # Lucid
 	Color(0.80, 0.78, 0.45),  # Whispers
@@ -43,6 +48,20 @@ func fill_ratio() -> float:
 	return clampf(s.sanity / game.sim.config.sanity.max_sanity, 0.0, 1.0)
 
 
+## The sanity cap (LT-23) as a 0..1 position: the reserved block starts here.
+func cap_ratio() -> float:
+	return clampf(game.sim.state.sanity_cap / game.sim.config.sanity.max_sanity, 0.0, 1.0)
+
+
+## "Sanity n  State", or "Sanity n / cap  State" while reserves hold part of the bar.
+func label_text() -> String:
+	var s := game.sim.state
+	var st := STATE_NAMES[int(s.sanity_state)]
+	if s.sanity_cap < game.sim.config.sanity.max_sanity:
+		return "Sanity %d / %d  %s" % [roundi(s.sanity), roundi(s.sanity_cap), st]
+	return "Sanity %d  %s" % [roundi(s.sanity), st]
+
+
 ## Threshold boundaries to mark, as 0..1 positions (each state's `min`, except 0).
 func mark_ratios() -> PackedFloat32Array:
 	var out := PackedFloat32Array()
@@ -68,15 +87,39 @@ func _draw() -> void:
 		_draw_torn_fill(r, fill, color, st == SimState.SanityState.MADNESS)
 	else:
 		draw_rect(Rect2(r.position, Vector2(fill, r.size.y)), color)
+	_draw_reserved(r, r.size.x * cap_ratio())
 	for m in mark_ratios():
 		var x := r.size.x * m
 		draw_line(Vector2(x, -3), Vector2(x, r.size.y + 3), COLOR_MARK, 2.0)
 	draw_rect(r, COLOR_FRAME, false, 1.0)
-	var text := "Sanity %d  %s" % [roundi(s.sanity), STATE_NAMES[st]]
+	var text := label_text()
 	var font := ThemeDB.fallback_font
 	var pos := Vector2(6, r.size.y * 0.5 + 5)
-	draw_string(font, pos + Vector2(1, 1), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color.BLACK)
+	# A black outline keeps the label readable where threshold marks and hatching cross it.
+	draw_string_outline(font, pos, text, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, 4, Color.BLACK)
 	draw_string(font, pos, text, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color.WHITE)
+
+
+## LT-23: the reserved part (x_cap..right end) as a dark block with diagonal hatching,
+## drawn over the fill so a wobbling torn edge never shows inside it.
+func _draw_reserved(r: Rect2, x_cap: float) -> void:
+	if x_cap >= r.size.x - 0.5:
+		return
+	var h := r.size.y
+	draw_rect(Rect2(Vector2(x_cap, 0), Vector2(r.size.x - x_cap, h)), COLOR_RESERVED)
+	var x0 := x_cap - h
+	while x0 < r.size.x:
+		# Line from (x0, h) to (x0 + h, 0), clipped to x_cap..r.size.x.
+		var a := Vector2(x0, h)
+		var b := Vector2(x0 + h, 0)
+		if a.x < x_cap:
+			a = Vector2(x_cap, h - (x_cap - x0))
+		if b.x > r.size.x:
+			b = Vector2(r.size.x, h - (r.size.x - x0))
+		if b.x > a.x:
+			draw_line(a, b, COLOR_HATCH, 1.5)
+		x0 += HATCH_STEP
+	draw_line(Vector2(x_cap, 0), Vector2(x_cap, h), COLOR_FRAME, 1.0)
 
 
 ## Fraying / Madness: the fill is drawn as vertical slices that tear up and down, its end

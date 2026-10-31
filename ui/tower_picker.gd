@@ -2,7 +2,8 @@ class_name TowerPicker
 extends VBoxContainer
 ## Build view of the side panel (LT-7, LT-24 §4) for a buildable cell: one button per tower
 ## in the config with its cost, and under it the tower's role and L1 info (TowerInfo). A
-## button is disabled, with the reason, whenever Simulation.can_build refuses it.
+## button is disabled, with the reason, whenever Simulation.can_build refuses it, and warns
+## "(drives you mad!)" when its reserve would take the sanity cap to 0 (LT-23 Q3).
 ## `visible` is "the build view is shown"; SidePanel shows its idle text otherwise.
 
 ## Kept for callers of the LT-7 name; the texts live in TowerInfo.REASONS.
@@ -65,7 +66,14 @@ func refresh() -> void:
 		var text := "%s - %s" % [def.name, TowerInfo.cost_text(def.cost)]
 		if b.disabled:
 			text += " (%s)" % TowerInfo.reason(r)
+		elif _drives_mad(def):
+			text += TowerInfo.MADNESS_WARNING
 		b.text = text
+
+
+## LT-23 Q3: building `def` (its L1 reserve) would take the cap to 0 and start madness.
+func _drives_mad(def: TowerDef) -> bool:
+	return TowerInfo.drives_mad(game.sim.state, def.levels[0].sanity_reserve)
 
 
 func _on_tower_pressed(def_id: String) -> void:

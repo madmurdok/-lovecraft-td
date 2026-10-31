@@ -7,7 +7,7 @@ extends VBoxContainer
 ## Simulation.can_upgrade refuses them; refresh() re-reads everything each frame.
 ## `visible` is "the tower view is shown"; SidePanel shows its idle text otherwise.
 
-const MADNESS_WARNING := " (drives you mad!)"
+const MADNESS_WARNING := TowerInfo.MADNESS_WARNING
 
 var game: Game
 var tower_id := 0
@@ -126,9 +126,7 @@ func _refresh_upgrade(b: Button, info: Label, t: SimTower, s: TowerDef.Level, br
 ## An enabled upgrade reserving `delta` more sanity would take the cap to 0 (and so start
 ## madness, LT-23 Q3).
 func _drives_mad(delta: float) -> bool:
-	var st := game.sim.state
-	return delta > 0.0 and st.sanity_cap - delta <= 0.0 \
-		and st.sanity_state != SimState.SanityState.MADNESS
+	return TowerInfo.drives_mad(game.sim.state, delta)
 
 
 func _on_upgrade_pressed(branch: String) -> void:
