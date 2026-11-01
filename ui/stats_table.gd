@@ -10,6 +10,7 @@ extends VBoxContainer
 const FONT_SIZE := 12
 const FONT_SIZE_NARROW := 11  ## values at 3 columns, so "Single" / "Summon" keep a gap
 const LABEL_W := 62  ## the row-label column (LT-43 §4)
+const LABEL_W_NARROW := 55  ## at 3 columns, labels at FONT_SIZE_NARROW ("Sanity/kill" 53 px)
 const SEPARATION := 2
 const COLOR_LABEL := Color(0.6, 0.6, 0.64)
 const COLOR_DASH := Color(0.45, 0.45, 0.5)
@@ -28,6 +29,7 @@ var row_keys: PackedStringArray = []
 var cells: Dictionary[String, Array] = {}
 var heads: Array[Label] = []
 var _value_font := FONT_SIZE
+var _label_font := FONT_SIZE
 var _shown := []  ## the last set_columns arguments: refresh() calls it every frame
 
 
@@ -74,15 +76,17 @@ func set_columns(p_heads: PackedStringArray, cols: Array[Dictionary], lit: Dicti
 	heads.clear()
 	var n := cols.size()
 	_value_font = FONT_SIZE_NARROW if n >= 3 else FONT_SIZE
+	_label_font = _value_font
+	var label_w := LABEL_W_NARROW if n >= 3 else LABEL_W
 	var head_row := _row("Head")
-	head_row.add_child(_label("", COLOR_LABEL, LABEL_W))
+	head_row.add_child(_label("", COLOR_LABEL, label_w))
 	for i in n:
 		var h := _label(p_heads[i] if i < p_heads.size() else "", head_color)
 		heads.append(h)
 		head_row.add_child(h)
 	for key: String in row_keys:
 		var row := _row("Row_" + key)
-		row.add_child(_label(_row_label(key), COLOR_LABEL, LABEL_W))
+		row.add_child(_label(_row_label(key), COLOR_LABEL, label_w))
 		var shown: Array[String] = []
 		for i in n:
 			shown.append(String(lit.get(key, cols[i][key])) if i == 0 else String(cols[i][key]))
@@ -103,6 +107,24 @@ func set_columns(p_heads: PackedStringArray, cols: Array[Dictionary], lit: Dicti
 				labels.append(l)
 				row.add_child(l)
 		cells[key] = labels
+	_fit_columns(n)
+
+
+## Each value column at least as wide as its widest unspanned cell, the same in every row
+## (so the columns stay aligned), so no value is cut (LT-53/S8: "Ground | Ground | All").
+func _fit_columns(n: int) -> void:
+	for i in n:
+		var col: Array[Label] = [heads[i]]
+		for key: String in cells:
+			if cells[key].size() == n:
+				col.append(cells[key][i])
+		var w := 0.0
+		for l in col:
+			var f := l.get_theme_font("font")
+			w = maxf(w, f.get_string_size(l.text, HORIZONTAL_ALIGNMENT_LEFT, -1,
+				l.get_theme_font_size("font_size")).x)
+		for l in col:
+			l.custom_minimum_size.x = ceilf(w)
 
 
 ## The text a reader sees in row `key`, column `col` (a spanning cell answers every column).
@@ -137,7 +159,7 @@ func _label(text: String, color: Color, width := 0) -> Label:
 	var l := Label.new()
 	l.text = text
 	l.clip_text = true
-	l.add_theme_font_size_override("font_size", FONT_SIZE if width > 0 else _value_font)
+	l.add_theme_font_size_override("font_size", _label_font if width > 0 else _value_font)
 	l.add_theme_color_override("font_color", color)
 	if width > 0:
 		l.custom_minimum_size.x = width
