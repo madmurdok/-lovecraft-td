@@ -59,6 +59,7 @@
     },
     "necronomicon_reader": {
       "name": "Necronomicon Reader",
+      "short": "Reader",
       "role": "Area blast, uses sanity",
       "kind": "occult",
       "cost": 150,
@@ -79,6 +80,7 @@
     },
     "dynamite_crew": {
       "name": "Dynamite crew",
+      "short": "Dynamite",
       "role": "Lobbed charges, ground",
       "kind": "mundane",
       "glyph": "D",
@@ -102,6 +104,7 @@
     },
     "coast_battery": {
       "name": "Coast battery",
+      "short": "Battery",
       "role": "Long gun, blind up close",
       "kind": "mundane",
       "glyph": "B",
@@ -140,6 +143,7 @@
     },
     "resonator": {
       "name": "Tillinghast Resonator",
+      "short": "Resonator",
       "role": "Beam, strong when mad",
       "kind": "occult",
       "glyph": "T",
@@ -163,6 +167,7 @@
     },
     "silver_key": {
       "name": "Silver Key Gate",
+      "short": "Silver Key",
       "role": "Sends foes back the path",
       "kind": "occult",
       "glyph": "K",
@@ -187,6 +192,7 @@
     },
     "summoning_circle": {
       "name": "Summoning Circle",
+      "short": "Circle",
       "role": "Ghouls hold foes back",
       "kind": "occult",
       "glyph": "C",

@@ -158,7 +158,7 @@ func test_idle_text_shows_iff_no_view_is_open() -> void:
 	assert_str(_game.side_panel.idle_label.text).is_equal("Click a cell to build, a tower to upgrade.")
 	_assert_view(true, false, false)
 	await _click_cell(_buildable_cell())
-	# LT-43 §3: the picker is over the board; the panel asks for a pick until a hover.
+	# LT-61 §1: the list is above the panel's scroll; it asks for a pick until a hover.
 	_assert_view(true, true, false)
 	assert_str(_game.side_panel.idle_label.text).is_equal(SidePanel.PICK_TEXT)
 	await _click_control(_game.picker.cancel_button)
@@ -213,23 +213,25 @@ func test_build_columns_show_name_cost_and_the_reserve_cell() -> void:
 	await _click_cell(_buildable_cell())
 	for id: String in _config.towers:
 		var def: TowerDef = _config.towers[id]
-		assert_str(_game.picker.names[id].text).is_equal(def.name)
+		assert_str(_game.picker.names[id].text).is_equal(def.short_name)
 		assert_str(_game.picker.costs[id].text).is_equal(TowerInfo.cost_text(def.cost))
-	# LT-23 Q5: an occult build costs gold only; its Reserve cell names the reserve.
+	# LT-23 Q5: an occult build costs gold only; its Trait cell names the reserve (LT-61).
 	var sign: TowerDef = _config.towers[SIGN]
 	assert_float(sign.levels[0].sanity_reserve).is_greater(0.0)
 	assert_str(_game.picker.costs[SIGN].text).not_contains("sanity")
-	assert_str(_game.picker.cells[SIGN]["reserve"].text).is_equal(
-		TowerInfo.num(sign.levels[0].sanity_reserve))
+	assert_str(_game.picker.cells[SIGN]["trait"].text).is_equal(
+		"Res " + TowerInfo.num(sign.levels[0].sanity_reserve))
 
 
 ## LT-43 §3: unaffordable reddens the cost cell (the reason in the tooltip); a madness
-## warning marks the Reserve cell red with "!" (the tooltip ends with MADNESS_WARNING).
+## warning marks the Trait cell red with "!" (the tooltip's first line ends with
+## MADNESS_WARNING; LT-61 §3: a second line names the trait).
 func _assert_status(id: String, status: String) -> void:
 	var def: TowerDef = _config.towers[id]
 	var b: Button = _game.picker.buttons[id]
 	var cost: Label = _game.picker.costs[id]
-	var reserve: Label = _game.picker.cells[id]["reserve"]
+	var reserve: Label = _game.picker.cells[id]["trait"]
+	var tip_line := b.tooltip_text.get_slice("\n", 0)
 	var tip := "%s — %s" % [def.name, TowerInfo.cost_text(def.cost)]
 	assert_str(cost.text).is_equal(TowerInfo.cost_text(def.cost))
 	var mad := TowerInfo.MADNESS_WARNING.strip_edges()
@@ -237,15 +239,15 @@ func _assert_status(id: String, status: String) -> void:
 		assert_that(cost.get_theme_color("font_color")).is_equal(StatsTable.COLOR_VALUE)
 		assert_str(reserve.text).ends_with(TowerPicker.MAD_MARK)
 		assert_that(reserve.get_theme_color("font_color")).is_equal(TowerPicker.STATUS_COLOR)
-		assert_str(b.tooltip_text).is_equal(tip + TowerInfo.MADNESS_WARNING)
+		assert_str(tip_line).is_equal(tip + TowerInfo.MADNESS_WARNING)
 		return
 	assert_str(reserve.text).not_contains(TowerPicker.MAD_MARK)
 	if status.is_empty():
 		assert_that(cost.get_theme_color("font_color")).is_equal(StatsTable.COLOR_VALUE)
-		assert_str(b.tooltip_text).is_equal(tip)
+		assert_str(tip_line).is_equal(tip)
 	else:
 		assert_that(cost.get_theme_color("font_color")).is_equal(TowerPicker.STATUS_COLOR)
-		assert_str(b.tooltip_text).is_equal(tip + " " + status)
+		assert_str(tip_line).is_equal(tip + " " + status)
 
 
 func test_build_buttons_are_disabled_with_the_reason() -> void:
@@ -608,9 +610,9 @@ func test_picker_and_hud_buttons_are_opaque_and_a_disabled_one_stays_legible() -
 	await _click_cell(_buildable_cell())
 	_game.sim.state.gold = 0
 	_game.picker.refresh()
-	var b: Button = _game.picker.buttons[RIFLE]
-	assert_bool(b.disabled).is_true()
-	_assert_opaque_button(b)
+	assert_bool(_game.picker.buttons[RIFLE].disabled).is_true()
+	# LT-61 §10: a list row is a flat button (its cells carry the state); Cancel stays framed.
+	_assert_opaque_button(_game.picker.cancel_button)
 	_assert_opaque_button(_game.hud.call_wave_button)
 	_assert_opaque_button(_game.hud.pause_button)
 

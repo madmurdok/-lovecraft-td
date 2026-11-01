@@ -1,8 +1,8 @@
 class_name TowerPickerGroupsTest
 extends ConfigTestBase
-## LT-55 (LT-46 P15), LT-43 §3: the build table shows two labelled groups, "MUNDANE" then
-## "OCCULT", by TowerDef.kind, data order inside each; with 10 towers the table fits inside the
-## board at 1152x648. Each column shows its name, cost and L1 row values. The 10-tower config is built
+## LT-55 (LT-46 P15), LT-61: the build list shows two labelled groups, "MUNDANE" then
+## "OCCULT", by TowerDef.kind, data order inside each; with 10 towers the list fits the side
+## panel's 176 px at 1152x648. Each row shows its short name, cost, L1 DPS and trait. The 10-tower config is built
 ## here (res://data plus five towers appended in mixed kind order), never in data/. Real mouse
 ## events go into a 1152x648 SubViewport like side_panel_test.
 
@@ -155,23 +155,28 @@ func _ids_of(kind: String) -> Array:
 	return out
 
 
-## The picker table's children by name, in order (LT-43 §3: the label column, then the
-## columns, a divider between the kinds).
+## The picker list's scrolling children by name, in order (LT-61: the mundane rows under
+## the pinned MUNDANE line, then the OCCULT line and the occult rows).
 func _child_names() -> Array:
 	var out := []
-	for c in _game.picker.find_child("Table", true, false).get_children():
+	for c in _game.picker.find_child("Body", true, false).get_children():
 		out.append(String(c.name))
 	return out
 
 
 func _expected_children(mundane: Array, occult: Array) -> Array:
-	var out := ["Labels"]
+	var out := []
 	for id: String in mundane:
 		out.append("Tower_" + id)
-	out.append("Divider_occult")
+	out.append("Group_occult")
 	for id: String in occult:
 		out.append("Tower_" + id)
 	return out
+
+
+## The first tooltip line (LT-61 §3: a second line names the trait).
+func _tip_line(id: String) -> String:
+	return _game.picker.buttons[id].tooltip_text.get_slice("\n", 0)
 
 
 func _tip(id: String) -> String:
@@ -207,42 +212,47 @@ func test_group_headers_read_mundane_and_occult() -> void:
 	await _start_game(_ten_config())
 	await _open_picker()
 	for pair: Array in [["Group_mundane", "MUNDANE"], ["Group_occult", "OCCULT"]]:
-		var h := _game.picker.find_child(pair[0], true, false) as Label
+		var line := _game.picker.find_child(pair[0], true, false)
+		assert_object(line).is_not_null()
+		var h := line.get_node("Title") as Label
 		assert_object(h).is_not_null()
 		assert_str(h.text).is_equal(pair[1])
 		assert_bool(h.is_visible_in_tree()).is_true()
 
 
-# --- LT-43 §3: the column cells -------------------------------------------------------------
+# --- LT-61 §2: the row cells ---------------------------------------------------------------
 
-func test_every_column_shows_its_name_cost_and_l1_row_values() -> void:
+func test_every_row_shows_its_short_name_cost_dps_and_trait() -> void:
 	await _start_game(_ten_config())
+	_game.sim.state.gold = 10000
 	await _open_picker()
 	for id: String in _config.towers:
 		var def: TowerDef = _config.towers[id]
-		assert_str(_game.picker.names[id].text).is_equal(def.name)
+		assert_str(_game.picker.names[id].text).is_equal(def.short_name)
 		assert_str(_game.picker.costs[id].text).is_equal(TowerInfo.cost_text(def.cost))
-		var values := TowerInfo.row_values(def, def.levels[0], _config)
-		for row: Array in TowerInfo.ROWS:
-			assert_str(_game.picker.cells[id][row[0]].text) \
-				.override_failure_message("%s %s" % [id, row[0]]).is_equal(values[row[0]])
+		assert_str(_game.picker.cells[id]["dps"].text).override_failure_message(id) \
+			.is_equal(TowerInfo.dps_text(def.levels[0], _config))
+		assert_str(_game.picker.cells[id]["trait"].text).override_failure_message(id) \
+			.is_equal(TowerInfo.trait_text(def, def.levels[0]))
 
 
-# --- fit: 10 towers, 1152x648, inside the board ---------------------------------------------
+# --- fit: 10 towers, 1152x648, the side panel's 176 px --------------------------------------
 
 func _assert_fits(state: String) -> void:
 	var map := _game.sim.state.map
-	var board := Rect2(Game.BOARD_ORIGIN, Vector2(map.width, map.height) * Board.CELL)
+	var panel := SidePanel.panel_rect(map)
 	var r := _game.picker.get_global_rect()
-	assert_bool(board.encloses(r)).override_failure_message(
-		"%s: picker %s outside the board %s" % [state, r, board]).is_true()
+	assert_bool(panel.encloses(r)).override_failure_message(
+		"%s: picker %s outside the panel %s" % [state, r, panel]).is_true()
+	assert_float(r.size.x).override_failure_message("%s: picker %s wider than 176 px"
+		% [state, r]).is_less_equal(176.0)
 	for id: String in _config.towers:
 		var c: Control = _game.picker.buttons[id]
 		assert_bool(r.encloses(c.get_global_rect())).override_failure_message(
 			"%s: %s at %s outside %s" % [state, c.name, c.get_global_rect(), r]).is_true()
 
 
-func test_ten_affordable_towers_fit_the_board_at_1152x648() -> void:
+func test_ten_affordable_towers_fit_176_px_at_1152x648() -> void:
 	await _start_game(_ten_config())
 	assert_that(_vp.size).is_equal(Vector2i(1152, 648))
 	_game.sim.state.gold = 10000
@@ -253,7 +263,7 @@ func test_ten_affordable_towers_fit_the_board_at_1152x648() -> void:
 	_assert_fits("affordable")
 
 
-func test_ten_unaffordable_towers_fit_the_board_at_1152x648() -> void:
+func test_ten_unaffordable_towers_fit_176_px_at_1152x648() -> void:
 	await _start_game(_ten_config())
 	_game.sim.state.gold = 0
 	await _open_picker()
@@ -271,21 +281,21 @@ func test_refresh_states_hold_for_all_ten_columns() -> void:
 	await _open_picker()
 	for id: String in _config.towers:
 		assert_bool(_game.picker.buttons[id].disabled).is_false()
-		assert_str(_game.picker.buttons[id].tooltip_text).is_equal(_tip(id))
+		assert_str(_tip_line(id)).is_equal(_tip(id))
 		assert_that(_game.picker.costs[id].get_theme_color("font_color")) \
 			.is_equal(StatsTable.COLOR_VALUE)
 	_game.sim.state.gold = 0
 	_game.picker.refresh()
 	for id: String in _config.towers:
 		assert_bool(_game.picker.buttons[id].disabled).is_true()
-		assert_str(_game.picker.buttons[id].tooltip_text).is_equal(_tip(id) + " (not enough money)")
+		assert_str(_tip_line(id)).is_equal(_tip(id) + " (not enough money)")
 		assert_that(_game.picker.costs[id].get_theme_color("font_color")) \
 			.is_equal(TowerPicker.STATUS_COLOR)
 	# Affordable again: the cost is back to its plain colour.
 	_game.sim.state.gold = 10000
 	_game.picker.refresh()
 	for id: String in _config.towers:
-		assert_str(_game.picker.buttons[id].tooltip_text).is_equal(_tip(id))
+		assert_str(_tip_line(id)).is_equal(_tip(id))
 		assert_that(_game.picker.costs[id].get_theme_color("font_color")) \
 			.is_equal(StatsTable.COLOR_VALUE)
 

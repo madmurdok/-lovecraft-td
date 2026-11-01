@@ -62,7 +62,8 @@ static func kind_color(kind: String) -> Color:
 
 
 ## Rebuilds the table: `heads[i]` over `cols[i]` (TowerInfo.row_values dictionaries);
-## `lit` (row key -> text with LIT_MARK) overrides column 0. `head_color` colours the heads.
+## `lit` (row key -> text with LIT_MARK) overrides column 0. `head_color` colours the heads;
+## the head row is hidden when every head is "" (LT-61 §1).
 func set_columns(p_heads: PackedStringArray, cols: Array[Dictionary], lit: Dictionary = {},
 		head_color := COLOR_MUNDANE) -> void:
 	var args := [p_heads, cols, lit, head_color]
@@ -84,6 +85,8 @@ func set_columns(p_heads: PackedStringArray, cols: Array[Dictionary], lit: Dicti
 		var h := _label(p_heads[i] if i < p_heads.size() else "", head_color)
 		heads.append(h)
 		head_row.add_child(h)
+	# LT-61 §1: no head row when every head is "" (the build card's single column).
+	head_row.visible = Array(p_heads).any(func(t: String) -> bool: return not t.is_empty())
 	for key: String in row_keys:
 		var row := _row("Row_" + key)
 		row.add_child(_label(_row_label(key), COLOR_LABEL, label_w))

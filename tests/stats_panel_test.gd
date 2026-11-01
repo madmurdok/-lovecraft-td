@@ -172,28 +172,20 @@ func test_table_spans_equal_rows_golds_changed_cells_and_marks_lit_now() -> void
 
 # --- the panel: same rows as the picker, heads per level ------------------------------------
 
-## §1 "every tower shows the same 10 rows": the picker column and the panel table (Special
-## under it as lines) list the ROWS in order, for every tower at L1, L2 and each branch.
+## §1 "every tower shows the same 10 rows": the panel table (Special under it as lines)
+## lists the ROWS in order, for every tower at L1, L2 and each branch. LT-61 §2: a build
+## list row is Name, Cost, DPS and Trait for every tower.
 func test_picker_and_panel_show_the_same_rows_in_the_same_order() -> void:
 	await _start_game()
 	var labels := []
 	for row: Array in TowerInfo.ROWS:
 		labels.append(row[1])
-	# Picker: the label column, then each tower's cells.
 	_game.picker.open_for(_buildable_cell())
-	var picker_labels := []
-	for c in _game.picker.find_child("Labels", true, false).get_children():
-		if c is Label:
-			picker_labels.append(c.text)
-	assert_array(picker_labels).is_equal(["Tower", "Cost"] + labels)
 	for id: String in _config.towers:
 		var names := []
 		for c in _game.picker.buttons[id].find_child("Cells", true, false).get_children():
 			names.append(String(c.name))
-		var want := ["Name", "Cost"]
-		for k: String in _rows():
-			want.append("Row_" + k)
-		assert_array(names).override_failure_message(id).is_equal(want)
+		assert_array(names).override_failure_message(id).is_equal(["Name", "Cost", "Dps", "Trait"])
 	_game.picker.close()
 	# Panel: every tower, L1, L2 and both branches.
 	var panel_names := ["Head"]

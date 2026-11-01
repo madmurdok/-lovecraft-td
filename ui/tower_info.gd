@@ -280,6 +280,26 @@ static func range_text(s: TowerDef.Level) -> String:
 	return num(s.range_cells)
 
 
+## LT-61 §2: the build list's Trait cell, the one property to know before building, first
+## match: "Res N" (an occult sanity reserve), "Ground" (never hits flyers), "Blind N" (no
+## fire within N cells), "Line" (pierce), "Reveal" (shows fakes), "Blast" (area), else
+## CELL_DASH. The madness "!" is the picker's (it depends on the live sanity cap).
+static func trait_text(def: TowerDef, s: TowerDef.Level) -> String:
+	if def.kind == "occult" and s.sanity_reserve > 0.0:
+		return "Res " + num(s.sanity_reserve)
+	if def.ground_only():
+		return "Ground"
+	if s.min_range > 0.0:
+		return "Blind " + num(s.min_range)
+	if s.effects.get("pierce", 0.0) > 0.0:
+		return "Line"
+	if s.effects.get("reveal_fakes", 0.0) > 0.0:
+		return "Reveal"
+	if s.effects.get("aoe_radius", 0.0) > 0.0:
+		return "Blast"
+	return CELL_DASH
+
+
 ## "All" or "Ground" (TowerDef.targets; a circle: whether its units fly).
 static func hits_text(def: TowerDef, s: TowerDef.Level) -> String:
 	if s.is_summon():
