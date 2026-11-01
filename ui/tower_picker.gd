@@ -45,6 +45,11 @@ func _ready() -> void:
 func _add_entry(def_id: String, def: TowerDef) -> void:
 	var b := SidePanel.make_button("Tower_" + def_id, _on_tower_pressed.bind(def_id))
 	b.add_theme_font_size_override("font_size", ENTRY_FONT_SIZE)
+	# One line per button: a refusal reason would wrap it and push Cancel out of the panel.
+	# The full text stays in the tooltip.
+	b.autowrap_mode = TextServer.AUTOWRAP_OFF
+	b.clip_text = true
+	b.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	add_child(b)
 	buttons[def_id] = b
 	var info := SidePanel.make_label("Info_" + def_id, SidePanel.COLOR_INFO)
@@ -92,6 +97,7 @@ func refresh() -> void:
 		elif game.sim.would_drive_mad_build(def_id):
 			text += TowerInfo.MADNESS_WARNING
 		b.text = text
+		b.tooltip_text = text + "\n" + infos[def_id].text
 
 
 func _on_tower_pressed(def_id: String) -> void:
