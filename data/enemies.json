@@ -10,7 +10,7 @@
     },
     "hybrid": {
       "name": "Innsmouth Hybrid",
-      "hp": 210, "speed": 0.9, "armor": 2, "leak_damage": 1,
+      "hp": 240, "speed": 0.9, "armor": 2, "leak_damage": 1,
       "drops": { "bone": 699, "amber": 250, "idol": 50, "star_stone": 1 }
     },
     "deep_one": {
@@ -34,7 +34,7 @@
       "name": "Shoggoth",
       "hp": 3600, "speed": 0.5, "armor": 5, "leak_damage": 5,
       "drops": { "bone": 0, "amber": 0, "idol": 999, "star_stone": 1 },
-      "horror_drain": 0.5,
+      "horror_drain": 2.5,
       "traits": {
         "regen": { "hp_percent_per_second": 1 }
       }
