@@ -6,7 +6,7 @@ extends GdUnitTestSuite
 ## not observable headless, so the last two pin the geometry the drawing uses (text metrics
 ## from the fallback font) and, for the plate, that _draw_tower draws it under the letter.
 
-const BASE := Vector2i(1152, 648)
+const BASE := Vector2i(1200, 675)
 const WINDOW := Vector2i(1280, 720)
 const BAR_NAMES := ["GoldLabel", "RelicsLabel", "SellRelicsButton", "PhaseLabel", "HpLabel",
 	"CallWaveButton", "SpeedButton", "PauseButton", "SanityBar"]

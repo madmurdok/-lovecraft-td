@@ -26,8 +26,8 @@ const TITLE_TEXT := "Build here"
 const FONT_SIZE := 12
 const HEAD_FONT_SIZE := 11  ## group titles and column heads
 const NAME_FONT_MIN := 10  ## past LIST_MAX_ROWS the names shrink to this, then ellipsis
-## LT-61 §2: column widths at FONT_SIZE; their sum (176) is the panel's inner width.
-const NAME_W := 62
+## LT-61 §2: column widths at FONT_SIZE; their sum (224) is the panel's inner width.
+const NAME_W := 110  ## 62 at the 192 px panel; LT-59 gives the name the extra 48 px of the 240 px panel
 const COST_W := 30
 const COST_GAP := 4  ## between $ and DPS, so "$130" and "15–45" never read as one number
 const DPS_W := 34

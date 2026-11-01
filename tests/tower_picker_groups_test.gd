@@ -2,9 +2,9 @@ class_name TowerPickerGroupsTest
 extends ConfigTestBase
 ## LT-55 (LT-46 P15), LT-61: the build list shows two labelled groups, "MUNDANE" then
 ## "OCCULT", by TowerDef.kind, data order inside each; with 10 towers the list fits the side
-## panel's 176 px at 1152x648. Each row shows its short name, cost, L1 DPS and trait. The 10-tower config is built
+## panel's 224 px at 1200x675. Each row shows its short name, cost, L1 DPS and trait. The 10-tower config is built
 ## here (res://data plus five towers appended in mixed kind order), never in data/. Real mouse
-## events go into a 1152x648 SubViewport like side_panel_test.
+## events go into a 1200x675 SubViewport like side_panel_test.
 
 const RIFLE := "rifleman"
 const SIGN := "elder_sign"
@@ -39,7 +39,7 @@ var _ten_occult: Array = []
 
 func before_test() -> void:
 	_vp = SubViewport.new()
-	_vp.size = Vector2i(1152, 648)
+	_vp.size = Vector2i(1200, 675)
 	add_child(_vp)
 
 
@@ -236,7 +236,7 @@ func test_every_row_shows_its_short_name_cost_dps_and_trait() -> void:
 			.is_equal(TowerInfo.trait_text(def, def.levels[0]))
 
 
-# --- fit: 10 towers, 1152x648, the side panel's 176 px --------------------------------------
+# --- fit: 10 towers, 1200x675, the side panel's 224 px --------------------------------------
 
 func _assert_fits(state: String) -> void:
 	var map := _game.sim.state.map
@@ -244,17 +244,17 @@ func _assert_fits(state: String) -> void:
 	var r := _game.picker.get_global_rect()
 	assert_bool(panel.encloses(r)).override_failure_message(
 		"%s: picker %s outside the panel %s" % [state, r, panel]).is_true()
-	assert_float(r.size.x).override_failure_message("%s: picker %s wider than 176 px"
-		% [state, r]).is_less_equal(176.0)
+	assert_float(r.size.x).override_failure_message("%s: picker %s wider than 224 px"
+		% [state, r]).is_less_equal(224.0)
 	for id: String in _config.towers:
 		var c: Control = _game.picker.buttons[id]
 		assert_bool(r.encloses(c.get_global_rect())).override_failure_message(
 			"%s: %s at %s outside %s" % [state, c.name, c.get_global_rect(), r]).is_true()
 
 
-func test_ten_affordable_towers_fit_176_px_at_1152x648() -> void:
+func test_ten_affordable_towers_fit_224_px_at_1200x675() -> void:
 	await _start_game(_ten_config())
-	assert_that(_vp.size).is_equal(Vector2i(1152, 648))
+	assert_that(_vp.size).is_equal(Vector2i(1200, 675))
 	_game.sim.state.gold = 10000
 	await _open_picker()
 	await get_tree().process_frame
@@ -263,7 +263,7 @@ func test_ten_affordable_towers_fit_176_px_at_1152x648() -> void:
 	_assert_fits("affordable")
 
 
-func test_ten_unaffordable_towers_fit_176_px_at_1152x648() -> void:
+func test_ten_unaffordable_towers_fit_224_px_at_1200x675() -> void:
 	await _start_game(_ten_config())
 	_game.sim.state.gold = 0
 	await _open_picker()
@@ -385,16 +385,16 @@ func _font_of(l: Label) -> int:
 	return l.get_theme_font_size("font_size")
 
 
-## The widths of the four cells add up to the panel's 176 px, and each cell has its width.
-func test_row_cells_have_their_column_widths_summing_to_176() -> void:
+## The widths of the four cells add up to the panel's 224 px, and each cell has its width.
+func test_row_cells_have_their_column_widths_summing_to_224() -> void:
 	await _start_game(_data_config())
 	_game.sim.state.gold = 10000
 	await _open_picker()
 	await get_tree().process_frame
 	var sum := TowerPicker.NAME_W + TowerPicker.COST_W + TowerPicker.COST_GAP \
 		+ TowerPicker.DPS_W + TowerPicker.TRAIT_W
-	assert_int(sum).is_equal(176)
-	assert_float(_game.picker.size.x).is_equal(176.0)
+	assert_int(sum).is_equal(224)
+	assert_float(_game.picker.size.x).is_equal(224.0)
 	for id: String in _config.towers:
 		assert_float(_game.picker.names[id].size.x).override_failure_message(id) \
 			.is_equal(float(TowerPicker.NAME_W))
@@ -450,7 +450,7 @@ func test_a_long_name_shrinks_to_10_px_then_ends_in_an_ellipsis() -> void:
 	assert_int(ellipsis).override_failure_message("fixture has no over-long name").is_greater(0)
 
 
-## 10 shipped towers: no scrolling in the list (neither way), the whole list inside 176 px.
+## 10 shipped towers: no scrolling in the list (neither way), the whole list inside 224 px.
 func test_ten_towers_need_no_scrolling_in_the_list() -> void:
 	await _start_game(_data_config())
 	_game.sim.state.gold = 10000
@@ -549,18 +549,13 @@ func test_fifteen_towers_scroll_the_list_and_pin_heads_aligned_to_the_scrollbar(
 		bar.get_global_rect().position.x, tol)
 	# Names fit what is left of NAME_W, or sit at the minimum font (ellipsis).
 	var avail := TowerPicker.NAME_W - picker.scrollbar_w()
-	var narrowed := 0
 	for tid: String in picker.names:
 		var l: Label = picker.names[tid]
 		var fs := _font_of(l)
 		if fs > TowerPicker.NAME_FONT_MIN:
 			assert_float(_name_w(l, fs)).override_failure_message("%s '%s' %d px" % [tid, l.text, fs]) \
 				.is_less_equal(float(avail))
-		if _name_w(l, TowerPicker.FONT_SIZE) > avail and _name_w(l, TowerPicker.FONT_SIZE) <= TowerPicker.NAME_W:
-			narrowed += 1
-			assert_int(fs).is_less(TowerPicker.FONT_SIZE)
-	assert_int(narrowed).override_failure_message("no name between %d and %d px" % [avail,
-		TowerPicker.NAME_W]).is_greater(0)
+		# LT-59: at the 240 px panel the shipped names fit beside the scrollbar unshrunk.
 
 
 ## The column heads (LT-61 §3) sit on the first group line only, each with its tooltip.

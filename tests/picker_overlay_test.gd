@@ -23,7 +23,7 @@ func before_test() -> void:
 	assert_bool(r.ok).override_failure_message("\n".join(r.errors)).is_true()
 	_config = r.config
 	_vp = SubViewport.new()
-	_vp.size = Vector2i(1152, 648)
+	_vp.size = Vector2i(1200, 675)
 	add_child(_vp)
 
 
@@ -507,7 +507,7 @@ func test_resonator_dps_is_a_range_in_the_picker_and_live_in_the_panel() -> void
 ## rows is at least as wide as its text, and the list is inside the side panel.
 func test_no_picker_text_is_cut_at_1280x720() -> void:
 	_vp.size = Vector2i(1280, 720)
-	_vp.size_2d_override = Vector2i(1152, 648)
+	_vp.size_2d_override = Vector2i(1200, 675)
 	_vp.size_2d_override_stretch = true
 	await _start_game()
 	assert_int(_config.towers.size()).is_equal(10)

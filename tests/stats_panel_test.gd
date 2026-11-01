@@ -21,7 +21,7 @@ func before_test() -> void:
 	assert_bool(r.ok).override_failure_message("\n".join(r.errors)).is_true()
 	_config = r.config
 	_vp = SubViewport.new()
-	_vp.size = Vector2i(1152, 648)
+	_vp.size = Vector2i(1200, 675)
 	add_child(_vp)
 
 
@@ -474,7 +474,7 @@ func test_the_flare_circle_lights_a_tower_and_the_panel_marks_it() -> void:
 ## sanity, where its DPS is widest).
 func test_no_table_value_is_cut_at_1280x720() -> void:
 	_vp.size = Vector2i(1280, 720)
-	_vp.size_2d_override = Vector2i(1152, 648)
+	_vp.size_2d_override = Vector2i(1200, 675)
 	_vp.size_2d_override_stretch = true
 	await _start_game()
 	var cuts := []

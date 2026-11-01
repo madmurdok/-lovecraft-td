@@ -20,7 +20,7 @@ func before_test() -> void:
 	assert_bool(r.ok).override_failure_message("\n".join(r.errors)).is_true()
 	_config = r.config
 	_vp = SubViewport.new()
-	_vp.size = Vector2i(1152, 648)
+	_vp.size = Vector2i(1200, 675)
 	add_child(_vp)
 
 
@@ -120,11 +120,11 @@ func test_panel_rect_is_right_of_the_board_below_the_hud() -> void:
 	var board := Rect2(Game.BOARD_ORIGIN, Vector2(map.width, map.height) * Board.CELL)
 	assert_float(r.position.x).is_equal(Game.BOARD_ORIGIN.x + map.width * Board.CELL)
 	assert_float(r.position.y).is_equal(Game.BOARD_ORIGIN.y)
-	assert_float(r.end.x).is_equal(1152.0)
-	assert_float(r.end.y).is_equal(648.0)
+	assert_float(r.end.x).is_equal(1200.0)
+	assert_float(r.end.y).is_equal(675.0)
 	assert_bool(r.intersects(board)).is_false()
 	if map.width * Board.CELL == 960:
-		assert_that(r).is_equal(Rect2(960, 48, 192, 600))
+		assert_that(r).is_equal(Rect2(960, 48, 240, 627))
 	assert_that(_game.side_panel.get_global_rect()).is_equal(r)
 
 
@@ -143,6 +143,11 @@ func test_long_content_scrolls_vertically_and_never_grows_the_panel() -> void:
 	await get_tree().process_frame
 	assert_that(_game.side_panel.get_global_rect()).is_equal(r)
 	assert_bool(r.encloses(scroll.get_global_rect())).is_true()
+	# LT-59: the wider panel fits an L2 card; a long special text still scrolls, never grows it.
+	_game.tower_panel.special_label.text = "a line" + "\n".repeat(60)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	assert_that(_game.side_panel.get_global_rect()).is_equal(r)
 	assert_float(_game.tower_panel.size.y).is_greater(scroll.size.y)  # it scrolls
 
 
@@ -563,9 +568,9 @@ func test_after_the_outcome_the_other_modes_read_run_over() -> void:
 func test_hud_bar_spans_the_full_width_above_the_board() -> void:
 	await _start_game()
 	var hud := _game.hud
-	assert_float(hud.get_global_rect().size.x).is_equal(1152.0)
+	assert_float(hud.get_global_rect().size.x).is_equal(1200.0)
 	var bg: Control = hud.get_node("Background")
-	assert_that(bg.get_global_rect()).is_equal(Rect2(0, 0, 1152, Game.BOARD_ORIGIN.y))
+	assert_that(bg.get_global_rect()).is_equal(Rect2(0, 0, 1200, Game.BOARD_ORIGIN.y))
 
 
 func test_a_range_ring_crossing_the_top_edge_is_drawn_under_the_hud() -> void:
@@ -628,8 +633,8 @@ func test_the_footer_covers_the_strip_below_the_board() -> void:
 		return
 	var m := _game.sim.state.map
 	var bottom := Game.BOARD_ORIGIN.y + m.height * Board.CELL
-	assert_float(bottom).is_less(648.0)
-	assert_that(footer.get_global_rect()).is_equal(Rect2(0, bottom, 1152, 648 - bottom))
+	assert_float(bottom).is_less(675.0)
+	assert_that(footer.get_global_rect()).is_equal(Rect2(0, bottom, 1200, 675 - bottom))
 	assert_that(footer.color).is_equal(UiStyle.COLOR_BG)
 	assert_float(footer.color.a).is_equal(1.0)
 	assert_int(footer.mouse_filter).is_equal(Control.MOUSE_FILTER_IGNORE)
