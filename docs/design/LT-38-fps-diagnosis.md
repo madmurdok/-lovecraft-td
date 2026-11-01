@@ -208,3 +208,22 @@ Line numbers are from `release-0.2.1` (the worktree HEAD, 78fb66a).
 - Vsync pacing: `--disable-vsync` gives the same frame times (round 2, rows 3-5).
 - Not settled: what causes the external slow/fast render mode (focus/occlusion vs GPU
   contention). Round 2 recorded `window_is_focused() = false`; round 1 did not record it.
+
+## Addendum: owner FPS numbers (LT-44 S6, 2026-11-01)
+
+Build: `release-0.3.0` at f889e00, windowed, GL Compatibility, Intel Iris Plus.
+Machine state: `uptime` 21:31, load averages 5.14 5.03 5.66.
+Runs: `-- --sanity=100 --frame-stats` (seed 1788012770) and `-- --sanity=0 --frame-stats`
+(seed 3171830760). Each was read off the always-visible FPS label in the bottom left. The
+owner confirmed the units: "FPS (зелёный, слева внизу)".
+
+| Sanity | FPS range seen | Midpoint |
+|---|---|---|
+| 100 | 30-50 | 40 |
+| 0 | 18-33 | 25.5 |
+
+The midpoints differ by about 36 %, well past the 10 % threshold. This disagrees with the
+S1 verdict above ("no more than about 10 %"). The S1 runs were load-gated and probe-driven,
+while these are by-eye ranges from two different seeds at load ~5. A diagnosis follow-up
+is filed to re-measure under the owner's conditions (focused window, a real run) and find
+which sanity effect costs the frames.
