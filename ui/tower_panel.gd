@@ -173,6 +173,8 @@ func _refresh_table(t: SimTower, s: TowerDef.Level, branches: PackedStringArray)
 		cols.append(TowerInfo.row_values(t.def, target, cfg, sanity_now))
 		targets.append(target)
 	var lit := TowerInfo.lit_values(t.def, s, cfg, sanity_now) if t.lit else {}
+	var bar := game.side_panel.scroll.get_v_scroll_bar()
+	stats_table.max_width = int(game.side_panel.scroll.size.x - bar.get_combined_minimum_size().x)
 	stats_table.set_columns(heads, cols, lit, StatsTable.kind_color(t.def.kind))
 	lit_label.text = TowerInfo.lit_line(t.def, s, cfg) if t.lit else ""
 	lit_label.visible = not lit_label.text.is_empty()
