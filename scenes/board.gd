@@ -136,6 +136,16 @@ const BEAM_WIDTH := 2.0  ## core px at factor 1; + BEAM_WIDTH_PER_FACTOR per fac
 const BEAM_WIDTH_PER_FACTOR := 1.2
 const BEAM_QUIVER_HZ := 9.0
 const BEAM_RIM_CELLS := 0.42  ## the beam leaves the tower tile this far from its centre
+## LT-51 Silver Key Gate: per banished enemy, a silver thread from the gate to the enemy's
+## old spot, a keyhole there while the enemy "folds" (arcs collapsing on a fading ghost),
+## a dotted trail back to where it reappears and a ring opening around it there. Banish
+## immunity shows as a silver lid arc over the body.
+const BANISH_COLOR := Color(2.0, 2.1, 2.6)
+const BANISH_GHOST := Color(0.75, 0.8, 1.0)
+const BANISH_SECONDS := 0.9
+const BANISH_REACH := 0.3  ## the thread from the gate fades out over this long
+const BANISH_FOLD := 0.45  ## the old spot collapses in this long; the new ring opens after
+const BANISH_LID_CELLS := 0.33
 
 ## LT-14 visual tunables.
 @export var flicker_rate := 13.0  ## flicker steps per second
@@ -206,6 +216,10 @@ func on_event(ev: SimEvent) -> void:
 			var t := game.sim.tower_by_id(ev.id)
 			if t != null:
 				var fx := _shot_fx(t, ev.data)
+				if fx.get("kind", "") == "banish":
+					# LT-51: one SHOT per banished enemy; a Pure cast moves 3 at once.
+					_add_attack_fx(fx, maxi(MAX_FX_PER_TOWER, t.stats().banish_targets()))
+					return
 				if fx.get("kind", "") == "dynamite":
 					fx["throw_tick"] = ev.tick
 				if fx.get("kind", "") == "beam":
@@ -236,11 +250,14 @@ func on_event(ev: SimEvent) -> void:
 ## LT-25 §1: the attack look from the tower's current stats (so upgrades and branches
 ## change it): sanity_scaling -> "beam" (LT-50), pierce -> "harpoon", fuse_seconds ->
 ## "dynamite" (LT-47), min_range -> "shell" (LT-48), aoe_radius -> "wave", support level ->
-## "aura" ("searchlight" with reveal_fakes, LT-49), otherwise "tracer".
+## "aura" ("searchlight" with reveal_fakes, LT-49), banish_cells -> "banish" (LT-51),
+## otherwise "tracer".
 static func shot_kind(t: SimTower) -> String:
 	var s := t.stats()
-	if s.damage <= 0.0:
+	if not s.acts():
 		return "searchlight" if s.effects.get("reveal_fakes", 0.0) > 0.0 else "aura"
+	if s.is_banish():
+		return "banish"
 	if s.is_beam():
 		return "beam"
 	if s.effects.get("pierce", 0.0) > 0.0:
@@ -263,6 +280,8 @@ static func enemy_markers(e: SimEnemy) -> PackedStringArray:
 		out.append("vuln")
 	if e.status.get("bleed_ticks", 0) > 0:  # LT-29: state, per tick
 		out.append("bleed")
+	if e.status.get("banish_immune_ticks", 0) > 0:  # LT-51: a gate cannot banish it now
+		out.append("sealed")
 	return out
 
 
@@ -285,6 +304,12 @@ func _shot_fx(t: SimTower, data: Dictionary) -> Dictionary:
 	var kind := shot_kind(t)
 	if kind == "aura" or kind == "searchlight":
 		return {}
+	if kind == "banish":
+		# LT-51: `from` / `to` are the banished enemy's spots before and after the move.
+		return {"kind": "banish", "tower": t.id, "origin": t.centre(), "from": data["from"],
+			"to": data["to"], "hits": data.get("hits", []).duplicate(),
+			"astray": data.get("astray", false), "seed": _fx_rng.randi(),
+			"ttl": BANISH_SECONDS, "dur": BANISH_SECONDS}
 	var hits: Array = data.get("hits", [])
 	var to: Vector2 = data["to"]
 	var fx := {"kind": kind, "tower": t.id, "from": t.centre(), "to": to, "end": to,
@@ -351,15 +376,15 @@ func _drop_beam(tower_id: int) -> void:
 		return not (fx["kind"] == "beam" and fx.get("tower", -1) == tower_id))
 
 
-## Appends an attack effect, keeping at most MAX_FX_PER_TOWER live ones per tower.
-func _add_attack_fx(fx: Dictionary) -> void:
+## Appends an attack effect, keeping at most `cap` (MAX_FX_PER_TOWER) live ones per tower.
+func _add_attack_fx(fx: Dictionary, cap := MAX_FX_PER_TOWER) -> void:
 	if fx.is_empty():
 		return
 	var mine: Array[int] = []
 	for i in effects.size():
 		if effects[i].get("tower", -1) == fx["tower"]:
 			mine.append(i)
-	var drop := mine.size() - (MAX_FX_PER_TOWER - 1)
+	var drop := mine.size() - (cap - 1)
 	for k in range(drop - 1, -1, -1):
 		effects.remove_at(mine[k])
 	effects.append(fx)
@@ -551,6 +576,8 @@ static func attack_color(kind: String) -> Color:
 			return SHELL_COLOR
 		"beam":
 			return BEAM_COLOR
+		"banish":
+			return BANISH_COLOR
 	return Color.BLACK
 
 
@@ -651,6 +678,9 @@ func _draw_enemies(s: SimState) -> void:
 					CELL * 0.09, dc)
 		if mad > 0.0:
 			draw_arc(px, CELL * 0.25, 0, TAU, 24, Color(COLOR_ENEMY_OUTLINE, color.a * mad), 3.0)
+		if marks.has("sealed"):  # LT-51: a silver lid over the body while banish-immune
+			draw_arc(px, CELL * BANISH_LID_CELLS, PI * 1.15, PI * 1.85, 10,
+				Color(BANISH_COLOR, 0.85 * color.a), 2.0)
 		if marks.has("vuln"):  # body outline
 			draw_arc(px, CELL * 0.25, 0, TAU, 24, Color(MARK_VULN, color.a), 2.0)
 		if e.revealed:  # LT-49: amber ring outside the dashed slow mark, slash across the body
@@ -684,6 +714,8 @@ func _draw_effects() -> void:
 				_draw_shell(fx)
 			"beam":
 				_draw_beam(fx)
+			"banish":
+				_draw_banish(fx)
 			"blast":
 				_draw_blast(fx)
 			"death":
@@ -839,6 +871,43 @@ func _draw_beam(fx: Dictionary) -> void:
 		var v := Vector2.from_angle(ph * 0.3 + i * TAU / 3.0)
 		draw_line(b + v * CELL * 0.1, b + v * CELL * (0.22 + 0.06 * pulse),
 			Color(BEAM_CORE, fade), 1.5)
+
+
+## LT-51 Silver Key Gate, one banished enemy: a silver thread from the gate to its old
+## spot; there a keyhole and four arcs collapsing on a fading ghost body (the fold); a
+## dotted trail to the new spot, where a ring opens around the enemy (it is already drawn
+## there: the sim moved it without a slide).
+func _draw_banish(fx: Dictionary) -> void:
+	var el := _elapsed(fx)
+	var dur: float = fx["dur"]
+	var k := clampf(el / dur, 0.0, 1.0)
+	var o: Vector2 = fx["origin"] * CELL
+	var a: Vector2 = fx["from"] * CELL
+	var b: Vector2 = fx["to"] * CELL
+	if el < BANISH_REACH:
+		var rf := 1.0 - el / BANISH_REACH
+		o += (a - o).normalized() * minf(CELL * BEAM_RIM_CELLS, o.distance_to(a))
+		draw_line(o, a, Color(BANISH_COLOR, 0.9 * rf), 2.0)
+	if a.distance_to(b) > 1.0:
+		draw_dashed_line(a, b, Color(BANISH_COLOR, 0.7 * (1.0 - k)), 2.5, 6.0)
+	var fold := clampf(el / BANISH_FOLD, 0.0, 1.0)
+	if fold < 1.0:
+		var left := 1.0 - fold
+		draw_circle(a, CELL * 0.3 * left, Color(BANISH_GHOST, 0.6 * left))
+		var r := CELL * (0.22 + 0.4 * left)
+		for i in 4:
+			var st := i * TAU / 4.0 + fold * PI
+			draw_arc(a, r, st, st + TAU / 7.0, 6, Color(BANISH_COLOR, 0.4 + 0.6 * left), 3.0)
+	# The keyhole outlasts the fold: the gate's mark on the old spot.
+	var kc := Color(BANISH_COLOR, 1.0 - k)
+	var hole := CELL * 0.14
+	draw_circle(a + Vector2(0, -hole * 0.6), hole, kc)
+	draw_colored_polygon(PackedVector2Array([a + Vector2(-hole * 0.45, 0),
+		a + Vector2(hole * 0.45, 0), a + Vector2(hole * 0.8, hole * 1.9),
+		a + Vector2(-hole * 0.8, hole * 1.9)]), kc)
+	if el >= BANISH_FOLD * 0.5:
+		var open := clampf((el - BANISH_FOLD * 0.5) / (dur - BANISH_FOLD * 0.5), 0.0, 1.0)
+		draw_arc(b, CELL * (0.25 + 0.35 * open), 0, TAU, 24, Color(BANISH_COLOR, 1.0 - open), 3.0)
 
 
 ## LT-48 Coast battery: a muzzle flash and a smoke puff drifting off the gun, the shell (a

@@ -160,6 +160,30 @@
                "sanity_reserve": 45,
                "effects": { "ignore_armor": 1, "sanity_scaling": 4 } }
       }
+    },
+    "silver_key": {
+      "name": "Silver Key Gate",
+      "role": "Sends foes back the path",
+      "kind": "occult",
+      "glyph": "K",
+      "cost": 140,
+      "levels": [
+        { "range": 3, "fire_interval": 6, "sanity_reserve": 10,
+          "effects": { "banish_cells": 4, "banish_max_hp": 500, "banish_immune_seconds": 8 } },
+        { "upgrade_cost": 110, "range": 3.5, "fire_interval": 5, "sanity_reserve": 16,
+          "effects": { "banish_cells": 5, "banish_max_hp": 500, "banish_immune_seconds": 8 } }
+      ],
+      "branches": {
+        "a": { "name": "Gate of Slumber", "role": "Banishes three at once",
+               "upgrade_cost": 180, "range": 3.5, "fire_interval": 5, "sanity_reserve": 22,
+               "effects": { "banish_cells": 5, "banish_targets": 3, "banish_max_hp": 500,
+                            "banish_immune_seconds": 8 } },
+        "b": { "name": "Ultimate Gate", "role": "Farther, hurts, any size",
+               "upgrade_cost": 180, "range": 3.5, "damage": 60, "fire_interval": 5,
+               "sanity_reserve": 45,
+               "effects": { "banish_cells": 8, "banish_max_hp": 4000,
+                            "banish_immune_seconds": 8 } }
+      }
     }
   }
 }

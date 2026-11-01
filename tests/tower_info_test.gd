@@ -165,7 +165,9 @@ func test_every_tower_level_and_branch_gets_lines_and_none_is_coming_soon() -> v
 			var got := _lines(id, s)
 			assert_array(got).is_not_empty()
 			var first: String = got[0]
-			assert_bool(first.begins_with("Damage ") or first == "Support (no damage)") \
+			# LT-51: a gate without damage leads with its cast timer.
+			assert_bool(first.begins_with("Damage ") or first == "Support (no damage)"
+				or first.begins_with("Casts every ")) \
 				.override_failure_message("%s: %s" % [id, first]).is_true()
 			var soon := got.filter(func(x: String) -> bool: return x.ends_with(CS))
 			assert_bool(s.has_pending()).override_failure_message("%s %s" % [id, got]).is_false()
@@ -265,6 +267,9 @@ func test_shipped_madness_line_fits_24_chars_and_keeps_the_multiplier() -> void:
 					continue
 				seen += 1
 				assert_int(line.length()).override_failure_message(line).is_less_equal(LINE_MAX)
+				if s.damage <= 0.0:  # LT-51: a gate without damage only goes astray
+					assert_str(line).is_equal("Madness: astray")
+					continue
 				assert_str(line).contains("x" + _n(_cfg.sanity.madness.damage_multiplier))
 	assert_int(seen).is_greater(0)
 
