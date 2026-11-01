@@ -181,7 +181,7 @@ Read for context: LT-33 "Boundary rule"; `scenes/lighting.gd` (`_ready` 67-87,
 | new `ui/lighthouse_panel.gd` (in `side_panel.gd`) | level, beams, coverage %, upgrade button (`can_upgrade_lighthouse`, `lighthouse_upgrade_cost`); oil `4 / 6` and "Buy oil ($10)" (`can_buy_oil`), by day |
 | `ui/hud.gd` | "Flare (2 oil)" button, enabled by `can_fire_flare()`, cooldown seconds left; oil stock beside it |
 | `scenes/board.gd` `_draw_tower` (408-426) | lit marker from `t.lit`; enemies need none (the cone shows it) |
-| `tools/bot_runs.gd` (header 1-41, `_play` 98-212, `_act` 242-279, `_next_upgrade` 281-305) | flags `--lighthouse=0` (never upgrade the lighthouse) and `--flare=0` (never buy oil, never flare); day policy: after `sell_relics()`, top oil up to `BOT_OIL_TARGET` (4 = two flares; `buy_oil()` until the stock is 4 or a call is refused), then the purchase loop, lighthouse level next when its cost ≤ the cheapest tower upgrade (tunable); night policy: `fire_flare()` when ≥ 3 live enemies are lit; RUN keys `lighthouse_level`, `flares`, `oil_bought`, `oil_gold`, `lit_shots` |
+| `tools/bot_runs.gd` (header 1-41, `_play` 98-212, `_act` 242-279, `_next_upgrade` 281-305) | flags `--lighthouse=0` (never upgrade the lighthouse) and `--flare=0` (never buy oil, never flare); day policy: after `sell_relics()`, top oil up to `BOT_OIL_TARGET` (4 = two flares; `buy_oil()` until the stock is 4 or a call is refused), then the purchase loop, lighthouse level next when its cost ≤ the cheapest tower upgrade (tunable; a refused level is not retried that day and the loop falls through to upgrades and builds); night policy: `fire_flare()` when ≥ 3 live enemies are lit; RUN keys `lighthouse_level`, `flares`, `oil_bought`, `oil_gold`, `lit_shots` |
 | `docs/GDD.md` §5.2 (89-91), 335-340 | beam rules, flare, lamp oil, "drain half" removed; LT-26 §5 oil line points here |
 
 Boundary: all reads go through `state.*`, `tower.lit`, public queries; no `sim._*`, no
@@ -220,8 +220,9 @@ Read: `tests/sim_test_base.gd` (edit helpers), `tests/wave_test_base.gd`,
 off, flare `enemy_speed_mult` 1.0 and `width_mult` 1.0; same purchases, oil included) →
 the beam's effect; **no-upgrade** (`--lighthouse=0`) → is the upgrade worth its cost;
 **no-flare** (`--flare=0`) → does the flare pay for its oil. Cheap observation telling
-arms apart: `lit_shots` > 0 and `missed` differs between on and beam-off; `flares` > 0
-only in on. Tune lighthouse costs, multipliers, oil price/cap/start and flare numbers.
+arms apart: `missed` differs between on and beam-off. `lit_shots` is a geometric count (shots by
+a tower inside a beam, whether or not a modifier applies) and `flares` > 0 in beam-off
+too (same purchases, oil included), so neither tells those two arms apart. Tune lighthouse costs, multipliers, oil price/cap/start and flare numbers.
 
 ## 4. Owner questions
 
