@@ -13,12 +13,12 @@ func _real() -> GameConfig:
 
 func test_real_data_loads_with_expected_counts() -> void:
 	var c := _real()
-	assert_int(c.towers.size()).is_equal(6)
+	assert_int(c.towers.size()).is_equal(7)
 	assert_int(c.enemies.size()).is_equal(5)
 	assert_int(c.waves.waves.size()).is_equal(5)
 	assert_array(c.towers.keys()).contains_exactly_in_any_order(
 		["rifleman", "harpooner", "elder_sign", "necronomicon_reader", "dynamite_crew",
-		"coast_battery"])
+		"coast_battery", "searchlight"])
 	assert_array(c.enemies.keys()).contains_exactly_in_any_order(
 		["cultist", "hybrid", "deep_one", "night_gaunt", "shoggoth"])
 
@@ -26,7 +26,7 @@ func test_real_data_loads_with_expected_counts() -> void:
 func test_default_dir_is_res_data() -> void:
 	var result := GameConfig.load_from_dir()
 	assert_bool(result.ok).is_true()
-	assert_int(result.config.towers.size()).is_equal(6)
+	assert_int(result.config.towers.size()).is_equal(7)
 
 
 func test_economy_fields() -> void:

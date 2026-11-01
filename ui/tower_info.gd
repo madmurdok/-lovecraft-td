@@ -39,7 +39,8 @@ const PRIORITY_NAMES := {
 
 ## Effect lines in display order: the keys one line reads (a pair shares a line).
 const EFFECT_GROUPS := [
-	["pierce"], ["aoe_radius"], ["fuse_seconds"], ["ignore_armor"], ["slow"], ["damage_taken_multiplier"],
+	["pierce"], ["aoe_radius"], ["fuse_seconds"], ["ignore_armor"], ["reveal_fakes"], ["slow"],
+	["damage_taken_multiplier"],
 	["crit_chance", "crit_multiplier"], ["burst_targets"], ["bleed_dps", "bleed_seconds"],
 	["pull_cells", "pull_max_hp", "pull_immune_seconds"], ["strip_armor"],
 ]
@@ -134,7 +135,8 @@ static func kind_lines(def: TowerDef, s: TowerDef.Level, sanity: SanityConfig) -
 		if s.damage > 0.0 and sanity.regen_mundane_kill > 0.0:
 			out.append("Kills restore %s sanity" % num(sanity.regen_mundane_kill))
 		var fraying: SanityConfig.Threshold = sanity.thresholds.get("fraying")
-		if fraying != null and fraying.miss_chance > 0.0:
+		# LT-49: a mundane support tower (Searchlight) never shoots, so it never misses.
+		if s.damage > 0.0 and fraying != null and fraying.miss_chance > 0.0:
 			out.append("May miss while Fraying (%s%%)" % num(fraying.miss_chance * 100.0))
 	elif s.damage > 0.0:
 		# Madness changes shots only (x damage, astray); an aura has none.
@@ -238,6 +240,8 @@ static func _effect_text(first_key: String, e: Dictionary) -> String:
 			return "Fuse %s s, thrown ahead" % num(e.get("fuse_seconds", 0.0))
 		"ignore_armor":
 			return "Ignores armor"
+		"reveal_fakes":
+			return "Reveals fakes"
 		"slow":
 			return "Slows enemies %s%%" % num(e.get("slow", 0.0) * 100.0)
 		"damage_taken_multiplier":

@@ -118,6 +118,25 @@
                "upgrade_cost": 150, "range": 7, "min_range": 2, "damage": 100,
                "fire_interval": 3.0, "effects": { "aoe_radius": 1.0 } }
       }
+    },
+    "searchlight": {
+      "name": "Searchlight",
+      "role": "Reveals fakes, slows",
+      "kind": "mundane",
+      "glyph": "S",
+      "cost": 80,
+      "levels": [
+        { "range": 3, "effects": { "reveal_fakes": 1, "slow": 0.2 } },
+        { "upgrade_cost": 60, "range": 3.5, "effects": { "reveal_fakes": 1, "slow": 0.25 } }
+      ],
+      "branches": {
+        "a": { "name": "Signal lamp", "role": "Wide reveal",
+               "upgrade_cost": 100, "range": 5,
+               "effects": { "reveal_fakes": 1, "slow": 0.25 } },
+        "b": { "name": "Blinding beam", "role": "Slows hard, marks foes",
+               "upgrade_cost": 100, "range": 3.5,
+               "effects": { "reveal_fakes": 1, "slow": 0.4, "damage_taken_multiplier": 1.2 } }
+      }
     }
   }
 }
