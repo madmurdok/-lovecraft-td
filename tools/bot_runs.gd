@@ -24,6 +24,8 @@ extends SceneTree
 ##              skipped (the order moves on to the next item). Tries buy_sanity() too.
 ##   madness  : necronomicon_reader / elder_sign alternating, no guard, never buys sanity:
 ##              it keeps building past cap 0 (MADNESS).
+##   demolition: rifleman, rifleman, dynamite_crew repeated (LT-47): "mundane" with the
+##              Dynamite crew in the harpooner's slot, for a with/without comparison.
 ## Placement (greedy): the free buildable cell with the most path cells whose centre is
 ## within the tower's L1 range; ties go to the lowest row-major cell. No sells.
 ## Upgrades (LT-24 §5, "wide then deep"): while the board has fewer than BUILD_FIRST towers
@@ -50,7 +52,7 @@ extends SceneTree
 ## order), "star_stones" and "wage" ($ of dawn wages).
 ## A run is capped at 30 simulated minutes (outcome "timeout").
 
-const STRATEGIES := ["mundane", "occult", "mixed", "madness"]
+const STRATEGIES := ["mundane", "occult", "mixed", "madness", "demolition"]
 const BOT_OIL_TARGET := 4  ## oil the bot keeps by day: two flares (tunable)
 const FLARE_MIN_LIT := 3  ## live lit enemies that make the bot fire the flare (tunable)
 const MAX_TICKS := 30 * 60 * 30
@@ -67,6 +69,7 @@ const BRANCH_PICK := {
 	"occult": {"rifleman": "a", "elder_sign": "a", "necronomicon_reader": "a"},
 	"mixed": {"rifleman": "a", "harpooner": "a", "elder_sign": "a", "necronomicon_reader": "a"},
 	"madness": {"elder_sign": "b", "necronomicon_reader": "b"},
+	"demolition": {"rifleman": "a", "dynamite_crew": "a"},
 }
 
 var _cfg: GameConfig
@@ -257,6 +260,8 @@ func _order(strat: String, i: int, sim: Simulation, built: Dictionary) -> String
 	match strat:
 		"mundane":
 			return "harpooner" if i % 3 == 2 else "rifleman"
+		"demolition":
+			return "dynamite_crew" if i % 3 == 2 else "rifleman"
 		"occult":
 			if i == 0:
 				return "rifleman"

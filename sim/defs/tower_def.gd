@@ -2,8 +2,11 @@ class_name TowerDef
 extends RefCounted
 ## One tower from towers.json (GDD §6): L1 and L2 in `levels`, L3 as branch "a" or "b".
 
-const FIELDS := ["name", "role", "kind", "cost", "levels", "branches"]
+const FIELDS := ["name", "role", "kind", "glyph", "targets", "cost", "levels", "branches"]
 const KINDS: PackedStringArray = ["mundane", "occult"]
+## LT-47 (LT-46 §2.3): "all" (default) or "ground": flyers are never candidates of a
+## ground tower and never hit by its shots or blasts.
+const TARGETS: PackedStringArray = ["all", "ground"]
 const LEVEL_COUNT := 2  ## L1, L2; L3 is a branch
 const BRANCH_IDS: PackedStringArray = ["a", "b"]
 ## Max length of a `role` line (tower or branch), after strip_edges (LT-24 §1).
@@ -14,6 +17,10 @@ var name: String
 ## One-line player-facing role (no numbers); "" when absent (LT-24 §1).
 var role: String
 var kind: String  ## "mundane" | "occult"
+## LT-47 (P11): the board letter, one character; defaults to the name's first letter.
+## Glyphs are unique across towers (GameConfig).
+var glyph: String
+var targets := "all"  ## one of TARGETS
 var cost: int  ## gold to build (L1), >= 0
 var levels: Array[Level] = []
 var branches: Dictionary[String, Level] = {}
@@ -26,6 +33,18 @@ static func parse(r: ConfigReader, id: String, obj: Dictionary, path: String) ->
 	t.name = r.req_string(obj, "name", path)
 	t.role = parse_role(r, obj, path)
 	t.kind = r.req_string(obj, "kind", path, KINDS)
+	t.glyph = t.name.left(1)
+	var g := r.opt_string(obj, "glyph", path)
+	# Codepoints <= 32 and U+00A0 draw nothing on the board.
+	if g.length() == 1 and g.unicode_at(0) > 32 and g.unicode_at(0) != 0xA0:
+		t.glyph = g
+	elif obj.has("glyph"):
+		r.error(ConfigReader.join(path, "glyph"),
+			"must be exactly 1 visible character, got \"%s\"" % g)
+	if obj.has("targets"):
+		t.targets = r.as_string(obj["targets"], ConfigReader.join(path, "targets"), TARGETS)
+		if t.targets.is_empty():
+			t.targets = "all"
 	t.cost = r.req_int(obj, "cost", path, 0)
 
 	var levels: Variant = r.req_array(obj, "levels", path)
@@ -48,6 +67,11 @@ static func parse(r: ConfigReader, id: String, obj: Dictionary, path: String) ->
 			if bo != null:
 				t.branches[b] = Level.parse(r, bo, ConfigReader.join(bp, b), true, t.kind, true)
 	return t
+
+
+## LT-47: flyers are not candidates of this tower and not hit by its shots or blasts.
+func ground_only() -> bool:
+	return targets == "ground"
 
 
 ## Optional `role` of `obj`: a non-blank string of at most ROLE_MAX_CHARS characters
@@ -93,7 +117,7 @@ class Level:
 		"crit_chance": 1.0, "crit_multiplier": INF, "burst_targets": INF, "pierce": INF,
 		"bleed_dps": INF, "bleed_seconds": INF, "pull_cells": INF, "pull_max_hp": INF,
 		"pull_immune_seconds": INF, "slow": 1.0, "damage_taken_multiplier": INF,
-		"strip_armor": INF, "aoe_radius": INF,
+		"strip_armor": INF, "aoe_radius": INF, "fuse_seconds": INF,
 	}
 
 	## Config keys (EFFECTS or stats) that parse but the sim does not apply yet (LT-24
@@ -153,4 +177,13 @@ class Level:
 				if EFFECTS.has(key):
 					l.effects[key] = r.as_number(effects[key], ConfigReader.join(ep, key),
 						0.0, EFFECTS[key])
+			# LT-47: a fused charge is a delayed blast, so it needs a blast radius and is
+			# not a line shot.
+			if l.effects.get("fuse_seconds", 0.0) > 0.0:
+				if l.effects.get("aoe_radius", 0.0) <= 0.0:
+					r.error(ConfigReader.join(ep, "fuse_seconds"), "needs aoe_radius > 0")
+				if l.effects.get("pierce", 0.0) > 0.0:
+					r.error(ConfigReader.join(ep, "fuse_seconds"), "cannot combine with pierce")
+				if l.effects.get("pull_cells", 0.0) > 0.0:
+					r.error(ConfigReader.join(ep, "fuse_seconds"), "cannot combine with pull_cells")
 		return l
