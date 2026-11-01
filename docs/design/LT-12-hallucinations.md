@@ -84,6 +84,8 @@ New `sim/core/hallucination_system.gd` (`class_name HallucinationSystem`, plain
 - **Packs:** a fake Deep One comes as a full pack (a lone Deep One would be a live tell).
   The pack size of a fake rolls on **SANITY**, not SPAWN: `spawn_enemy` picks the stream by
   `is_fake`, so hallucinations never change the size of later real packs.
+  Since LT-63 a fake pack's members enter one by one like a real pack's; fake members still
+  queued at dawn are dropped with the other fakes (no event: they never entered).
 - **Cap:** none. At 6 s and with dissolve at wave end the count is bounded by wave length
   (~10 per minute of wave). No new config field.
 

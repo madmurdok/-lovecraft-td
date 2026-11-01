@@ -50,7 +50,8 @@ class Wave:
 
 
 ## `count` spawn events of `enemy_id`, `interval` s apart, starting `delay` s
-## after the wave starts. An enemy with a "pack" trait spawns a pack per event.
+## after the wave starts. An enemy with a "pack" trait spawns a pack per event
+## (members one by one, pack.spacing_s apart; LT-63).
 class SpawnGroup:
 	extends RefCounted
 

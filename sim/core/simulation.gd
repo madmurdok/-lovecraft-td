@@ -57,6 +57,9 @@ var _hallucinations := HallucinationSystem.new()
 ## LT-27 §1.3: token id -> true for tokens dropped by fakes. Sim-private: the render must
 ## never tell a ghost token from a real one before it vanishes.
 var _ghost_tokens: Dictionary[int, bool] = {}
+## LT-63: pack members not entered yet, queue order: [due_tick, EnemyDef, is_fake, pack_of].
+## Sim only (fakes are queued too, LT-12 §1); slot 7 lets them in (_release_pack_members).
+var _pack_queue: Array = []
 
 
 func _init(p_config: GameConfig, run_seed: int) -> void:
@@ -129,7 +132,9 @@ func step() -> void:
 	_horror_drain()
 	# 6b. Relic tokens (LT-27 §1.3): ghosts vanish, real tokens are credited on arrival.
 	_settle_tokens()
-	# 7. Spawning, then fakes (LT-12) from the spawner's candidates.
+	# 7. Spawning: queued pack members due now (LT-63), then the spawner, then fakes (LT-12)
+	# from the spawner's candidates.
+	_release_pack_members()
 	if _spawner != null:
 		_spawner.tick(self)
 		_hallucinations.tick(self, _spawner)
@@ -145,9 +150,12 @@ func step() -> void:
 
 ## Spawns `def_id` at the start of its route; a `pack` enemy spawns min..max of them
 ## (rolled on SPAWN, or on SANITY for a fake so hallucinations never change real pack
-## sizes, LT-12 §2) on the same tick at the same spot. Returns the first new id
-## (a pack's ids are consecutive), or 0 if `def_id` is unknown or the outcome is set
-## (then nothing changes and no event is emitted).
+## sizes, LT-12 §2). LT-63: only the first member enters now; member k (1..count-1) is
+## queued and enters at the start of the route in slot 7 of tick now + k x
+## ticks(pack.spacing_s), before the spawner's spawns of that tick, so members never stack
+## on one spot. Every member's pack_of is the first member's id. Returns the first new id,
+## or 0 if `def_id` is unknown or the outcome is set (then nothing changes and no event is
+## emitted).
 func spawn_enemy(def_id: String, is_fake := false) -> int:
 	if state.outcome != SimState.Outcome.NONE:
 		return 0
@@ -155,28 +163,59 @@ func spawn_enemy(def_id: String, is_fake := false) -> int:
 		push_error("Simulation.spawn_enemy: unknown enemy \"%s\"" % def_id)
 		return 0
 	var def: EnemyDef = config.enemies[def_id]
-	var count := 1
-	if def.traits.has("pack"):
-		var pack: Dictionary = def.traits["pack"]
-		var stream := SimRng.Stream.SANITY if is_fake else SimRng.Stream.SPAWN
-		count = rng(stream).randi_range(int(pack["min"]), int(pack["max"]))
-	var first_id := state.next_id
-	for i in count:
-		var e := SimEnemy.new()
-		e.id = state.next_id
-		state.next_id += 1
-		e.def = def
-		e.hp = def.hp
-		e.max_hp = def.hp
-		e.is_fake = is_fake
-		e.spawn_tick = state.tick
-		e.base_units_per_tick = SimTime.units_per_tick(def.speed)
-		# Flyers start at S too (owner decision, §7 Q3) and fly straight to L.
-		e.route = SimRoute.straight(state.map.spawn, state.map.lighthouse) if def.flying \
-			else _ground_route
-		state.enemies.append(e)
-		_emit(SimEvent.Type.SPAWNED, e.id, {"def": def_id})
+	if not def.traits.has("pack"):
+		return _enter(def, is_fake, 0)
+	var pack: Dictionary = def.traits["pack"]
+	var stream := SimRng.Stream.SANITY if is_fake else SimRng.Stream.SPAWN
+	var count := rng(stream).randi_range(int(pack["min"]), int(pack["max"]))
+	var spacing := SimTime.ticks(pack["spacing_s"])
+	var first_id := _enter(def, is_fake, state.next_id)
+	for k in range(1, count):
+		_pack_queue.append([state.tick + k * spacing, def, is_fake, first_id])
 	return first_id
+
+
+## LT-63: true while a real pack member is queued and not entered yet (a wave is not
+## cleared and the run is not won before it has entered).
+func has_queued_real_members() -> bool:
+	for q: Array in _pack_queue:
+		if not q[2]:
+			return true
+	return false
+
+
+## Slot 7 (LT-63): every queued pack member whose due tick has come enters, queue order.
+func _release_pack_members() -> void:
+	if _pack_queue.is_empty():
+		return
+	var left: Array = []
+	for q: Array in _pack_queue:
+		if int(q[0]) > state.tick:
+			left.append(q)
+		else:
+			_enter(q[1], q[2], q[3])
+	_pack_queue = left
+
+
+## One enemy of `def` enters at the start of its route on this tick, with a new id and
+## SPAWNED {def}; returns that id.
+func _enter(def: EnemyDef, is_fake: bool, pack_of: int) -> int:
+	var e := SimEnemy.new()
+	e.id = state.next_id
+	state.next_id += 1
+	e.def = def
+	e.hp = def.hp
+	e.max_hp = def.hp
+	e.is_fake = is_fake
+	e.pack_of = pack_of
+	e.spawn_tick = state.tick
+	e.base_units_per_tick = SimTime.units_per_tick(def.speed)
+	# Flyers start at S too (owner decision, §7 Q3) and fly straight to L.
+	e.route = SimRoute.straight(state.map.spawn, state.map.lighthouse) if def.flying \
+		else _ground_route
+	state.enemies.append(e)
+	_emit(SimEvent.Type.SPAWNED, e.id, {"def": def.id})
+	return e.id
 
 
 ## The one armor rule for every damage source (§3.4). Returns the hp actually removed
@@ -2106,8 +2145,10 @@ func _leak() -> void:
 
 ## LT-12 §5 (called by the wave director when a wave is cleared): every live fake, in id
 ## order, is marked dissolved with FAKE_DISSOLVED {reason}; then state.enemies is
-## compacted again, so the build phase starts with no enemy in `state`.
+## compacted again, so the build phase starts with no enemy in `state`. Fake pack members
+## still queued (LT-63) are dropped without an event: they never entered.
 func dissolve_fakes(reason: String) -> void:
+	_pack_queue = _pack_queue.filter(func(q: Array) -> bool: return not q[2])
 	for e in state.enemies:
 		if e.is_live() and e.is_fake:
 			e.dissolved = true
@@ -2183,7 +2224,7 @@ func _check_outcome() -> void:
 		state.outcome = SimState.Outcome.LOST
 		_emit(SimEvent.Type.OUTCOME, 0, {"result": "lost"})
 		return
-	if _spawner == null or not _spawner.is_exhausted():
+	if _spawner == null or not _spawner.is_exhausted() or has_queued_real_members():
 		return
 	for e in state.enemies:
 		if not e.is_fake:

@@ -15,6 +15,9 @@ var base_units_per_tick: int
 var is_fake := false
 var revealed := false  ## fake made visible (LT-12); the renderer sees this, never is_fake
 var spawn_tick: int
+## LT-63: id of the first member of its pack (itself for the first), 0 = not a pack enemy.
+## Members enter one by one, so a pack's ids need not be consecutive.
+var pack_of := 0
 ## Set during a tick; the enemy is removed at the end of that tick (step 8).
 var dead := false
 var leaked := false

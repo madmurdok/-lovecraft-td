@@ -18,7 +18,7 @@
       "hp": 135, "speed": 1.6, "armor": 0, "leak_damage": 1,
       "drops": { "bone": 749, "amber": 250, "idol": 0, "star_stone": 1 },
       "traits": {
-        "pack": { "min": 4, "max": 6 }
+        "pack": { "min": 4, "max": 6, "spacing_s": 0.5 }
       }
     },
     "night_gaunt": {

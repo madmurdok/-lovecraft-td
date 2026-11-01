@@ -78,6 +78,12 @@ func expected_leak_tick(spawn_tick: int, length: int, units_per_tick: int) -> in
 	return spawn_tick + (length + units_per_tick - 1) / units_per_tick
 
 
+## LT-63: ticks from a pack's first member entering to its last one at the max pack size.
+func pack_span_ticks(cfg: GameConfig, def_id: String) -> int:
+	var pack: Dictionary = cfg.enemies[def_id].traits["pack"]
+	return (int(pack["max"]) - 1) * SimTime.ticks(pack["spacing_s"])
+
+
 ## Steps `n` times (or until the outcome freezes the sim) and returns the drained events.
 func run(sim: Simulation, n: int) -> Array[SimEvent]:
 	for i in n:

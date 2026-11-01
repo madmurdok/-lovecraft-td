@@ -9,12 +9,13 @@ extends SimSpawner
 ## is wave tick 0. A wave called early (Simulation.call_wave, between ticks) makes the next
 ## tick wave tick 0. Spawn event k of a group fires on wave tick
 ## ticks(delay) + k * ticks(interval); events due on one tick fire in group order, then
-## event order. A pack enemy expands into its pack inside Simulation.spawn_enemy.
+## event order. A pack enemy expands into its pack inside Simulation.spawn_enemy; its
+## members after the first enter later, one per pack.spacing_s (LT-63).
 ##
 ## Day = BUILD, night = WAVE (LT-27 §3). Dawn (clearing a wave) dissolves fakes, settles
 ## every relic token in flight and resets the night luck.
-## A wave is cleared when every group has fired all its events and no real enemy is alive
-## (fakes do not count). Clearing pays award_wave_bonus(n) (the dawn wage) before the outcome check, so the
+## A wave is cleared when every group has fired all its events, no real pack member is still
+## queued (LT-63) and no real enemy is alive (fakes do not count). Clearing pays award_wave_bonus(n) (the dawn wage) before the outcome check, so the
 ## last wave's bonus is paid in the same tick WON is set; the between-waves sanity regen
 ## (award_wave_sanity) follows the bonus the same way.
 
@@ -51,7 +52,7 @@ func end_tick(sim: Simulation) -> void:
 	var s := sim.state
 	if s.phase != SimState.Phase.WAVE or s.lighthouse_hp == 0:
 		return  # a wave that ends with the lighthouse is not survived: no bonus
-	if not _all_fired(s):
+	if not _all_fired(s) or sim.has_queued_real_members():
 		return
 	for e in s.enemies:
 		if not e.is_fake:
