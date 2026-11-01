@@ -32,7 +32,7 @@ var hud: Hud
 var relic_tokens: RelicTokens  ## LT-27 §4: tokens flying from kills to the HUD counter
 var star_stones_found := 0  ## LT-27 §4: star-stones credited this run (end screen)
 var side_panel: SidePanel  ## LT-24: fixed right panel holding the two views below
-var picker: TowerPicker  ## build view of side_panel
+var picker: TowerPicker  ## LT-43: build table over the board; its hover card is in side_panel
 var tower_panel: TowerPanel  ## tower view of side_panel
 var lighthouse_panel: LighthousePanel  ## LT-30: lighthouse view of side_panel
 var end_screen: EndScreen
@@ -101,7 +101,12 @@ func _ready() -> void:
 	side_panel.name = "SidePanel"
 	side_panel.game = self
 	ui.add_child(side_panel)
-	picker = side_panel.picker
+	# LT-43 §3: the build table is an overlay on the board, drawn above the side panel.
+	picker = TowerPicker.new()
+	picker.name = "TowerPicker"
+	picker.game = self
+	ui.add_child(picker)
+	side_panel.attach_picker(picker)
 	tower_panel = side_panel.tower_panel
 	lighthouse_panel = side_panel.lighthouse_panel
 	end_screen = EndScreen.new()

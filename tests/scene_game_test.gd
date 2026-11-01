@@ -95,7 +95,11 @@ func test_picker_has_one_button_per_config_tower_with_name_and_cost() -> void:
 	assert_int(_game.picker.buttons.size()).is_equal(_config.towers.size())
 	for def_id: String in _config.towers:
 		var def: TowerDef = _config.towers[def_id]
-		assert_str(_game.picker.buttons[def_id].text).contains("%s — $%d" % [def.name, def.cost])
+		# LT-43 §3: a column shows the name and the cost in its own cells.
+		assert_str(_game.picker.names[def_id].text).is_equal(def.name)
+		assert_str(_game.picker.costs[def_id].text).is_equal("$%d" % def.cost)
+		assert_str(_game.picker.buttons[def_id].tooltip_text).contains(
+			"%s — $%d" % [def.name, def.cost])
 
 
 func test_picker_enables_every_buildable_tower_and_disables_unaffordable_ones() -> void:
@@ -111,7 +115,10 @@ func test_picker_enables_every_buildable_tower_and_disables_unaffordable_ones() 
 	_game.advance(0.0)
 	assert_bool(_game.picker.buttons[RIFLE].disabled).is_true()
 	assert_str(_game.picker.buttons[RIFLE].text).not_contains("not enough money")
-	assert_str(_game.picker.infos[RIFLE].text.split("\n")[0]).is_equal("(not enough money)")
+	# LT-43 §3: unaffordable reddens the cost cell; the reason is in the tooltip.
+	assert_that(_game.picker.costs[RIFLE].get_theme_color("font_color")) \
+		.is_equal(TowerPicker.STATUS_COLOR)
+	assert_str(_game.picker.buttons[RIFLE].tooltip_text).contains("(not enough money)")
 	# A disabled button builds nothing.
 	await _click_control(_game.picker.buttons[RIFLE])
 	assert_int(_game.sim.state.towers.size()).is_equal(0)
