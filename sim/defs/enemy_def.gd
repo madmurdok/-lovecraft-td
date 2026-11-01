@@ -87,7 +87,7 @@ static func _parse_trait(r: ConfigReader, trait_id: String, params: Dictionary,
 		out["max"] = float(hi)
 		n = r.errors.size()
 		var spacing := r.req_number(params, "spacing_s", path, 0.0, INF, true)
-		if r.errors.size() == n and spacing < SimTime.DT:
+		if r.errors.size() == n and spacing < SimTime.DT - 1e-9:  # 1e-9: DT written out in JSON (0.0333...) rounds just below DT
 			r.error(ConfigReader.join(path, "spacing_s"),
 				"must be at least one tick (%s s), got %s" % [SimTime.DT, spacing])
 		out["spacing_s"] = spacing
