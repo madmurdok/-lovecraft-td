@@ -26,8 +26,11 @@ extends SceneTree
 ##              it keeps building past cap 0 (MADNESS).
 ##   demolition: rifleman, rifleman, dynamite_crew repeated (LT-47): "mundane" with the
 ##              Dynamite crew in the harpooner's slot, for a with/without comparison.
+##   battery  : rifleman, rifleman, coast_battery repeated (LT-48): the same with the
+##              Coast battery in that slot.
 ## Placement (greedy): the free buildable cell with the most path cells whose centre is
-## within the tower's L1 range; ties go to the lowest row-major cell. No sells.
+## within the tower's L1 range (and not inside its L1 min_range, LT-48); ties go to the
+## lowest row-major cell. No sells.
 ## Upgrades (LT-24 §5, "wide then deep"): while the board has fewer than BUILD_FIRST towers
 ## the next purchase is the next build; after that it is the cheapest upgrade (gold; ties
 ## -> lower tower id) among the towers, L3 branch from BRANCH_PICK. A tower whose picked
@@ -52,7 +55,7 @@ extends SceneTree
 ## order), "star_stones" and "wage" ($ of dawn wages).
 ## A run is capped at 30 simulated minutes (outcome "timeout").
 
-const STRATEGIES := ["mundane", "occult", "mixed", "madness", "demolition"]
+const STRATEGIES := ["mundane", "occult", "mixed", "madness", "demolition", "battery"]
 const BOT_OIL_TARGET := 4  ## oil the bot keeps by day: two flares (tunable)
 const FLARE_MIN_LIT := 3  ## live lit enemies that make the bot fire the flare (tunable)
 const MAX_TICKS := 30 * 60 * 30
@@ -70,6 +73,7 @@ const BRANCH_PICK := {
 	"mixed": {"rifleman": "a", "harpooner": "a", "elder_sign": "a", "necronomicon_reader": "a"},
 	"madness": {"elder_sign": "b", "necronomicon_reader": "b"},
 	"demolition": {"rifleman": "a", "dynamite_crew": "a"},
+	"battery": {"rifleman": "a", "coast_battery": "a"},
 }
 
 var _cfg: GameConfig
@@ -262,6 +266,8 @@ func _order(strat: String, i: int, sim: Simulation, built: Dictionary) -> String
 			return "harpooner" if i % 3 == 2 else "rifleman"
 		"demolition":
 			return "dynamite_crew" if i % 3 == 2 else "rifleman"
+		"battery":
+			return "coast_battery" if i % 3 == 2 else "rifleman"
 		"occult":
 			if i == 0:
 				return "rifleman"
@@ -386,6 +392,7 @@ func _next_upgrade(sim: Simulation, strat: String) -> Array:
 func _best_cell(sim: Simulation, id: String) -> Vector2i:
 	if not _score_cache.has(id):
 		var rng_cells: float = _cfg.towers[id].levels[0].range_cells
+		var min_cells: float = _cfg.towers[id].levels[0].min_range
 		var m := _cfg.map
 		var list: Array = []
 		for y in m.height:
@@ -395,7 +402,8 @@ func _best_cell(sim: Simulation, id: String) -> Vector2i:
 					continue
 				var score := 0
 				for p in m.path:
-					if Vector2(c - p).length() <= rng_cells:
+					var d := Vector2(c - p).length()
+					if d <= rng_cells and d >= min_cells:
 						score += 1
 				if score > 0:
 					list.append([score, c])

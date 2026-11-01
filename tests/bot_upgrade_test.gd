@@ -607,3 +607,57 @@ func test_lighthouse_waits_for_cheaper_tower_upgrades() -> void:
 	assert_bool(b.call("_lighthouse_next", sim, "mundane")).is_true()
 	sim.state.lighthouse_level = cfg.economy.beam.levels.size() - 1
 	assert_bool(b.call("_lighthouse_next", sim, "mundane")).is_false()  # at the top
+
+
+## LT-48 (LT-46 §5): the "battery" strategy builds the Coast battery in the mundane order's
+## third slot and takes AP shells (a) at L3.
+func test_battery_builds_the_coast_battery_and_buys_branch_a() -> void:
+	var b := _bot()
+	assert_array(b.get_script().get_script_constant_map()["STRATEGIES"]).contains(["battery"])
+	assert_dict(b.get_script().get_script_constant_map()["BRANCH_PICK"]["battery"]) \
+		.contains_key_value("coast_battery", "a")
+	var sim := _sim()
+	var order: Array = []
+	for i in 6:
+		order.append(b.call("_order", "battery", i, sim, {}))
+	assert_array(order).is_equal([RIFLE, RIFLE, "coast_battery", RIFLE, RIFLE, "coast_battery"])
+	var cb := _place(sim, "coast_battery", 1)
+	assert_array(_next(sim, "battery")).is_equal([cb.id, "a"])
+
+
+## Path cells of `cfg`'s map whose distance from `c` is within [lo, hi].
+func _window_score(cfg: GameConfig, c: Vector2i, lo: float, hi: float) -> int:
+	var n := 0
+	for p: Vector2i in cfg.map.path:
+		var d := Vector2(c - p).length()
+		if d >= lo and d <= hi:
+			n += 1
+	return n
+
+
+## LT-48: placement scores only path cells in the ring min_range <= d <= range. A wide dead
+## zone (an edit) makes the ring's best cell differ from the full disc's best.
+func test_best_cell_scores_only_path_cells_outside_the_dead_zone() -> void:
+	var cfg := _fresh()
+	var l1: TowerDef.Level = cfg.towers["coast_battery"].levels[0]
+	l1.min_range = 5.0
+	var b := _bot()
+	b.set("_cfg", cfg)
+	var sim := _sim(0, cfg)
+	var best_ring := 0
+	var best_disc := 0
+	var ring_tops: Array[Vector2i] = []
+	for c: Vector2i in _cells(sim):
+		var s := _window_score(cfg, c, l1.min_range, l1.range_cells)
+		best_disc = maxi(best_disc, _window_score(cfg, c, 0.0, l1.range_cells))
+		if s > best_ring:
+			best_ring = s
+			ring_tops = [c]
+		elif s == best_ring:
+			ring_tops.append(c)
+	var got: Vector2i = b.call("_best_cell", sim, "coast_battery")
+	assert_array(ring_tops).contains([got])
+	# Precondition: no ring-best cell is also a disc-best cell, so a scorer that ignores
+	# the dead zone picks elsewhere.
+	for c in ring_tops:
+		assert_int(_window_score(cfg, c, 0.0, l1.range_cells)).is_less(best_disc)

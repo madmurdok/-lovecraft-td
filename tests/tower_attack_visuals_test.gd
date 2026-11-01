@@ -424,3 +424,74 @@ func test_a_blast_event_adds_a_blast_effect_at_its_centre() -> void:
 	assert_vector(fx["from"]).is_equal(Vector2(3.5, 2.5))
 	assert_float(fx["radius"]).is_equal(1.3)
 	assert_float(fx["ttl"]).is_greater(0.0)
+
+
+# --- LT-48: the Coast battery's shell ----------------------------------------------------------
+
+func test_shot_kind_of_every_battery_level_is_shell() -> void:
+	await _start_game()
+	var t := _tower("coast_battery")
+	assert_str(Board.shot_kind(t)).is_equal("shell")
+	t.level = 1
+	assert_str(Board.shot_kind(t)).is_equal("shell")
+	t.level = TowerDef.LEVEL_COUNT
+	for b: String in TowerDef.BRANCH_IDS:
+		t.branch = b
+		assert_str(Board.shot_kind(t)).override_failure_message(b).is_equal("shell")
+	assert_float(t.stats().effects.get("aoe_radius", 0.0)).is_equal(1.0)  # b: min_range wins
+
+
+func test_a_battery_shot_is_a_shell_of_its_aoe_radius() -> void:
+	await _start_game()
+	var t := _tower("coast_battery")
+	var e := _enemy()
+	var to := Vector2(4.5, 2.5)
+	_shoot(t, to, [e.id])
+	var fx := _last_fx()
+	assert_str(fx["kind"]).is_equal("shell")
+	assert_float(fx["ttl"]).is_equal(Board.SHELL_SECONDS)
+	assert_float(fx["radius"]).is_equal(0.0)
+	assert_vector(fx["end"]).is_equal(to)
+	assert_array(fx["hits"]).is_equal([e.id])
+	t.level = TowerDef.LEVEL_COUNT
+	t.branch = "a"
+	_shoot(t, to, [e.id])
+	assert_float(_last_fx()["radius"]).is_equal(0.0)
+	t.branch = "b"
+	_shoot(t, to, [e.id])
+	assert_str(_last_fx()["kind"]).is_equal("shell")
+	assert_float(_last_fx()["radius"]).is_equal(1.0)
+
+
+func test_a_missed_shell_lands_off_its_aim() -> void:
+	await _start_game()
+	var t := _tower("coast_battery")
+	var to := Vector2(4.5, 2.5)
+	_shoot(t, to, [], true)
+	var fx := _last_fx()
+	assert_str(fx["kind"]).is_equal("shell")
+	assert_bool(fx["miss"]).is_true()
+	assert_bool((fx["end"] as Vector2).is_equal_approx(to)).is_false()
+
+
+func test_the_shell_colour_is_its_own_and_marks_the_tower() -> void:
+	assert_bool(Board.attack_color("shell") == Board.SHELL_COLOR).is_true()
+	for k: String in ["tracer", "harpoon", "wave", "aura", "dynamite"]:
+		assert_bool(Board.attack_color(k) == Board.SHELL_COLOR).override_failure_message(k) \
+			.is_false()
+
+
+func test_selected_dead_zone_is_the_selected_towers_min_range_while_its_ring_shows() -> void:
+	await _start_game()
+	var board := _game.board
+	var cb := _tower("coast_battery")
+	var rifle := _tower("rifleman")
+	assert_float(board.selected_dead_zone()).is_equal(0.0)  # nothing selected
+	board.selected_cell = cb.cell
+	board.selected_range = cb.stats().range_cells
+	assert_float(board.selected_dead_zone()).is_equal(2.0)
+	board.selected_range = 0.0
+	assert_float(board.selected_dead_zone()).is_equal(0.0)  # ring hidden
+	board.selected_cell = rifle.cell
+	board.selected_range = rifle.stats().range_cells
+	assert_float(board.selected_dead_zone()).is_equal(0.0)  # no dead zone

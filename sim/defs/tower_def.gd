@@ -97,13 +97,16 @@ static func parse_role(r: ConfigReader, obj: Dictionary, path: String) -> String
 class Level:
 	extends RefCounted
 
-	const LEVEL_FIELDS := ["name", "role", "upgrade_cost", "range", "damage",
+	const LEVEL_FIELDS := ["name", "role", "upgrade_cost", "range", "min_range", "damage",
 		"fire_interval", "sanity_reserve", "madness_affected", "effects"]
 
 	var name: String
 	var role: String  ## branches only (L3); "" on levels and when absent (LT-24 §1)
 	var upgrade_cost: int  ## gold to upgrade into this level; 0 on L1 (use TowerDef.cost)
 	var range_cells: float  ## JSON "range"; cells, > 0 (attack range or aura radius)
+	## LT-48 (P4): dead zone, cells; enemies whose cell-centre distance is strictly less
+	## are not candidates. Default 0; >= 0 and < range; only on towers with damage.
+	var min_range: float
 	var damage: float  ## per hit, >= 0 (0 = support tower)
 	var fire_interval: float  ## seconds between shots; required > 0 when damage > 0
 	## Total sanity cap this tower holds while it stands at this level (LT-23 §1), not added
@@ -118,6 +121,7 @@ class Level:
 		"bleed_dps": INF, "bleed_seconds": INF, "pull_cells": INF, "pull_max_hp": INF,
 		"pull_immune_seconds": INF, "slow": 1.0, "damage_taken_multiplier": INF,
 		"strip_armor": INF, "aoe_radius": INF, "fuse_seconds": INF,
+		"ignore_armor": 1.0,
 	}
 
 	## Config keys (EFFECTS or stats) that parse but the sim does not apply yet (LT-24
@@ -154,6 +158,17 @@ class Level:
 				"not allowed on L1 (the tower's cost is the build price)")
 		l.range_cells = r.req_number(obj, "range", path, 0.0, INF, true)
 		l.damage = r.opt_number(obj, "damage", path, 0.0, 0.0)
+		# LT-48: a dead zone needs an attack and must leave a ring to fire into.
+		l.min_range = r.opt_number(obj, "min_range", path, 0.0, 0.0)
+		if l.min_range > 0.0:
+			if l.damage <= 0.0:
+				r.error(ConfigReader.join(path, "min_range"),
+					"only towers with damage have a dead zone")
+				l.min_range = 0.0
+			elif l.range_cells > 0.0 and l.min_range >= l.range_cells:
+				r.error(ConfigReader.join(path, "min_range"),
+					"must be less than range (%s), got %s" % [l.range_cells, l.min_range])
+				l.min_range = 0.0
 		if l.damage > 0.0:
 			l.fire_interval = r.req_number(obj, "fire_interval", path, 0.0, INF, true)
 		else:
@@ -186,4 +201,9 @@ class Level:
 					r.error(ConfigReader.join(ep, "fuse_seconds"), "cannot combine with pierce")
 				if l.effects.get("pull_cells", 0.0) > 0.0:
 					r.error(ConfigReader.join(ep, "fuse_seconds"), "cannot combine with pull_cells")
+			# LT-48: a flag, not an amount.
+			var ia: float = l.effects.get("ignore_armor", 0.0)
+			if ia != 0.0 and ia != 1.0:
+				r.error(ConfigReader.join(ep, "ignore_armor"), "must be 0 or 1, got %s" % ia)
+				l.effects["ignore_armor"] = 0.0
 		return l
