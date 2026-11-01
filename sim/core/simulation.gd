@@ -381,9 +381,11 @@ func _reserve_drives_mad(delta: float) -> bool:
 
 ## Whether `t` picks a target when it fires (LT-31): its current level acts (deals damage
 ## or banishes, LT-51 P9). False for an aura tower (Elder Sign), which has no target
-## priority to switch.
+## priority to switch, and (LT-52) for a Summoning Circle: it acts, but its units pick the
+## nearest enemy themselves, so a priority would change nothing.
 func has_targeting(t: SimTower) -> bool:
-	return t.stats().acts()
+	var s := t.stats()
+	return s.acts() and not s.is_summon()
 
 
 ## Whether set_target_priority(tower_id, mode) would be applied now; OK or the first
@@ -1432,6 +1434,9 @@ func _fire_towers() -> void:
 		if s.is_banish():
 			_cast_banish(t, s)  # LT-51: its own cast; no miss, crit or shot shape
 			continue
+		if s.is_summon():
+			_summon(t, s)  # LT-52: allied units do the damage (slot 5 _ally_combat)
+			continue
 		var in_range := _candidates(t, s)
 		var target: SimEnemy = null
 		var burst := int(s.effects.get("burst_targets", 0.0))
@@ -1590,6 +1595,25 @@ func _cast_banish(t: SimTower, s: TowerDef.Level) -> void:
 		for e in picks:
 			apply_damage(e.id, damage, t.def.id)
 	t.cooldown_ticks = maxi(1, SimTime.ticks(s.fire_interval))
+
+
+## LT-52 (§2.2): a Summoning Circle with fewer than summon_max live units summons one at
+## its centre (spawn_ally: leash = range + 1, lifetime summon_lifetime) and spends the
+## cooldown. At its maximum it does not summon and stays ready, so a unit gone frees a
+## slot at once. A circle lit at summon time gives the unit summon_dps x occult_power_mult
+## for its whole life (§3 "lit at summon time"); madness is applied live by _ally_combat.
+## No miss, crit or astray (a unit bites what it holds).
+func _summon(t: SimTower, s: TowerDef.Level) -> void:
+	if allies_of(t.id).size() >= s.summon_max():
+		return
+	var dps: float = s.effects.get("summon_dps", 0.0)
+	if t.lit and t.def.kind == "occult":
+		dps *= config.economy.beam.occult_power_mult
+	var id := spawn_ally(t.id, t.def.id, t.centre(), s.effects.get("summon_hp", 0.0), dps,
+		s.effects.get("summon_speed", 0.0), s.summon_flying(),
+		SimTime.ticks(float(s.effects.get("summon_lifetime", 0.0))), s.range_cells + 1.0)
+	if id != 0:
+		t.cooldown_ticks = maxi(1, SimTime.ticks(s.fire_interval))
 
 
 ## LT-51 (Q4 "HP cap per level"): those of `enemies` a gate with stats `s` may banish:
@@ -1897,7 +1921,9 @@ func _tick_statuses() -> void:
 
 
 ## LT-52 slot 2: an ally whose lifetime ran out is gone ("expired"); a live ally's held
-## enemy gets speed_mult 0 (a hold on an enemy no longer live is dropped).
+## enemy gets speed_mult 0. A hold that is no longer valid (_holds: the enemy died, was
+## revealed as a fake, or was pushed out of contact by a pull / banish in the last slot 5)
+## is dropped first, so that enemy is not frozen for another tick.
 func _tick_allies() -> void:
 	for a in state.allies:
 		if not a.is_live():
@@ -1908,10 +1934,17 @@ func _tick_allies() -> void:
 		if a.held_id < 0:
 			continue
 		var e := enemy_by_id(a.held_id)
-		if e == null or not e.is_live():
+		if not _holds(a, e):
 			a.held_id = -1
 			continue
 		e.speed_mult = 0.0
+
+
+## LT-52: true while `a` may keep holding `e`: live, not a revealed fake (units never
+## engage one) and within ALLY_CONTACT of `a` (a push back breaks the hold).
+func _holds(a: SimAlly, e: SimEnemy) -> bool:
+	return e != null and e.is_live() and not e.revealed \
+		and _dist2(a.pos, e.route.position_at(e.distance)) <= ALLY_CONTACT * ALLY_CONTACT
 
 
 ## LT-52 slot 3, after enemies move; allies in id order. A holding ally stays while its enemy
@@ -1932,9 +1965,7 @@ func _move_allies() -> void:
 			continue
 		a.prev_pos = a.pos
 		if a.held_id >= 0:
-			var h := enemy_by_id(a.held_id)
-			if h != null and h.is_live() \
-					and _dist2(a.pos, h.route.position_at(h.distance)) <= ALLY_CONTACT * ALLY_CONTACT:
+			if _holds(a, enemy_by_id(a.held_id)):
 				a.target_id = a.held_id
 				continue
 			held.erase(a.held_id)
@@ -1976,18 +2007,27 @@ func _ally_target(a: SimAlly, held: Dictionary[int, bool]) -> SimEnemy:
 ## LT-52 slot 5 (after the towers fire), allies in id order: a holding ally deals
 ## `max(0, dps - armor) x DT` to its enemy (armor once per second, not per tick, LT-46 P10;
 ## the hit skips armor, damage_taken_mult applies; kill credit `source`); an enemy still
-## live then deals `contact_dps x DT` to the ally, which is gone ("killed") at 0 HP. Fakes
-## are engaged and hit back like real enemies (the unit cannot tell).
+## live then deals `contact_dps x DT` to the ally, which is gone ("killed") at 0 HP.
+## Unrevealed fakes are engaged and hit back like real enemies (the unit cannot tell); a
+## hold this slot's shots broke (_holds: pushed out of contact, fake revealed) is dropped
+## with no damage either way. The unit's dps is x madness.damage_multiplier while sanity is
+## in MADNESS and its circle is madness_affected, read every tick (§3 "units deal").
 func _ally_combat() -> void:
+	var madness := state.sanity_state == SimState.SanityState.MADNESS
 	for a in state.allies:
 		if not a.is_live() or a.held_id < 0:
 			continue
 		var e := enemy_by_id(a.held_id)
-		if e == null or not e.is_live():
+		if not _holds(a, e):
 			a.held_id = -1
 			continue
+		var dps := a.dps
+		if madness:
+			var t := tower_by_id(a.tower)
+			if t != null and t.stats().madness_affected:
+				dps *= config.sanity.madness.damage_multiplier
 		var armor := maxf(0.0, e.def.armor + e.armor_bonus)
-		apply_damage(e.id, maxf(0.0, a.dps - armor) * SimTime.DT, a.source, true)
+		apply_damage(e.id, maxf(0.0, dps - armor) * SimTime.DT, a.source, true)
 		if not e.is_live():
 			a.held_id = -1
 			continue

@@ -12,6 +12,7 @@ const MINUS := "−"  ## U+2212, for sanity drains
 const MADNESS_WARNING := " (drives you mad!)"  ## LT-23 Q3: build/upgrade takes the cap to 0
 const REMOVED := "Loses: "  ## LT-28: before the old line of an effect an upgrade removes
 const GROUND_ONLY := "Cannot hit flyers"  ## LT-47: a tower with targets "ground"
+const UNITS_GROUND_ONLY := "Units ignore flyers"  ## LT-52: a circle whose units walk
 
 ## Player-facing text for a refused build or upgrade (presentation only).
 const REASONS := {
@@ -44,6 +45,8 @@ const EFFECT_GROUPS := [
 	["crit_chance", "crit_multiplier"], ["burst_targets"], ["bleed_dps", "bleed_seconds"],
 	["pull_cells", "pull_max_hp", "pull_immune_seconds"], ["strip_armor"],
 	["banish_cells", "banish_targets"], ["banish_max_hp", "banish_immune_seconds"],
+	["summon_max", "summon_lifetime"], ["summon_hp", "summon_dps"], ["summon_speed"],
+	["summon_flying"],
 ]
 
 
@@ -82,6 +85,8 @@ static func lines(def: TowerDef, s: TowerDef.Level, sanity: SanityConfig,
 	if s.acts():
 		if s.damage > 0.0:
 			out.append(_damage_text(s))
+		elif s.is_summon():  # LT-52: a circle summons on a timer
+			out.append(summon_text(s.fire_interval))
 		else:  # LT-51: a gate with no damage still casts on a timer
 			out.append(cast_text(s.fire_interval))
 		out.append("Range %s cells" % num(s.range_cells))
@@ -89,6 +94,8 @@ static func lines(def: TowerDef, s: TowerDef.Level, sanity: SanityConfig,
 			out.append(dead_zone_text(s.min_range))
 		if def.ground_only():
 			out.append(GROUND_ONLY)
+		elif s.is_summon() and not s.summon_flying():
+			out.append(UNITS_GROUND_ONLY)
 	else:
 		out.append("Support (no damage)")
 		out.append("Aura radius %s cells" % num(s.range_cells))
@@ -104,6 +111,11 @@ static func lines(def: TowerDef, s: TowerDef.Level, sanity: SanityConfig,
 ## LT-51: the timer line of a level that acts without damage (Silver Key L1/L2/Pure).
 static func cast_text(interval: float) -> String:
 	return "Casts every %s s" % num(interval)
+
+
+## LT-52: the timer line of a Summoning Circle level.
+static func summon_text(interval: float) -> String:
+	return "Summons every %s s" % num(interval)
 
 
 ## LT-50: the live line of a sanity-scaled level.
@@ -159,8 +171,12 @@ static func kind_lines(def: TowerDef, s: TowerDef.Level, sanity: SanityConfig) -
 			out.append("May miss while Fraying (%s%%)" % num(fraying.miss_chance * 100.0))
 	elif s.acts():
 		# Madness changes shots only (x damage, astray); an aura has none. LT-51: a gate
-		# without damage only goes astray.
-		if s.madness_affected and s.damage <= 0.0:
+		# without damage only goes astray. LT-52: a circle's units deal x damage, never
+		# astray (a unit bites what it holds).
+		if s.madness_affected and s.is_summon():
+			var um := sanity.madness.damage_multiplier if sanity != null else 0.0
+			out.append("Madness: units x%s" % num(um))
+		elif s.madness_affected and s.damage <= 0.0:
 			out.append("Madness: astray")
 		elif s.madness_affected:
 			var mult := sanity.madness.damage_multiplier if sanity != null else 0.0
@@ -289,6 +305,17 @@ static func _effect_text(first_key: String, e: Dictionary) -> String:
 			if n > 1.0:
 				return "Banish %s foes %s cells" % [num(n), num(e.get("banish_cells", 0.0))]
 			return "Banish %s cells back" % num(e.get("banish_cells", 0.0))
+		"summon_max":  # LT-52
+			var n: float = e.get("summon_max", 0.0)
+			return "Up to %s unit%s, %s s each" % [num(n), "" if n == 1.0 else "s",
+				num(e.get("summon_lifetime", 0.0))]
+		"summon_hp":  # LT-52
+			return "Unit %s HP, %s DPS" % [num(e.get("summon_hp", 0.0)),
+				num(e.get("summon_dps", 0.0))]
+		"summon_speed":  # LT-52
+			return "Unit speed %s cells/s" % num(e.get("summon_speed", 0.0))
+		"summon_flying":  # LT-52 (Byakhee)
+			return "Units fly, hold flyers"
 		"banish_max_hp":  # LT-51 (Q4): the cap is shown
 			return "Max %s HP; immune %s s" % [num(e.get("banish_max_hp", 0.0)),
 				num(e.get("banish_immune_seconds", 0.0))]
