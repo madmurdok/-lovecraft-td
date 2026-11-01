@@ -291,11 +291,12 @@ func _act(sim: Simulation, strat: String, idx: int, built: Dictionary) -> int:
 	if _flare:
 		while sim.state.oil < BOT_OIL_TARGET and sim.buy_oil() == Simulation.CommandResult.OK:
 			pass  # refused: no oil block, full, or too poor
+	var lighthouse_refused := false  # a refused lighthouse buy falls through to the builds
 	while true:
-		if _upgrades and _lighthouse and sim.state.towers.size() >= BUILD_FIRST \
-				and _lighthouse_next(sim, strat):
+		if _upgrades and _lighthouse and not lighthouse_refused \
+				and sim.state.towers.size() >= BUILD_FIRST and _lighthouse_next(sim, strat):
 			if sim.upgrade_lighthouse() != Simulation.CommandResult.OK:
-				break
+				lighthouse_refused = true
 			continue
 		if _upgrades and sim.state.towers.size() >= BUILD_FIRST:
 			var up := _next_upgrade(sim, strat)

@@ -220,8 +220,9 @@ Read: `tests/sim_test_base.gd` (edit helpers), `tests/wave_test_base.gd`,
 off, flare `enemy_speed_mult` 1.0 and `width_mult` 1.0; same purchases, oil included) →
 the beam's effect; **no-upgrade** (`--lighthouse=0`) → is the upgrade worth its cost;
 **no-flare** (`--flare=0`) → does the flare pay for its oil. Cheap observation telling
-arms apart: `lit_shots` > 0 and `missed` differs between on and beam-off; `flares` > 0
-only in on. Tune lighthouse costs, multipliers, oil price/cap/start and flare numbers.
+arms apart: `missed` differs between on and beam-off. `lit_shots` is a geometric count (shots by
+a tower inside a beam, whether or not a modifier applies) and `flares` > 0 in beam-off
+too (same purchases, oil included), so neither tells those two arms apart. Tune lighthouse costs, multipliers, oil price/cap/start and flare numbers.
 
 ## 4. Owner questions
 
