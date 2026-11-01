@@ -87,8 +87,8 @@ func refresh() -> void:
 		return
 	oil_label.text = "Lamp oil: %d / %d" % [sim.state.oil, eco.oil.cap]
 	if eco.flare != null:
-		oil_label.text += "\nFlare: %d oil, radius %s cells, %s s; fired at night." % [
-			eco.flare.cost_oil, ConfigReader.fmt(sim.flare_radius()),
+		oil_label.text += "\nFlare: %d oil, radius %s, %s s; fired at night." % [
+			eco.flare.cost_oil, TowerInfo.cells_text(ConfigReader.fmt(sim.flare_radius())),
 			ConfigReader.fmt(eco.flare.seconds)]
 	var buy := sim.can_buy_oil()
 	if eco.flare != null:

@@ -501,8 +501,8 @@ func test_targeting_towers_show_the_switch_between_stats_and_upgrade_first_marke
 		await _open_tower(def_id)
 		_assert_switch("first")
 	var p := _game.tower_panel
-	var order := ["Stats", "PriorityTitle", "Priority_first", "Priority_strongest",
-		"Priority_fastest", "UpgradeTitle"]
+	var order := ["Stats", "UpgradeTitle", "PriorityTitle", "Priority_first",
+		"Priority_strongest", "Priority_fastest"]
 	var idx := order.map(func(n: String) -> int: return p.get_node(n).get_index())
 	var sorted := idx.duplicate()
 	sorted.sort()

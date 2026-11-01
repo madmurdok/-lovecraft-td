@@ -4,8 +4,8 @@ extends VBoxContainer
 ## level, role (the branch role at L3), the beam status line while lit (LT-43 §5), the stats
 ## table (StatsTable: Now | L2 at L1, Now | A | B at L2, Now at L3; lit Now cells marked
 ## "*"), the special lines (prefixed by column), the kind line, the upgrade button (L1) or
-## the two branch buttons (L2) with their role lines, the target priority switch (LT-31;
-## hidden for an aura tower), "Max level" at L3, and Sell with the refund
+## the two branch buttons (L2) with their role lines, "Max level" at L3, the target priority
+## switch below them (LT-31, LT-59; hidden for an aura tower), and Sell with the refund
 ## Simulation.sell_refund reports now. Buttons are disabled with the reason whenever
 ## Simulation.can_upgrade refuses them; refresh() re-reads everything each frame.
 ## `visible` is "the tower view is shown"; SidePanel shows its idle text otherwise.
@@ -51,14 +51,6 @@ func _ready() -> void:
 	kind_label = SidePanel.make_label("Kind", StatsTable.COLOR_LABEL)
 	kind_label.add_theme_font_size_override("font_size", StatsTable.FONT_SIZE)
 	add_child(kind_label)
-	priority_title = SidePanel.make_label("PriorityTitle")
-	priority_title.text = "── Target ──"
-	priority_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	add_child(priority_title)
-	for mode: String in SimTower.TARGET_PRIORITIES:
-		var pb := SidePanel.make_button("Priority_" + mode, _on_priority_pressed.bind(mode))
-		add_child(pb)
-		priority_buttons[mode] = pb
 	upgrade_title = SidePanel.make_label("UpgradeTitle")
 	upgrade_title.text = "── Upgrade ──"
 	upgrade_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -74,6 +66,14 @@ func _ready() -> void:
 	max_label = SidePanel.make_label("MaxLevel")
 	max_label.text = "Max level"
 	add_child(max_label)
+	priority_title = SidePanel.make_label("PriorityTitle")
+	priority_title.text = "── Target ──"
+	priority_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	add_child(priority_title)
+	for mode: String in SimTower.TARGET_PRIORITIES:
+		var pb := SidePanel.make_button("Priority_" + mode, _on_priority_pressed.bind(mode))
+		add_child(pb)
+		priority_buttons[mode] = pb
 	sell_button = SidePanel.make_button("SellButton", _on_sell_pressed)
 	add_child(sell_button)
 	add_child(SidePanel.make_button("CancelButton", close, "Cancel"))

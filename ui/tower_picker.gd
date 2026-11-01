@@ -49,7 +49,7 @@ const HEADS := [
 const TRAIT_TIPS := {
 	"Res": "Sanity reserve %s",
 	"Ground": "Ground: never hits flyers",
-	"Blind": "Blind %s: can't fire within %s cells",
+	"Blind": "Blind %s: can't fire within %s",
 	"Line": "Line: pierces",
 	"Reveal": "Reveal: shows fakes",
 	"Blast": "Blast: area damage",
@@ -281,6 +281,8 @@ static func _trait_tip(tag: String) -> String:
 	var tip: String = TRAIT_TIPS.get(words[0], "")
 	if tip.is_empty() or words.size() < 2:
 		return tip
+	if words[0] == "Blind":  # the number twice: "Blind 1: can't fire within 1 cell"
+		return tip % [words[1], TowerInfo.cells_text(words[1])]
 	return tip.replace("%s", words[1])
 
 

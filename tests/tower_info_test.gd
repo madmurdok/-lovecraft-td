@@ -89,7 +89,7 @@ func test_dynamite_shows_ground_only_the_blast_and_the_fuse() -> void:
 	var l1 := d.levels[0]
 	var e: Dictionary = l1.effects
 	_assert_cells(_row("dynamite_crew", l1), {"attack": "Blast", "hits": "Ground"})
-	assert_array(_special(l1)).is_equal(["Blast radius %s cells" % _n(e["aoe_radius"]),
+	assert_array(_special(l1)).is_equal(["Blast radius " + TowerInfo.cells_text(_n(e["aoe_radius"])),
 		"Fuse %s s, thrown ahead" % _n(e["fuse_seconds"])])
 	# Spec example at today's config.
 	if e["fuse_seconds"] == 1.0:
@@ -128,7 +128,7 @@ func test_necronomicon_lines_and_the_madness_kind_line() -> void:
 	_assert_cells(_row("necronomicon_reader", l1), _attack(l1))
 	_assert_cells(_row("necronomicon_reader", l1), {"attack": "Blast",
 		"reserve": _n(l1.sanity_reserve), "kill": TowerInfo.CELL_DASH})
-	assert_array(_special(l1)).is_equal(["Blast radius %s cells" % _n(l1.effects["aoe_radius"])])
+	assert_array(_special(l1)).is_equal(["Blast radius " + TowerInfo.cells_text(_n(l1.effects["aoe_radius"]))])
 	assert_array(Array(TowerInfo.kind_lines(n, l1, _cfg.sanity))).is_equal([
 		"Madness: x%s, astray" % _n(_cfg.sanity.madness.damage_multiplier)])
 	var got := Array(TowerInfo.kind_lines(n, n.branches["a"], _cfg.sanity))
@@ -465,7 +465,7 @@ func test_battery_shows_its_dead_zone_after_the_range_and_its_shell_effects() ->
 	if l1.range_cells == 7.0 and l1.min_range == 2.0:
 		assert_str(_row("coast_battery", l1)["range"]).is_equal("2–7")
 	assert_array(_special(d.branches["a"])).contains(["Ignores armor"])
-	assert_array(_special(d.branches["b"])).contains(["Blast radius 1 cells"])
+	assert_array(_special(d.branches["b"])).contains(["Blast radius 1 cell"])
 	assert_array(_special(d.branches["b"])).not_contains(["Ignores armor"])
 	for id: String in ["rifleman", "harpooner", "dynamite_crew"]:
 		assert_str(_row(id, _def(id).levels[0])["range"]).not_contains("–")

@@ -12,6 +12,7 @@ const FONT_SIZE_NARROW := 11  ## values at 3 columns, so "Single" / "Summon" kee
 const LABEL_W := 62  ## the row-label column (LT-43 §4)
 const LABEL_W_NARROW := 55  ## at 3 columns, labels at FONT_SIZE_NARROW ("Sanity/kill" 53 px)
 const SEPARATION := 2
+const COLUMN_GAP := 6  ## min free px after the widest cell of a value column (LT-59)
 const COLOR_LABEL := Color(0.6, 0.6, 0.64)
 const COLOR_DASH := Color(0.45, 0.45, 0.5)
 const COLOR_VALUE := Color(0.93, 0.93, 0.95)
@@ -127,7 +128,7 @@ func _fit_columns(n: int) -> void:
 			w = maxf(w, f.get_string_size(l.text, HORIZONTAL_ALIGNMENT_LEFT, -1,
 				l.get_theme_font_size("font_size")).x)
 		for l in col:
-			l.custom_minimum_size.x = ceilf(w)
+			l.custom_minimum_size.x = ceilf(w) + (COLUMN_GAP if i < n - 1 else 0)
 
 
 ## The text a reader sees in row `key`, column `col` (a spanning cell answers every column).
