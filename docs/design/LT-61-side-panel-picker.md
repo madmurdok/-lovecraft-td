@@ -187,6 +187,7 @@ keys in LT-61. Owner (Q4): "Только Esc, как сейчас (Recommended)"
 ## 9. Owner questions
 
 Answered:
+- Q1 (round 2): "A: $ · DPS · Trait (Recommended)"
 - Q2: "Reader, Circle и т.п. (Recommended)"
 - Q3: "Скрывается, как сейчас"
 - Q4: "Только Esc, как сейчас (Recommended)"
