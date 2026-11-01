@@ -366,14 +366,13 @@ func test_pack_spacing_must_be_present_positive_and_at_least_one_tick() -> void:
 		var rb := load_json_edit(E, func(d: Dictionary) -> void:
 			d["enemies"]["deep_one"]["traits"]["pack"]["spacing_s"] = bad)
 		assert_rejected(rb, E, path)
-	# 0.4 tick rounds to 0 ticks, 0.6 tick rounds to 1: both are below one tick.
-	for sub: float in [SimTime.DT * 0.4, SimTime.DT * 0.6]:
+	# 0.4 tick rounds to 0 ticks, 0.03 (0.9 tick) rounds to 1: both are below one tick.
+	for sub: float in [SimTime.DT * 0.4, 0.03]:
 		var rs := load_json_edit(E, func(d: Dictionary) -> void:
 			d["enemies"]["deep_one"]["traits"]["pack"]["spacing_s"] = sub)
 		assert_rejected(rs, E, path, "at least one tick")
-	# A hair above one tick is accepted (JSON text drops the last digits of DT itself).
-	var ok := load_json_edit(E, func(d: Dictionary) -> void:
-		d["enemies"]["deep_one"]["traits"]["pack"]["spacing_s"] = SimTime.DT + 0.001)
+	# Exactly one tick as JSON writes it (1/30 s is serialized as 0.03333333333333).
+	var ok := load_text_edit(E, '"spacing_s": 0.5', '"spacing_s": 0.03333333333333')
 	assert_bool(ok.ok).override_failure_message("\n".join(ok.errors)).is_true()
 
 
