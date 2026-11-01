@@ -56,11 +56,19 @@ func _bot(upgrades := true, lighthouse := true, flare := true) -> Object:
 
 
 ## LT-30: money the bot spends by day topping the lamp oil up from oil.start to
-## BOT_OIL_TARGET, before any build or upgrade.
+## one flare's cost_oil (LT-57 §5), before any build or upgrade.
 func _oil_topup() -> int:
-	var target: int = _bot().get_script().get_script_constant_map()["BOT_OIL_TARGET"]
+	var target: int = real_config().economy.flare.cost_oil
 	var oil := real_config().economy.oil
 	return maxi(0, target - oil.start) * oil.price
+
+
+## LT-57: the day's oil top-up as command names, oil.start -> flare.cost_oil.
+func _topup_buys() -> Array:
+	var out := []
+	for i in maxi(0, real_config().economy.flare.cost_oil - real_config().economy.oil.start):
+		out.append("buy_oil")
+	return out
 
 
 ## A fresh res://data config the test may edit (real_config() is shared by the suite).
@@ -321,7 +329,8 @@ func test_no_upgrade_before_five_towers() -> void:
 	var first := _bot().get_script().get_script_constant_map()["BUILD_FIRST"] as int
 	assert_int(first).is_equal(5)
 	# Gold for 4 builds + one rifleman L2: the bot builds 4 and saves for the 5th.
-	var sim := _sim(_mundane_builds(4) + real_config().towers[RIFLE].levels[1].upgrade_cost)
+	var sim := _sim(_mundane_builds(4) + real_config().towers[RIFLE].levels[1].upgrade_cost
+		+ _oil_topup())  # LT-57: the $80 top-up comes first
 	_bot().call("_act", sim, "mundane", 0, {})
 	assert_array(_levels(sim)).is_equal([0, 0, 0, 0])
 
@@ -369,7 +378,10 @@ func test_run_lines_carry_upgrade_keys_only_with_upgrades_on() -> void:
 	assert_array(off.keys()).is_equal(BASELINE_KEYS + LT23_KEYS + LT27_KEYS + LT30_KEYS)
 	assert_array([off["lighthouse_level"], off["flares"], off["oil_bought"], off["oil_gold"]]) \
 		.is_equal([0, 0, 0, 0])
-	var on: Dictionary = _bot(true).call("_play", "mundane", 1000)
+	# LT-57: with the flare on, the bot spends $80 a day on oil from night 1 and loses at
+	# wave 3 before any upgrade on this seed (balance finding for S6); the upgrade keys are
+	# checked with the flare off.
+	var on: Dictionary = _bot(true, true, false).call("_play", "mundane", 1000)
 	assert_array(on.keys()).is_equal(BASELINE_KEYS + LT23_KEYS + LT27_KEYS + LT30_KEYS
 		+ ["upgrades", "upgrade_gold"])
 	var oil := real_config().economy.oil
@@ -385,7 +397,7 @@ func test_run_lines_carry_upgrade_keys_only_with_upgrades_on() -> void:
 		assert_bool(k in allowed).override_failure_message(k).is_true()
 	assert_int(on["upgrade_gold"]).is_greater_equal(0)
 	# Same strategy and seed twice: the same RUN line.
-	var again: Dictionary = _bot(true).call("_play", "mundane", 1000)
+	var again: Dictionary = _bot(true, true, false).call("_play", "mundane", 1000)
 	assert_str(JSON.stringify(again)).is_equal(JSON.stringify(on))
 
 
@@ -447,7 +459,7 @@ func test_blocked_occult_bot_out_of_riflemen_upgrades_below_build_first() -> voi
 	# LT-30: the oil top-up first, then one upgrade (all the gold left), then the round's
 	# call_wave (its bonus is the only gold).
 	var cmds := sim.state.command_log.slice(log_size).map(func(c: Array) -> String: return c[1])
-	assert_array(cmds).is_equal(["buy_oil", "buy_oil", "upgrade", "call_wave"])
+	assert_array(cmds).is_equal(_topup_buys() + ["upgrade", "call_wave"])
 
 
 func test_blocked_occult_bot_with_nothing_to_upgrade_saves_its_gold() -> void:
@@ -460,7 +472,7 @@ func test_blocked_occult_bot_with_nothing_to_upgrade_saves_its_gold() -> void:
 	assert_int(sim.state.towers.size()).is_equal(0)
 	# Only the oil top-up (LT-30) and the call_wave of the round: no build, no upgrade.
 	var cmds := sim.state.command_log.slice(log_size).map(func(c: Array) -> String: return c[1])
-	assert_array(cmds).is_equal(["buy_oil", "buy_oil", "call_wave"])
+	assert_array(cmds).is_equal(_topup_buys() + ["call_wave"])
 
 
 func test_mixed_skips_a_blocked_occult_item_and_builds_the_next() -> void:
@@ -490,7 +502,9 @@ func test_mixed_skips_a_blocked_occult_item_and_builds_the_next() -> void:
 ## is below the peak, since the first occult build happens at full sanity.
 func test_occult_run_line_metrics_are_consistent() -> void:
 	var cfg := real_config()
-	var run_line: Dictionary = _bot(true).call("_play", "occult", 1000)
+	# LT-57: flare off: with the $80 daily top-up the occult bot loses at wave 2 before its
+	# first occult build on this seed (balance finding for S6), which leaves no reserve.
+	var run_line: Dictionary = _bot(true, true, false).call("_play", "occult", 1000)
 	var top := cfg.sanity.max_sanity
 	var peak: float = run_line["reserve_peak"]
 	assert_float(peak).is_greater(0.0)
@@ -537,8 +551,8 @@ func test_bots_never_set_target_priority() -> void:
 # --- LT-30: the lighthouse, lamp oil and the flare -----------------------------------------
 
 func test_day_tops_the_oil_up_to_the_target_before_building() -> void:
-	var target: int = _bot().get_script().get_script_constant_map()["BOT_OIL_TARGET"]
-	assert_int(target).is_equal(4)
+	var target: int = real_config().economy.flare.cost_oil  # LT-57: one flare's oil
+	assert_int(target).is_equal(8)
 	var sim := _sim(1000)
 	var start := sim.state.oil
 	_bot().call("_act", sim, "mundane", 0, {})
@@ -561,39 +575,43 @@ func test_flare_off_never_buys_oil_nor_fires() -> void:
 	var day := _sim(1000)
 	_bot(true, true, false).call("_act", day, "mundane", 0, {})
 	assert_int(day.state.oil).is_equal(real_config().economy.oil.start)
-	var night := _night_with_lit(3)
+	var night := _night_with_near(4)
 	_bot(true, true, false).call("_act", night, "mundane", 5, {})
 	assert_int(night.state.flare_cooldown_ticks).is_equal(0)
 	for c: Array in day.state.command_log + night.state.command_log:
 		assert_bool(c[1] in ["buy_oil", "fire_flare"]).override_failure_message(str(c)).is_false()
 
 
-## A WAVE sim with `lit` live enemies flagged lit (and one unlit), oil for a flare.
-func _night_with_lit(lit: int) -> Simulation:
+## A WAVE sim with `near` live enemies one cell before the lighthouse (inside the flare
+## circle, LT-57 §5) and one at the spawn (outside), none flagged lit, oil for a flare.
+func _night_with_near(near: int) -> Simulation:
 	var sim := _sim()
 	assert_int(sim.call_wave()).is_equal(R.OK)
 	for e in sim.state.enemies:
 		e.lit = false
-	for i in lit + 1:
+	for i in near + 1:
 		var e := sim.enemy_by_id(sim.spawn_enemy("cultist", false))
-		e.lit = i < lit
-	sim.state.oil = 4
+		e.lit = false
+		if i < near:
+			e.distance = e.route.length - SimTime.UNITS_PER_CELL
+	sim.state.oil = sim.config.economy.flare.cost_oil
 	sim.drain_events()
 	return sim
 
 
-func test_night_fires_the_flare_at_three_lit_enemies() -> void:
-	var min_lit: int = _bot().get_script().get_script_constant_map()["FLARE_MIN_LIT"]
-	assert_int(min_lit).is_equal(3)
-	var sim := _night_with_lit(min_lit)
+func test_night_fires_the_flare_at_four_enemies_in_the_circle() -> void:
+	var min_near: int = _bot().get_script().get_script_constant_map()["FLARE_MIN_IN_CIRCLE"]
+	assert_int(min_near).is_equal(4)
+	var cost := real_config().economy.flare.cost_oil
+	var sim := _night_with_near(min_near)
 	_bot().call("_act", sim, "mundane", 5, {})
 	assert_array(sim.state.command_log.back()).is_equal([sim.state.tick, "fire_flare"])
-	assert_int(sim.state.oil).is_equal(4 - real_config().economy.flare.cost_oil)
-	var few := _night_with_lit(min_lit - 1)
+	assert_int(sim.state.oil).is_equal(0)
+	var few := _night_with_near(min_near - 1)
 	var log_size := few.state.command_log.size()
 	_bot().call("_act", few, "mundane", 5, {})
 	assert_int(few.state.command_log.size()).is_equal(log_size)
-	assert_int(few.state.oil).is_equal(4)
+	assert_int(few.state.oil).is_equal(cost)
 
 
 ## Five L3 Marksmen: mundane has no tower upgrade left (LT-29: L2 riflemen now buy the
@@ -602,7 +620,7 @@ func _five_l3_rifles(gold: int) -> Simulation:
 	var sim := _sim(gold)
 	for i in 5:
 		_place(sim, RIFLE, 2, "a")
-	sim.state.oil = 4  # no oil top-up in the way
+	sim.state.oil = real_config().economy.flare.cost_oil  # no oil top-up in the way
 	return sim
 
 
@@ -722,7 +740,7 @@ func _counting_five_l3(gold: int) -> CountingSim:
 	sim.drain_events()
 	for i in 5:
 		_place(sim, RIFLE, 2, "a")
-	sim.state.oil = 4  # no oil top-up in the way
+	sim.state.oil = real_config().economy.flare.cost_oil  # no oil top-up in the way
 	assert_bool(_bot().call("_lighthouse_next", sim, "mundane")).is_true()
 	return sim
 

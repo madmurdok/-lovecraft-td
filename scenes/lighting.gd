@@ -28,15 +28,22 @@ const TOWER_LIGHT_CELLS := 2.2  ## radius
 ## small. Towers past the cap stay unlit (still visible under the ambient).
 const MAX_TOWER_LIGHTS := 12
 const BEAM_TEX_SIZE := 256
+## LT-57 §4: the radial flare light (a disc lit to the sim's flare_radius()).
+const FLARE_ENERGY := 1.3
+const FLARE_EASE_IN := 0.15  ## seconds from the shot to full energy
+const FLARE_EASE_OUT := 0.5  ## the last seconds of the flare fade to 0
+const FLARE_TEX_SIZE := 256
 
 static var _beam_texs: Dictionary[int, ImageTexture] = {}  ## half angle (milli-rad) -> cone
 static var _glow_tex: GradientTexture2D
+static var _flare_tex: GradientTexture2D
 
 var game: Game
 var modulate_node: CanvasModulate
 var beam: PointLight2D  ## the first beam (always present)
 var beams: Array[PointLight2D] = []  ## LT-30: one per sim.beam_count(), beam is beams[0]
 var glow: PointLight2D
+var flare_light: PointLight2D  ## LT-57: the radial flare, visible only while one burns
 var fog: Node2D
 var _tower_lights: Dictionary[int, PointLight2D] = {}  ## tower id -> light
 var night := 0.0  ## LT-27 §4: 0 = day, 1 = night; eases toward night_target()
@@ -77,6 +84,8 @@ func _ready() -> void:
 	glow = _light("LighthouseGlow", _glow_texture(), BEAM_COLOR, 1.0,
 		LIGHTHOUSE_GLOW_CELLS * 2.0 * Board.CELL / 256.0)
 	glow.position = lh_center
+	flare_light = _light("FlareLight", _flare_texture(), BEAM_COLOR, 0.0, 1.0)
+	flare_light.position = lh_center
 	_sync_beams()
 	beam = beams[0]
 	_apply_night()
@@ -86,6 +95,7 @@ func _process(delta: float) -> void:
 	_sync_beams()
 	_sync_tower_lights()
 	ease_night(delta)
+	_sync_flare()
 
 
 ## Moves `night` toward the phase's target by 1 - exp(-delta / NIGHT_EASE_SECONDS) of the
@@ -113,16 +123,13 @@ func _apply_night() -> void:
 
 ## LT-30 §3.2: the beams follow the sim. Count from beam_count() (a lighthouse upgrade adds
 ## beams), rotation from beam_directions(alpha) (tick + alpha, no timer of its own; empty by
-## day, then the last rotation stays), cone width from the config, widened while a flare
-## burns (state.flare_ticks_left, a read).
+## day, then the last rotation stays), cone width from the config (a flare no longer
+## widens it: LT-57 lights a circle instead, _sync_flare).
 func _sync_beams() -> void:
 	var sim := game.sim
 	var lh_center := (Vector2(sim.state.map.lighthouse) + Vector2(0.5, 0.5)) * Board.CELL
 	var cfg := sim.config.economy
-	var k := cfg.beam.half_width_ratio
-	if cfg.flare != null and sim.state.flare_ticks_left > 0:
-		k *= cfg.flare.width_mult
-	var tex := _beam_texture(atan(k))
+	var tex := _beam_texture(atan(cfg.beam.half_width_ratio))
 	var tex_scale := cfg.beam.reach_cells * 2.0 * Board.CELL / BEAM_TEX_SIZE
 	var want := sim.beam_count()
 	while beams.size() < want:
@@ -139,6 +146,29 @@ func _sync_beams() -> void:
 		beams[i].texture_scale = tex_scale
 		if i < dirs.size():
 			beams[i].rotation = dirs[i].angle()
+
+
+## LT-57 §4: the flare light covers sim.flare_radius() cells (its disc edge at the texture
+## rim) and burns while state.flare_ticks_left > 0 (a read): energy eases in over
+## FLARE_EASE_IN after the shot and out over the last FLARE_EASE_OUT seconds, x night.
+func _sync_flare() -> void:
+	var sim := game.sim
+	flare_light.texture_scale = sim.flare_radius() * 2.0 * Board.CELL / FLARE_TEX_SIZE
+	flare_light.energy = FLARE_ENERGY * night * flare_strength(sim)
+	flare_light.visible = flare_light.energy > 0.0
+
+
+## 0..1 brightness of the flare now: 0 when none burns, ramps up over FLARE_EASE_IN seconds
+## after the shot and down over the last FLARE_EASE_OUT seconds.
+static func flare_strength(sim: Simulation) -> float:
+	var flare := sim.config.economy.flare
+	var left := sim.state.flare_ticks_left
+	if flare == null or left <= 0 or sim.flare_radius() <= 0.0:
+		return 0.0
+	var total := maxi(1, SimTime.ticks(flare.seconds))
+	var since := float(total - left + 1) * SimTime.DT
+	var until := float(left) * SimTime.DT
+	return clampf(since / FLARE_EASE_IN, 0.0, 1.0) * clampf(until / FLARE_EASE_OUT, 0.0, 1.0)
 
 
 func _sync_tower_lights() -> void:
@@ -187,6 +217,25 @@ static func _glow_texture() -> GradientTexture2D:
 		_glow_tex.width = 256
 		_glow_tex.height = 256
 	return _glow_tex
+
+
+## LT-57: the flare disc, FLARE_TEX_SIZE across: near-flat bright core (the whole circle
+## is lit in the sim) falling to 0 at the rim.
+static func _flare_texture() -> GradientTexture2D:
+	if _flare_tex == null:
+		var g := Gradient.new()
+		g.set_color(0, Color(1, 1, 1, 1))
+		g.set_color(1, Color(0, 0, 0, 0))
+		g.add_point(0.7, Color(0.8, 0.8, 0.8, 0.8))
+		g.add_point(0.94, Color(0.55, 0.55, 0.55, 0.55))
+		_flare_tex = GradientTexture2D.new()
+		_flare_tex.gradient = g
+		_flare_tex.fill = GradientTexture2D.FILL_RADIAL
+		_flare_tex.fill_from = Vector2(0.5, 0.5)
+		_flare_tex.fill_to = Vector2(0.5, 0.0)
+		_flare_tex.width = FLARE_TEX_SIZE
+		_flare_tex.height = FLARE_TEX_SIZE
+	return _flare_tex
 
 
 ## A cone of half angle `half_angle` (radians) pointing along +x from the texture centre

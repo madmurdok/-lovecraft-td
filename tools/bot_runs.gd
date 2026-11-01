@@ -51,12 +51,13 @@ extends SceneTree
 ## allows, then call_wave() at once (lighting the lamp at once gives the night its maximum
 ## luck). During a wave (night) building, upgrades and sales are refused, so the bot only
 ## tries buy_sanity() (occult, mixed), re-checking every second.
-## Lighthouse (LT-30 §3.2/§3.4): by day, after sell_relics(), the bot tops the lamp oil up to
-## BOT_OIL_TARGET (buy_oil() until the stock is there or a call is refused), and in the
+## Lighthouse (LT-30 §3.2/§3.4, LT-57 §5): by day, after sell_relics(), the bot tops the lamp
+## oil up to one flare's flare.cost_oil (buy_oil() until the stock is there or a call is
+## refused), and in the
 ## purchase loop buys the next lighthouse level when its cost is at most the cheapest tower
 ## upgrade's (or no tower upgrade is left); a refused level is not retried that day and the
 ## loop falls through to tower upgrades and builds (LT-30 S10); at night it fires the flare when at least
-## FLARE_MIN_LIT live enemies are lit. [--lighthouse=0] never upgrades the lighthouse,
+## FLARE_MIN_IN_CIRCLE live enemies are within the flare radius. [--lighthouse=0] never upgrades the lighthouse,
 ## [--flare=0] never buys oil and never fires. A beam-off arm is a --data=<dir> variant.
 ## RUN lines add "lighthouse_level", "flares", "oil_bought", "oil_gold" and "lit_shots"
 ## (shots by a tower inside a beam).
@@ -67,8 +68,9 @@ extends SceneTree
 
 const STRATEGIES := ["mundane", "occult", "mixed", "madness", "demolition", "battery",
 	"resonator", "gate", "circle"]
-const BOT_OIL_TARGET := 4  ## oil the bot keeps by day: two flares (tunable)
-const FLARE_MIN_LIT := 3  ## live lit enemies that make the bot fire the flare (tunable)
+## LT-57 §5: live enemies (reals and fakes) within the flare radius that make the bot fire
+## the flare (tunable).
+const FLARE_MIN_IN_CIRCLE := 4
 const MAX_TICKS := 30 * 60 * 30
 ## Strategy -> lowest sanity_cap an occult build/upgrade may leave (LT-23 §4, tunable).
 const CAP_FLOOR := {"occult": 30.0, "mixed": 60.0}
@@ -333,7 +335,8 @@ func _act(sim: Simulation, strat: String, idx: int, built: Dictionary) -> int:
 		return idx  # LT-27 §3: night; builds, upgrades and sales are day only
 	sim.sell_relics()  # refused with an empty stash
 	if _flare:
-		while sim.state.oil < BOT_OIL_TARGET and sim.buy_oil() == Simulation.CommandResult.OK:
+		while sim.state.oil < _bot_oil_target(sim) \
+				and sim.buy_oil() == Simulation.CommandResult.OK:
 			pass  # refused: no oil block, full, or too poor
 	var lighthouse_refused := false  # a refused lighthouse buy falls through to the builds
 	while true:
@@ -380,16 +383,23 @@ func _lighthouse_next(sim: Simulation, strat: String) -> bool:
 	return up.is_empty() or cost <= sim.upgrade_target(sim.tower_by_id(up[0]), up[1]).upgrade_cost
 
 
-## Night: fires the flare when at least FLARE_MIN_LIT live enemies are lit (refused on
-## cooldown or without oil).
+## LT-57 §5: oil the bot keeps by day: one flare (flare.cost_oil), 0 without a flare block.
+static func _bot_oil_target(sim: Simulation) -> int:
+	var flare := sim.config.economy.flare
+	return flare.cost_oil if flare != null else 0
+
+
+## Night: fires the flare when at least FLARE_MIN_IN_CIRCLE live enemies (reals and fakes, as
+## a player sees them) are within the flare radius (LT-57 §5: before firing they are not lit
+## by the circle yet, so e.lit is not the count). Refused on cooldown or without oil.
 func _night_flare(sim: Simulation) -> void:
 	if not _flare:
 		return
-	var lit := 0
+	var near := 0
 	for e in sim.state.enemies:
-		if e.lit:
-			lit += 1
-	if lit >= FLARE_MIN_LIT:
+		if e.is_live() and sim.in_flare_radius(e.route.position_at(e.distance)):
+			near += 1
+	if near >= FLARE_MIN_IN_CIRCLE:
 		sim.fire_flare()
 
 

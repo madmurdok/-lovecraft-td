@@ -1,6 +1,6 @@
 # LT-57 — Radial flare: design note (S1)
 
-Status: draft for the owner · branch `feat/LT-57-radial-flare` (release-0.3.0 tip 7851dd3)
+Status: approved (Q1-Q4 answered, §8) · branch `feat/LT-57-radial-flare` (release-0.3.0 tip 7851dd3)
 
 Owner (verbatim): "Мне кажется вспышка должна работать не по конусу а во все стороны - такой
 массовый засвет. И стоить оно должно дороже, не 10$ а все 50 или даже 100, тк это массовый
@@ -37,14 +37,14 @@ what it means today, so every lit rule (§3) applies inside the circle with no n
 | `flare.radius_cells` (new, per lighthouse level) | — | **[6, 8, 10]** | path/build cells inside: 13/15, 18/30, 23/43 (of 40/121). L1: 3× today's average path cover and certain instead of a lottery; L3 ≈ 1.3× today's 4-beam flare. Growing keeps the lighthouse upgrade selling the flare (LT-30 §1.1 rationale). Covers the last loop before the lighthouse, where leaks happen. Validation: one entry per `beam.levels`, each in [0, `beam.reach_cells`] (0 = flare lights nothing, for the `beam_off` arm) |
 | `flare.seconds` | 3 | **5** | "массовый": an enemy at speed 1.0 inside the circle for the whole flare loses 2.5 cells at ×0.5 (today 1.5) |
 | `flare.enemy_speed_mult` | 0.5 | 0.5 | unchanged |
-| `flare.cost_oil` | 2 | **6** | $60 at $10/oil: the owner's $50-100 band, low end; ≈ one dawn wage (50 + 10n = $60-$100), 1.2 Riflemen ($50) |
+| `flare.cost_oil` | 2 | **8** | $80 at $10/oil (owner Q1 "$80 (8 масла)"): mid of the $50-100 band; a real choice against a tower every night |
 | `oil.price` | $10 | $10 | owner: buy oil by day, "дороже" via more oil, not a dearer unit |
-| `oil.cap` | 6 | **12** | two flares; refill $120 ≈ one late wage, cannot be stockpiled for the finale |
-| `oil.start` | 2 | **0** | 6 free oil would be $60 free against $200 start gold; the LT-56 goal (bots lose ≥ 10/20) wants harder, not easier. The HUD shows "Flare (6 oil)" disabled "No oil" on night 1, which points at the lighthouse panel |
+| `oil.cap` | 6 | **16** | two flares (Q1); refill $160, cannot be stockpiled for the finale |
+| `oil.start` | 2 | **0** | 8 free oil would be $80 free against $200 start gold; the LT-56 goal (bots lose ≥ 10/20) wants harder, not easier. The HUD shows "Flare (8 oil)" disabled on night 1, which points at the lighthouse panel |
 | `flare.cooldown_seconds` | 20 | **30** | a night runs ~60 s: at most two flares, so one night cannot burn the whole tank on a single wave's tail |
 | `flare.width_mult`, `flare.hold_beams` | 2.0, true | **removed** | the circle replaces the widening; `FLARE_FIELDS` rejects them (old variants fail loudly) |
 
-All are S6 tunables (balance lab, `tools/balance/README.md`); Q1 sets the price band.
+All are S6 tunables (balance lab, `tools/balance/README.md`); Q1 set the price ($80, tank 16).
 
 ## 3. What "lit" does inside the circle (unchanged rules, wider reach)
 
@@ -54,9 +54,10 @@ All are S6 tunables (balance lab, `tools/balance/README.md`); Q1 sets the price 
 - **Occult towers:** `power_mult ×0.7`: Elder Sign aura strength, Reader/Resonator damage,
   Silver Key banish distance and damage (`_cast_banish` 1564), Summoning Circle: a unit
   summoned during the flare keeps `summon_dps ×0.7` for its whole life (`_summon` 1610,
-  "lit at summon time", LT-52 §3). Q2 asks whether towers are lit by the flare at all.
+  "lit at summon time", LT-52 §3). Q2 resolved: towers are lit by the flare too.
 - **Fakes / reveal:** fakes are slowed like reals and stay targetable; the flare does not
-  reveal (the Searchlight's Revealing branch stays the fake counter, LT-26 non-goal). Q3.
+  reveal (the Searchlight's Revealing branch stays the fake counter, LT-26 non-goal). Q3
+  resolved: no reveal.
 - `TOWER_LIT` flips fire for towers entering/leaving the circle (first/last flare tick), as
   for beams today.
 
@@ -68,20 +69,20 @@ All are S6 tunables (balance lab, `tools/balance/README.md`); Q1 sets the price 
   out over the last 0.5 s of `flare_ticks_left`, × `night`. The cone widening in
   `_sync_beams` 118-140 is removed. Optional faint rim ring in `scenes/board.gd` so the edge
   reads on lit sea. Tower lit corner marks (board.gd 608) already show who is lit.
-- **HUD** (`ui/hud.gd` `_refresh_flare` 185-206): "Flare (6 oil)" / "Flare burning" /
+- **HUD** (`ui/hud.gd` `_refresh_flare` 185-206): "Flare (8 oil)" / "Flare burning" /
   "Flare 12 s" unchanged in form; tooltip "Lights everything within 6 cells for 5 s".
 - **Lighthouse panel** (`ui/lighthouse_panel.gd` `refresh` 59-91):
-  `Lamp oil: 4 / 12` · `Flare: 6 oil, radius 6 cells, 5 s; fired at night.` · next level
+  `Lamp oil: 4 / 16` · `Flare: 8 oil, radius 6 cells, 5 s; fired at night.` · next level
   line `Upgrade: 2 beams, flare radius 8 ($120)`. The buy button becomes
-  **"Buy oil for a flare ($60)"**: a new `game.buy_flare_oil()` calls `sim.buy_oil()` up to
+  **"Buy oil for a flare ($80)"** (the price of the units one click would buy): a new `game.buy_flare_oil()` calls `sim.buy_oil()` up to
   `min(cost_oil, cap - oil)` times and stops at the first refusal (each unit stays one logged
   `buy_oil`, so sim, replay and bots are untouched); label shows the reason when refused.
-  Six clicks per flare at one unit each would be the alternative; rejected.
+  Eight clicks per flare at one unit each would be the alternative; rejected.
 
 ## 5. Bot (`tools/bot_runs.gd`)
 
 - `BOT_OIL_TARGET := 4` (70) → `config.economy.flare.cost_oil` (one flare; two would cost
-  $120 by day, more than most wages).
+  $160 by day, more than most wages).
 - `FLARE_MIN_LIT := 3` (71) → `FLARE_MIN_IN_CIRCLE := 4`: `_night_flare` (385-393) counts live
   enemies (reals and fakes, as a player sees them) with `sim.in_flare_radius(p)`, not `e.lit`
   (before firing they are not lit by the circle yet). 4 because a flare now costs 3×.
@@ -117,10 +118,10 @@ Read only: `_lit_by` 1285-1299, `_madness_buff_blocked` ~1400, `_fire_towers` li
    ×0.8 interval with no miss draw; an occult tower at ×0.7 (Silver Key banish distance one
    case). Fakes inside are slowed and still targetable (Q3 recommended).
 6. `TOWER_LIT` true on the first flare tick for a tower in the circle, false after the last.
-7. `fire_flare` pays `cost_oil` 6; `NO_OIL` at 5; cooldown 30 s; tank `OIL_FULL` at 12.
+7. `fire_flare` pays `cost_oil` 8; `NO_OIL` at 7; cooldown 30 s; tank `OIL_FULL` at 16.
 8. Config: `radius_cells` wrong length / > reach / negative rejected; `width_mult`,
    `hold_beams` rejected as unknown keys.
-9. `game.buy_flare_oil()`: buys `min(6, cap - oil)` units, stops at the first refusal
+9. `game.buy_flare_oil()`: buys `min(8, cap - oil)` units, stops at the first refusal
    (poor: buys what it can afford), one `buy_oil` log entry per unit.
 10. Bot: fires at 4 live enemies in the circle (none lit by a beam), not at 3; tops oil up to
     `cost_oil`.
@@ -128,7 +129,11 @@ Read only: `_lit_by` 1285-1299, `_madness_buff_blocked` ~1400, `_fire_towers` li
 Controls (revert → must fail): the `or in_flare_radius` term (1, 3); the radius index by level
 (3); `buy_flare_oil` loop bound (9); bot count source (10).
 
-## 8. Open questions
+## 8. Questions (resolved)
+
+Owner answers (verbatim): Q1 **"$80 (8 масла)"** (8 oil = $80, tank 16); Q2 **"Как у луча:
+и враги, и башни (Recommended)"**; Q3 **"Нет (Recommended)"** (no reveal); Q4 **"Растёт:
+6/8/10 (Recommended)"**. The options below are kept as asked.
 
 **Q1. Flare price.** Today a flare costs 2 oil = $20. Change: more oil per flare (your
 answer); the band is $50-100. Example: on night 3 the wage is $80; at $60 the player buys a

@@ -199,6 +199,33 @@ func buy_oil() -> Simulation.CommandResult:
 	return r
 
 
+## LT-57 §4: oil for one flare, by day: buys one unit at a time (each a logged sim
+## buy_oil) up to flare_oil_to_buy() units, stopping at the first refusal. Returns OK when
+## at least one unit was bought, else the refusal.
+func buy_flare_oil() -> Simulation.CommandResult:
+	var r := Simulation.CommandResult.OK
+	var bought := 0
+	for i in flare_oil_to_buy():
+		r = sim.buy_oil()
+		if r != Simulation.CommandResult.OK:
+			break
+		bought += 1
+	if bought == 0 and r == Simulation.CommandResult.OK:
+		r = sim.can_buy_oil()
+	_after_command()
+	return Simulation.CommandResult.OK if bought > 0 else r
+
+
+## LT-57: units buy_flare_oil() tries: min(flare.cost_oil, cap - oil) (1 per click without
+## a flare block); 0 without an oil block.
+func flare_oil_to_buy() -> int:
+	var eco := sim.config.economy
+	if eco.oil == null:
+		return 0
+	var want := eco.flare.cost_oil if eco.flare != null else 1
+	return clampi(eco.oil.cap - sim.state.oil, 0, want)
+
+
 ## LT-30: the night flare, paid with oil.
 func fire_flare() -> Simulation.CommandResult:
 	var r := sim.fire_flare()

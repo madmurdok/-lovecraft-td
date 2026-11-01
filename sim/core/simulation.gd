@@ -599,9 +599,9 @@ func can_fire_flare() -> CommandResult:
 	return CommandResult.OK
 
 
-## Player command (LT-30 §1.1): for flare.seconds the beams widen (half_width_ratio x
-## width_mult), stop turning when hold_beams, and every lit enemy moves at
-## x enemy_speed_mult; the cooldown runs from now. Emits FLARE_FIRED {ticks, cooldown}
+## Player command (LT-30 §1.1, LT-57 radial): for flare.seconds everything within
+## flare_radius() cells of the lighthouse is lit (beams keep turning and keep their width),
+## and every lit enemy moves at x enemy_speed_mult; the cooldown runs from now. Emits FLARE_FIRED {ticks, cooldown}
 ## (id 0), then OIL_CHANGED {delta: -cost_oil, oil, reason: "flare"}.
 func fire_flare() -> CommandResult:
 	var result := can_fire_flare()
@@ -1178,30 +1178,46 @@ func _flaring() -> bool:
 	return state.flare_ticks_left > 0 and config.economy.flare != null
 
 
-## tan of the beams' half angle this tick: half_width_ratio, x flare.width_mult while a
-## flare burns.
-func _beam_half_width() -> float:
-	var k := config.economy.beam.half_width_ratio
-	if _flaring():
-		k *= config.economy.flare.width_mult
-	return k
+## LT-57: the flare's lit radius in cells at the current lighthouse level
+## (flare.radius_cells[lighthouse_level]); 0 without a flare block.
+func flare_radius() -> float:
+	var flare := config.economy.flare
+	if flare == null or state.lighthouse_level >= flare.radius_cells.size():
+		return 0.0
+	return flare.radius_cells[state.lighthouse_level]
 
 
-## Slot 2, first (LT-30 §3.1): saves prev_beam_* (also when held, so the render does not
-## jump), turns the base direction (night only, not while a flare holds it), then sets `lit`
+## LT-57: whether the point p (cell units, the frame of SimTower.centre) lies within
+## flare_radius() of the lighthouse cell centre, boundary inclusive. Independent of whether
+## a flare burns (the bot asks before firing).
+func in_flare_radius(p: Vector2) -> bool:
+	var lh := config.map.lighthouse
+	var vx := p.x - (lh.x + 0.5)
+	var vy := p.y - (lh.y + 0.5)
+	var r := flare_radius()
+	return vx * vx + vy * vy <= r * r
+
+
+## Lit now by a beam (dirs, half-width k) or, while a flare burns, by its circle (LT-57).
+func _lit_now(dirs: Array, k: float, px: float, py: float) -> bool:
+	return _lit_by(dirs, k, px, py) or (_flaring() and in_flare_radius(Vector2(px, py)))
+
+
+## Slot 2, first (LT-30 §3.1): saves prev_beam_*, turns the base direction (night only; a
+## flare no longer holds it, LT-57), then sets `lit` (in a beam or the flare circle)
 ## of every tower (centre; TOWER_LIT {lit} on a flip, id order) and of every live enemy
 ## (route position at the start of the tick, as auras). By day every flag is false.
 func _update_beam() -> void:
 	state.prev_beam_dx = state.beam_dx
 	state.prev_beam_dy = state.beam_dy
 	var on := _beam_on()
-	if on and not (_flaring() and config.economy.flare.hold_beams):
+	if on:
 		_turn_beam()
 	var dirs := _beam_dirs() if on else []
-	var k := _beam_half_width()
+	var k := config.economy.beam.half_width_ratio
 	for t in state.towers:
 		var c := t.centre()
-		var lit := on and _lit_by(dirs, k, c.x, c.y)
+		var lit := on and _lit_now(dirs, k, c.x, c.y)
 		if lit != t.lit:
 			t.lit = lit
 			_emit(SimEvent.Type.TOWER_LIT, t.id, {"lit": lit})
@@ -1211,7 +1227,7 @@ func _update_beam() -> void:
 		if not e.is_live():
 			continue
 		var p := e.route.position_at(e.distance)
-		e.lit = _lit_by(dirs, k, p.x, p.y)
+		e.lit = _lit_now(dirs, k, p.x, p.y)
 
 
 ## Run start: "rotate" points the base direction left (SimState default); "sweep" starts at
@@ -1275,9 +1291,9 @@ static func _dirs_of(x: float, y: float, count: int) -> Array:
 
 
 ## Whether the point (px, py) (cell units, the frame of SimTower.centre) is inside any beam
-## now (LT-26 §1.1), with the flare's width when one burns. False by day.
+## now (LT-26 §1.1) or within the flare circle while one burns (LT-57). False by day.
 func _is_lit(px: float, py: float) -> bool:
-	return _beam_on() and _lit_by(_beam_dirs(), _beam_half_width(), px, py)
+	return _beam_on() and _lit_now(_beam_dirs(), config.economy.beam.half_width_ratio, px, py)
 
 
 ## LT-26 §1.1 lit test against the lighthouse cell centre L, v = p - L: |v|² <= reach²,
@@ -1300,7 +1316,8 @@ func _lit_by(dirs: Array, k: float, px: float, py: float) -> bool:
 
 
 ## Slot 2, after the madness buff (LT-30 §1.1): while a flare burns, every lit live enemy
-## (fakes alike) gets speed_mult x flare.enemy_speed_mult this tick. The passive beam never
+## (fakes alike; lit includes the flare circle, LT-57) gets speed_mult x
+## flare.enemy_speed_mult this tick. The passive beam never
 ## slows.
 func _apply_flare_slow() -> void:
 	if not _flaring():

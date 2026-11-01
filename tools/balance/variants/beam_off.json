@@ -8,7 +8,7 @@
           "occult": { "power_mult": 1.0 },
           "enemy": { "cancel_madness_buff": false }
         },
-        "flare": { "width_mult": 1.0, "enemy_speed_mult": 1.0 }
+        "flare": { "radius_cells": [0, 0, 0], "enemy_speed_mult": 1.0 }
       }
     }
   }

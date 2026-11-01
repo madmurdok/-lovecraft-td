@@ -28,13 +28,12 @@
       "occult": { "power_mult": 0.7 },
       "enemy": { "cancel_madness_buff": true }
     },
-    "oil": { "price": 10, "start": 2, "cap": 6 },
+    "oil": { "price": 10, "start": 0, "cap": 16 },
     "flare": {
-      "cost_oil": 2,
-      "cooldown_seconds": 20,
-      "seconds": 3,
-      "width_mult": 2.0,
-      "hold_beams": true,
+      "cost_oil": 8,
+      "cooldown_seconds": 30,
+      "seconds": 5,
+      "radius_cells": [6, 8, 10],
       "enemy_speed_mult": 0.5
     }
   }

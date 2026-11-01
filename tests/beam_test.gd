@@ -603,9 +603,10 @@ func test_oil_carries_over_the_night_and_the_dawn() -> void:
 func test_fire_flare_pays_oil_and_emits_in_order() -> void:
 	var sim := _still()
 	var f := sim.config.economy.flare
-	sim.state.oil = 5
+	var start := f.cost_oil + 3
+	sim.state.oil = start
 	assert_int(sim.fire_flare()).is_equal(R.OK)
-	assert_int(sim.state.oil).is_equal(5 - f.cost_oil)
+	assert_int(sim.state.oil).is_equal(start - f.cost_oil)
 	assert_int(sim.state.flare_ticks_left).is_equal(SimTime.ticks(f.seconds))
 	assert_int(sim.state.flare_cooldown_ticks).is_equal(SimTime.ticks(f.cooldown_seconds))
 	var ev := sim.drain_events()
@@ -613,7 +614,7 @@ func test_fire_flare_pays_oil_and_emits_in_order() -> void:
 		[T.FLARE_FIRED, T.OIL_CHANGED])
 	assert_dict(ev[0].data).is_equal({"ticks": SimTime.ticks(f.seconds),
 		"cooldown": SimTime.ticks(f.cooldown_seconds)})
-	assert_dict(ev[1].data).is_equal({"delta": -f.cost_oil, "oil": 5 - f.cost_oil,
+	assert_dict(ev[1].data).is_equal({"delta": -f.cost_oil, "oil": start - f.cost_oil,
 		"reason": "flare"})
 	assert_array(sim.state.command_log.back()).is_equal([sim.state.tick, "fire_flare"])
 
@@ -640,7 +641,7 @@ func test_fire_flare_refusals_in_order() -> void:
 func test_cooldown_runs_from_the_activation_also_by_day() -> void:
 	var sim := _still()
 	var cd := SimTime.ticks(sim.config.economy.flare.cooldown_seconds)
-	sim.state.oil = 6
+	sim.state.oil = 2 * sim.config.economy.flare.cost_oil  # two flares
 	assert_int(sim.fire_flare()).is_equal(R.OK)
 	run(sim, cd - 1)
 	assert_int(sim.can_fire_flare()).is_equal(R.ON_COOLDOWN)
@@ -653,55 +654,47 @@ func test_cooldown_runs_from_the_activation_also_by_day() -> void:
 	assert_int(sim.state.flare_cooldown_ticks).is_equal(cd - 10)
 
 
-func test_flare_holds_the_beams_for_exactly_its_seconds() -> void:
+## LT-57: the flare burns for exactly its seconds and no longer holds the beams.
+func test_flare_burns_for_exactly_its_seconds_and_beams_keep_turning() -> void:
 	var sim := tsim()
-	sim.state.oil = 6
+	sim.state.oil = sim.config.economy.flare.cost_oil
 	var n := SimTime.ticks(sim.config.economy.flare.seconds)
 	run(sim, 3)
 	assert_int(sim.fire_flare()).is_equal(R.OK)
-	var dx := sim.state.beam_dx
-	var dy := sim.state.beam_dy
 	for i in n:
+		var dx := sim.state.beam_dx
+		var dy := sim.state.beam_dy
+		assert_int(sim.state.flare_ticks_left).is_equal(n - i)
 		sim.step()
-		assert_float(sim.state.beam_dx).override_failure_message("tick %d" % i).is_equal(dx)
-		assert_float(sim.state.beam_dy).is_equal(dy)
-		assert_float(sim.state.prev_beam_dx).is_equal(dx)  # saved also when held
+		assert_bool(sim.state.beam_dx != dx or sim.state.beam_dy != dy) \
+			.override_failure_message("tick %d: beam held" % i).is_true()
 	assert_int(sim.state.flare_ticks_left).is_equal(0)
-	sim.step()
-	assert_bool(sim.state.beam_dx != dx or sim.state.beam_dy != dy).is_true()
-	# hold_beams off: the beam keeps turning during the flare.
-	var loose := tsim()
-	loose.config.economy.flare.hold_beams = false
-	loose.state.oil = 6
-	loose.fire_flare()
-	var fx := loose.state.beam_dx
-	loose.step()
-	assert_float(loose.state.beam_dx).is_not_equal(fx)
 
 
-func test_flare_widens_the_cone_by_width_mult_while_it_burns() -> void:
-	var sim := _still()
+## LT-57: while the flare burns everything within flare_radius() of the lighthouse is lit
+## (the beam aimed away from the map lights nothing here).
+func test_flare_lights_the_circle_while_it_burns() -> void:
+	var sim := _still(false)
 	var n := SimTime.ticks(sim.config.economy.flare.seconds)
-	assert_float(sim.config.economy.flare.width_mult).is_equal(2.0)
-	# (11, 1): v = (-3, 1), outside k but inside 2k; (12, 1): v = (-2, 1), outside 2k.
-	var wide := build(sim, RIFLE, Vector2i(11, 1))
-	var never := build(sim, RIFLE, Vector2i(12, 1))
+	var r := sim.flare_radius()
+	assert_float(r).is_equal(6.0)
+	# (11, 1): v = (-3, 1), inside the circle; (7, 1): v = (-7, 1), outside.
+	var near := build(sim, RIFLE, Vector2i(11, 1))
+	var far := build(sim, RIFLE, Vector2i(7, 1))
 	run(sim, 2)
-	assert_bool(wide.lit).is_false()
-	sim.state.oil = 6
+	assert_bool(near.lit).is_false()
+	sim.state.oil = 2 * sim.config.economy.flare.cost_oil
 	assert_int(sim.fire_flare()).is_equal(R.OK)
 	var t0 := sim.state.tick
 	var ev := run(sim, n + 2)
-	assert_array(_lit_events(ev, wide.id)).is_equal([[t0 + 1, true], [t0 + n + 1, false]])
-	assert_array(_lit_events(ev, never.id)).is_empty()
-	# Direct geometry: the edge moves from k to k x width_mult.
-	var k := sim.config.economy.beam.half_width_ratio
-	sim.state.oil = 6
+	assert_array(_lit_events(ev, near.id)).is_equal([[t0 + 1, true], [t0 + n + 1, false]])
+	assert_array(_lit_events(ev, far.id)).is_empty()
+	# Direct geometry: the edge at r, inclusive.
 	sim.state.flare_cooldown_ticks = 0
-	assert_bool(_lit(sim, -4.0, 4.0 * k * 1.5)).is_false()
+	assert_bool(_lit(sim, -r, 0.0)).is_false()
 	sim.fire_flare()
-	assert_bool(_lit(sim, -4.0, 4.0 * k * 1.5)).is_true()
-	assert_bool(_lit(sim, -4.0, 4.0 * k * 2.0 * (1.0 + EPS))).is_false()
+	assert_bool(_lit(sim, -r, 0.0)).is_true()
+	assert_bool(_lit(sim, -r * (1.0 + EPS), 0.0)).is_false()
 
 
 func test_flare_slows_lit_enemies_only_while_it_burns() -> void:
@@ -713,7 +706,7 @@ func test_flare_slows_lit_enemies_only_while_it_burns() -> void:
 	run(sim, 2)
 	assert_bool(real.lit).is_true()
 	assert_float(real.speed_mult).is_equal(1.0)  # the passive beam never slows
-	sim.state.oil = 6
+	sim.state.oil = f.cost_oil
 	sim.fire_flare()
 	var slowed := {"real": 0, "fake": 0}
 	for i in n + 10:
@@ -728,7 +721,7 @@ func test_flare_slows_lit_enemies_only_while_it_burns() -> void:
 	# Unlit enemies are not slowed by a flare.
 	var away := _still(false)
 	var e3 := put(away, "cultist", 3.0)
-	away.state.oil = 6
+	away.state.oil = f.cost_oil
 	away.fire_flare()
 	run(away, 1)
 	assert_bool(e3.lit).is_false()

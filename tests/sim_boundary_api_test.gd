@@ -382,6 +382,7 @@ func test_replay_command_lighthouse_oil_flare() -> void:
 	for s: Simulation in p:
 		s.step()
 		assert_int(s.state.phase).is_equal(SimState.Phase.BUILD)
+		s.state.oil = s.config.economy.flare.cost_oil - 1  # LT-57: one buy away from a flare
 	_same_as_direct(p, [1, "upgrade_lighthouse"], func(s: Simulation) -> int:
 		return s.upgrade_lighthouse())
 	_same_as_direct(p, [1, "buy_oil"], func(s: Simulation) -> int: return s.buy_oil())
@@ -393,8 +394,7 @@ func test_replay_command_lighthouse_oil_flare() -> void:
 		return s.buy_oil())  # NOT_BUILD_PHASE on both
 	for s: Simulation in p:
 		assert_int(s.state.lighthouse_level).is_equal(1)
-		assert_int(s.state.oil).is_equal(s.config.economy.oil.start + 1
-			- s.config.economy.flare.cost_oil)
+		assert_int(s.state.oil).is_equal(0)  # cost_oil - 1 + 1 bought - cost_oil burnt
 		assert_int(s.state.flare_ticks_left).is_greater(0)
 	var names: Array = p[0].state.command_log.map(func(e: Array) -> String: return e[1])
 	assert_array(names).is_equal(["upgrade_lighthouse", "buy_oil", "call_wave", "fire_flare"])
@@ -416,6 +416,7 @@ func test_a_lighthouse_run_replays_through_replay_command() -> void:
 func _lighthouse_twin() -> Simulation:
 	var sim := wsim([[group("deep_one", 3, 0.5)]], 2)
 	sim.state.gold = 10000
+	sim.state.oil = sim.config.economy.flare.cost_oil - 1  # LT-57: one buy away from a flare
 	return sim
 
 
@@ -497,7 +498,7 @@ func _ready_sim() -> Array:
 	sim.state.gold = 100000
 	sim.state.relics["star_stone"] = 2
 	sim.config.sanity.madness.exit_rule = "buyout"
-	sim.state.oil = 4  # LT-30: room for buy_oil, enough for fire_flare
+	sim.state.oil = 9  # LT-30: room for buy_oil, enough for fire_flare (LT-57: cost 8, cap 16)
 	var t := build(sim, RIFLE, Vector2i(5, 1))
 	sim.drain_events()
 	# LT-30: a day sim, so upgrade_lighthouse and buy_oil would apply; fire_flare (night
@@ -540,7 +541,7 @@ func test_replay_command_known_name_with_bad_args_is_bad_args_and_changes_nothin
 			.is_push_error("Simulation.replay_command: bad args %s" % [entry])
 		assert_int(r["v"]).override_failure_message("%s" % [entry]).is_equal(R2.BAD_ARGS)
 	assert_str(_digest_all(night)).is_equal(at_night)
-	assert_int(night.state.oil).is_equal(4)
+	assert_int(night.state.oil).is_equal(9)
 
 
 func test_replay_command_non_string_or_unknown_name_stays_unknown_command() -> void:

@@ -1,7 +1,7 @@
 class_name LighthouseUiTest
 extends GdUnitTestSuite
 ## LT-30 §3.2 presentation: the beams are drawn from sim state (count from the level,
-## rotation from beam_directions at tick + alpha, flare width from the config), the lighthouse
+## rotation from beam_directions at tick + alpha, the radial flare light, LT-57), the lighthouse
 ## panel (opened by a click on its cell) with its upgrade and oil buttons, the HUD flare
 ## button and oil label, and the Game command forwards.
 
@@ -77,20 +77,28 @@ func test_beams_follow_the_sim_directions_and_have_no_timer() -> void:
 	assert_bool(held[0] != day[0]).is_true()  # the night ticks did turn it
 
 
-func test_flare_widens_the_drawn_cone_while_it_burns() -> void:
+## LT-57: the flare no longer widens the cone; a radial light of flare_radius() burns instead.
+func test_flare_keeps_the_cone_and_burns_a_radial_light() -> void:
 	var l := _game.lighting
 	var eco := _game.sim.config.economy
 	var normal := Lighting._beam_texture(atan(eco.beam.half_width_ratio))
 	assert_object(l.beam.texture).is_same(normal)
+	assert_bool(l.flare_light.visible).is_false()
 	_game.call_wave()
+	_game.sim.state.oil = eco.flare.cost_oil
 	assert_int(_game.fire_flare()).is_equal(R.OK)
 	await get_tree().process_frame
-	var wide := Lighting._beam_texture(atan(eco.beam.half_width_ratio * eco.flare.width_mult))
-	assert_object(wide).is_not_same(normal)
-	assert_object(l.beam.texture).is_same(wide)
+	assert_object(l.beam.texture).is_same(normal)
+	l.night = 1.0
+	l._sync_flare()
+	assert_bool(l.flare_light.visible).is_true()
+	assert_float(l.flare_light.texture_scale).is_equal_approx(
+		_game.sim.flare_radius() * 2.0 * Board.CELL / Lighting.FLARE_TEX_SIZE, 1e-6)
 	_steps(SimTime.ticks(eco.flare.seconds))
 	await get_tree().process_frame
 	assert_int(_game.sim.state.flare_ticks_left).is_equal(0)
+	l._sync_flare()
+	assert_bool(l.flare_light.visible).is_false()
 	assert_object(l.beam.texture).is_same(normal)
 
 
@@ -147,6 +155,8 @@ func test_panel_oil_button_states() -> void:
 	var before := s.oil
 	assert_int(_game.buy_oil()).is_equal(R.OK)  # Game forwards to the sim
 	assert_int(s.oil).is_equal(before + 1)
+	p.refresh()
+	assert_str(p.oil_button.text).contains("Buy oil for a flare")  # LT-57
 	s.oil = oil.cap
 	p.refresh()
 	assert_bool(p.oil_button.disabled).is_true()
@@ -175,6 +185,7 @@ func test_flare_button_shows_at_night_with_its_states() -> void:
 	assert_bool(h.flare_button.visible).is_false()  # by day
 	assert_str(h.oil_label.text).is_equal("Oil %d / %d" % [s.oil, _game.sim.config.economy.oil.cap])
 	assert_bool(h.oil_label.visible).is_true()
+	s.oil = f.cost_oil  # LT-57: oil.start is 0
 	_game.call_wave()
 	h.refresh()
 	assert_bool(h.flare_button.visible).is_true()
