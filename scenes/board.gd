@@ -14,7 +14,7 @@ extends Node2D
 ## its blast ring. Nothing here tells a fake from a real enemy: every look depends only on
 ## SHOT / BLAST fields and aura state. LT-49: the Searchlight's aura is a lit disc with a
 ## sweeping beam; a fake its aura revealed (`SimEnemy.revealed`, sim state)
-## is drawn faint with a solid light ring.
+## is drawn as a ghost-grey body with an amber ring and slash.
 ## LT-41 (LT-38 P2): the static map (cells, grid, start, lighthouse) lives in a child
 ## MapLayer drawn behind the board's own draw and redrawn only when the map changes, not
 ## every frame. Same parent, so the same CanvasModulate and light mask apply to it.
@@ -116,8 +116,13 @@ const SEARCHLIGHT_COLOR := Color(2.4, 2.2, 1.5)
 const SEARCH_SWEEP_SECONDS := 5.0
 const SEARCH_CONE := 0.45  ## half angle of the sweeping wedge, radians
 const SEARCH_DISC_ALPHA := 0.07
-const REVEALED_ALPHA := 0.35  ## body alpha of a revealed fake
-const REVEALED_RING_CELLS := 0.44  ## solid light ring around a revealed fake
+const REVEALED_ALPHA := 0.45  ## body alpha of a revealed fake
+## A revealed fake: a ghost-grey body, a bold amber ring outside the dashed slow mark and
+## an amber slash across the body ("exposed, ignore"), unlike any other enemy marker.
+const REVEALED_BODY := Color(0.62, 0.62, 0.72)
+const REVEALED_MARK := Color(2.6, 1.3, 0.3)
+const REVEALED_RING_CELLS := 0.44
+const REVEALED_SLASH_CELLS := 0.3  ## half length of the slash
 
 ## LT-14 visual tunables.
 @export var flicker_rate := 13.0  ## flicker steps per second
@@ -590,7 +595,7 @@ func _draw_enemies(s: SimState) -> void:
 		var px := p * CELL
 		var color := COLOR_ENEMY.lerp(COLOR_ENEMY_MAD, mad)
 		if e.revealed:
-			color.a = REVEALED_ALPHA
+			color = Color(REVEALED_BODY, REVEALED_ALPHA)
 		var dip := fl * _flicker_dip(e.id) if fl > 0.0 else 0.0
 		color.a *= 1.0 - dip
 		if dip > 0.5:  # a torn frame: a faint double a few pixels off
@@ -614,8 +619,11 @@ func _draw_enemies(s: SimState) -> void:
 			draw_arc(px, CELL * 0.25, 0, TAU, 24, Color(COLOR_ENEMY_OUTLINE, color.a * mad), 3.0)
 		if marks.has("vuln"):  # body outline
 			draw_arc(px, CELL * 0.25, 0, TAU, 24, Color(MARK_VULN, color.a), 2.0)
-		if e.revealed:  # LT-49: a solid light ring (outside the dashed slow mark)
-			draw_arc(px, CELL * REVEALED_RING_CELLS, 0, TAU, 24, Color(SEARCHLIGHT_COLOR, 0.9), 2.0)
+		if e.revealed:  # LT-49: amber ring outside the dashed slow mark, slash across the body
+			var mc := Color(REVEALED_MARK, 1.0 - dip)
+			draw_arc(px, CELL * REVEALED_RING_CELLS, 0, TAU, 24, mc, 3.0)
+			var d := Vector2(1, -1).normalized() * CELL * REVEALED_SLASH_CELLS
+			draw_line(px - d, px + d, mc, 3.0)
 		if game.sim.debug_is_fake(e):
 			draw_arc(px, CELL * 0.3, 0, TAU, 24, COLOR_DEBUG_FAKE, 2.0)
 		var w := CELL * 0.6
