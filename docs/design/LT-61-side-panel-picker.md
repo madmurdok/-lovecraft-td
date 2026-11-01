@@ -70,8 +70,9 @@ tower gets a tag without a table:
 | `aoe_radius` effect (mundane, not caught above) | `Blast` | none today | 29 |
 | none | `—` | Rifleman | 12 |
 
-Column widths (px, font 12): name 66, $ 30, DPS 34, Trait 46 = 176 = the panel's inner width,
-no horizontal scroll. Widest tag "Ground" 44. The madness "!" stays where it was: after the
+Column widths (px, font 12): name 62, $ 30, gap 4, DPS 34, Trait 46 = 176 = the panel's
+inner width, no horizontal scroll. (S3 review: with name 66 and no gap "$130" and "15–45"
+touched and read as "$13015–45"; the name column gave 4 px to a gap after $.) Widest tag "Ground" 44. The madness "!" stays where it was: after the
 reserve value, now inside the Trait cell ("Res 10!", red).
 **Consequence:** the occult towers' own effects (slow, banish, summon, the Resonator's "strong
 when mad") are not in the row; they are in the card's Attack row and special lines.
@@ -123,8 +124,9 @@ keeps the full name. **Example (width at 12 px, column 66):**
 | Summoning Circle | Circle | 33 | Summoning | 70 (does not fit) |
 
 "Necronomicon" (86) and "Summoning" (70) do not fit 66 px. Data, not a UI table, so a modder's
-new tower gets its short name in the same place as its name; a test asserts every shipped
-short name fits the column at 12 px.
+new tower gets its short name in the same place as its name. With the name column at 62 px
+(§2, S3 review) "Searchlight" (65) and "Harpooner" (64) shrink to 11 px (`_fit_names`); a
+test asserts every shipped short name fits 62 px at 10-12 px without an ellipsis.
 + No ellipses at 10 towers. − Two names change identity ("Reader", "Circle"): the board glyphs
 are N and C, and the card title shows the full name on hover. Owner (Q2): "Reader, Circle и т.п. (Recommended)".
 
@@ -212,13 +214,13 @@ Change:
 
 | File | Lines | Change |
 |---|---|---|
-| `ui/tower_picker.gd` | 1-14 doc, 16-45 consts, 47-58 vars | `extends VBoxContainer` (in the panel, not over the board). Drop `COL_W*`, `LABEL_W`, `DIVIDER_W`, `NAME_H`, `SPECIAL_H`, `WRAP_SPACING`, `BAND_H`, `MARGIN`, `CELL_REASONS`, `col_w`. Add `NAME_W 66`, `COST_W 30`, `DPS_W 34`, `TRAIT_W 46`, `ROW_H 18`, `GROUP_H 16`, `LIST_MAX_ROWS 14`, `SCROLLBAR_W 14`, `HEADS` (text + tooltip), `title_label`. Keep `buttons`, `costs`, `names`, `cells` (keys now `dps`, `trait`), `hovered`, `cancel_button`, `cell`, `REASONS`, `STATUS_COLOR`, `DIM`, `MAD_MARK`, `GROUP_TITLES`, `COLOR_FRAME`, signal. |
+| `ui/tower_picker.gd` | 1-14 doc, 16-45 consts, 47-58 vars | `extends VBoxContainer` (in the panel, not over the board). Drop `COL_W*`, `LABEL_W`, `DIVIDER_W`, `NAME_H`, `SPECIAL_H`, `WRAP_SPACING`, `BAND_H`, `MARGIN`, `CELL_REASONS`, `col_w`. Add `NAME_W 62` (S3: was 66), `COST_W 30`, `COST_GAP 4`, `DPS_W 34`, `TRAIT_W 46`, `ROW_H 18`, `GROUP_H 16`, `LIST_MAX_ROWS 14`, `scrollbar_w()` (the real v-scrollbar width, S3: was a fixed 14), `HEADS` (text + tooltip), `title_label`. Keep `buttons`, `costs`, `names`, `cells` (keys now `dps`, `trait`), `hovered`, `cancel_button`, `cell`, `REASONS`, `STATUS_COLOR`, `DIM`, `MAD_MARK`, `GROUP_TITLES`, `COLOR_FRAME`, signal. |
 | `ui/tower_picker.gd` | 61-135 `_ready` | Title line (title label + Cancel), MUNDANE line with heads, rows, OCCULT line, rows; rows in a `ScrollContainer` with min height capped at `LIST_MAX_ROWS` (§5). No board-width maths. |
 | `ui/tower_picker.gd` | 138-148 `_label_column`, 151-191 `_column` | Replace by `_head_line(kind, with_heads)` and `_row(id, def)`: a flat `Button` (transparent normal/disabled box) holding an HBox of 4 labels (name, cost, DPS, trait); short name from `def.short_name`; trait from `TowerInfo.trait_text`. |
-| `ui/tower_picker.gd` | 194-208 `_fit_names` | Fit to `NAME_W` (minus `SCROLLBAR_W` when scrolling), 12 → 10, then ellipsis. |
+| `ui/tower_picker.gd` | 194-208 `_fit_names` | Fit to `NAME_W` (minus `scrollbar_w()` when scrolling; the pinned heads get a spacer of that width), 12 → 10, then ellipsis. |
 | `ui/tower_picker.gd` | 211-230 `open_for`, `_anchor` | Drop `_anchor`; `open_for` also sets `board.selected_glyph`. |
 | `ui/tower_picker.gd` | 233-241 `close` | Also clear `board.selected_glyph`. |
-| `ui/tower_picker.gd` | 244-290 `refresh`, `_cost_with_reason` | §6: title reason from the first non-gold refusal; drop `_cost_with_reason`; madness "!" on `cells[id]["trait"]` (was `["reserve"]`). |
+| `ui/tower_picker.gd` | 244-290 `refresh`, `_cost_with_reason` | §6: title reason from the first non-gold refusal; when every row is refused for gold, "Only by day" at night, else "Not enough money" (S3 review); drop `_cost_with_reason`; madness "!" on `cells[id]["trait"]` (was `["reserve"]`). |
 | `ui/tower_picker.gd` | 304-336 `_on_hover`, `_set_hovered`, `_frame` | §7: hover/exit as today (exit clears, card hides); frame = 1 px gold + faint fill; set/clear `board.selected_glyph`. |
 | `ui/side_panel.gd` | 19-33 vars, 68-104 `_ready` | Build a `Layout` VBox: picker (created here, like `tower_panel`) above `scroll`, `scroll` expand-fill. |
 | `ui/side_panel.gd` | 107-112 `attach_picker` | Gone or reduced to connecting signals of the panel's own picker. |

@@ -185,7 +185,7 @@ func test_picker_and_panel_show_the_same_rows_in_the_same_order() -> void:
 		var names := []
 		for c in _game.picker.buttons[id].find_child("Cells", true, false).get_children():
 			names.append(String(c.name))
-		assert_array(names).override_failure_message(id).is_equal(["Name", "Cost", "Dps", "Trait"])
+		assert_array(names).override_failure_message(id).is_equal(["Name", "Cost", "Gap", "Dps", "Trait"])
 	_game.picker.close()
 	# Panel: every tower, L1, L2 and both branches.
 	var panel_names := ["Head"]

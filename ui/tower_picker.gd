@@ -27,8 +27,9 @@ const FONT_SIZE := 12
 const HEAD_FONT_SIZE := 11  ## group titles and column heads
 const NAME_FONT_MIN := 10  ## past LIST_MAX_ROWS the names shrink to this, then ellipsis
 ## LT-61 §2: column widths at FONT_SIZE; their sum (176) is the panel's inner width.
-const NAME_W := 66
+const NAME_W := 62
 const COST_W := 30
+const COST_GAP := 4  ## between $ and DPS, so "$130" and "15–45" never read as one number
 const DPS_W := 34
 const TRAIT_W := 46
 const TITLE_H := 22
@@ -36,10 +37,9 @@ const GROUP_H := 16
 const ROW_H := 18
 const SEPARATOR_H := 9
 const LIST_MAX_ROWS := 14  ## LT-61 §5: more rows scroll inside the list
-const SCROLLBAR_W := 14  ## the name column gives this up while the rows scroll
 ## LT-61 §3: column heads on the first group line: [text, tooltip, width].
 const HEADS := [
-	["$", "Cost", COST_W],
+	["$", "Cost", COST_W + COST_GAP],
 	["DPS", "Damage per second", DPS_W],
 	["Trait", "What sets it apart: Ground = never hits flyers, Blind N = can't fire within N"
 		+ " cells, Line = pierces, Reveal = shows fakes, Res N = sanity reserve, ! = building"
@@ -116,13 +116,21 @@ func _ready() -> void:
 			body.add_child(_row(id, towers[id]))
 	add_child(rows_scroll)
 	var scrolling := n_rows > LIST_MAX_ROWS
+	# Past LIST_MAX_ROWS the rows lose the scrollbar's width; the pinned heads do too.
+	var bar_w := scrollbar_w() if scrolling else 0
+	if bar_w > 0:
+		var pinned: HBoxContainer = get_node("Group_" + String(groups[0][0]))
+		pinned.add_child(_spacer(bar_w))
+		# The title loses that width too: one size down keeps "MUNDANE" whole.
+		var title: Label = pinned.get_node("Title")
+		title.add_theme_font_size_override("font_size", HEAD_FONT_SIZE - 1)
 	rows_scroll.custom_minimum_size.y = mini(n_rows, LIST_MAX_ROWS) * ROW_H \
 		+ inner_groups * GROUP_H
 	var sep := HSeparator.new()
 	sep.name = "Separator"
 	sep.custom_minimum_size.y = SEPARATOR_H
 	add_child(sep)
-	_fit_names(scrolling)
+	_fit_names(bar_w)
 
 
 ## A group line: the kind's title, and (`with_heads`) the column heads with tooltips.
@@ -168,6 +176,9 @@ func _row(id: String, def: TowerDef) -> Button:
 	var cost := _value("Cost", TowerInfo.cost_text(def.cost), StatsTable.COLOR_VALUE, COST_W)
 	costs[id] = cost
 	h.add_child(cost)
+	var gap := _spacer(COST_GAP)
+	gap.name = "Gap"
+	h.add_child(gap)
 	var dps_text := TowerInfo.dps_text(s, game.sim.config)
 	var dps := _value("Dps", dps_text, StatsTable.color_for("dps", dps_text), DPS_W)
 	h.add_child(dps)
@@ -179,9 +190,10 @@ func _row(id: String, def: TowerDef) -> Button:
 
 
 ## LT-61 §5: each name at FONT_SIZE, shrunk towards NAME_FONT_MIN while it is wider than
-## NAME_W (less SCROLLBAR_W while the rows scroll); still too wide, it ends in an ellipsis.
-func _fit_names(scrolling: bool) -> void:
-	var avail := NAME_W - (SCROLLBAR_W if scrolling else 0)
+## NAME_W less `bar_w` (the scrollbar while the rows scroll); still too wide, it ends in an
+## ellipsis.
+func _fit_names(bar_w: int) -> void:
+	var avail := NAME_W - bar_w
 	for id: String in names:
 		var l := names[id]
 		var font := l.get_theme_font("font")
@@ -218,6 +230,7 @@ func refresh() -> void:
 	if not visible:
 		return
 	var shared := Simulation.CommandResult.OK  ## LT-61 §6: the first refusal not about gold
+	var any_ok := false
 	for id in buttons:
 		var def: TowerDef = game.sim.config.towers[id]
 		var r := game.sim.can_build(id, cell)
@@ -226,6 +239,7 @@ func refresh() -> void:
 		var poor := r == Simulation.CommandResult.NOT_ENOUGH_GOLD
 		if b.disabled and not poor and shared == Simulation.CommandResult.OK:
 			shared = r
+		any_ok = any_ok or not b.disabled
 		var cost := costs[id]
 		cost.add_theme_color_override("font_color",
 			STATUS_COLOR if poor else StatsTable.COLOR_VALUE)
@@ -249,6 +263,12 @@ func refresh() -> void:
 		if not trait_tip.is_empty():
 			tip += "\n" + trait_tip
 		b.tooltip_text = tip
+	# Every row poor: can_build reports gold before the phase, so the title says the night
+	# itself, or by day that nothing is affordable.
+	if shared == Simulation.CommandResult.OK and not any_ok and not buttons.is_empty():
+		shared = Simulation.CommandResult.NOT_BUILD_PHASE \
+			if game.sim.state.phase == SimState.Phase.WAVE \
+			else Simulation.CommandResult.NOT_ENOUGH_GOLD
 	var refused := shared != Simulation.CommandResult.OK
 	var why := TowerInfo.reason(shared)
 	title_label.text = why.left(1).to_upper() + why.substr(1) if refused else TITLE_TEXT
@@ -347,6 +367,18 @@ func _cell(node_name: String, text: String, color: Color) -> Label:
 	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	l.add_theme_color_override("font_color", color)
 	return l
+
+
+## The rows' vertical scrollbar width in px (its theme minimum).
+func scrollbar_w() -> int:
+	return ceili(rows_scroll.get_v_scroll_bar().get_combined_minimum_size().x)
+
+
+func _spacer(w: int) -> Control:
+	var c := Control.new()
+	c.custom_minimum_size.x = w
+	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return c
 
 
 ## A right-aligned value cell `w` px wide.
