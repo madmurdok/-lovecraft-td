@@ -75,7 +75,7 @@ func test_enemy_defaults_and_traits() -> void:
 	assert_bool(en["night_gaunt"].flying).is_true()
 	for id in ["cultist", "hybrid", "deep_one", "shoggoth"]:
 		assert_bool(en[id].flying).is_false()
-	assert_float(en["shoggoth"].horror_drain).is_equal(0.5)
+	assert_float(en["shoggoth"].horror_drain).is_equal(2.5)  # LT-45 difficulty pass (was 0.5)
 	for id in ["cultist", "hybrid", "deep_one", "night_gaunt"]:
 		assert_float(en[id].horror_drain).is_equal(0.0)
 	assert_array(en["deep_one"].traits.keys()).contains_exactly(["pack"])
