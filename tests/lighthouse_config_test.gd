@@ -172,6 +172,29 @@ func test_flare_values() -> void:
 	assert_float(c.economy.flare.enemy_speed_mult).is_equal(1.0)
 
 
+## LT-57 §7 b8: flare.radius_cells has one entry per beam level, each in [0, beam.reach_cells];
+## the LT-30 cone keys width_mult / hold_beams are gone.
+func test_flare_radius_cells_one_per_level_within_reach() -> void:
+	_rejects([
+		["lighthouse.flare.radius_cells",
+			func(l: Dictionary) -> void: l["flare"]["radius_cells"] = [6, 8], "one entry per beam level"],
+		["lighthouse.flare.radius_cells",
+			func(l: Dictionary) -> void: l["flare"]["radius_cells"] = [6, 8, 10, 12],
+			"one entry per beam level"],
+		["lighthouse.flare.radius_cells[2]",
+			func(l: Dictionary) -> void: l["flare"]["radius_cells"][2] = 16.01, "must be"],
+		["lighthouse.flare.radius_cells[1]",
+			func(l: Dictionary) -> void: l["flare"]["radius_cells"][1] = -0.5, "must be"],
+		["lighthouse.flare.radius_cells", func(l: Dictionary) -> void: l["flare"].erase("radius_cells"),
+			"missing required field"],
+		["lighthouse.flare.hold_beams", func(l: Dictionary) -> void: l["flare"]["hold_beams"] = true,
+			"unknown field"],
+	])
+	var c := _accepts(func(l: Dictionary) -> void:
+		l["flare"]["radius_cells"] = [0, 8.5, 16])  # the reach (16) itself is allowed
+	assert_array(c.economy.flare.radius_cells).is_equal([0.0, 8.5, 16.0])
+
+
 func test_unknown_fields() -> void:
 	_rejects([
 		["lighthouse.beam.color", func(l: Dictionary) -> void: l["beam"]["color"] = 1, "unknown field"],

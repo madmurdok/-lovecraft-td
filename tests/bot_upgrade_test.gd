@@ -568,6 +568,64 @@ func test_day_tops_the_oil_up_after_the_first_towers() -> void:
 	assert_int(few.state.oil).is_equal(start)
 
 
+## LT-57 (orchestrator rule): no oil while the board has fewer than BUILD_FIRST towers, even
+## with money left over after the builds; with them the bot tops up to one flare's oil and
+## keeps that reserve (buys nothing when it already holds it).
+func test_no_oil_below_five_towers_and_one_flare_reserve_after() -> void:
+	var first := _bot().get_script().get_script_constant_map()["BUILD_FIRST"] as int
+	var cost: int = real_config().economy.flare.cost_oil
+	var price: int = real_config().economy.oil.price
+	var rifle: int = real_config().towers[RIFLE].cost
+	assert_int(rifle - 1).is_greater_equal(price)  # the leftover could buy oil
+	# One rifle affordable, oil money left over: builds it and saves the rest.
+	var few := _sim(rifle + rifle - 1)
+	_bot().call("_act", few, "mundane", 0, {})
+	assert_int(few.state.towers.size()).is_equal(1)
+	assert_int(few.state.oil).is_equal(0)
+	assert_int(few.state.gold).is_equal(rifle - 1)
+	# first - 1 towers, not enough for the next one: still no oil.
+	var four := _sim(0)
+	for i in first - 1:
+		_place(four, RIFLE)
+	four.state.gold = rifle - 1
+	_bot().call("_act", four, "mundane", first - 1, {})
+	assert_int(four.state.oil).is_equal(0)
+	# BUILD_FIRST towers and the reserve held: no buy_oil.
+	var full := _sim(0)
+	for i in first:
+		_place(full, RIFLE)
+	full.state.oil = cost
+	full.state.gold = 1000
+	var n := full.state.command_log.size()
+	_bot().call("_act", full, "mundane", first, {})
+	assert_int(full.state.oil).is_equal(cost)
+	for c: Array in full.state.command_log.slice(n):
+		assert_str(c[1]).is_not_equal("buy_oil")
+	# Part of the reserve held: buys only the difference.
+	var part := _sim(0)
+	for i in first:
+		_place(part, RIFLE)
+	part.state.oil = cost - 3
+	part.state.gold = 1000
+	_bot().call("_act", part, "mundane", first, {})
+	assert_int(part.state.oil).is_equal(cost)
+
+
+## LT-57 §5: the count is the circle, not e.lit: four beam-lit enemies outside the circle
+## do not fire the flare.
+func test_night_ignores_beam_lit_enemies_outside_the_circle() -> void:
+	var min_near: int = _bot().get_script().get_script_constant_map()["FLARE_MIN_IN_CIRCLE"]
+	var sim := _night_with_near(0)
+	for i in min_near:
+		var e := sim.enemy_by_id(sim.spawn_enemy("cultist", false))
+		e.lit = true
+		assert_bool(sim.in_flare_radius(e.route.position_at(e.distance))).is_false()
+	var log_size := sim.state.command_log.size()
+	_bot().call("_act", sim, "mundane", 5, {})
+	assert_int(sim.state.command_log.size()).is_equal(log_size)
+	assert_int(sim.state.flare_cooldown_ticks).is_equal(0)
+
+
 func test_flare_off_never_buys_oil_nor_fires() -> void:
 	var day := _sim(1000)
 	_bot(true, true, false).call("_act", day, "mundane", 0, {})
