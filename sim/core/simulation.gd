@@ -58,7 +58,8 @@ var _hallucinations := HallucinationSystem.new()
 ## never tell a ghost token from a real one before it vanishes.
 var _ghost_tokens: Dictionary[int, bool] = {}
 ## LT-63: pack members not entered yet, queue order: [due_tick, EnemyDef, is_fake, pack_of].
-## Sim only (fakes are queued too, LT-12 §1); slot 7 lets them in (_release_pack_members).
+## Sim only (fakes are queued too, LT-12 §1); real members enter in slot 7, fake ones in
+## slot 8 after the dawn check (_release_pack_members).
 var _pack_queue: Array = []
 
 
@@ -132,9 +133,9 @@ func step() -> void:
 	_horror_drain()
 	# 6b. Relic tokens (LT-27 §1.3): ghosts vanish, real tokens are credited on arrival.
 	_settle_tokens()
-	# 7. Spawning: queued pack members due now (LT-63), then the spawner, then fakes (LT-12)
-	# from the spawner's candidates.
-	_release_pack_members()
+	# 7. Spawning: queued real pack members due now (LT-63), then the spawner, then fakes
+	# (LT-12) from the spawner's candidates.
+	_release_pack_members(false)
 	if _spawner != null:
 		_spawner.tick(self)
 		_hallucinations.tick(self, _spawner)
@@ -144,6 +145,9 @@ func step() -> void:
 	_compact()
 	if _spawner != null:
 		_spawner.end_tick(self)
+	# 8b. Queued fake pack members due now enter after the dawn check (LT-63), so one due on
+	# the dawn tick is dropped with the rest instead of entering and dissolving at once.
+	_release_pack_members(true)
 	# 9. Outcome.
 	_check_outcome()
 
@@ -151,9 +155,9 @@ func step() -> void:
 ## Spawns `def_id` at the start of its route; a `pack` enemy spawns min..max of them
 ## (rolled on SPAWN, or on SANITY for a fake so hallucinations never change real pack
 ## sizes, LT-12 §2). LT-63: only the first member enters now; member k (1..count-1) is
-## queued and enters at the start of the route in slot 7 of tick now + k x
-## ticks(pack.spacing_s), before the spawner's spawns of that tick, so members never stack
-## on one spot. Every member's pack_of is the first member's id. Returns the first new id,
+## queued and enters at the start of the route on tick now + k x ticks(pack.spacing_s), so
+## members never stack on one spot: a real one in slot 7 before the spawner's spawns, a
+## fake one in slot 8 after the wave system's dawn check. Every member's pack_of is the first member's id. Returns the first new id,
 ## or 0 if `def_id` is unknown or the outcome is set (then nothing changes and no event is
 ## emitted).
 func spawn_enemy(def_id: String, is_fake := false) -> int:
@@ -184,13 +188,14 @@ func has_queued_real_members() -> bool:
 	return false
 
 
-## Slot 7 (LT-63): every queued pack member whose due tick has come enters, queue order.
-func _release_pack_members() -> void:
+## LT-63: every queued pack member with is_fake == `fakes` whose due tick has come enters,
+## queue order (slot 7 for real members, slot 8 for fake ones). Draws no RNG.
+func _release_pack_members(fakes: bool) -> void:
 	if _pack_queue.is_empty():
 		return
 	var left: Array = []
 	for q: Array in _pack_queue:
-		if int(q[0]) > state.tick:
+		if bool(q[2]) != fakes or int(q[0]) > state.tick:
 			left.append(q)
 		else:
 			_enter(q[1], q[2], q[3])
@@ -2146,7 +2151,8 @@ func _leak() -> void:
 ## LT-12 §5 (called by the wave director when a wave is cleared): every live fake, in id
 ## order, is marked dissolved with FAKE_DISSOLVED {reason}; then state.enemies is
 ## compacted again, so the build phase starts with no enemy in `state`. Fake pack members
-## still queued (LT-63) are dropped without an event: they never entered.
+## still queued (LT-63), due on this tick or later, are dropped without an event: they
+## never entered.
 func dissolve_fakes(reason: String) -> void:
 	_pack_queue = _pack_queue.filter(func(q: Array) -> bool: return not q[2])
 	for e in state.enemies:
