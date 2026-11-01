@@ -12,7 +12,8 @@ const SIGN := "elder_sign"
 
 const PER_KIND := 5
 ## Padding per kind, used in this order until the kind has PER_KIND towers. Names near the
-## longest real one, roles at the 24-char limit: the worst case for the fit.
+## longest real one, roles at the 24-char limit: the worst case for the fit. The glyph
+## column is unused: _ten_config picks glyphs no shipped tower has.
 const DUMMIES := {
 	"mundane": [
 		["lamplighter", "Lamplighter", "Lamps reveal the unseen!", "L"],
@@ -73,6 +74,15 @@ func _ten_config() -> GameConfig:
 			out[id] = real[id]
 			ids[kind].append(id)
 	var templates := {"mundane": ids["mundane"][0], "occult": ids["occult"][0]}
+	# Glyphs are unique per config: dummies take letters no shipped tower uses (its glyph, or
+	# the first letter of its name when it has none, as TowerDef.parse does).
+	var used := {}
+	for id: String in real:
+		used[String(real[id].get("glyph", String(real[id]["name"]).left(1)))] = true
+	var free := []
+	for c in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
+		if not used.has(c):
+			free.append(c)
 	var next := {"mundane": 0, "occult": 0}
 	while ids["mundane"].size() < PER_KIND or ids["occult"].size() < PER_KIND:
 		for kind: String in ["occult", "mundane"]:
@@ -83,7 +93,7 @@ func _ten_config() -> GameConfig:
 			var t: Dictionary = real[templates[kind]].duplicate(true)
 			t["name"] = e[1]
 			t["role"] = e[2]
-			t["glyph"] = e[3]
+			t["glyph"] = free.pop_front()
 			out[e[0]] = t
 			ids[kind].append(e[0])
 	d["towers"] = out
