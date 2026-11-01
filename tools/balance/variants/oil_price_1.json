@@ -1,0 +1,6 @@
+{
+  "description": "lamp oil costs 1 gold instead of 10 (LT-30 S13 arm F)",
+  "patch": {
+    "economy.json": { "lighthouse": { "oil": { "price": 1 } } }
+  }
+}

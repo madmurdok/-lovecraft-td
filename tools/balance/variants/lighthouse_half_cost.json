@@ -1,0 +1,8 @@
+{
+  "description": "lighthouse levels cost half: 60 and 125 (LT-30 S13 arm H; array items by index)",
+  "patch": {
+    "economy.json": {
+      "lighthouse": { "beam": { "levels": { "1": { "upgrade_cost": 60 }, "2": { "upgrade_cost": 125 } } } }
+    }
+  }
+}
