@@ -99,6 +99,25 @@
                "effects": { "aoe_radius": 1.3, "fuse_seconds": 1.0, "bleed_dps": 8,
                             "bleed_seconds": 3 } }
       }
+    },
+    "coast_battery": {
+      "name": "Coast battery",
+      "role": "Long gun, blind up close",
+      "kind": "mundane",
+      "glyph": "B",
+      "cost": 120,
+      "levels": [
+        { "range": 7, "min_range": 2, "damage": 70, "fire_interval": 3.0 },
+        { "upgrade_cost": 90, "range": 8, "min_range": 2, "damage": 95, "fire_interval": 3.0 }
+      ],
+      "branches": {
+        "a": { "name": "AP shells", "role": "Ignores armor",
+               "upgrade_cost": 150, "range": 8, "min_range": 2, "damage": 140,
+               "fire_interval": 3.2, "effects": { "ignore_armor": 1 } },
+        "b": { "name": "HE shells", "role": "Shells splash",
+               "upgrade_cost": 150, "range": 7, "min_range": 2, "damage": 100,
+               "fire_interval": 3.0, "effects": { "aoe_radius": 1.0 } }
+      }
     }
   }
 }
