@@ -39,8 +39,8 @@ const PRIORITY_NAMES := {
 
 ## Effect lines in display order: the keys one line reads (a pair shares a line).
 const EFFECT_GROUPS := [
-	["pierce"], ["aoe_radius"], ["fuse_seconds"], ["ignore_armor"], ["reveal_fakes"], ["slow"],
-	["damage_taken_multiplier"],
+	["pierce"], ["aoe_radius"], ["fuse_seconds"], ["ignore_armor"], ["sanity_scaling"],
+	["reveal_fakes"], ["slow"], ["damage_taken_multiplier"],
 	["crit_chance", "crit_multiplier"], ["burst_targets"], ["bleed_dps", "bleed_seconds"],
 	["pull_cells", "pull_max_hp", "pull_immune_seconds"], ["strip_armor"],
 ]
@@ -73,7 +73,10 @@ static func is_pending(key: String) -> bool:
 
 
 ## Stat, effect and kind lines of one level/branch of `def` (no role line).
-static func lines(def: TowerDef, s: TowerDef.Level, sanity: SanityConfig) -> PackedStringArray:
+## LT-50: with the live `current_sanity` (not NAN) a sanity-scaled level also reads its
+## damage factor now ("x1.6 at current sanity"); the picker passes none.
+static func lines(def: TowerDef, s: TowerDef.Level, sanity: SanityConfig,
+		current_sanity := NAN) -> PackedStringArray:
 	var out := PackedStringArray()
 	if s.damage > 0.0:
 		out.append(_damage_text(s))
@@ -88,8 +91,15 @@ static func lines(def: TowerDef, s: TowerDef.Level, sanity: SanityConfig) -> Pac
 	if s.sanity_reserve > 0.0:
 		out.append("Reserves %s sanity" % num(s.sanity_reserve))
 	out.append_array(effect_lines(s.effects))
+	if s.is_beam() and sanity != null and not is_nan(current_sanity):
+		out.append(sanity_factor_text(s.sanity_factor(current_sanity, sanity.max_sanity)))
 	out.append_array(kind_lines(def, s, sanity))
 	return out
+
+
+## LT-50: the live line of a sanity-scaled level.
+static func sanity_factor_text(factor: float) -> String:
+	return "x%s at current sanity" % ("%.1f" % factor)
 
 
 ## The value of an effect key that means "no effect": 1 for a multiplier, 0 otherwise.
@@ -240,6 +250,8 @@ static func _effect_text(first_key: String, e: Dictionary) -> String:
 			return "Fuse %s s, thrown ahead" % num(e.get("fuse_seconds", 0.0))
 		"ignore_armor":
 			return "Ignores armor"
+		"sanity_scaling":
+			return "Up to x%s at low sanity" % num(1.0 + e.get("sanity_scaling", 0.0))
 		"reveal_fakes":
 			return "Reveals fakes"
 		"slow":

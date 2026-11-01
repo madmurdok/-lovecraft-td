@@ -123,6 +123,19 @@ const REVEALED_BODY := Color(0.62, 0.62, 0.72)
 const REVEALED_MARK := Color(2.6, 1.3, 0.3)
 const REVEALED_RING_CELLS := 0.44
 const REVEALED_SLASH_CELLS := 0.3  ## half length of the slash
+## LT-50 Tillinghast Resonator (LT-46 P14): one held beam per tower, a violet glow with a
+## bright quivering core from the tower to its (moving) target, a pulsing node at the tower
+## and a crackling ring on the target. SHOT every 6 ticks refreshes it instead of adding a
+## new effect; it fades BEAM_FADE seconds after the last SHOT's interval ran out. Thicker and
+## brighter as sanity falls (the SHOT's sanity_factor).
+const BEAM_COLOR := Color(1.5, 0.55, 2.7)
+const BEAM_CORE := Color(2.6, 2.0, 2.9)
+const BEAM_GRACE_TICKS := 4  ## held this long past the next SHOT's due tick (3 dimmed it at 5 Hz)
+const BEAM_FADE := 0.12
+const BEAM_WIDTH := 2.0  ## core px at factor 1; + BEAM_WIDTH_PER_FACTOR per factor above 1
+const BEAM_WIDTH_PER_FACTOR := 1.2
+const BEAM_QUIVER_HZ := 9.0
+const BEAM_RIM_CELLS := 0.42  ## the beam leaves the tower tile this far from its centre
 
 ## LT-14 visual tunables.
 @export var flicker_rate := 13.0  ## flicker steps per second
@@ -195,6 +208,12 @@ func on_event(ev: SimEvent) -> void:
 				var fx := _shot_fx(t, ev.data)
 				if fx.get("kind", "") == "dynamite":
 					fx["throw_tick"] = ev.tick
+				if fx.get("kind", "") == "beam":
+					# LT-50: held in sim time until the next SHOT is due (+ grace), so pause
+					# and x2 follow the clock; one beam per tower, the new one replaces it.
+					fx["end_tick"] = ev.tick + SimTime.ticks(t.stats().fire_interval) \
+						+ BEAM_GRACE_TICKS
+					_drop_beam(t.id)
 				_add_attack_fx(fx)
 		SimEvent.Type.BLAST:  # LT-47: the charge explodes (hits real and fake alike)
 			var hits: Array = ev.data.get("hits", [])
@@ -215,13 +234,15 @@ func on_event(ev: SimEvent) -> void:
 
 
 ## LT-25 §1: the attack look from the tower's current stats (so upgrades and branches
-## change it): pierce -> "harpoon", fuse_seconds -> "dynamite" (LT-47), min_range ->
-## "shell" (LT-48), aoe_radius -> "wave", support level -> "aura" ("searchlight" with
-## reveal_fakes, LT-49), otherwise "tracer".
+## change it): sanity_scaling -> "beam" (LT-50), pierce -> "harpoon", fuse_seconds ->
+## "dynamite" (LT-47), min_range -> "shell" (LT-48), aoe_radius -> "wave", support level ->
+## "aura" ("searchlight" with reveal_fakes, LT-49), otherwise "tracer".
 static func shot_kind(t: SimTower) -> String:
 	var s := t.stats()
 	if s.damage <= 0.0:
 		return "searchlight" if s.effects.get("reveal_fakes", 0.0) > 0.0 else "aura"
+	if s.is_beam():
+		return "beam"
 	if s.effects.get("pierce", 0.0) > 0.0:
 		return "harpoon"
 	if s.effects.get("fuse_seconds", 0.0) > 0.0:
@@ -308,6 +329,11 @@ func _shot_fx(t: SimTower, data: Dictionary) -> Dictionary:
 				fx["ttl"] = SHELL_SECONDS
 				if fx["miss"]:
 					fx["end"] = _miss_end(fx["from"], to)
+			"beam":
+				# Sim time: on_event sets end_tick; tick_effects keeps ttl to it.
+				fx["factor"] = data.get("sanity_factor", 1.0)
+				fx["target"] = data.get("target", -1)
+				fx["ttl"] = BEAM_FADE
 			"dynamite":
 				# Sim time: tick_effects keeps ttl at what is left until detonate_tick
 				# (+ DYN_DUD_TICKS for a dud); the BLAST event draws the explosion.
@@ -317,6 +343,12 @@ func _shot_fx(t: SimTower, data: Dictionary) -> Dictionary:
 				fx["ttl"] = BLAST_SECONDS
 	fx["dur"] = fx["ttl"]
 	return fx
+
+
+## LT-50: removes tower `tower_id`'s held beam, if any (a new SHOT replaces it).
+func _drop_beam(tower_id: int) -> void:
+	effects = effects.filter(func(fx: Dictionary) -> bool:
+		return not (fx["kind"] == "beam" and fx.get("tower", -1) == tower_id))
 
 
 ## Appends an attack effect, keeping at most MAX_FX_PER_TOWER live ones per tower.
@@ -517,6 +549,8 @@ static func attack_color(kind: String) -> Color:
 			return DYNAMITE_COLOR
 		"shell":
 			return SHELL_COLOR
+		"beam":
+			return BEAM_COLOR
 	return Color.BLACK
 
 
@@ -648,6 +682,8 @@ func _draw_effects() -> void:
 				_draw_charge(fx)
 			"shell":
 				_draw_shell(fx)
+			"beam":
+				_draw_beam(fx)
 			"blast":
 				_draw_blast(fx)
 			"death":
@@ -775,6 +811,34 @@ func _draw_wave(fx: Dictionary) -> void:
 	if be < WAVE_FLASH:
 		for p: Vector2 in fx["hit_pos"]:
 			draw_arc(p * CELL, CELL * 0.3, 0, TAU, 20, Color(rim, 1.0 - be / WAVE_FLASH), 2.0)
+
+
+## LT-50 Resonator: the held beam. Its end follows the target's drawn position while that
+## enemy is live (else the shot's `to`); width and glow grow with `factor` (sanity_factor).
+func _draw_beam(fx: Dictionary) -> void:
+	var a: Vector2 = fx["from"] * CELL
+	var end: Vector2 = fx["to"]
+	var e := game.sim.enemy_by_id(fx["target"]) if game != null and game.sim != null else null
+	if e != null and e.is_live():
+		end = game.sim.enemy_position(e, alpha)
+	var b := end * CELL
+	# From the tile's rim, not its centre, so the glyph stays readable under the beam.
+	a += (b - a).normalized() * minf(CELL * BEAM_RIM_CELLS, a.distance_to(b))
+	var fade := clampf(fx["ttl"] / BEAM_FADE, 0.0, 1.0)
+	var f: float = fx.get("factor", 1.0)
+	var w := BEAM_WIDTH + BEAM_WIDTH_PER_FACTOR * maxf(0.0, f - 1.0)
+	var ph := _time * TAU * BEAM_QUIVER_HZ + float(fx["seed"] % 1000) * 0.01
+	var glow := Color(BEAM_COLOR, 0.35 * fade)
+	draw_line(a, b, glow, w * 3.5)
+	draw_polyline(_wave_points(a, b, ph, 5.0, 1.5 + 0.5 * f, 16), Color(BEAM_COLOR, fade), w)
+	draw_line(a, b, Color(BEAM_CORE, fade), maxf(1.0, w * 0.4))
+	var pulse := 0.5 + 0.5 * sin(ph * 0.5)
+	draw_circle(a, CELL * (0.06 + 0.03 * pulse), Color(BEAM_CORE, fade))
+	draw_arc(b, CELL * (0.18 + 0.08 * pulse), 0, TAU, 16, Color(BEAM_COLOR, fade), 2.0)
+	for i in 3:
+		var v := Vector2.from_angle(ph * 0.3 + i * TAU / 3.0)
+		draw_line(b + v * CELL * 0.1, b + v * CELL * (0.22 + 0.06 * pulse),
+			Color(BEAM_CORE, fade), 1.5)
 
 
 ## LT-48 Coast battery: a muzzle flash and a smoke puff drifting off the gun, the shell (a

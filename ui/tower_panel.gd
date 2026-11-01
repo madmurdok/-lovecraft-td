@@ -99,7 +99,8 @@ func refresh() -> void:
 		title_label.text += " · " + s.name
 	role_label.text = s.role if at_max else t.def.role
 	role_label.visible = not role_label.text.is_empty()
-	stats_label.text = "\n".join(TowerInfo.lines(t.def, s, game.sim.config.sanity))
+	stats_label.text = "\n".join(TowerInfo.lines(t.def, s, game.sim.config.sanity,
+		game.sim.state.sanity))
 	_refresh_priority(t)
 	var branches := game.sim.upgrade_branches(t)
 	upgrade_title.visible = not branches.is_empty()

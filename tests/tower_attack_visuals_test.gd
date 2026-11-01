@@ -571,3 +571,88 @@ func test_a_board_frame_with_a_revealed_and_a_hidden_fake_draws_without_errors()
 	await get_tree().process_frame
 	assert_bool(hidden.revealed).is_false()
 	assert_bool(_game.sim.debug_is_fake(shown)).is_false()
+
+
+# --- LT-50: the Resonator's held beam -------------------------------------------------------
+
+func test_shot_kind_of_every_resonator_level_is_beam() -> void:
+	await _start_game()
+	var t := _tower("resonator")
+	assert_str(Board.shot_kind(t)).is_equal("beam")
+	t.level = 1
+	assert_str(Board.shot_kind(t)).is_equal("beam")
+	t.level = TowerDef.LEVEL_COUNT
+	for b: String in TowerDef.BRANCH_IDS:
+		t.branch = b
+		assert_str(Board.shot_kind(t)).override_failure_message(b).is_equal("beam")
+
+
+func test_the_beam_colour_is_its_own() -> void:
+	assert_bool(Board.attack_color("beam") == Board.BEAM_COLOR).is_true()
+	for k: String in ["tracer", "harpoon", "wave", "aura", "dynamite", "shell", "searchlight"]:
+		assert_bool(Board.attack_color(k) == Board.BEAM_COLOR).override_failure_message(k) \
+			.is_false()
+
+
+## A Resonator SHOT {beam, sanity_factor} at `target` as of sim tick `tick`.
+func _beam(t: SimTower, tick: int, target: SimEnemy, factor := 1.0) -> void:
+	_game.sim.state.tick = tick
+	var to := _game.sim.enemy_position(target, 1.0)
+	_game.board.on_event(SimEvent.new(SimEvent.Type.SHOT, tick, t.id, {"def": t.def.id,
+		"target": target.id, "hits": [target.id], "to": to, "miss": false, "beam": true,
+		"sanity_factor": factor}))
+
+
+func _interval_ticks(t: SimTower) -> int:
+	return SimTime.ticks(t.stats().fire_interval)
+
+
+func test_one_beam_per_tower_a_new_shot_replaces_it() -> void:
+	await _start_game()
+	var t := _tower("resonator")
+	var other := _tower("resonator")
+	var e := _enemy(false, 2.0)
+	var n := _interval_ticks(t)
+	assert_int(n).is_equal(6)
+	_beam(other, 100, e)
+	_beam(t, 100, e, 1.4)
+	_beam(t, 106, e, 2.2)
+	var mine := _fx_of(t.id)
+	assert_int(mine.size()).is_equal(1)
+	assert_str(mine[0]["kind"]).is_equal("beam")
+	assert_int(mine[0]["end_tick"]).is_equal(106 + n + Board.BEAM_GRACE_TICKS)
+	assert_float(mine[0]["factor"]).is_equal(2.2)
+	assert_int(mine[0]["target"]).is_equal(e.id)
+	assert_int(_fx_of(other.id).size()).is_equal(1)
+	# A frame with a held beam on a live enemy draws without errors.
+	_game.board.queue_redraw()
+	await get_tree().process_frame
+	await get_tree().process_frame
+	assert_int(_fx_of(t.id).size()).is_equal(1)
+
+
+func test_the_beam_stays_drawn_at_full_strength_until_the_next_shot_is_due() -> void:
+	await _start_game()
+	var t := _tower("resonator")
+	var e := _enemy(false, 2.0)
+	var n := _interval_ticks(t)
+	_beam(t, 100, e)
+	# Wall-clock time alone does not end it: the sim clock is still at 100.
+	for i in 5:
+		_game.board.tick_effects(1.0)
+	assert_int(_fx_of(t.id).size()).is_equal(1)
+	# Every frame up to the next SHOT (due at 100 + n) is undimmed: ttl >= BEAM_FADE.
+	for tick in range(100, 100 + n):
+		for a: float in [0.0, 0.5, 0.99]:
+			_game.sim.state.tick = tick
+			_game.board.alpha = a
+			_game.board.tick_effects(1.0 / 60.0)
+			var fx := _fx_of(t.id)
+			assert_int(fx.size()).override_failure_message("tick %d alpha %s" % [tick, a]) \
+				.is_equal(1)
+			assert_float(fx[0]["ttl"]).override_failure_message("tick %d alpha %s" % [tick, a]) \
+				.is_greater_equal(Board.BEAM_FADE)
+	# A late SHOT (a frame of lag) still finds it drawn; it fades out at end_tick.
+	assert_bool(_alive_at(t, 100 + n)).is_true()
+	assert_bool(_alive_at(t, 99 + n + Board.BEAM_GRACE_TICKS)).is_true()
+	assert_bool(_alive_at(t, 100 + n + Board.BEAM_GRACE_TICKS)).is_false()

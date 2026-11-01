@@ -515,3 +515,34 @@ func test_searchlight_is_support_that_reveals_and_slows_with_no_mundane_kind_lin
 	assert_float(_cfg.sanity.thresholds["fraying"].miss_chance).is_greater(0.0)
 	for l: TowerDef.Level in [d.levels[0], d.levels[1], d.branches["a"], b]:
 		assert_array(Array(TowerInfo.kind_lines(d, l, _cfg.sanity))).is_empty()
+
+
+## LT-50 (§5 "x1.6 at current sanity", §7 Q2): the Resonator's effect line reads the most it
+## multiplies by (1 + sanity_scaling, at sanity 0); with the live sanity passed, a line with
+## the factor now (on the full bar); the picker passes none, so no such line.
+func test_resonator_reads_its_scaling_and_the_factor_at_current_sanity() -> void:
+	var d := _def("resonator")
+	var l1 := d.levels[0]
+	assert_array(_lines("resonator", l1)).is_equal(_attack(l1) + [
+		"Reserves %s sanity" % _n(l1.sanity_reserve),
+		"Ignores armor",
+		"Up to x3 at low sanity",
+		"Madness: x%s, astray" % _n(_cfg.sanity.madness.damage_multiplier)])
+	assert_array(Array(TowerInfo.lines(d, l1, _cfg.sanity, 40.0))).is_equal(_attack(l1) + [
+		"Reserves %s sanity" % _n(l1.sanity_reserve),
+		"Ignores armor",
+		"Up to x3 at low sanity",
+		"x2.2 at current sanity",
+		"Madness: x%s, astray" % _n(_cfg.sanity.madness.damage_multiplier)])
+	assert_array(Array(TowerInfo.lines(d, l1, _cfg.sanity, 92.0))) \
+		.contains(["x1.2 at current sanity"])
+	assert_array(Array(TowerInfo.lines(d, l1, _cfg.sanity, 100.0))) \
+		.contains(["x1.0 at current sanity"])
+	assert_array(_lines("resonator", d.branches["a"])) \
+		.contains(["Up to x2 at low sanity", "Reveals fakes", "Unaffected by madness"])
+	assert_array(_lines("resonator", d.branches["b"])).contains(["Up to x5 at low sanity"])
+	# Only a sanity-scaled level gets the live line.
+	var rifle := _def("rifleman")
+	var got := Array(TowerInfo.lines(rifle, rifle.levels[0], _cfg.sanity, 40.0))
+	assert_bool(got.any(func(s: String) -> bool: return s.ends_with("at current sanity"))) \
+		.is_false()

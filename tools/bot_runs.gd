@@ -30,6 +30,9 @@ extends SceneTree
 ##              Dynamite crew in the harpooner's slot, for a with/without comparison.
 ##   battery  : rifleman, rifleman, coast_battery repeated (LT-48): the same with the
 ##              Coast battery in that slot.
+##   resonator: rifleman, rifleman, resonator repeated (LT-50): the same with the
+##              Tillinghast Resonator in that slot; no cap guard (its reserves lower the
+##              cap, and lower sanity is what it feeds on).
 ## Placement (greedy): the free buildable cell with the most path cells whose centre is
 ## within the tower's L1 range (and not inside its L1 min_range, LT-48); ties go to the
 ## lowest row-major cell. No sells.
@@ -58,7 +61,8 @@ extends SceneTree
 ## order), "star_stones" and "wage" ($ of dawn wages).
 ## A run is capped at 30 simulated minutes (outcome "timeout").
 
-const STRATEGIES := ["mundane", "occult", "mixed", "madness", "demolition", "battery"]
+const STRATEGIES := ["mundane", "occult", "mixed", "madness", "demolition", "battery",
+	"resonator"]
 const BOT_OIL_TARGET := 4  ## oil the bot keeps by day: two flares (tunable)
 const FLARE_MIN_LIT := 3  ## live lit enemies that make the bot fire the flare (tunable)
 const MAX_TICKS := 30 * 60 * 30
@@ -77,6 +81,7 @@ const BRANCH_PICK := {
 	"madness": {"elder_sign": "b", "necronomicon_reader": "b"},
 	"demolition": {"rifleman": "a", "dynamite_crew": "a"},
 	"battery": {"rifleman": "a", "coast_battery": "a"},
+	"resonator": {"rifleman": "a", "resonator": "a"},
 }
 
 var _cfg: GameConfig
@@ -284,6 +289,8 @@ func _order(strat: String, i: int, sim: Simulation, built: Dictionary) -> String
 			return "dynamite_crew" if i % 3 == 2 else "rifleman"
 		"battery":
 			return "coast_battery" if i % 3 == 2 else "rifleman"
+		"resonator":
+			return "resonator" if i % 3 == 2 else "rifleman"
 		"occult":
 			if i == 0:
 				return "rifleman"

@@ -23,6 +23,10 @@ var target_priority := DEFAULT_TARGET_PRIORITY
 ## LT-29 §1.2 (Gangsters): round-robin position over the ranked `burst_targets`; persists
 ## between shots, wraps to the ranked set's size at each shot.
 var burst_index := 0
+## LT-50 (Resonator beam): the enemy a beam level keeps firing at while it stays a live
+## candidate; -1 = none, the next shot picks by target_priority. Cleared by
+## Simulation.set_target_priority so a new mode applies at once.
+var locked_id := -1
 ## LT-30: inside a lighthouse beam (centre test, slot 2); persists between ticks, a flip
 ## emits TOWER_LIT {lit}.
 var lit := false
