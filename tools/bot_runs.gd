@@ -42,7 +42,8 @@ extends SceneTree
 ## Lighthouse (LT-30 §3.2/§3.4): by day, after sell_relics(), the bot tops the lamp oil up to
 ## BOT_OIL_TARGET (buy_oil() until the stock is there or a call is refused), and in the
 ## purchase loop buys the next lighthouse level when its cost is at most the cheapest tower
-## upgrade's (or no tower upgrade is left); at night it fires the flare when at least
+## upgrade's (or no tower upgrade is left); a refused level is not retried that day and the
+## loop falls through to tower upgrades and builds (LT-30 S10); at night it fires the flare when at least
 ## FLARE_MIN_LIT live enemies are lit. [--lighthouse=0] never upgrades the lighthouse,
 ## [--flare=0] never buys oil and never fires. A beam-off arm is a --data=<dir> variant.
 ## RUN lines add "lighthouse_level", "flares", "oil_bought", "oil_gold" and "lit_shots"
