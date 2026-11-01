@@ -130,7 +130,7 @@ const REVEALED_SLASH_CELLS := 0.3  ## half length of the slash
 ## brighter as sanity falls (the SHOT's sanity_factor).
 const BEAM_COLOR := Color(1.5, 0.55, 2.7)
 const BEAM_CORE := Color(2.6, 2.0, 2.9)
-const BEAM_GRACE_TICKS := 3  ## held this long past the next SHOT's due tick
+const BEAM_GRACE_TICKS := 4  ## held this long past the next SHOT's due tick (3 dimmed it at 5 Hz)
 const BEAM_FADE := 0.12
 const BEAM_WIDTH := 2.0  ## core px at factor 1; + BEAM_WIDTH_PER_FACTOR per factor above 1
 const BEAM_WIDTH_PER_FACTOR := 1.2
