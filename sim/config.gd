@@ -49,6 +49,15 @@ static func load_from_dir(dir: String = DEFAULT_DIR) -> ConfigLoadResult:
 				var to: Variant = r.as_object(map[id], ConfigReader.join("towers", id))
 				if to != null:
 					c.towers[id] = TowerDef.parse(r, id, to, ConfigReader.join("towers", id))
+			# LT-47 (P11): the board tells towers apart by their glyph.
+			var glyph_of: Dictionary[String, String] = {}
+			for id: String in c.towers:
+				var g: String = c.towers[id].glyph
+				if glyph_of.has(g):
+					r.error(ConfigReader.join("towers", id),
+						"glyph \"%s\" is already used by tower \"%s\"" % [g, glyph_of[g]])
+				else:
+					glyph_of[g] = id
 	result.errors.append_array(r.errors)
 
 	r = ConfigReader.new(WAVES_FILE)

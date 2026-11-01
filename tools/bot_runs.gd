@@ -5,6 +5,11 @@ extends SceneTree
 ##   [--upgrades=0] (never upgrade: the pre-LT-24 baseline; RUN lines then carry no
 ##   "upgrades"/"upgrade_gold" keys. Since LT-27 the economy differs, so no run compares
 ##   byte for byte with a pre-LT-27 harness; only the key set does)
+##   [--branch=<tower>:<a|b>[,<tower>:<a|b>...]] (LT-29: override BRANCH_PICK for these
+##   tower def ids in every strategy, e.g. --branch=rifleman:b,harpooner:b; other towers keep
+##   the strategy's pick; a branch other than a or b is an error)
+##   [--strategies=<name>[,<name>...]] (LT-56: play only these strategies, in STRATEGIES
+##   order; an unknown name is an error. tools/balance/ runs one strategy per process)
 ## For each strategy x seed it plays one full run on data/ with a fresh Simulation +
 ## WaveDirector and prints one "RUN {json}" line per run, then a "SUMMARY {json}" line.
 ##
@@ -21,12 +26,24 @@ extends SceneTree
 ##              skipped (the order moves on to the next item). Tries buy_sanity() too.
 ##   madness  : necronomicon_reader / elder_sign alternating, no guard, never buys sanity:
 ##              it keeps building past cap 0 (MADNESS).
+##   demolition: rifleman, rifleman, dynamite_crew repeated (LT-47): "mundane" with the
+##              Dynamite crew in the harpooner's slot, for a with/without comparison.
+##   battery  : rifleman, rifleman, coast_battery repeated (LT-48): the same with the
+##              Coast battery in that slot.
+##   resonator: rifleman, rifleman, resonator repeated (LT-50): the same with the
+##              Tillinghast Resonator in that slot; no cap guard (its reserves lower the
+##              cap, and lower sanity is what it feeds on).
+##   gate     : rifleman, rifleman, silver_key repeated (LT-51): the same with the Silver
+##              Key Gate in that slot; no cap guard.
+##   circle   : rifleman, rifleman, summoning_circle repeated (LT-52): the same with the
+##              Summoning Circle in that slot; no cap guard.
 ## Placement (greedy): the free buildable cell with the most path cells whose centre is
-## within the tower's L1 range; ties go to the lowest row-major cell. No sells.
+## within the tower's L1 range (and not inside its L1 min_range, LT-48); ties go to the
+## lowest row-major cell. No sells.
 ## Upgrades (LT-24 §5, "wide then deep"): while the board has fewer than BUILD_FIRST towers
 ## the next purchase is the next build; after that it is the cheapest upgrade (gold; ties
 ## -> lower tower id) among the towers, L3 branch from BRANCH_PICK. A tower whose picked
-## branch is missing or has_pending() stays at L2; the cap guard (occult, mixed) skips an
+## branch is missing or has_pending() (none since LT-29) stays at L2; the cap guard (occult, mixed) skips an
 ## upgrade whose reserve delta would leave the cap below CAP_FLOOR. With no upgrade left the next purchase is a build. The
 ## bot buys the next purchase or stops for the round (it saves, never skips to something
 ## cheaper).
@@ -34,12 +51,27 @@ extends SceneTree
 ## allows, then call_wave() at once (lighting the lamp at once gives the night its maximum
 ## luck). During a wave (night) building, upgrades and sales are refused, so the bot only
 ## tries buy_sanity() (occult, mixed), re-checking every second.
+## Lighthouse (LT-30 §3.2/§3.4, LT-57 §5): by day, once the board has BUILD_FIRST towers
+## (towers first, then the oil reserve; LT-57 S2 decision), the bot tops the lamp oil up to
+## one flare's flare.cost_oil (buy_oil() until the stock is there or a call is refused),
+## before any upgrade, and in the
+## purchase loop buys the next lighthouse level when its cost is at most the cheapest tower
+## upgrade's (or no tower upgrade is left); a refused level is not retried that day and the
+## loop falls through to tower upgrades and builds (LT-30 S10); at night it fires the flare when at least
+## FLARE_MIN_IN_CIRCLE live enemies are within the flare radius. [--lighthouse=0] never upgrades the lighthouse,
+## [--flare=0] never buys oil and never fires. A beam-off arm is a --data=<dir> variant.
+## RUN lines add "lighthouse_level", "flares", "oil_bought", "oil_gold" and "lit_shots"
+## (shots by a tower inside a beam).
 ## Loot is random (seeded LOOT stream): compare strategies over the default 10 seeds.
 ## RUN lines add "relics_sold" ($ from sales), "drops" (real relics credited per kind, config
 ## order), "star_stones" and "wage" ($ of dawn wages).
 ## A run is capped at 30 simulated minutes (outcome "timeout").
 
-const STRATEGIES := ["mundane", "occult", "mixed", "madness"]
+const STRATEGIES := ["mundane", "occult", "mixed", "madness", "demolition", "battery",
+	"resonator", "gate", "circle"]
+## LT-57 §5: live enemies (reals and fakes) within the flare radius that make the bot fire
+## the flare (tunable).
+const FLARE_MIN_IN_CIRCLE := 4
 const MAX_TICKS := 30 * 60 * 30
 ## Strategy -> lowest sanity_cap an occult build/upgrade may leave (LT-23 §4, tunable).
 const CAP_FLOOR := {"occult": 30.0, "mixed": 60.0}
@@ -54,11 +86,20 @@ const BRANCH_PICK := {
 	"occult": {"rifleman": "a", "elder_sign": "a", "necronomicon_reader": "a"},
 	"mixed": {"rifleman": "a", "harpooner": "a", "elder_sign": "a", "necronomicon_reader": "a"},
 	"madness": {"elder_sign": "b", "necronomicon_reader": "b"},
+	"demolition": {"rifleman": "a", "dynamite_crew": "a"},
+	"battery": {"rifleman": "a", "coast_battery": "a"},
+	"resonator": {"rifleman": "a", "resonator": "a"},
+	"gate": {"rifleman": "a", "silver_key": "a"},
+	"circle": {"rifleman": "a", "summoning_circle": "a"},
 }
 
 var _cfg: GameConfig
 var _score_cache := {}  ## def id -> Array of [score, cell] sorted best first
 var _upgrades := true  ## false with --upgrades=0
+var _lighthouse := true  ## false with --lighthouse=0
+var _flare := true  ## false with --flare=0
+var _branch_override := {}  ## tower def id -> branch from --branch=, wins over BRANCH_PICK
+var _strategies: Array = STRATEGIES  ## strategies to play, narrowed by --strategies=
 
 
 func _init() -> void:
@@ -74,6 +115,30 @@ func _init() -> void:
 			data_dir = a.substr(7)
 		elif a.begins_with("--upgrades="):
 			_upgrades = a.substr(11) != "0"
+		elif a.begins_with("--lighthouse="):
+			_lighthouse = a.substr(13) != "0"
+		elif a.begins_with("--flare="):
+			_flare = a.substr(8) != "0"
+		elif a.begins_with("--branch="):
+			for pair in a.substr(9).split(",", false):
+				var kv := pair.split(":")
+				if kv.size() != 2 or kv[1] not in ["a", "b"]:
+					printerr("bad --branch pair: ", pair)
+					quit(1)
+					return
+				_branch_override[kv[0]] = kv[1]
+		elif a.begins_with("--strategies="):
+			var picked := a.substr(13).split(",", false)
+			for name in picked:
+				if name not in STRATEGIES:
+					printerr("unknown strategy in --strategies: ", name, " (known: ", STRATEGIES, ")")
+					quit(1)
+					return
+			_strategies = STRATEGIES.filter(func(x): return x in picked)
+			if _strategies.is_empty():
+				printerr("--strategies names no strategy")
+				quit(1)
+				return
 	var res := GameConfig.load_from_dir(data_dir) if data_dir != "" else GameConfig.load_from_dir()
 	if not res.ok:
 		printerr("config errors: ", res.errors)
@@ -81,7 +146,7 @@ func _init() -> void:
 		return
 	_cfg = res.config
 	var runs: Array = []
-	for strat in STRATEGIES:
+	for strat in _strategies:
 		for s in seeds:
 			var r := _play(strat, 1000 + s)
 			runs.append(r)
@@ -126,6 +191,10 @@ func _play(strat: String, run_seed: int) -> Dictionary:
 	var relics_sold := 0
 	var wage := 0
 	var drops := {}
+	var flares := 0
+	var oil_bought := 0
+	var oil_gold := 0
+	var lit_shots := 0
 	for kind in _cfg.economy.relic_ids():
 		drops[kind] = 0
 	while st.outcome == SimState.Outcome.NONE and st.tick < MAX_TICKS:
@@ -157,6 +226,9 @@ func _play(strat: String, run_seed: int) -> Dictionary:
 				free_reserve += ev.data["delta"]  # negative: the part paid from sanity
 			elif ev.type == SimEvent.Type.SHOT:
 				shots += 1
+				var shooter := sim.tower_by_id(ev.id)
+				if shooter != null and shooter.lit:
+					lit_shots += 1
 				if ev.data.get("miss", false):
 					missed += 1
 				if ev.data.get("astray", false):
@@ -166,6 +238,12 @@ func _play(strat: String, run_seed: int) -> Dictionary:
 					relics_sold += ev.data["delta"]
 				elif ev.data["reason"] == "wave_bonus":
 					wage += ev.data["delta"]
+				elif ev.data["reason"] == "oil":
+					oil_gold -= ev.data["delta"]
+			elif ev.type == SimEvent.Type.FLARE_FIRED:
+				flares += 1
+			elif ev.type == SimEvent.Type.OIL_CHANGED and ev.data["reason"] == "buy":
+				oil_bought += ev.data["delta"]
 			elif ev.type == SimEvent.Type.RELICS_CHANGED and ev.data["reason"] == "kill":
 				drops[ev.data["kind"]] += ev.data["delta"]
 			elif ev.type == SimEvent.Type.TOWER_UPGRADED:
@@ -200,7 +278,8 @@ func _play(strat: String, run_seed: int) -> Dictionary:
 		"reserve_peak": snappedf(reserve_peak, 0.1), "free_reserve": snappedf(free_reserve, 0.1),
 		"hp_lost_per_wave": hp_lost_per_wave, "towers_final": towers_final,
 		"relics_sold": relics_sold, "drops": drops, "star_stones": drops.get("star_stone", 0),
-		"wage": wage,
+		"wage": wage, "lighthouse_level": st.lighthouse_level, "flares": flares,
+		"oil_bought": oil_bought, "oil_gold": oil_gold, "lit_shots": lit_shots,
 	}
 	if _upgrades:
 		run["upgrades"] = upgrades
@@ -215,6 +294,16 @@ func _order(strat: String, i: int, sim: Simulation, built: Dictionary) -> String
 	match strat:
 		"mundane":
 			return "harpooner" if i % 3 == 2 else "rifleman"
+		"demolition":
+			return "dynamite_crew" if i % 3 == 2 else "rifleman"
+		"battery":
+			return "coast_battery" if i % 3 == 2 else "rifleman"
+		"resonator":
+			return "resonator" if i % 3 == 2 else "rifleman"
+		"gate":
+			return "silver_key" if i % 3 == 2 else "rifleman"
+		"circle":
+			return "summoning_circle" if i % 3 == 2 else "rifleman"
 		"occult":
 			if i == 0:
 				return "rifleman"
@@ -243,9 +332,22 @@ func _act(sim: Simulation, strat: String, idx: int, built: Dictionary) -> int:
 	if strat == "occult" or strat == "mixed":
 		sim.buy_sanity()  # refused unless exit_rule is "buyout" and state is MADNESS
 	if sim.state.phase == SimState.Phase.WAVE:
+		_night_flare(sim)
 		return idx  # LT-27 §3: night; builds, upgrades and sales are day only
 	sim.sell_relics()  # refused with an empty stash
+	var lighthouse_refused := false  # a refused lighthouse buy falls through to the builds
+	var topped := not _flare  # LT-57: the oil reserve comes after the BUILD_FIRST towers
 	while true:
+		if not topped and sim.state.towers.size() >= BUILD_FIRST:
+			topped = true
+			while sim.state.oil < _bot_oil_target(sim) \
+					and sim.buy_oil() == Simulation.CommandResult.OK:
+				pass  # refused: no oil block, full, or too poor
+		if _upgrades and _lighthouse and not lighthouse_refused \
+				and sim.state.towers.size() >= BUILD_FIRST and _lighthouse_next(sim, strat):
+			if sim.upgrade_lighthouse() != Simulation.CommandResult.OK:
+				lighthouse_refused = true
+			continue
 		if _upgrades and sim.state.towers.size() >= BUILD_FIRST:
 			var up := _next_upgrade(sim, strat)
 			if not up.is_empty():
@@ -274,12 +376,43 @@ func _act(sim: Simulation, strat: String, idx: int, built: Dictionary) -> int:
 	return idx
 
 
+## Whether the lighthouse level is the next purchase: one is left and its cost is at most
+## the cheapest tower upgrade's (or no tower upgrade is left).
+func _lighthouse_next(sim: Simulation, strat: String) -> bool:
+	var cost := sim.lighthouse_upgrade_cost()
+	if cost == 0:
+		return false
+	var up := _next_upgrade(sim, strat)
+	return up.is_empty() or cost <= sim.upgrade_target(sim.tower_by_id(up[0]), up[1]).upgrade_cost
+
+
+## LT-57 §5: oil the bot keeps by day: one flare (flare.cost_oil), 0 without a flare block.
+static func _bot_oil_target(sim: Simulation) -> int:
+	var flare := sim.config.economy.flare
+	return flare.cost_oil if flare != null else 0
+
+
+## Night: fires the flare when at least FLARE_MIN_IN_CIRCLE live enemies (reals and fakes, as
+## a player sees them) are within the flare radius (LT-57 §5: before firing they are not lit
+## by the circle yet, so e.lit is not the count). Refused on cooldown or without oil.
+func _night_flare(sim: Simulation) -> void:
+	if not _flare:
+		return
+	var near := 0
+	for e in sim.state.enemies:
+		if e.is_live() and sim.in_flare_radius(e.route.position_at(e.distance)):
+			near += 1
+	if near >= FLARE_MIN_IN_CIRCLE:
+		sim.fire_flare()
+
+
 ## The bot's next upgrade as [tower_id, branch], or [] when no tower can go further for it:
 ## the cheapest target (gold) over the towers in id order, ties -> lower id. Skips a tower
 ## whose L3 pick is missing from BRANCH_PICK or has_pending(), and (occult, mixed) an
 ## upgrade whose reserve delta fails the cap guard (_cap_allows).
 func _next_upgrade(sim: Simulation, strat: String) -> Array:
-	var picks: Dictionary = BRANCH_PICK.get(strat, {})
+	var picks: Dictionary = BRANCH_PICK.get(strat, {}).duplicate()
+	picks.merge(_branch_override, true)
 	var best: Array = []
 	var best_cost := 0
 	for t in sim.state.towers:
@@ -306,6 +439,7 @@ func _next_upgrade(sim: Simulation, strat: String) -> Array:
 func _best_cell(sim: Simulation, id: String) -> Vector2i:
 	if not _score_cache.has(id):
 		var rng_cells: float = _cfg.towers[id].levels[0].range_cells
+		var min_cells: float = _cfg.towers[id].levels[0].min_range
 		var m := _cfg.map
 		var list: Array = []
 		for y in m.height:
@@ -315,7 +449,8 @@ func _best_cell(sim: Simulation, id: String) -> Vector2i:
 					continue
 				var score := 0
 				for p in m.path:
-					if Vector2(c - p).length() <= rng_cells:
+					var d := Vector2(c - p).length()
+					if d <= rng_cells and d >= min_cells:
 						score += 1
 				if score > 0:
 					list.append([score, c])

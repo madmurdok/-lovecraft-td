@@ -8,7 +8,9 @@ extends SimTestBase
 ##  2. scenes/, ui/ and tools/ never reach a private Simulation member (`sim._x`, or any
 ##     `_name` declared in simulation.gd, static ones included) or write sim.state / sim.config:
 ##     no assignment at any depth, no mutator call (append, erase, ...), and none through a
-##     local alias of SimState or of something inside it (LT-36);
+##     local alias of SimState or of something inside it (LT-36); LT-42: nor a state-changing
+##     method of a state class, nor through a typed state-class parameter, a getter, a class
+##     field, a same-file call's parameter or an inner class (see _state_writes);
 ##  3. is_fake stays out of presentation (render_isolation_test is the main guard and must stay);
 ## and two runtime proofs: the sim plays a whole game without a SceneTree, and a Game driven
 ## by uneven frames ends in the state a bare Simulation reaches by stepping the same commands.
@@ -18,7 +20,7 @@ const PRESENTATION_DIRS := ["res://scenes", "res://ui", "res://tools"]
 const SIMULATION := "res://sim/core/simulation.gd"
 ## Engine types sim/ may name today (computed from the code once and pinned, LT-34/S2).
 const ENGINE_ALLOWLIST := [
-	"Array", "Callable", "Dictionary", "FileAccess", "JSON", "PackedByteArray", "PackedInt64Array",
+	"Array", "Dictionary", "FileAccess", "JSON", "PackedByteArray", "PackedInt64Array",
 	"PackedStringArray", "RandomNumberGenerator", "RefCounted", "RegEx", "String", "Variant",
 	"Vector2", "Vector2i",
 ]
@@ -45,6 +47,13 @@ const SIM_FORBIDDEN_WITH_STRINGS := [
 const CHAIN := "(?:\\.\\w+|\\[[^\\]]*\\])"
 ## An assignment operator (not ==, <=, >=, !=).
 const ASSIGN := "\\s*(?:=(?!=)|[-+*/%|&^]=|<<=|>>=)"
+## LT-42 (S5): an Array method returning one of its elements (`towers.back()`), not a copy.
+const ELEMENT_CALL := "\\.(?:back|front|get|pick_random|pop_back|pop_front|pop_at|min|max)" \
+	+ "\\s*\\([^()]*\\)"
+## An access chain that may take one element by a call: `.towers.back().def`.
+const TAIL := CHAIN + "*(?:" + ELEMENT_CALL + CHAIN + "*)?"
+## One element of a container: `[i]` or an ELEMENT_CALL.
+const ELEMENT_STEP := "(?:\\[[^\\]]*\\]|" + ELEMENT_CALL + ")"
 ## Array / Dictionary / Object methods that change their receiver.
 const MUTATORS := "(?:append|append_array|assign|clear|erase|fill|insert|merge|pop_at|pop_back" \
 	+ "|pop_front|push_back|push_front|remove_at|resize|reverse|set|shuffle|sort|sort_custom)"
@@ -53,11 +62,12 @@ const WRITE_PATTERNS := [
 	"\\.state" + CHAIN + "+" + ASSIGN,
 	"\\.config" + CHAIN + "+" + ASSIGN,
 ]
-## Mutator calls on sim.state / sim.config or anything inside them (LT-36).
-const MUTATOR_PATTERN := "\\.(?:state|config)" + CHAIN + "*\\." + MUTATORS + "\\s*\\("
 const STEPS_AFTER_FRAMES := 3000
 
 var _vp: SubViewport
+var _state_types_cache := {}
+var _mutators_cache := ""
+var _sim_getters_cache: Array = []
 
 
 func after_test() -> void:
@@ -196,21 +206,223 @@ func _engine_caps(file: String, text: String, own: Dictionary, allow: Array) -> 
 	return out
 
 
-## LT-36 (F3): names bound to SimState or to something inside it in one scope (code lines):
-## `var s := game.sim.state[.x...]`, `s: SimState` (a var or a parameter) and
-## `for t in sim.state.towers:`, also through an earlier alias (`for t in s.towers:`).
+## LT-42: classes whose instances live inside sim.state / sim.config: SimState and GameConfig,
+## then every own class named in a member (a class-level `var x: T`, `Array[T]`, ...) of one of
+## them, transitively; inner classes as `Outer.Inner`. Type name -> source text ("" for inner
+## ones). Locals (`var r: ConfigReader` inside a func) do not count.
+func _state_types() -> Dictionary:
+	if not _state_types_cache.is_empty():
+		return _state_types_cache
+	var texts := {}
+	var cn := RegEx.create_from_string("(?m)^class_name\\s+(\\w+)")
+	for f in _gd_files(SIM_DIR):
+		var text := FileAccess.get_file_as_string(f)
+		var m := cn.search(text)
+		if m != null:
+			texts[m.get_string(1)] = text
+	var decl := RegEx.create_from_string("^\\s*var\\s+\\w+\\s*:\\s*([^=]+)")
+	var word := RegEx.create_from_string("\\b[A-Z]\\w*")
+	var inner := RegEx.create_from_string("(?m)^\\s*class\\s+(\\w+)")
+	var todo: Array[String] = ["SimState", "GameConfig"]
+	while not todo.is_empty():
+		var t: String = todo.pop_back()
+		if _state_types_cache.has(t) or not texts.has(t):
+			continue
+		_state_types_cache[t] = texts[t]
+		for m in inner.search_all(texts[t]):
+			_state_types_cache[t + "." + m.get_string(1)] = ""
+		for s: Dictionary in _scopes(_code_lines(texts[t])):
+			if s.kind != "class":
+				continue
+			for entry: Array in s.lines:
+				var m := decl.search(entry[1])
+				if m != null:
+					for w in word.search_all(m.get_string(1)):
+						todo.append(w.get_string())
+	return _state_types_cache
+
+
+## `(?:SimState|SimTower|TowerDef\.Level|...)`, longest first, for a type annotation.
+func _state_type_pattern() -> String:
+	var names: Array = _state_types().keys()
+	names.sort_custom(func(a: String, b: String) -> bool: return a.length() > b.length())
+	return "(?:%s)(?![.\\w])" % "|".join(names.map(func(n: String) -> String:
+		return n.replace(".", "\\.")))
+
+
+## LT-42: `Array[<state type>]`, for a type annotation of a container of state objects.
+func _state_array_pattern() -> String:
+	return "Array\\[\\s*" + _state_type_pattern() + "\\s*\\]"
+
+
+## LT-42 (S5): public, non-static funcs declared under sim/ (Simulation's queries) that return
+## a state-class object ([0]: `tower_by_id -> SimTower`) or an Array of them ([1]:
+## `enemies_in_range -> Array[SimEnemy]`), from their declared return types.
+func _sim_getters() -> Array:
+	if not _sim_getters_cache.is_empty():
+		return _sim_getters_cache
+	var one := RegEx.create_from_string("^\\s*" + _state_type_pattern() + "\\s*$")
+	var many := RegEx.create_from_string("^\\s*" + _state_array_pattern() + "\\s*$")
+	var head := RegEx.create_from_string(
+		"(?m)^\\s*func\\s+([a-z]\\w*)\\s*\\([^)]*\\)\\s*->\\s*([^:\\n]+):")
+	var direct: Array[String] = []
+	var arrays: Array[String] = []
+	for f in _gd_files(SIM_DIR):
+		for m in head.search_all(FileAccess.get_file_as_string(f)):
+			var n := m.get_string(1)
+			if one.search(m.get_string(2)) != null and not direct.has(n):
+				direct.append(n)
+			elif many.search(m.get_string(2)) != null and not arrays.has(n):
+				arrays.append(n)
+	_sim_getters_cache = [direct, arrays]
+	return _sim_getters_cache
+
+
+## LT-42: MUTATORS plus the methods of the `_state_types()` classes that change their own
+## object: a non-static method (not _init) that assigns a member, calls a mutator on one, or
+## calls another such method of the same file. `(?:append|...|reset_modifiers|...)`.
+func _mutators() -> String:
+	if _mutators_cache != "":
+		return _mutators_cache
+	var found: Array[String] = []
+	for t: String in _state_types():
+		var text: String = _state_types()[t]
+		if text == "":
+			continue
+		var scopes := _scopes(_code_lines(text))
+		var members: Array[String] = []
+		var var_re := RegEx.create_from_string("^\\s*var\\s+(\\w+)")
+		for s: Dictionary in scopes:
+			if s.kind == "class":
+				for entry: Array in s.lines:
+					var m := var_re.search(entry[1])
+					if m != null:
+						members.append(m.get_string(1))
+		var own: Array[String] = []
+		while true:
+			var n := own.size()
+			var heads: Array[String] = []
+			if not members.is_empty():
+				var mem := "(?<![.\\w])(?:self\\.)?(?:%s)" % "|".join(members)
+				heads.append(mem + CHAIN + "*" + ASSIGN)
+				heads.append(mem + CHAIN + "*\\." + MUTATORS + "\\s*\\(")
+			if not own.is_empty():
+				heads.append("(?<![.\\w])(?:self\\.)?(?:%s)\\s*\\(" % "|".join(own))
+			for s: Dictionary in scopes:
+				if s.kind != "func" or s.is_static or s.name == "_init" or own.has(s.name):
+					continue
+				for p in heads:
+					if not _find("", s.lines.slice(1), p).is_empty():
+						own.append(s.name)
+						break
+			if own.size() == n:
+				break
+		for n in own:
+			if not found.has(n):
+				found.append(n)
+	_mutators_cache = MUTATORS if found.is_empty() \
+		else "(?:%s|%s)" % [MUTATORS, "|".join(found)]
+	return _mutators_cache
+
+
+## LT-42: the scopes of a source (code lines): [0] the script's class body, then one per inner
+## `class` body and one per func (static and inner-class ones too), in order. A line belongs to
+## the innermost scope its indentation is in. Each scope: {kind ("class"/"func"), name, lines,
+## owner (index of its class scope; -1 for [0]), indent, params (names), is_static}.
+## A func's params are read from its header line only.
+func _scopes(code: Array) -> Array:
+	var scopes: Array = [{kind = "class", name = "", lines = [], owner = -1, indent = -1,
+		params = [], is_static = false}]
+	var class_re := RegEx.create_from_string("^\\s*class\\s+(\\w+)")
+	var func_re := RegEx.create_from_string("^\\s*(static\\s+)?func\\s+(\\w+)\\s*\\(([^)]*)")
+	var param_re := RegEx.create_from_string("^\\s*(\\w+)")
+	var stack: Array[int] = [0]
+	for entry: Array in code:
+		var line: String = entry[1]
+		if line.strip_edges() == "":
+			scopes[stack.back()].lines.append(entry)
+			continue
+		var indent := line.length() - line.lstrip(" \t").length()
+		while scopes[stack.back()].indent >= indent:
+			stack.pop_back()
+		var c := class_re.search(line)
+		var f := func_re.search(line)
+		if c != null or f != null:
+			var owner := 0
+			for k in range(stack.size() - 1, -1, -1):
+				if scopes[stack[k]].kind == "class":
+					owner = stack[k]
+					break
+			var params: Array[String] = []
+			if f != null:
+				for p in f.get_string(3).split(","):
+					var m := param_re.search(p)
+					if m != null:
+						params.append(m.get_string(1))
+			stack.append(scopes.size())
+			scopes.append({kind = "class" if c != null else "func",
+				name = c.get_string(1) if c != null else f.get_string(2), lines = [],
+				owner = owner, indent = indent, params = params,
+				is_static = f != null and f.get_string(1) != ""})
+		scopes[stack.back()].lines.append(entry)
+	return scopes
+
+
+## LT-42: a head naming a state object: one of `names` (also `self.name`, S5), or a call of
+## one of `getters` (also `obj.getter()`, `game.sim.tower_by_id(id)`). "" when both are empty.
+func _alias_head(names: Array, getters: Array) -> String:
+	var alts: Array[String] = []
+	if not names.is_empty():
+		alts.append("(?<![.\\w])(?:self\\.)?(?:%s)" % "|".join(names))
+	if not getters.is_empty():
+		alts.append("(?<![\\w.])(?:[\\w.]*\\.)?(?:%s)\\s*\\([^()]*\\)" % "|".join(getters))
+	return "" if alts.is_empty() else "(?:%s)" % "|".join(alts)
+
+
+## LT-42: an expression whose value is a state object: `sim.state` / `.config` or a `head`
+## (`_alias_head`), then a TAIL (`.towers[0]`, `.towers.back().def`), or one element of a
+## container `elems` (`ts[0]`, `ts.back()`; S5). With `whole_container`, `elems` itself too
+## (the source of a `for`).
+func _state_value(head: String, elems: String, whole_container := false) -> String:
+	var alts: Array[String] = [
+		"(?:[\\w.]*\\.(?:state|config)%s)%s" % ["" if head == "" else "|" + head, TAIL]]
+	if elems != "":
+		alts.append(elems + ("(?:%s%s)?" if whole_container else "%s%s") % [ELEMENT_STEP, TAIL])
+	return "(?:%s)" % "|".join(alts)
+
+
+## LT-42: what writes through `head`: an assignment below it, or a mutator call on it or on
+## anything below it (also past an element call: `s.towers.back().level = 3`).
+func _write_patterns(head: String, mut: String) -> Array[String]:
+	return [
+		head + CHAIN + "+" + ASSIGN,
+		head + CHAIN + "*" + ELEMENT_CALL + CHAIN + "+" + ASSIGN,
+		head + TAIL + "\\." + mut + "\\s*\\(",
+	]
+
+
+## LT-36 (F3): names bound to SimState / GameConfig or to something inside them in one scope
+## (code lines): `var s := game.sim.state[.x...]` (or `.config`), `s: SimState` (a var or a
+## parameter; LT-42: any `_state_types()` class, `t: SimTower`) and `for t in sim.state.towers:`,
+## also through `known` names and calls of `getters` (`var s := s0.x`, `for t in get_s().towers:`).
+## LT-42 (S5): also a plain assignment in the scope (`var s = null` then `s = sim.state`), an
+## element call (`var t := sim.state.towers.back()`), and an element of / a `for` over a
+## container `elems` (`_containers`).
 ## A call ends the chain: `var c := sim.state.towers.duplicate()` is a copy, not an alias.
-func _state_aliases(code_lines: Array) -> Array[String]:
+## Returns `known` plus the names found.
+func _state_aliases(code_lines: Array, known: Array = [], getters: Array = [],
+		elems := "") -> Array[String]:
 	var names: Array[String] = []
-	var typed := RegEx.create_from_string("\\b(\\w+)\\s*:\\s*SimState\\b")
+	names.assign(known)
+	var typed := RegEx.create_from_string("\\b(\\w+)\\s*:\\s*" + _state_type_pattern())
 	while true:
-		var src := "[\\w.]*\\.state"
-		if not names.is_empty():
-			src = "(?:%s|(?<![.\\w])(?:%s))" % [src, "|".join(names)]
+		var head := _alias_head(names, getters)
+		var src := _state_value(head, elems)
 		var res: Array[RegEx] = [
-			RegEx.create_from_string("\\bvar\\s+(\\w+)[^=]*=\\s*" + src + CHAIN + "*\\s*$"),
-			RegEx.create_from_string("\\bfor\\s+(\\w+)(?:\\s*:\\s*\\w+)?\\s+in\\s+" + src
-				+ CHAIN + "*\\s*:"),
+			RegEx.create_from_string("\\bvar\\s+(\\w+)[^=]*=\\s*" + src + "\\s*$"),
+			RegEx.create_from_string("^\\s*(?:self\\.)?(\\w+)\\s*=(?!=)\\s*" + src + "\\s*$"),
+			RegEx.create_from_string("\\bfor\\s+(\\w+)(?:\\s*:\\s*\\w+)?\\s+in\\s+"
+				+ _state_value(head, elems, true) + "\\s*:"),
 			typed,
 		]
 		var found := names.size()
@@ -225,32 +437,165 @@ func _state_aliases(code_lines: Array) -> Array[String]:
 	return names
 
 
-## Every write to sim.state / sim.config in a presentation source: an assignment at any depth,
-## a mutator call, or either through a SimState alias of the same function (aliases bound
-## at the top level, before the first func, count in every function).
+## LT-42 (S5): names in one scope holding a container of state objects: `ts: Array[SimTower]`
+## (a var or a parameter) and `var es := game.sim.enemies_in_range(...)` (an Array getter).
+## Their elements are aliases; the container itself is not (it may be a fresh Array).
+func _containers(code_lines: Array, array_getters: Array) -> Array[String]:
+	var res: Array[RegEx] = [
+		RegEx.create_from_string("\\b(\\w+)\\s*:\\s*" + _state_array_pattern())]
+	if not array_getters.is_empty():
+		res.append(RegEx.create_from_string("\\bvar\\s+(\\w+)[^=]*=\\s*"
+			+ _alias_head([], array_getters) + "\\s*$"))
+	var out: Array[String] = []
+	for entry: Array in code_lines:
+		for re in res:
+			for m in re.search_all(entry[1]):
+				if not out.has(m.get_string(1)):
+					out.append(m.get_string(1))
+	return out
+
+
+## LT-42: [callee, args] for every call on `line` of a name in `funcs` (`f(...)`,
+## `self.f(...)`); args split at top-level commas, a call spanning lines cut at the line end.
+func _calls(line: String, funcs: Dictionary) -> Array:
+	var out := []
+	var re := RegEx.create_from_string("(?:(?<=self\\.)|(?<![.\\w]))(\\w+)\\s*\\(")
+	for m in re.search_all(line):
+		if not funcs.has(m.get_string(1)):
+			continue
+		var args: Array[String] = []
+		var cur := ""
+		var depth := 0
+		for k in range(m.get_end(), line.length()):
+			var c := line[k]
+			if c == "(" or c == "[" or c == "{":
+				depth += 1
+			elif c == ")" or c == "]" or c == "}":
+				if depth == 0:
+					break
+				depth -= 1
+			elif c == "," and depth == 0:
+				args.append(cur)
+				cur = ""
+				continue
+			cur += c
+		args.append(cur)
+		out.append([m.get_string(1), args])
+	return out
+
+
+## Every write to sim.state / sim.config in a presentation source: an assignment at any depth
+## or a mutator call (LT-42: also a method of a state class that changes its object,
+## `t.reset_modifiers()`), directly or through an alias (`_state_aliases`). Aliases are scoped
+## (`_scopes`): a func sees its own and its class's; LT-42 adds, all within this file:
+##  - a class field (declared in the class body) assigned an alias in a func (`s = sim.state`,
+##    `self.s = ...`) is an alias in every func of that class, also as `self.s`;
+##  - a func returning an alias (`return sim.state`) or declared `-> <state type>` is a getter:
+##    `get_s().gold = 1`, `var s := get_s()`; so are Simulation's queries (`_sim_getters`):
+##    `var t := game.sim.tower_by_id(id)`, `game.sim.enemy_by_id(id).reset_modifiers()`;
+##  - elements of a state container (`_containers`, or an Array getter call such as
+##    `game.sim.enemies_in_range(...)`) are aliases: `ts[0].level = 3`, `for e in ts:`;
+##  - a parameter of a func this file calls with an alias in that position (`f(sim.state)`)
+##    is an alias inside that func;
+##  - an inner class's funcs see its own fields, not the outer script's.
 func _state_writes(file: String, text: String) -> Array[String]:
 	var code := _code_lines(text)
+	var mut := _mutators()
 	var out: Array[String] = []
-	for p: String in WRITE_PATTERNS:
+	for p: String in _write_patterns("\\.(?:state|config)", mut):
 		out.append_array(_find(file, code, p))
-	out.append_array(_find(file, code, MUTATOR_PATTERN))
-	var scopes: Array = [[]]
-	var func_re := RegEx.create_from_string("^(?:static\\s+)?func\\b")
-	for entry: Array in code:
-		if func_re.search(entry[1]) != null:
-			scopes.append([])
-		scopes.back().append(entry)
-	var top := _state_aliases(scopes[0])
-	for scope: Array in scopes:
-		var names := top.duplicate()
-		for n in _state_aliases(scope):
-			if not names.has(n):
-				names.append(n)
-		if names.is_empty():
-			continue
-		var head := "(?<![.\\w])(?:%s)" % "|".join(names)
-		out.append_array(_find(file, scope, head + CHAIN + "+" + ASSIGN))
-		out.append_array(_find(file, scope, head + CHAIN + "*\\." + MUTATORS + "\\s*\\("))
+	var scopes := _scopes(code)
+	var var_re := RegEx.create_from_string("^\\s*var\\s+(\\w+)")
+	var returns_one := RegEx.create_from_string("->\\s*" + _state_type_pattern())
+	var returns_many := RegEx.create_from_string("->\\s*" + _state_array_pattern())
+	var names: Array = []
+	var members: Array = []
+	var funcs := {}
+	var getters: Array[String] = []
+	getters.assign(_sim_getters()[0])
+	var array_getters: Array[String] = []
+	array_getters.assign(_sim_getters()[1])
+	for i in scopes.size():
+		var s: Dictionary = scopes[i]
+		names.append([])
+		var mem: Array[String] = []
+		if s.kind == "class":
+			for entry: Array in s.lines:
+				var m := var_re.search(entry[1])
+				if m != null:
+					mem.append(m.get_string(1))
+		else:
+			if not funcs.has(s.name):
+				funcs[s.name] = i
+			if returns_one.search(s.lines[0][1]) != null and not getters.has(s.name):
+				getters.append(s.name)
+			elif returns_many.search(s.lines[0][1]) != null and not array_getters.has(s.name):
+				array_getters.append(s.name)
+		members.append(mem)
+	var conts: Array = []
+	for i in scopes.size():
+		var c := _containers(scopes[i].lines, array_getters)
+		if scopes[i].kind == "func":
+			for n in conts[scopes[i].owner]:
+				if not c.has(n):
+					c.append(n)
+		conts.append(c)
+	var elems_of := func(i: int) -> String:
+		return _alias_head(conts[i], array_getters)
+	var changed := true
+	while changed:
+		changed = false
+		for i in scopes.size():
+			var s: Dictionary = scopes[i]
+			var inherited: Array = names[s.owner] if s.kind == "func" else []
+			var known: Array = inherited.duplicate()
+			for n in names[i]:
+				if not known.has(n):
+					known.append(n)
+			for n in _state_aliases(s.lines, known, getters, elems_of.call(i)):
+				if not known.has(n):
+					names[i].append(n)
+					known.append(n)
+					changed = true
+			if s.kind != "func":
+				continue
+			var src := _state_value(_alias_head(known, getters), elems_of.call(i))
+			var field_re := RegEx.create_from_string(
+				"^\\s*(?:self\\.)?(\\w+)\\s*=(?!=)\\s*" + src + "\\s*$")
+			var return_re := RegEx.create_from_string("^\\s*return\\s+" + src + "\\s*$")
+			var arg_re := RegEx.create_from_string("^\\s*" + src + "\\s*$")
+			for k in range(1, s.lines.size()):
+				var line: String = s.lines[k][1]
+				var m := field_re.search(line)
+				if m != null and members[s.owner].has(m.get_string(1)) \
+						and not names[s.owner].has(m.get_string(1)):
+					names[s.owner].append(m.get_string(1))
+					changed = true
+				if return_re.search(line) != null and not getters.has(s.name):
+					getters.append(s.name)
+					changed = true
+				for call: Array in _calls(line, funcs):
+					var callee: Dictionary = scopes[funcs[call[0]]]
+					for a in mini(call[1].size(), callee.params.size()):
+						var p: String = callee.params[a]
+						if arg_re.search(call[1][a]) != null \
+								and not names[funcs[call[0]]].has(p):
+							names[funcs[call[0]]].append(p)
+							changed = true
+	for i in scopes.size():
+		var s: Dictionary = scopes[i]
+		var known: Array = names[i].duplicate()
+		if s.kind == "func":
+			known.append_array(names[s.owner])
+		var heads: Array[String] = []
+		var head := _alias_head(known, getters)
+		if head != "":
+			heads.append(head)
+		if elems_of.call(i) != "":
+			heads.append(elems_of.call(i) + ELEMENT_STEP)
+		for h in heads:
+			for p in _write_patterns(h, mut):
+				out.append_array(_find(file, s.lines, p))
 	return out
 
 
@@ -316,6 +661,72 @@ func test_the_write_scan_flags_nested_writes_mutator_calls_and_aliases() -> void
 		"func f() -> void:\n\tvar c := sim.state.towers.duplicate()\n\tc.clear()",
 		"func f() -> void:\n\tvar s := sim.state\n\ts = other\n\tlabels.append(s)",
 		"var states := 1\nstates.clear()\nnode.state_text = \"a\"",
+	]:
+		assert_array(_state_writes("f.gd", text)).override_failure_message(
+			"falsely flagged:\n" + text).is_empty()
+
+
+## LT-42: one case per alias form the guard follows; each must be flagged.
+func test_the_write_scan_follows_the_lt42_alias_forms() -> void:
+	for text: String in [
+		# a state class's own mutating method (`_mutators`), on an alias and on a getter call
+		"func f() -> void:\n\tvar s := sim.state\n\ts.enemies[0].reset_modifiers()",
+		"func f() -> void:\n\tgame.sim.enemy_by_id(id).reset_modifiers()",
+		# Simulation getters (`_sim_getters`): one object, and an Array of them
+		"func f() -> void:\n\tvar t := game.sim.tower_by_id(id)\n\tt.level = 3",
+		"func f() -> void:\n\tgame.sim.tower_by_id(id).level = 3",
+		"func f() -> void:\n\tfor e in game.sim.enemies_in_range(c, 2.0):\n\t\te.hp = 0",
+		"func f() -> void:\n\tvar es := game.sim.enemies_in_range(c, 2.0)\n\tes[0].hp = 0",
+		# a getter of this file, by its return and by its declared state return type
+		"func get_s():\n\treturn sim.state\nfunc f() -> void:\n\tget_s().gold = 1",
+		"func get_t() -> SimTower:\n\treturn null\nfunc f() -> void:\n\tvar t := get_t()\n"
+			+ "\tt.level = 3",
+		# a class field assigned an alias inside a func, plain and through self
+		"var s\nfunc _ready() -> void:\n\ts = sim.state\nfunc f() -> void:\n\ts.gold = 1",
+		"var s\nfunc _ready() -> void:\n\tself.s = sim.state\nfunc f() -> void:\n\tself.s.gold = 1",
+		# typed params: a state class, an inner one, an Array of them (index, element call, for)
+		"func f(t: SimTower) -> void:\n\tt.level = 3",
+		"func f(l: TowerDef.Level) -> void:\n\tl.damage = 1.0",
+		"func f(ts: Array[SimTower]) -> void:\n\tts[0].level = 3",
+		"func f(ts: Array[SimTower]) -> void:\n\tts.back().level = 3",
+		"func f(ts: Array[SimTower]) -> void:\n\tfor t in ts:\n\t\tt.level = 3",
+		# a param of a func this file calls with an alias (`_calls`), plain and through self
+		"func f() -> void:\n\tg(sim.state)\nfunc g(x) -> void:\n\tx.gold = 1",
+		"func f() -> void:\n\tself.g(1, sim.state.towers[0])\nfunc g(a, x) -> void:\n\tx.level = 3",
+		# an inner class's field, assigned in one of its funcs and written in another
+		"class Inner:\n\tvar s\n\tfunc a() -> void:\n\t\ts = sim.state\n\tfunc b() -> void:\n"
+			+ "\t\ts.gold = 1",
+		# element tails (ELEMENT_CALL): direct, and into an alias
+		"func f() -> void:\n\tsim.state.towers.back().level = 3",
+		"func f() -> void:\n\tsim.state.towers.front().level = 3",
+		"func f() -> void:\n\tsim.state.towers.get(0).level = 3",
+		"func f() -> void:\n\tsim.state.enemies.pop_front().hp = 0",
+		"func f() -> void:\n\tvar t := sim.state.towers.back()\n\tt.level = 3",
+		# a local declared empty and assigned an alias later (`_state_aliases`)
+		"func f() -> void:\n\tvar s = null\n\ts = sim.state\n\ts.gold = 1",
+	]:
+		assert_array(_state_writes("f.gd", text)).override_failure_message(
+			"not flagged:\n" + text).is_not_empty()
+
+
+## LT-42: near misses of the forms above; none may be flagged.
+func test_the_write_scan_skips_the_lt42_near_misses() -> void:
+	for text: String in [
+		# an enum nested in a state class is not that class
+		"func f(st: SimState.SanityState) -> void:\n\tst.x = 1",
+		# ConfigReader is only a func-local in sim/, not a member of the config
+		"func f(r: ConfigReader) -> void:\n\tr.x = 1",
+		"func f() -> void:\n\tvar r: ConfigReader = ConfigReader.new(p)\n\tr.x = 1",
+		# an Array param of state objects may be a fresh Array: changing it is no state write
+		"func f(ts: Array[SimTower]) -> void:\n\tts.clear()",
+		"func f(ts: Array[SimTower]) -> void:\n\tts.append(t)",
+		# a func-local (not a class field) assigned an alias stays in its func
+		"func f() -> void:\n\tvar s\n\ts = sim.state\nfunc g() -> void:\n\ts.gold = 1",
+		# an inner class's funcs see its own fields, not the outer script's
+		"var s\nfunc a() -> void:\n\ts = sim.state\nclass Inner:\n\tvar s\n\tfunc b() -> void:\n"
+			+ "\t\ts.gold = 1",
+		# a func this file calls with no alias: its param is none
+		"func f() -> void:\n\tg(label)\nfunc g(x) -> void:\n\tx.text = \"a\"",
 	]:
 		assert_array(_state_writes("f.gd", text)).override_failure_message(
 			"falsely flagged:\n" + text).is_empty()

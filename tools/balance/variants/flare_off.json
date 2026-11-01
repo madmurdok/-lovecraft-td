@@ -1,0 +1,4 @@
+{
+  "description": "the bot never buys oil and never fires the flare (LT-30 S13 arm D)",
+  "flags": ["--flare=0"]
+}

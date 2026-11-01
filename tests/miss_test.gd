@@ -17,6 +17,7 @@ func _sim(run_seed := SEED, miss := {}) -> Simulation:
 			root["width"] = ROWS[0].length()
 			root["height"] = ROWS.size()
 			root["rows"] = ROWS)
+		dark_beam(dir)  # LT-30: a lit rifle would skip its miss roll
 		for k: String in miss:
 			edit(dir, "sanity.json", func(root: Dictionary) -> void:
 				root["thresholds"][k]["miss_chance"] = miss[k]))

@@ -8,6 +8,9 @@ const ECON := "economy.json"
 const ENEMIES := "enemies.json"
 
 var _real: GameConfig
+## LT-30: make_config (tsim, ...) darkens the lighthouse beam (reach ~0) so suites about
+## other mechanics are not lit in phase NONE, where the beam shines; a beam suite sets this.
+var lit_beam := false
 
 
 ## The unedited res://data config (loaded once per suite).
@@ -43,11 +46,26 @@ func _apply_edits(dir: String, rows: Array, hp: int, enemy_edits: Dictionary) ->
 			root["rows"] = rows)
 	if hp >= 0:
 		edit(dir, ECON, func(root: Dictionary) -> void: root["lighthouse"]["hp"] = hp)
+	if not lit_beam:
+		dark_beam(dir)
 	for id: String in enemy_edits:
 		var fields: Dictionary = enemy_edits[id]
 		edit(dir, ENEMIES, func(root: Dictionary) -> void:
 			for k: String in fields:
 				root["enemies"][id][k] = fields[k])
+
+
+## LT-30: shrinks the beam's reach to ~0 in the copied economy.json: nothing is ever lit.
+## LT-57: the flare circle too (radius_cells must stay within reach_cells): radius 0.
+func dark_beam(dir: String) -> void:
+	edit(dir, ECON, func(root: Dictionary) -> void:
+		var lh: Dictionary = root["lighthouse"]
+		lh["beam"]["reach_cells"] = 0.0001
+		if lh.has("flare"):
+			var zeros := []
+			for i in lh["beam"]["levels"].size():
+				zeros.append(0)
+			lh["flare"]["radius_cells"] = zeros)
 
 
 ## Route length in units of a ground path of `path_cells` cells (each step one cell).

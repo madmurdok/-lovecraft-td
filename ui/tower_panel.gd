@@ -1,9 +1,11 @@
 class_name TowerPanel
 extends VBoxContainer
-## Tower view of the side panel for a clicked tower (LT-7, LT-24 §4): name and level, role
-## (the branch role at L3), current stats (TowerInfo), the upgrade button (L1) or the two
-## branch buttons (L2) with their deltas, the target priority switch (LT-31; hidden for an
-## aura tower), "Max level" at L3, and Sell with the refund
+## Tower view of the side panel for a clicked tower (LT-7, LT-24 §4, LT-43 §4): name and
+## level, role (the branch role at L3), the beam status line while lit (LT-43 §5), the stats
+## table (StatsTable: Now | L2 at L1, Now | A | B at L2, Now at L3; lit Now cells marked
+## "*"), the special lines (prefixed by column), the kind line, the upgrade button (L1) or
+## the two branch buttons (L2) with their role lines, the target priority switch (LT-31;
+## hidden for an aura tower), "Max level" at L3, and Sell with the refund
 ## Simulation.sell_refund reports now. Buttons are disabled with the reason whenever
 ## Simulation.can_upgrade refuses them; refresh() re-reads everything each frame.
 ## `visible` is "the tower view is shown"; SidePanel shows its idle text otherwise.
@@ -15,10 +17,13 @@ var game: Game
 var tower_id := 0
 var title_label: Label
 var role_label: Label
-var stats_label: Label
+var lit_label: Label  ## LT-43 §5: "* In the beam now: ..." while the tower is lit
+var stats_table: StatsTable
+var special_label: Label  ## special lines under the table, "A: ..." per upgrade column
+var kind_label: Label
 var upgrade_title: Label
 var max_label: Label
-## Upgrade branch ("" = L1 -> L2, "a"/"b" = L2 -> L3) -> its button / its role + delta text.
+## Upgrade branch ("" = L1 -> L2, "a"/"b" = L2 -> L3) -> its button / its role line.
 ## All three exist; refresh() shows those Simulation.upgrade_branches accepts now.
 var upgrade_buttons: Dictionary[String, Button] = {}
 var upgrade_infos: Dictionary[String, Label] = {}
@@ -34,8 +39,18 @@ func _ready() -> void:
 	add_child(title_label)
 	role_label = SidePanel.make_label("Role", SidePanel.COLOR_ROLE)
 	add_child(role_label)
-	stats_label = SidePanel.make_label("Stats", SidePanel.COLOR_INFO)
-	add_child(stats_label)
+	lit_label = SidePanel.make_label("Lit", StatsTable.COLOR_LIT)
+	lit_label.add_theme_font_size_override("font_size", StatsTable.FONT_SIZE)
+	add_child(lit_label)
+	stats_table = StatsTable.new()
+	stats_table.name = "Stats"
+	add_child(stats_table)
+	special_label = SidePanel.make_label("Special", SidePanel.COLOR_INFO)
+	special_label.add_theme_font_size_override("font_size", StatsTable.FONT_SIZE)
+	add_child(special_label)
+	kind_label = SidePanel.make_label("Kind", StatsTable.COLOR_LABEL)
+	kind_label.add_theme_font_size_override("font_size", StatsTable.FONT_SIZE)
+	add_child(kind_label)
 	priority_title = SidePanel.make_label("PriorityTitle")
 	priority_title.text = "── Target ──"
 	priority_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -99,9 +114,9 @@ func refresh() -> void:
 		title_label.text += " · " + s.name
 	role_label.text = s.role if at_max else t.def.role
 	role_label.visible = not role_label.text.is_empty()
-	stats_label.text = "\n".join(TowerInfo.lines(t.def, s, game.sim.config.sanity))
-	_refresh_priority(t)
 	var branches := game.sim.upgrade_branches(t)
+	_refresh_table(t, s, branches)
+	_refresh_priority(t)
 	upgrade_title.visible = not branches.is_empty()
 	max_label.visible = branches.is_empty()
 	for branch: String in upgrade_buttons:
@@ -135,11 +150,54 @@ func _refresh_upgrade(b: Button, info: Label, t: SimTower, s: TowerDef.Level, br
 	elif game.sim.would_drive_mad_upgrade(t.id, branch):
 		text += MADNESS_WARNING
 	b.text = text
+	info.text = target.role
+	info.visible = not target.role.is_empty()
+
+
+## LT-43 §2, §4, §5: the table (Now + one column per upgrade target), the lit status line and
+## lit Now cells, the special lines (Now's, then each column's special_delta_lines prefixed
+## by its head; a sanity-scaled tower first reads the sanity its DPS is at), the kind line.
+func _refresh_table(t: SimTower, s: TowerDef.Level, branches: PackedStringArray) -> void:
+	var cfg := game.sim.config
+	var sanity_now := game.sim.state.sanity
+	var heads := PackedStringArray(["Now"])
+	var cols: Array[Dictionary] = [TowerInfo.row_values(t.def, s, cfg, sanity_now)]
+	var targets: Array[TowerDef.Level] = []
+	for branch: String in upgrade_buttons:
+		if not branches.has(branch):
+			continue
+		var target: TowerDef.Level = game.sim.upgrade_target(t, branch)
+		if target == null:
+			continue
+		heads.append("L%d" % (t.level + 2) if branch.is_empty() else branch.to_upper())
+		cols.append(TowerInfo.row_values(t.def, target, cfg, sanity_now))
+		targets.append(target)
+	var lit := TowerInfo.lit_values(t.def, s, cfg, sanity_now) if t.lit else {}
+	stats_table.set_columns(heads, cols, lit, StatsTable.kind_color(t.def.kind))
+	lit_label.text = TowerInfo.lit_line(t.def, s, cfg) if t.lit else ""
+	lit_label.visible = not lit_label.text.is_empty()
 	var lines := PackedStringArray()
-	if not target.role.is_empty():
-		lines.append(target.role)
-	lines.append_array(TowerInfo.delta_lines(s, target))
-	info.text = "\n".join(lines)
+	if s.is_beam():
+		lines.append(TowerInfo.live_dps_text(sanity_now))
+	var lit_fx := TowerInfo.lit_effects(t.def, s, cfg) if t.lit else {}
+	var fx: Variant = null if lit_fx.is_empty() else lit_fx
+	var now := TowerInfo.special_lines(s, fx)
+	if not lit_fx.is_empty():  # LT-43 §5: "*" only on the lines the beam changes
+		var base := TowerInfo.special_lines(s)
+		for i in now.size():
+			if not base.has(now[i]):
+				now[i] += TowerInfo.LIT_MARK
+	var prefix := "Now: " if not targets.is_empty() else ""
+	for line in now:
+		lines.append(prefix + line)
+	for i in targets.size():
+		for line in TowerInfo.special_delta_lines(s, targets[i]):
+			lines.append("%s: %s" % [heads[i + 1], line])
+	special_label.text = "\n".join(lines)
+	special_label.visible = not lines.is_empty()
+	var no_misses := t.lit and cfg.economy.beam.mundane_ignore_miss
+	kind_label.text = "\n".join(TowerInfo.kind_lines(t.def, s, cfg.sanity, no_misses))
+	kind_label.visible = not kind_label.text.is_empty()
 
 
 ## LT-31: shown only when the tower picks targets (Simulation.has_targeting). The current

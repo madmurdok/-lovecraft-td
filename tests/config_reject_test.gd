@@ -369,8 +369,21 @@ func test_effect_value_bounds() -> void:
 		d["towers"]["rifleman"]["branches"]["a"]["effects"]["crit_chance"] = 1.5)
 	assert_rejected(r2, T, "towers.rifleman.branches.a.effects.crit_chance", "must be <= 1")
 	var r3 := load_json_edit(T, func(d: Dictionary) -> void:
-		d["towers"]["rifleman"]["branches"]["b"]["effects"]["shooters"] = -1)
-	assert_rejected(r3, T, "towers.rifleman.branches.b.effects.shooters", ">= 0")
+		d["towers"]["rifleman"]["branches"]["b"]["effects"]["burst_targets"] = -1)
+	assert_rejected(r3, T, "towers.rifleman.branches.b.effects.burst_targets", ">= 0")
+	# LT-29: the new Chain harpoon keys are bounded like the others.
+	for key: String in ["pull_max_hp", "pull_immune_seconds"]:
+		var r4 := load_json_edit(T, func(d: Dictionary) -> void:
+			d["towers"]["harpooner"]["branches"]["b"]["effects"][key] = -1)
+		assert_rejected(r4, T, "towers.harpooner.branches.b.effects." + key, ">= 0")
+
+
+## LT-29: Militia's `shooters` left the schema, so an old config that still has it is
+## rejected as an unknown field.
+func test_removed_shooters_key_is_unknown() -> void:
+	var r := load_json_edit(T, func(d: Dictionary) -> void:
+		d["towers"]["rifleman"]["branches"]["b"]["effects"]["shooters"] = 2)
+	assert_rejected(r, T, "towers.rifleman.branches.b.effects.shooters", "unknown field")
 
 
 # --- sanity cross-field rules -----------------------------------------------

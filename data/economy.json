@@ -11,5 +11,30 @@
   "token_fly_seconds": 2.0,
   "ghost_vanish_seconds": 1.0,
   "early_night_luck_per_second": 0.02,
-  "lighthouse": { "hp": 20 }
+  "lighthouse": {
+    "hp": 20,
+    "beam": {
+      "pattern": "rotate",
+      "turn_t": 0.0075,
+      "reach_cells": 16,
+      "half_width_ratio": 0.245,
+      "sweep_edges": [[-1, 0], [0, -1]],
+      "levels": [
+        { "beams": 1 },
+        { "beams": 2, "upgrade_cost": 120 },
+        { "beams": 4, "upgrade_cost": 250 }
+      ],
+      "mundane": { "fire_interval_mult": 0.8, "ignore_miss": true },
+      "occult": { "power_mult": 0.7 },
+      "enemy": { "cancel_madness_buff": true }
+    },
+    "oil": { "price": 10, "start": 0, "cap": 16 },
+    "flare": {
+      "cost_oil": 8,
+      "cooldown_seconds": 30,
+      "seconds": 5,
+      "radius_cells": [6, 8, 10],
+      "enemy_speed_mult": 0.5
+    }
+  }
 }

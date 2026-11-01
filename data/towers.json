@@ -13,9 +13,9 @@
         "a": { "name": "Marksman", "role": "Long range, crits",
                "upgrade_cost": 80, "range": 5, "damage": 18, "fire_interval": 0.7,
                "effects": { "crit_chance": 0.2, "crit_multiplier": 2 } },
-        "b": { "name": "Militia", "role": "2 shooters, faster fire",
-               "upgrade_cost": 80, "range": 3.5, "damage": 12, "fire_interval": 0.5,
-               "effects": { "shooters": 2 } }
+        "b": { "name": "Gangsters", "role": "Tommy guns, 3 targets",
+               "upgrade_cost": 80, "range": 3, "damage": 7, "fire_interval": 0.2,
+               "effects": { "burst_targets": 3 } }
       }
     },
     "harpooner": {
@@ -33,7 +33,8 @@
                "effects": { "pierce": 1, "bleed_dps": 6, "bleed_seconds": 3 } },
         "b": { "name": "Chain harpoon", "role": "Pulls target back",
                "upgrade_cost": 100, "range": 4.5, "damage": 24, "fire_interval": 1.5,
-               "effects": { "pierce": 1, "pull_cells": 1.5 } }
+               "effects": { "pierce": 1, "pull_cells": 1.5, "pull_max_hp": 500,
+                            "pull_immune_seconds": 3 } }
       }
     },
     "elder_sign": {
@@ -74,6 +75,139 @@
         "b": { "name": "Corrupted Rite", "role": "Bigger hits, +reserve",
                "upgrade_cost": 200, "range": 3.5, "damage": 150, "fire_interval": 3,
                "sanity_reserve": 45, "effects": { "aoe_radius": 1.5 } }
+      }
+    },
+    "dynamite_crew": {
+      "name": "Dynamite crew",
+      "role": "Lobbed charges, ground",
+      "kind": "mundane",
+      "glyph": "D",
+      "targets": "ground",
+      "cost": 90,
+      "levels": [
+        { "range": 3.5, "damage": 45, "fire_interval": 2.5,
+          "effects": { "aoe_radius": 1.0, "fuse_seconds": 1.0 } },
+        { "upgrade_cost": 70, "range": 4, "damage": 60, "fire_interval": 2.4,
+          "effects": { "aoe_radius": 1.2, "fuse_seconds": 1.0 } }
+      ],
+      "branches": {
+        "a": { "name": "Demolition man", "role": "Huge charge, long fuse",
+               "upgrade_cost": 120, "range": 4, "damage": 110, "fire_interval": 3.0,
+               "effects": { "aoe_radius": 1.5, "fuse_seconds": 1.2 } },
+        "b": { "name": "Shrapnel charges", "role": "Blast makes foes bleed",
+               "upgrade_cost": 120, "range": 4, "damage": 60, "fire_interval": 2.2,
+               "effects": { "aoe_radius": 1.3, "fuse_seconds": 1.0, "bleed_dps": 8,
+                            "bleed_seconds": 3 } }
+      }
+    },
+    "coast_battery": {
+      "name": "Coast battery",
+      "role": "Long gun, blind up close",
+      "kind": "mundane",
+      "glyph": "B",
+      "cost": 120,
+      "levels": [
+        { "range": 7, "min_range": 2, "damage": 70, "fire_interval": 3.0 },
+        { "upgrade_cost": 90, "range": 8, "min_range": 2, "damage": 95, "fire_interval": 3.0 }
+      ],
+      "branches": {
+        "a": { "name": "AP shells", "role": "Ignores armor",
+               "upgrade_cost": 150, "range": 8, "min_range": 2, "damage": 140,
+               "fire_interval": 3.2, "effects": { "ignore_armor": 1 } },
+        "b": { "name": "HE shells", "role": "Shells splash",
+               "upgrade_cost": 150, "range": 7, "min_range": 2, "damage": 100,
+               "fire_interval": 3.0, "effects": { "aoe_radius": 1.0 } }
+      }
+    },
+    "searchlight": {
+      "name": "Searchlight",
+      "role": "Reveals fakes, slows",
+      "kind": "mundane",
+      "glyph": "S",
+      "cost": 80,
+      "levels": [
+        { "range": 3, "effects": { "reveal_fakes": 1, "slow": 0.2 } },
+        { "upgrade_cost": 60, "range": 3.5, "effects": { "reveal_fakes": 1, "slow": 0.25 } }
+      ],
+      "branches": {
+        "a": { "name": "Signal lamp", "role": "Wide reveal",
+               "upgrade_cost": 100, "range": 5,
+               "effects": { "reveal_fakes": 1, "slow": 0.25 } },
+        "b": { "name": "Blinding beam", "role": "Slows hard, marks foes",
+               "upgrade_cost": 100, "range": 3.5,
+               "effects": { "reveal_fakes": 1, "slow": 0.4, "damage_taken_multiplier": 1.2 } }
+      }
+    },
+    "resonator": {
+      "name": "Tillinghast Resonator",
+      "role": "Beam, strong when mad",
+      "kind": "occult",
+      "glyph": "T",
+      "cost": 130,
+      "levels": [
+        { "range": 3, "damage": 3, "fire_interval": 0.2, "sanity_reserve": 8,
+          "effects": { "ignore_armor": 1, "sanity_scaling": 2 } },
+        { "upgrade_cost": 100, "range": 3.5, "damage": 4, "fire_interval": 0.2, "sanity_reserve": 14,
+          "effects": { "ignore_armor": 1, "sanity_scaling": 2 } }
+      ],
+      "branches": {
+        "a": { "name": "Tuned Resonator", "role": "Steady; shows fakes",
+               "upgrade_cost": 160, "range": 3.5, "damage": 6, "fire_interval": 0.2,
+               "sanity_reserve": 20, "madness_affected": false,
+               "effects": { "ignore_armor": 1, "sanity_scaling": 1, "reveal_fakes": 1 } },
+        "b": { "name": "Open Resonator", "role": "Feeds on lost sanity",
+               "upgrade_cost": 160, "range": 3.5, "damage": 4.5, "fire_interval": 0.2,
+               "sanity_reserve": 45,
+               "effects": { "ignore_armor": 1, "sanity_scaling": 4 } }
+      }
+    },
+    "silver_key": {
+      "name": "Silver Key Gate",
+      "role": "Sends foes back the path",
+      "kind": "occult",
+      "glyph": "K",
+      "cost": 140,
+      "levels": [
+        { "range": 3, "fire_interval": 6, "sanity_reserve": 10,
+          "effects": { "banish_cells": 4, "banish_max_hp": 500, "banish_immune_seconds": 8 } },
+        { "upgrade_cost": 110, "range": 3.5, "fire_interval": 5, "sanity_reserve": 16,
+          "effects": { "banish_cells": 5, "banish_max_hp": 500, "banish_immune_seconds": 8 } }
+      ],
+      "branches": {
+        "a": { "name": "Gate of Slumber", "role": "Banishes three at once",
+               "upgrade_cost": 180, "range": 3.5, "fire_interval": 5, "sanity_reserve": 22,
+               "effects": { "banish_cells": 5, "banish_targets": 3, "banish_max_hp": 500,
+                            "banish_immune_seconds": 8 } },
+        "b": { "name": "Ultimate Gate", "role": "Farther, hurts, any size",
+               "upgrade_cost": 180, "range": 3.5, "damage": 60, "fire_interval": 5,
+               "sanity_reserve": 45,
+               "effects": { "banish_cells": 8, "banish_max_hp": 4000,
+                            "banish_immune_seconds": 8 } }
+      }
+    },
+    "summoning_circle": {
+      "name": "Summoning Circle",
+      "role": "Ghouls hold foes back",
+      "kind": "occult",
+      "glyph": "C",
+      "cost": 160,
+      "levels": [
+        { "range": 2.5, "fire_interval": 10, "sanity_reserve": 12,
+          "effects": { "summon_max": 1, "summon_hp": 120, "summon_dps": 15,
+                       "summon_lifetime": 20, "summon_speed": 1.5 } },
+        { "upgrade_cost": 120, "range": 3, "fire_interval": 9, "sanity_reserve": 20,
+          "effects": { "summon_max": 2, "summon_hp": 150, "summon_dps": 18,
+                       "summon_lifetime": 20, "summon_speed": 1.5 } }
+      ],
+      "branches": {
+        "a": { "name": "Bound ghouls", "role": "Three sturdier ghouls",
+               "upgrade_cost": 180, "range": 3, "fire_interval": 8, "sanity_reserve": 26,
+               "effects": { "summon_max": 3, "summon_hp": 200, "summon_dps": 20,
+                            "summon_lifetime": 20, "summon_speed": 1.5 } },
+        "b": { "name": "Byakhee", "role": "Winged, hits flyers",
+               "upgrade_cost": 180, "range": 4, "fire_interval": 10, "sanity_reserve": 45,
+               "effects": { "summon_max": 1, "summon_hp": 150, "summon_dps": 45,
+                            "summon_lifetime": 20, "summon_speed": 3, "summon_flying": 1 } }
       }
     }
   }

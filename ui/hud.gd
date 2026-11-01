@@ -21,14 +21,20 @@ var pause_button: Button
 var sanity_bar: SanityBar  ## LT-14: sanity with threshold marks
 var buyout_button: Button  ## LT-13/14: madness buyout, only with exit_rule "buyout", in madness
 var hostile_label: Label  ## LT-23 Q10: the madness enemy buff, only in madness
+var flare_button: Button  ## LT-30: the night flare, in the footer strip at the board's right end
+var oil_label: Label  ## LT-30: "Oil 4 / 6", beside the flare button
 var frame_label: Label  ## LT-38 P1: only with `--frame-stats` (debug builds)
 var _frame_label_msec := 0
+var fps_label: Label  ## LT-44: always-visible FPS readout, bottom-left in the footer strip
+var _fps_label_msec := -FPS_INTERVAL_MSEC
+var _fps_shown := -1
 var footer: ColorRect  ## LT-28: covers the strip below the board (range rings end there)
 
 const COLOR_LUCK := Color(0.75, 0.9, 1.0)
 const FONT_SIZE := 14  ## LT-27: the bar fits the 1152 px base width, buyout included
 const SEPARATION := 10
 const MARGIN := 8  ## bar inset from the right edge
+const FPS_INTERVAL_MSEC := 250  ## LT-44: the FPS label refreshes a few times per second
 const RELIC_SLOT := 22.0  ## LT-28: left inset; relic tokens land in it, beside the counter
 
 
@@ -52,6 +58,14 @@ func _ready() -> void:
 	footer.size = Vector2(base_w,
 		float(ProjectSettings.get_setting("display/window/size/viewport_height")) - footer.position.y)
 	add_child(footer)
+	# LT-44: bottom-left of the footer strip (LT-30 oil + flare sit at its right end); not in the jitter list below.
+	fps_label = Label.new()
+	fps_label.name = "FpsLabel"
+	fps_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	fps_label.add_theme_font_size_override("font_size", 13)
+	fps_label.add_theme_color_override("font_color", Color(0.6, 1.0, 0.6))
+	fps_label.position = Vector2(6, footer.position.y + 4)
+	add_child(fps_label)
 	var bar := HBoxContainer.new()
 	bar.name = "Bar"
 	# LT-27: two-line columns (money over relics, phase over lighthouse HP) keep the bar
@@ -88,6 +102,12 @@ func _ready() -> void:
 	# LT-13 exit rule "buyout": shown by refresh() only in madness.
 	buyout_button = _button(bar, "BuyoutButton", game.buy_sanity)
 	buyout_button.visible = false
+	# LT-30: the flare and the oil stock in the footer strip, right-aligned to the board's
+	# edge; the FPS readout owns the left end of that strip.
+	if game.sim.config.economy.flare != null:
+		flare_button = _button(footer, "FlareButton", game.fire_flare)
+		oil_label = _label(footer, "OilLabel")
+		oil_label.add_theme_color_override("font_color", COLOR_LUCK)
 	# LT-23 Q10: just below the HUD strip, under the sanity bar (placed by refresh()).
 	hostile_label = Label.new()
 	hostile_label.name = "HostileLabel"
@@ -148,12 +168,58 @@ func refresh() -> void:
 		var x := minf(sanity_bar.get_global_rect().position.x - get_global_rect().position.x,
 			board_right - w - 4.0)
 		hostile_label.position = Vector2(x, Game.BOARD_ORIGIN.y + 2)
+	if flare_button != null:
+		_refresh_flare()
 	sanity_bar.queue_redraw()
+	_refresh_fps()
 	if frame_label != null:
 		var now := Time.get_ticks_msec()
 		if now - _frame_label_msec >= 250:  # a few times per second, readable
 			_frame_label_msec = now
 			frame_label.text = game.frame_stats.text()
+
+
+## LT-30 §3.2: "Flare (2 oil)" while it can be fired, "Flare 12 s" during the cooldown,
+## "Flare burning" while it burns; the oil stock beside it. The button shows at night only
+## (a night command); the stock shows all the time.
+func _refresh_flare() -> void:
+	var sim := game.sim
+	var s := sim.state
+	var flare := sim.config.economy.flare
+	var night := s.phase == SimState.Phase.WAVE
+	flare_button.visible = night
+	oil_label.text = "Oil %d / %d" % [s.oil, sim.config.economy.oil.cap]
+	var can := sim.can_fire_flare()
+	flare_button.disabled = can != Simulation.CommandResult.OK
+	# LT-57: the flare lights a circle around the lighthouse.
+	flare_button.tooltip_text = "Lights everything within %s cells for %s s" % [
+		ConfigReader.fmt(sim.flare_radius()), ConfigReader.fmt(flare.seconds)]
+	if s.flare_ticks_left > 0:
+		flare_button.text = "Flare burning"
+	elif s.flare_cooldown_ticks > 0:
+		flare_button.text = "Flare %d s" % ceili(float(s.flare_cooldown_ticks) / SimTime.TICK_RATE)
+	else:
+		flare_button.text = "Flare (%d oil)" % flare.cost_oil
+	var right := board_rect().end.x - MARGIN
+	var y := board_rect().end.y + 4.0
+	var w := flare_button.get_combined_minimum_size().x
+	var lw := oil_label.get_combined_minimum_size().x
+	flare_button.position = Vector2(right - w, y - footer.position.y)
+	var label_right := right - w - 8.0 if night else right
+	oil_label.position = Vector2(label_right - lw, y - footer.position.y + 4.0)
+
+
+## LT-44: Engine.get_frames_per_second() every FPS_INTERVAL_MSEC; the string is rebuilt
+## only when the integer changed.
+func _refresh_fps() -> void:
+	var now := Time.get_ticks_msec()
+	if now - _fps_label_msec < FPS_INTERVAL_MSEC:
+		return
+	_fps_label_msec = now
+	var fps := int(Engine.get_frames_per_second())
+	if fps != _fps_shown:
+		_fps_shown = fps
+		fps_label.text = "FPS %d" % fps
 
 
 ## LT-23 Q10: "The world turns hostile: enemies +20 % speed, −20 % damage taken" from the

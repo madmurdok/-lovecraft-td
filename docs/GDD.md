@@ -172,6 +172,21 @@ Towers have no HP in the MVP: enemy effects only disable or slow
 a tower for a few seconds. Keep the tower model open for adding HP, destruction and
 repair later (a `disable` effect today, a `damage` effect later).
 
+The 0.3 roster (5 mundane + 5 occult, LT-47..LT-52) is designed in
+`docs/design/LT-46-tower-roster.md`; this table is updated when those towers ship.
+
+### 6.1 Parked tower ideas
+
+Recorded at LT-46 (owner: "Остальные решения запиши в документы, может вернемся к ним").
+Not planned; candidates for later towers or branches.
+
+- **Tommy-gun gangsters**: short-range bursts sprayed over a sector or several targets; anti-pack. Candidate for LT-49 or a Rifleman branch (LT-46 Q1).
+- **Coast Guard searchlight**: a beam that reveals fake enemies and marks targets (more damage taken). The Searchlight row above was never added to `data/towers.json`; candidate for LT-49 (LT-46 Q1).
+- **Dagon idol**: occult; converts an enemy for a while so it fights for the player ("Идол тоже запишем на будущее").
+- **Flamethrower**: mundane; short cone that sets enemies burning (DoT), strong vs packs, weak vs armor.
+- **Shotgun**: mundane; very short range, spread of pellets, high burst up close.
+- **Fishermen's net**: mundane; thrown net roots ground enemies for a moment. Candidate for LT-49 (LT-46 Q1 C).
+
 ## 7. Enemies
 
 | Enemy | HP | Speed | Armor | Leak dmg | Drops | Trait |
@@ -338,3 +353,8 @@ All findings from the 2026-10-29 pass were resolved in the body of the document.
   lighthouse is upgradeable and its levels add beams 1 → 2 → 4. Lit mundane towers fire 25 %
   faster and never miss; lit occult towers lose 30 % power but drain half (LT-23); lit enemies
   lose the Madness buff (LT-23). Lamp oil stays a later beam resource.
+  Flare (LT-30, radial since LT-57, `docs/design/LT-57-radial-flare.md`): a night command
+  paid with lamp oil bought by day ($10/unit, tank 16, start 0). For 5 s everything within
+  6 / 8 / 10 cells of the lighthouse (by lighthouse level) is lit in every direction, with
+  the same lit rules as the beams (towers and enemies; lit enemies move at x0.5); it costs
+  8 oil ($80), cooldown 30 s, and does not reveal hallucinations.

@@ -32,8 +32,9 @@ var hud: Hud
 var relic_tokens: RelicTokens  ## LT-27 §4: tokens flying from kills to the HUD counter
 var star_stones_found := 0  ## LT-27 §4: star-stones credited this run (end screen)
 var side_panel: SidePanel  ## LT-24: fixed right panel holding the two views below
-var picker: TowerPicker  ## build view of side_panel
+var picker: TowerPicker  ## LT-43: build table over the board; its hover card is in side_panel
 var tower_panel: TowerPanel  ## tower view of side_panel
+var lighthouse_panel: LighthousePanel  ## LT-30: lighthouse view of side_panel
 var end_screen: EndScreen
 
 
@@ -100,8 +101,14 @@ func _ready() -> void:
 	side_panel.name = "SidePanel"
 	side_panel.game = self
 	ui.add_child(side_panel)
-	picker = side_panel.picker
+	# LT-43 §3: the build table is an overlay on the board, drawn above the side panel.
+	picker = TowerPicker.new()
+	picker.name = "TowerPicker"
+	picker.game = self
+	ui.add_child(picker)
+	side_panel.attach_picker(picker)
 	tower_panel = side_panel.tower_panel
+	lighthouse_panel = side_panel.lighthouse_panel
 	end_screen = EndScreen.new()
 	end_screen.name = "EndScreen"
 	ui.add_child(end_screen)
@@ -133,6 +140,7 @@ func advance(delta: float) -> void:
 	hud.refresh()
 	picker.refresh()
 	tower_panel.refresh()
+	lighthouse_panel.refresh()
 
 
 # --- Player commands (forwarded to the sim) -------------------------------------------
@@ -182,6 +190,54 @@ func buy_sanity() -> Simulation.CommandResult:
 	return r
 
 
+## LT-30: lighthouse level, by day, paid in money.
+func upgrade_lighthouse() -> Simulation.CommandResult:
+	var r := sim.upgrade_lighthouse()
+	_after_command()
+	return r
+
+
+## LT-30: one unit of lamp oil, by day.
+func buy_oil() -> Simulation.CommandResult:
+	var r := sim.buy_oil()
+	_after_command()
+	return r
+
+
+## LT-57 §4: oil for one flare, by day: buys one unit at a time (each a logged sim
+## buy_oil) up to flare_oil_to_buy() units, stopping at the first refusal. Returns OK when
+## at least one unit was bought, else the refusal.
+func buy_flare_oil() -> Simulation.CommandResult:
+	var r := Simulation.CommandResult.OK
+	var bought := 0
+	for i in flare_oil_to_buy():
+		r = sim.buy_oil()
+		if r != Simulation.CommandResult.OK:
+			break
+		bought += 1
+	if bought == 0 and r == Simulation.CommandResult.OK:
+		r = sim.can_buy_oil()
+	_after_command()
+	return Simulation.CommandResult.OK if bought > 0 else r
+
+
+## LT-57: units buy_flare_oil() tries: min(flare.cost_oil, cap - oil) (1 per click without
+## a flare block); 0 without an oil block.
+func flare_oil_to_buy() -> int:
+	var eco := sim.config.economy
+	if eco.oil == null:
+		return 0
+	var want := eco.flare.cost_oil if eco.flare != null else 1
+	return clampi(eco.oil.cap - sim.state.oil, 0, want)
+
+
+## LT-30: the night flare, paid with oil.
+func fire_flare() -> Simulation.CommandResult:
+	var r := sim.fire_flare()
+	_after_command()
+	return r
+
+
 func toggle_speed() -> void:
 	chosen_speed = 2 if chosen_speed == 1 else 1
 	_apply_speed()
@@ -203,6 +259,7 @@ func _after_command() -> void:
 	hud.refresh()
 	picker.refresh()
 	tower_panel.refresh()
+	lighthouse_panel.refresh()
 
 
 func _consume_events() -> void:
@@ -216,6 +273,7 @@ func _consume_events() -> void:
 		if ev.type == SimEvent.Type.OUTCOME:
 			picker.close()
 			tower_panel.close()
+			lighthouse_panel.close()
 			side_panel.visible = false
 			end_screen.show_result(ev.data.get("result", "") == "won", sim.state,
 				star_stones_found)
@@ -225,13 +283,16 @@ func _consume_events() -> void:
 func close_panels() -> void:
 	picker.close()
 	tower_panel.close()
+	lighthouse_panel.close()
 
 
 func _on_cell_clicked(cell: Vector2i) -> void:
 	close_panels()
 	if sim.state.outcome != SimState.Outcome.NONE:
 		return
-	if sim.state.tower_at.has(cell):
+	if cell == sim.state.map.lighthouse:
+		lighthouse_panel.open()
+	elif sim.state.tower_at.has(cell):
 		tower_panel.open_for(sim.state.tower_at[cell])
 	elif sim.state.map.is_buildable(cell):
 		picker.open_for(cell)

@@ -70,10 +70,20 @@ func test_tower_lights_are_capped() -> void:
 	assert_int(_game.lighting._tower_lights.size()).is_equal(Lighting.MAX_TOWER_LIGHTS)
 
 
+## LT-30 §3.2 (LT-33 boundary rule): the beam turns with the sim's ticks at night, its
+## rotation is the sim's direction at tick + alpha; frames without a tick do not turn it.
 func test_beam_rotates_over_time() -> void:
+	assert_int(_game.call_wave()).is_equal(Simulation.CommandResult.OK)
+	await get_tree().process_frame
 	var before := _game.lighting.beam.rotation
+	for i in 3:
+		await get_tree().process_frame
+	assert_float(_game.lighting.beam.rotation).is_equal(before)  # no sim tick: no turn
+	for i in 10:
+		_game.sim.step()
 	await get_tree().process_frame
-	await get_tree().process_frame
+	var want := _game.sim.beam_directions(_game.clock.alpha())[0].angle()
+	assert_float(_game.lighting.beam.rotation).is_equal_approx(want, 1e-5)
 	assert_float(_game.lighting.beam.rotation).is_not_equal(before)
 
 
