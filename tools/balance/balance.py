@@ -39,9 +39,15 @@ class PatchError(Exception):
     pass
 
 
+
+def _read(path):
+    """Whole file as text, closed at once (no ResourceWarning)."""
+    with open(path, encoding="utf-8", errors="replace") as f:
+        return f.read()
+
 def bot_strategies():
     """The STRATEGIES const of tools/bot_runs.gd, so the list never drifts from the bot."""
-    src = open(BOT_FILE, encoding="utf-8").read()
+    src = _read(BOT_FILE)
     m = re.search(r"^const STRATEGIES := \[([^\]]*)\]", src, re.M)
     if not m:
         raise SystemExit("balance: cannot find 'const STRATEGIES := [...]' in " + BOT_FILE)
@@ -115,7 +121,7 @@ def load_variant(name):
     if not os.path.isfile(path):
         raise PatchError(f"no variant file {path}")
     try:
-        v = json.load(open(path, encoding="utf-8"))
+        v = json.loads(_read(path))
     except ValueError as e:
         raise PatchError(f"{path}: not valid JSON: {e}")
     if not isinstance(v, dict):
@@ -146,7 +152,7 @@ def materialize(variant, dest):
         src = os.path.join(DATA, f)
         if not os.path.isfile(src):
             raise PatchError(f"variant {variant['name']}: no data file data/{f}")
-        doc = json.load(open(src, encoding="utf-8"))
+        doc = json.loads(_read(src))
         try:
             apply_patch(doc, p)
         except PatchError as e:
@@ -180,9 +186,9 @@ def run_job(godot, job, seeds, logdir):
         + job["flags"]
     with open(out_p, "w") as o, open(err_p, "w") as e:
         rc = subprocess.run(cmd, stdout=o, stderr=e).returncode
-    err = open(err_p, encoding="utf-8", errors="replace").read()
+    err = _read(err_p)
     times = {k: float(v) for k, v in re.findall(r"^(real|user|sys) ([\d.]+)$", err, re.M)}
-    runs = [json.loads(l[4:]) for l in open(out_p, encoding="utf-8", errors="replace")
+    runs = [json.loads(l[4:]) for l in _read(out_p).splitlines()
             if l.startswith("RUN ")]
     problem = None
     if rc != 0:
