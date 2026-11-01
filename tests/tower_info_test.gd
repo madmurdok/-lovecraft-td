@@ -1,8 +1,8 @@
 class_name TowerInfoTest
 extends GdUnitTestSuite
 ## LT-24 §3 TowerInfo: info lines built from config (stats, drains, effects in
-## EFFECT_GROUPS order, kind lines last), "(coming soon)" for PENDING keys, number and cost
-## formatting, and the upgrade delta lines. Text formats come from the design note; the
+## EFFECT_GROUPS order, kind lines last), "(coming soon)" for PENDING keys (none since LT-29:
+## every shipped effect is wired), number and cost formatting, and the upgrade delta lines. Text formats come from the design note; the
 ## numbers in them are read from config.
 
 const CS := " (coming soon)"
@@ -48,7 +48,7 @@ func test_rifleman_l1_reads_damage_range_then_mundane_kind_lines() -> void:
 		assert_str(_lines("rifleman", l1)[0]).is_equal("Damage 10 every 0.8 s (12.5 DPS)")
 
 
-func test_harpooner_shows_the_line_shot_and_barbed_the_pending_bleed() -> void:
+func test_harpooner_shows_the_line_shot_barbed_bleed_and_the_chain_pull() -> void:
 	var h := _def("harpooner")
 	var l1 := h.levels[0]
 	var line := "Pierce: %s-cell-wide line" % _n(l1.effects["pierce"])
@@ -57,10 +57,14 @@ func test_harpooner_shows_the_line_shot_and_barbed_the_pending_bleed() -> void:
 	var bleed := "Bleed %s/s for %s s" % [_n(b.effects["bleed_dps"]), _n(b.effects["bleed_seconds"])]
 	assert_array(_lines("harpooner", b)).is_equal(_attack(b)
 		+ ["Pierce: %s-cell-wide line" % _n(b.effects["pierce"]),
-			bleed + CS] + _mundane_kind())
+			bleed] + _mundane_kind())
 	var c := h.branches["b"]
-	assert_array(_lines("harpooner", c)).contains(
-		["Pulls back %s cells%s" % [_n(c.effects["pull_cells"]), CS]])
+	var e: Dictionary = c.effects
+	assert_array(_lines("harpooner", c)).contains(["Pull %sc, ≤%s HP, %ss" % [
+		_n(e["pull_cells"]), _n(e["pull_max_hp"]), _n(e["pull_immune_seconds"])]])
+	# LT-29 S3 spec example at today's config.
+	if e["pull_cells"] == 1.5 and e["pull_max_hp"] == 500.0 and e["pull_immune_seconds"] == 3.0:
+		assert_array(_lines("harpooner", c)).contains(["Pull 1.5c, ≤500 HP, 3s"])
 
 
 func test_elder_sign_is_support_with_aura_and_effects_and_no_kind_line() -> void:
@@ -74,19 +78,19 @@ func test_elder_sign_is_support_with_aura_and_effects_and_no_kind_line() -> void
 	])
 
 
-## LT-23: the Seal's drain line became its reserve line; the strip stays pending.
-func test_corrupted_seal_shows_its_reserve_and_pending_armor_strip() -> void:
+## LT-23: the Seal's drain line became its reserve line; LT-29 wired the strip (no suffix).
+func test_corrupted_seal_shows_its_reserve_and_armor_strip() -> void:
 	var seal := _def("elder_sign").branches["b"]
 	var got := _lines("elder_sign", seal)
 	var reserve := "Reserves %s sanity" % _n(seal.sanity_reserve)
 	assert_array(got).contains([reserve,
-		"Foes lose %s armor%s" % [_n(seal.effects["strip_armor"]), CS]])
+		"Foes lose %s armor" % _n(seal.effects["strip_armor"])])
 	assert_bool(got.any(func(x: String) -> bool: return x.contains("sanity/s"))).is_false()
 	# The reserve comes before effects; the strip is the last effect group.
 	assert_int(got.find(reserve)) \
 		.is_less(got.find("Slows enemies %s%%" % _n(seal.effects["slow"] * 100.0)))
 	assert_str(got[got.size() - 1]).is_equal(
-		"Foes lose %s armor%s" % [_n(seal.effects["strip_armor"]), CS])
+		"Foes lose %s armor" % _n(seal.effects["strip_armor"]))
 
 
 func test_necronomicon_lines_and_the_madness_kind_line() -> void:
@@ -102,16 +106,23 @@ func test_necronomicon_lines_and_the_madness_kind_line() -> void:
 	assert_bool(got.any(func(s: String) -> bool: return s.begins_with("Madness"))).is_false()
 
 
-func test_dps_is_damage_over_interval_only_militia_ignores_its_pending_shooters() -> void:
+## LT-29: Gangsters (burst_targets) replaced Militia (shooters); DPS stays damage over
+## interval (the burst spreads it, crits do not count).
+func test_dps_is_damage_over_interval_only_for_gangsters_and_marksman() -> void:
 	var m := _def("rifleman").branches["b"]
 	var got := _lines("rifleman", m)
 	assert_str(got[0]).is_equal(_attack(m)[0])
-	if is_equal_approx(m.damage, 12.0) and is_equal_approx(m.fire_interval, 0.5):
-		assert_str(got[0]).contains("(24 DPS)")
-	assert_array(got).contains(["%s shooters%s" % [_n(m.effects["shooters"]), CS]])
+	if is_equal_approx(m.damage, 7.0) and is_equal_approx(m.fire_interval, 0.2):
+		assert_str(got[0]).contains("(35 DPS)")
+	assert_array(got).contains(["Spreads fire over %s foes" % _n(m.effects["burst_targets"])])
+	if m.effects["burst_targets"] == 3.0:
+		assert_array(got).contains(["Spreads fire over 3 foes"])
+	assert_bool(m.effects.has("shooters")).is_false()
 	var mk := _def("rifleman").branches["a"]
-	assert_array(_lines("rifleman", mk)).contains(["%s%% crit, x%s damage%s" % [
-		_n(mk.effects["crit_chance"] * 100.0), _n(mk.effects["crit_multiplier"]), CS]])
+	var gk := _lines("rifleman", mk)
+	assert_str(gk[0]).is_equal(_attack(mk)[0])
+	assert_array(gk).contains(["%s%% crit, x%s damage" % [
+		_n(mk.effects["crit_chance"] * 100.0), _n(mk.effects["crit_multiplier"])]])
 
 
 func test_a_config_edit_changes_the_text() -> void:
@@ -126,7 +137,8 @@ func test_a_config_edit_changes_the_text() -> void:
 	assert_str(got[1]).is_equal("Range 4.25 cells")
 
 
-func test_every_tower_level_and_branch_gets_lines_and_coming_soon_iff_pending() -> void:
+## LT-29: nothing shipped is pending, so no line anywhere says "(coming soon)".
+func test_every_tower_level_and_branch_gets_lines_and_none_is_coming_soon() -> void:
 	for id: String in _cfg.towers:
 		var def := _def(id)
 		var all: Array = def.levels.duplicate()
@@ -139,8 +151,8 @@ func test_every_tower_level_and_branch_gets_lines_and_coming_soon_iff_pending() 
 			assert_bool(first.begins_with("Damage ") or first == "Support (no damage)") \
 				.override_failure_message("%s: %s" % [id, first]).is_true()
 			var soon := got.filter(func(x: String) -> bool: return x.ends_with(CS))
-			assert_bool(not soon.is_empty()).override_failure_message("%s %s" % [id, got]) \
-				.is_equal(s.has_pending())
+			assert_bool(s.has_pending()).override_failure_message("%s %s" % [id, got]).is_false()
+			assert_array(soon).override_failure_message("%s %s" % [id, got]).is_empty()
 
 
 # --- 16: effect order, pending and unknown keys ---------------------------------------------
@@ -151,13 +163,15 @@ func test_effect_lines_follow_effect_groups_order_and_pairs_share_a_line() -> vo
 	assert_array(got).is_equal([
 		"Pierce: 2-cell-wide line",
 		"Slows enemies 10%",
-		"50% crit, x3 damage" + CS,
-		"Foes lose 1 armor" + CS,
+		"50% crit, x3 damage",
+		"Foes lose 1 armor",
 	])
 
 
+## LT-29: every schema effect key is wired, so none carries the suffix.
 func test_non_pending_effects_have_no_suffix() -> void:
-	for key: String in ["pierce", "aoe_radius", "slow", "damage_taken_multiplier"]:
+	assert_array(Array(TowerDef.Level.PENDING)).is_empty()
+	for key: String in TowerDef.Level.EFFECTS:
 		assert_bool(TowerDef.Level.PENDING.has(key)).is_false()
 		var got := TowerInfo.effect_lines({key: 1.5})
 		assert_int(got.size()).is_equal(1)
@@ -182,7 +196,9 @@ func _numbers_for(key: String, e: Dictionary) -> Array:
 		"damage_taken_multiplier": return ["+" + _n((e["damage_taken_multiplier"] - 1.0) * 100.0) + "%"]
 		"crit_chance": return [_n(e["crit_chance"] * 100.0) + "%", "x" + _n(e["crit_multiplier"])]
 		"bleed_dps": return [_n(e["bleed_dps"]) + "/s", _n(e["bleed_seconds"]) + " s"]
-		"pull_cells": return [_n(e["pull_cells"])]
+		"burst_targets": return [_n(e["burst_targets"])]
+		"pull_cells": return [_n(e["pull_cells"]) + "c", "≤" + _n(e["pull_max_hp"]),
+			_n(e["pull_immune_seconds"]) + "s"]
 		"strip_armor": return [_n(e["strip_armor"])]
 	return []
 
@@ -200,7 +216,7 @@ func test_shipped_effect_lines_fit_24_chars_and_keep_their_numbers() -> void:
 				assert_int(line.length()).override_failure_message("%s '%s'" % [id, line]) \
 					.is_less_equal(LINE_MAX)
 			for key: String in ["pierce", "aoe_radius", "slow", "damage_taken_multiplier",
-					"crit_chance", "bleed_dps", "pull_cells", "strip_armor"]:
+					"crit_chance", "burst_targets", "bleed_dps", "pull_cells", "strip_armor"]:
 				if not TowerInfo.is_active(s.effects, key):
 					continue
 				var text := "|".join(lines)
@@ -210,7 +226,7 @@ func test_shipped_effect_lines_fit_24_chars_and_keep_their_numbers() -> void:
 				covered[key] = true
 	# every Tier B template was actually exercised by the shipped data
 	for key: String in ["pierce", "aoe_radius", "slow", "damage_taken_multiplier",
-			"crit_chance", "bleed_dps", "pull_cells", "strip_armor"]:
+			"crit_chance", "burst_targets", "bleed_dps", "pull_cells", "strip_armor"]:
 		assert_bool(covered.has(key)).override_failure_message("not in shipped data: " + key).is_true()
 
 
@@ -309,8 +325,8 @@ func test_marksman_delta_skips_the_unchanged_interval_and_adds_the_new_effect() 
 		" · ".join([_arrow("Range", a.range_cells, b.range_cells),
 			_arrow("Damage", a.damage, b.damage),
 			_arrow("DPS", a.damage / a.fire_interval, b.damage / b.fire_interval)]),
-		"%s%% crit, x%s damage%s" % [_n(b.effects["crit_chance"] * 100.0),
-			_n(b.effects["crit_multiplier"]), CS]])
+		"%s%% crit, x%s damage" % [_n(b.effects["crit_chance"] * 100.0),
+			_n(b.effects["crit_multiplier"])]])
 
 
 func test_support_delta_uses_aura_radius_and_unchanged_effects_are_left_out() -> void:
@@ -327,7 +343,7 @@ func test_same_stats_give_only_the_new_effect_line() -> void:
 	var a := h.levels[1]
 	var b := h.branches["a"]
 	assert_array(Array(TowerInfo.delta_lines(a, b))).is_equal([
-		"Bleed %s/s for %s s%s" % [_n(b.effects["bleed_dps"]), _n(b.effects["bleed_seconds"]), CS]])
+		"Bleed %s/s for %s s" % [_n(b.effects["bleed_dps"]), _n(b.effects["bleed_seconds"])]])
 
 
 func test_pure_rite_delta_ends_with_unaffected_by_madness() -> void:
@@ -414,10 +430,11 @@ func test_a_removed_effect_prints_loses_and_its_old_line() -> void:
 		.is_equal([TowerInfo.REMOVED + "frost_aura: 2.5"])
 
 
-## A removed pending effect loses its old line without " (coming soon)"; a whole pair group
-## shows once.
-func test_a_removed_pending_effect_has_no_coming_soon() -> void:
+## A removed effect loses its old line without " (coming soon)"; a whole pair group shows
+## once. LT-29: no key is pending any more (crit was the pending example).
+func test_a_removed_effect_pair_shows_once_without_coming_soon() -> void:
 	var from := _level({"crit_chance": 0.5, "crit_multiplier": 3.0})
-	assert_bool(TowerInfo.is_pending("crit_chance")).is_true()
+	for key: String in TowerDef.Level.EFFECTS:
+		assert_bool(TowerInfo.is_pending(key)).override_failure_message(key).is_false()
 	assert_array(Array(TowerInfo.delta_lines(from, _level({})))) \
 		.is_equal([TowerInfo.REMOVED + "50% crit, x3 damage"])

@@ -111,21 +111,18 @@ func test_a_25_char_role_is_rejected_naming_the_path() -> void:
 
 # --- 12: pending effects -------------------------------------------------------------------
 
-func test_has_pending_on_the_shipped_branches_and_levels() -> void:
+## LT-29 wired every L3 effect: PENDING is empty and no shipped level or branch is pending.
+func test_nothing_shipped_is_pending() -> void:
+	assert_array(Array(TowerDef.Level.PENDING)).is_empty()
 	var cfg := _real()
-	var pending := {
-		"rifleman": {"a": true, "b": true},
-		"harpooner": {"a": true, "b": true},
-		"elder_sign": {"a": false, "b": true},
-		"necronomicon_reader": {"a": false, "b": false},
-	}
-	for id: String in pending:
+	assert_int(cfg.towers.size()).is_greater(0)
+	for id: String in cfg.towers:
 		var def: TowerDef = cfg.towers[id]
 		for l in def.levels:
 			assert_bool(l.has_pending()).override_failure_message("%s level" % id).is_false()
-		for b: String in pending[id]:
+		for b: String in TowerDef.BRANCH_IDS:
 			assert_bool(def.branches[b].has_pending()) \
-				.override_failure_message("%s.%s" % [id, b]).is_equal(pending[id][b])
+				.override_failure_message("%s.%s" % [id, b]).is_false()
 
 
 func test_has_pending_reads_only_effect_keys() -> void:
@@ -135,21 +132,29 @@ func test_has_pending_reads_only_effect_keys() -> void:
 	assert_bool(l.has_pending()).is_false()
 	l.effects["bleed_dps"] = 0.0
 	assert_bool(l.has_pending()).is_false()  # a zero value is not an effect
+	# LT-29: the formerly pending keys are wired, so a non-zero value is not pending either.
+	for key: String in ["crit_chance", "crit_multiplier", "burst_targets", "bleed_dps",
+			"bleed_seconds", "pull_cells", "pull_max_hp", "pull_immune_seconds", "strip_armor"]:
+		var w := TowerDef.Level.new()
+		w.effects[key] = 1.0
+		assert_bool(w.has_pending()).override_failure_message(key).is_false()
 	for key: String in TowerDef.Level.PENDING:
 		var k := TowerDef.Level.new()
 		k.effects[key] = 1.0
 		assert_bool(k.has_pending()).override_failure_message(key).is_true()
 
 
-## LT-23 pin 18: the drain stat left the schema and PENDING; a reserve is not pending, and
-## the Corrupted Seal stays pending through strip_armor alone.
-func test_sanity_per_second_left_pending_and_the_seal_is_pending_by_strip_armor() -> void:
+## LT-23 pin 18: the drain stat left the schema and PENDING; a reserve is not pending.
+## LT-29: the Corrupted Seal's strip_armor is wired, so the Seal is not pending with or
+## without it.
+func test_sanity_per_second_left_pending_and_the_seal_is_not_pending() -> void:
 	assert_bool(TowerDef.Level.PENDING.has("sanity_per_second")).is_false()
 	var k := TowerDef.Level.new()
 	k.sanity_reserve = 15.0
 	assert_bool(k.has_pending()).is_false()
 	var seal: TowerDef.Level = _real().towers["elder_sign"].branches["b"]
 	assert_float(seal.sanity_reserve).is_greater(0.0)
-	assert_bool(seal.has_pending()).is_true()
+	assert_float(seal.effects.get("strip_armor", 0.0)).is_greater(0.0)
+	assert_bool(seal.has_pending()).is_false()
 	seal.effects.erase("strip_armor")
 	assert_bool(seal.has_pending()).is_false()

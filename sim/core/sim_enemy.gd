@@ -26,7 +26,10 @@ var damage_taken_mult := 1.0
 var armor_bonus := 0.0
 var lit := false  ## LT-30: inside a lighthouse beam this tick (slot 2)
 
-## Trait timers (stun, harass stop, ...) added by later tasks.
+## Status timers, ticked in slot 2 by Simulation._tick_statuses; `*_ticks` keys are erased
+## at 0 (LT-29 P6). Keys: `bleed_ticks` (int, ticks left), `bleed_dps` (float),
+## `bleed_pulse` (int, ticks to the next pulse), `bleed_source` (String, tower def id),
+## `pull_immune_ticks` (int). Later tasks add theirs (stun, harass stop, banish immunity).
 var status: Dictionary = {}
 
 
