@@ -12,7 +12,9 @@ extends Node2D
 ## hit spark on a crit and a dashed chain for a pull. LT-47: the Dynamite crew's lobbed
 ## charge (an arc, then a sputtering fuse on the ground until the BLAST event, sim time) and
 ## its blast ring. Nothing here tells a fake from a real enemy: every look depends only on
-## SHOT / BLAST fields and aura state.
+## SHOT / BLAST fields and aura state. LT-49: the Searchlight's aura is a lit disc with a
+## sweeping beam; a fake its aura revealed (`SimEnemy.revealed`, sim state)
+## is drawn as a ghost-grey body with an amber ring and slash.
 ## LT-41 (LT-38 P2): the static map (cells, grid, start, lighthouse) lives in a child
 ## MapLayer drawn behind the board's own draw and redrawn only when the map changes, not
 ## every frame. Same parent, so the same CanvasModulate and light mask apply to it.
@@ -108,6 +110,19 @@ const SHELL_SECONDS := 0.55  ## travel + impact
 const SHELL_MUZZLE := 0.09
 const SHELL_IMPACT_CELLS := 0.45  ## burst radius of a shell without aoe_radius
 const DEAD_ZONE_DASH := 5.0  ## px per dash of the selected tower's dead-zone ring
+## LT-49 Searchlight: a faint lit disc at the aura radius with a beam wedge sweeping round
+## once per SEARCH_SWEEP_SECONDS; brighter while a drawn enemy is inside (ward_alpha).
+const SEARCHLIGHT_COLOR := Color(2.4, 2.2, 1.5)
+const SEARCH_SWEEP_SECONDS := 5.0
+const SEARCH_CONE := 0.45  ## half angle of the sweeping wedge, radians
+const SEARCH_DISC_ALPHA := 0.07
+const REVEALED_ALPHA := 0.45  ## body alpha of a revealed fake
+## A revealed fake: a ghost-grey body, a bold amber ring outside the dashed slow mark and
+## an amber slash across the body ("exposed, ignore"), unlike any other enemy marker.
+const REVEALED_BODY := Color(0.62, 0.62, 0.72)
+const REVEALED_MARK := Color(2.6, 1.3, 0.3)
+const REVEALED_RING_CELLS := 0.44
+const REVEALED_SLASH_CELLS := 0.3  ## half length of the slash
 
 ## LT-14 visual tunables.
 @export var flicker_rate := 13.0  ## flicker steps per second
@@ -201,11 +216,12 @@ func on_event(ev: SimEvent) -> void:
 
 ## LT-25 §1: the attack look from the tower's current stats (so upgrades and branches
 ## change it): pierce -> "harpoon", fuse_seconds -> "dynamite" (LT-47), min_range ->
-## "shell" (LT-48), aoe_radius -> "wave", support level -> "aura", otherwise "tracer".
+## "shell" (LT-48), aoe_radius -> "wave", support level -> "aura" ("searchlight" with
+## reveal_fakes, LT-49), otherwise "tracer".
 static func shot_kind(t: SimTower) -> String:
 	var s := t.stats()
 	if s.damage <= 0.0:
-		return "aura"
+		return "searchlight" if s.effects.get("reveal_fakes", 0.0) > 0.0 else "aura"
 	if s.effects.get("pierce", 0.0) > 0.0:
 		return "harpoon"
 	if s.effects.get("fuse_seconds", 0.0) > 0.0:
@@ -246,7 +262,7 @@ func ward_alpha(t: SimTower) -> float:
 ## fields (to, hits, miss, astray) and the tower's stats, never what was hit (LT-12 §1).
 func _shot_fx(t: SimTower, data: Dictionary) -> Dictionary:
 	var kind := shot_kind(t)
-	if kind == "aura":
+	if kind == "aura" or kind == "searchlight":
 		return {}
 	var hits: Array = data.get("hits", [])
 	var to: Vector2 = data["to"]
@@ -495,6 +511,8 @@ static func attack_color(kind: String) -> Color:
 			return WAVE_RIM
 		"aura":
 			return WARD_COLOR
+		"searchlight":
+			return SEARCHLIGHT_COLOR
 		"dynamite":
 			return DYNAMITE_COLOR
 		"shell":
@@ -527,7 +545,11 @@ func _draw_tower(t: SimTower) -> void:
 ## dashes; brighter and pulsing while a drawn enemy is inside.
 func _draw_auras(s: SimState) -> void:
 	for t in s.towers:
-		if shot_kind(t) != "aura":
+		var kind := shot_kind(t)
+		if kind == "searchlight":
+			_draw_searchlight(t)
+			continue
+		if kind != "aura":
 			continue
 		var c := t.centre() * CELL
 		var r := t.stats().range_cells * CELL
@@ -538,6 +560,26 @@ func _draw_auras(s: SimState) -> void:
 		for i in 5:
 			var st := rot + i * TAU / 5.0
 			draw_arc(c, r, st, st + 0.22, 6, Color(WARD_COLOR, minf(1.0, a + 0.15)), 4.0)
+
+
+## LT-49: the Searchlight's aura: a faint disc and rim at the radius, and a beam wedge
+## from the tower to the rim turning once per SEARCH_SWEEP_SECONDS (decoration: what is
+## revealed is the whole disc, sim state).
+func _draw_searchlight(t: SimTower) -> void:
+	var c := t.centre() * CELL
+	var r := t.stats().range_cells * CELL
+	var a := ward_alpha(t)
+	draw_circle(c, r, Color(SEARCHLIGHT_COLOR, SEARCH_DISC_ALPHA * (1.0 + a)))
+	draw_arc(c, r, 0, TAU, 64, Color(SEARCHLIGHT_COLOR, a * 0.8), 2.0)
+	var dir := _time * TAU / SEARCH_SWEEP_SECONDS
+	var pts := PackedVector2Array([c])
+	var cols := PackedColorArray([Color(SEARCHLIGHT_COLOR, 0.35 + 0.25 * a)])
+	var steps := 8
+	for i in steps + 1:
+		var ang := dir - SEARCH_CONE + 2.0 * SEARCH_CONE * i / steps
+		pts.append(c + Vector2(cos(ang), sin(ang)) * r)
+		cols.append(Color(SEARCHLIGHT_COLOR, 0.04))
+	draw_polygon(pts, cols)
 
 
 func _draw_enemies(s: SimState) -> void:
@@ -553,7 +595,7 @@ func _draw_enemies(s: SimState) -> void:
 		var px := p * CELL
 		var color := COLOR_ENEMY.lerp(COLOR_ENEMY_MAD, mad)
 		if e.revealed:
-			color.a = 0.35
+			color = Color(REVEALED_BODY, REVEALED_ALPHA)
 		var dip := fl * _flicker_dip(e.id) if fl > 0.0 else 0.0
 		color.a *= 1.0 - dip
 		if dip > 0.5:  # a torn frame: a faint double a few pixels off
@@ -577,6 +619,11 @@ func _draw_enemies(s: SimState) -> void:
 			draw_arc(px, CELL * 0.25, 0, TAU, 24, Color(COLOR_ENEMY_OUTLINE, color.a * mad), 3.0)
 		if marks.has("vuln"):  # body outline
 			draw_arc(px, CELL * 0.25, 0, TAU, 24, Color(MARK_VULN, color.a), 2.0)
+		if e.revealed:  # LT-49: amber ring outside the dashed slow mark, slash across the body
+			var mc := Color(REVEALED_MARK, 1.0 - dip)
+			draw_arc(px, CELL * REVEALED_RING_CELLS, 0, TAU, 24, mc, 3.0)
+			var d := Vector2(1, -1).normalized() * CELL * REVEALED_SLASH_CELLS
+			draw_line(px - d, px + d, mc, 3.0)
 		if game.sim.debug_is_fake(e):
 			draw_arc(px, CELL * 0.3, 0, TAU, 24, COLOR_DEBUG_FAKE, 2.0)
 		var w := CELL * 0.6

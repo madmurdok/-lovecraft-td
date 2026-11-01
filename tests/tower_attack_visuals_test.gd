@@ -495,3 +495,79 @@ func test_selected_dead_zone_is_the_selected_towers_min_range_while_its_ring_sho
 	board.selected_cell = rifle.cell
 	board.selected_range = rifle.stats().range_cells
 	assert_float(board.selected_dead_zone()).is_equal(0.0)  # no dead zone
+
+
+# --- LT-49: Searchlight ----------------------------------------------------------------------
+
+func test_shot_kind_of_every_searchlight_level_is_searchlight_and_it_draws_no_shot() -> void:
+	await _start_game()
+	var t := _tower("searchlight")
+	assert_str(Board.shot_kind(t)).is_equal("searchlight")
+	t.level = 1
+	assert_str(Board.shot_kind(t)).is_equal("searchlight")
+	t.level = TowerDef.LEVEL_COUNT
+	for b: String in TowerDef.BRANCH_IDS:
+		t.branch = b
+		assert_str(Board.shot_kind(t)).override_failure_message(b).is_equal("searchlight")
+	assert_str(Board.shot_kind(_tower("elder_sign"))).is_equal("aura")
+	var before := _game.board.effects.size()
+	_shoot(t, t.centre() + Vector2(1, 0), [])
+	assert_int(_game.board.effects.size()).is_equal(before)
+
+
+func test_the_searchlight_colour_is_its_own() -> void:
+	assert_bool(Board.attack_color("searchlight") == Board.SEARCHLIGHT_COLOR).is_true()
+	for k: String in ["tracer", "harpoon", "wave", "aura", "dynamite", "shell"]:
+		assert_bool(Board.attack_color(k) == Board.SEARCHLIGHT_COLOR) \
+			.override_failure_message(k).is_false()
+
+
+## The body of `func name(` in `src` up to the next top-level func.
+func _func_body(src: String, name: String) -> String:
+	var start := src.find("\nfunc %s(" % name)
+	assert_int(start).override_failure_message(name).is_greater_equal(0)
+	var end := src.find("\nfunc ", start + 1)
+	return src.substr(start, end - start if end >= 0 else -1)
+
+
+## LT-49 fix c4997e6: a revealed enemy is a ghost-grey body at REVEALED_ALPHA with an amber
+## ring outside the dashed slow mark and a slash, each gated on `e.revealed` (sim state),
+## never on is_fake. The look itself is checked by render; this pins the gating and the
+## constants it relies on.
+func test_a_revealed_enemy_is_drawn_grey_with_an_amber_ring_and_slash_on_revealed_only() -> void:
+	var body := _func_body(FileAccess.get_file_as_string("res://scenes/board.gd"),
+		"_draw_enemies")
+	assert_bool(RegEx.create_from_string("\\bis_fake\\b").search(body) == null).is_true()
+	var gated := RegEx.create_from_string("(?m)^(\\t+)if e\\.revealed:.*\\n((?:\\1\\t.*\\n)+)")
+	var blocks := ""
+	var outside := body
+	for m in gated.search_all(body):
+		blocks += m.get_string(2)
+		outside = outside.replace(m.get_string(0), "")
+	assert_str(blocks).contains("Color(REVEALED_BODY, REVEALED_ALPHA)")
+	assert_str(blocks).contains("REVEALED_MARK")
+	assert_str(blocks).contains("REVEALED_RING_CELLS")
+	assert_str(blocks).contains("draw_line(")
+	for k: String in ["REVEALED_BODY", "REVEALED_MARK", "REVEALED_RING_CELLS"]:
+		assert_str(outside).override_failure_message(k).not_contains(k)
+	# Amber (r > g > b), outside the slow mark and inside the cell; the body is see-through.
+	var mk := Board.REVEALED_MARK
+	assert_bool(mk.r > mk.g and mk.g > mk.b).is_true()
+	assert_float(Board.REVEALED_RING_CELLS).is_greater(Board.MARK_SLOW_CELLS)
+	assert_float(Board.REVEALED_RING_CELLS).is_less(0.5)
+	assert_float(Board.REVEALED_ALPHA).is_between(0.1, 0.9)
+	assert_bool(mk == Board.COLOR_DEBUG_FAKE).is_false()
+
+
+func test_a_board_frame_with_a_revealed_and_a_hidden_fake_draws_without_errors() -> void:
+	await _start_game()
+	_tower("searchlight")
+	var shown := _enemy(true, 2.0)
+	var hidden := _enemy(true, 3.0)
+	shown.revealed = true
+	assert_bool(_game.sim.debug_reveal_fakes).is_false()
+	_game.board.queue_redraw()
+	await get_tree().process_frame
+	await get_tree().process_frame
+	assert_bool(hidden.revealed).is_false()
+	assert_bool(_game.sim.debug_is_fake(shown)).is_false()

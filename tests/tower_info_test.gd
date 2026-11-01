@@ -495,3 +495,23 @@ func test_delta_shows_the_dead_zone_only_when_it_changes() -> void:
 	var d := _def("coast_battery")
 	for line: String in TowerInfo.delta_lines(d.levels[0], d.levels[1]):
 		assert_bool(line.contains("Dead zone")).override_failure_message(line).is_false()
+
+
+# --- LT-49: Searchlight ----------------------------------------------------------------------
+
+func test_searchlight_is_support_that_reveals_and_slows_with_no_mundane_kind_line() -> void:
+	var d := _def("searchlight")
+	var l1 := d.levels[0]
+	assert_array(_lines("searchlight", l1)).is_equal([
+		"Support (no damage)",
+		"Aura radius %s cells" % _n(l1.range_cells),
+		"Reveals fakes",
+		"Slows enemies %s%%" % _n(l1.effects["slow"] * 100.0),
+	])
+	var b := d.branches["b"]
+	assert_array(_lines("searchlight", b)).contains(["Reveals fakes",
+		"Foes take +%s%% damage" % _n((b.effects["damage_taken_multiplier"] - 1.0) * 100.0)])
+	# It never shoots: no Fraying miss line and no kill regen line on any level.
+	assert_float(_cfg.sanity.thresholds["fraying"].miss_chance).is_greater(0.0)
+	for l: TowerDef.Level in [d.levels[0], d.levels[1], d.branches["a"], b]:
+		assert_array(Array(TowerInfo.kind_lines(d, l, _cfg.sanity))).is_empty()
