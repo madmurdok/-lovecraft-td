@@ -739,3 +739,20 @@ func test_the_lighthouse_is_tried_again_the_next_day() -> void:
 	assert_int(sim.state.lighthouse_level).is_equal(1)
 	# Day 2: level 1 bought, level 2 refused once (too poor), not retried.
 	assert_int(sim.lighthouse_calls).is_equal(3)
+
+
+## LT-50 (LT-46 §5): the "resonator" strategy builds the Resonator in the mundane order's
+## third slot, takes Pure (a) at L3 and has no cap guard (lower sanity is what it feeds on).
+func test_resonator_builds_the_resonator_and_buys_branch_a() -> void:
+	var b := _bot()
+	var consts: Dictionary = b.get_script().get_script_constant_map()
+	assert_array(consts["STRATEGIES"]).contains(["resonator"])
+	assert_dict(consts["BRANCH_PICK"]["resonator"]).contains_key_value("resonator", "a")
+	var sim := _sim()
+	var order: Array = []
+	for i in 6:
+		order.append(b.call("_order", "resonator", i, sim, {}))
+	assert_array(order).is_equal([RIFLE, RIFLE, "resonator", RIFLE, RIFLE, "resonator"])
+	var rs := _place(sim, "resonator", 1)
+	assert_array(_next(sim, "resonator")).is_equal([rs.id, "a"])
+	assert_bool(_cap_allows("resonator", sim, sim.state.sanity_cap)).is_true()
