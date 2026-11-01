@@ -355,6 +355,28 @@ func test_pack_trait_bounds() -> void:
 	assert_rejected(r3, E, "enemies.deep_one.traits.pack.max", "expected integer")
 
 
+## LT-63: pack.spacing_s is required, > 0 and at least one tick (checked on the raw value,
+## not on the rounded tick count).
+func test_pack_spacing_must_be_present_positive_and_at_least_one_tick() -> void:
+	var path := "enemies.deep_one.traits.pack.spacing_s"
+	var r := load_json_edit(E, func(d: Dictionary) -> void:
+		d["enemies"]["deep_one"]["traits"]["pack"].erase("spacing_s"))
+	assert_rejected(r, E, path)
+	for bad: float in [0.0, -0.5]:
+		var rb := load_json_edit(E, func(d: Dictionary) -> void:
+			d["enemies"]["deep_one"]["traits"]["pack"]["spacing_s"] = bad)
+		assert_rejected(rb, E, path)
+	# 0.4 tick rounds to 0 ticks, 0.6 tick rounds to 1: both are below one tick.
+	for sub: float in [SimTime.DT * 0.4, SimTime.DT * 0.6]:
+		var rs := load_json_edit(E, func(d: Dictionary) -> void:
+			d["enemies"]["deep_one"]["traits"]["pack"]["spacing_s"] = sub)
+		assert_rejected(rs, E, path, "at least one tick")
+	# A hair above one tick is accepted (JSON text drops the last digits of DT itself).
+	var ok := load_json_edit(E, func(d: Dictionary) -> void:
+		d["enemies"]["deep_one"]["traits"]["pack"]["spacing_s"] = SimTime.DT + 0.001)
+	assert_bool(ok.ok).override_failure_message("\n".join(ok.errors)).is_true()
+
+
 func test_unknown_effect_key() -> void:
 	var r := load_json_edit(T, func(d: Dictionary) -> void:
 		d["towers"]["rifleman"]["branches"]["a"]["effects"]["crit_chanse"] = 0.1)
