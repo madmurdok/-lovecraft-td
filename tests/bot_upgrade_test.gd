@@ -635,7 +635,7 @@ func test_a_refused_lighthouse_buy_falls_through_to_the_days_build() -> void:
 	var id: String = _bot().call("_order", "mundane", 5, null, {})
 	var build_cost: int = real_config().towers[id].cost
 	assert_int(build_cost).is_less(lh_cost)  # affords the build, not the lighthouse
-	var sim := _five_l3_rifles(build_cost)
+	var sim := _counting_five_l3(build_cost)  # a retry loop ends at RETRY_GUARD, no hang
 	var idx: int = _bot().call("_act", sim, "mundane", 5, {})
 	assert_int(idx).is_equal(6)
 	assert_int(sim.state.towers.size()).is_equal(6)
