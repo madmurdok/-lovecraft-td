@@ -1,0 +1,286 @@
+class_name TowerPickerGroupsTest
+extends ConfigTestBase
+## LT-55 (LT-46 P15): the build picker shows two labelled groups, "Mundane" then "Occult", by
+## TowerDef.kind, data order inside each; with 10 towers every entry fits the side panel at
+## 1152x648 without scrolling. Owner decision "Роль + подсказка": under each button only the
+## role line is drawn, the full L1 info is the button's tooltip. The 10-tower config is built
+## here (res://data plus five towers appended in mixed kind order), never in data/. Real mouse
+## events go into a 1152x648 SubViewport like side_panel_test.
+
+const RIFLE := "rifleman"
+const SIGN := "elder_sign"
+
+## Appended after the five data towers, kinds interleaved so data order != group order.
+## Names near the longest real one, roles at the 24-char limit: the worst case for the fit.
+const EXTRA := [
+	["shoggoth_binder", "occult", SIGN, "Shoggoth Binder", "Binds foes, then crushes", "S"],
+	["lamplighter", "mundane", RIFLE, "Lamplighter", "Lamps reveal the unseen!", "L"],
+	["yithian_lens", "occult", SIGN, "Yithian Scrying Lens", "Scrying lens marks prey.", "Y"],
+	["harbour_watchman", "mundane", RIFLE, "Harbour Watchman", "Warns of foes far ahead.", "W"],
+	["mi_go_cylinder", "occult", SIGN, "Mi-Go Brain Cylinder", "Burns wide cones of foes", "M"],
+]
+const TEN_MUNDANE := ["rifleman", "harpooner", "dynamite_crew", "lamplighter", "harbour_watchman"]
+const TEN_OCCULT := ["elder_sign", "necronomicon_reader", "shoggoth_binder", "yithian_lens",
+	"mi_go_cylinder"]
+
+var _vp: SubViewport
+var _game: Game
+var _config: GameConfig
+
+
+func before_test() -> void:
+	_vp = SubViewport.new()
+	_vp.size = Vector2i(1152, 648)
+	add_child(_vp)
+
+
+func after_test() -> void:
+	if is_instance_valid(_vp):
+		_vp.queue_free()
+	_vp = null
+	_game = null
+
+
+func _data_config() -> GameConfig:
+	var r := GameConfig.load_from_dir("res://data")
+	assert_bool(r.ok).override_failure_message("\n".join(r.errors)).is_true()
+	return r.config
+
+
+## res://data plus EXTRA, loaded through the real towers.json parser. Written with
+## sort_keys off: ConfigTestBase.edit's JSON.stringify sorts keys and would lose data order.
+func _ten_config() -> GameConfig:
+	var dir := make_dir()
+	var d: Dictionary = JSON.parse_string(read_file(dir, "towers.json"))
+	for e: Array in EXTRA:
+		var t: Dictionary = d["towers"][e[2]].duplicate(true)
+		t["kind"] = e[1]
+		t["name"] = e[3]
+		t["role"] = e[4]
+		t["glyph"] = e[5]
+		d["towers"][e[0]] = t
+	write_file(dir, "towers.json", JSON.stringify(d, "  ", false))
+	var r := GameConfig.load_from_dir(dir)
+	assert_bool(r.ok).override_failure_message("\n".join(r.errors)).is_true()
+	assert_int(r.config.towers.size()).is_equal(10)
+	return r.config
+
+
+func _start_game(config: GameConfig) -> void:
+	_config = config
+	_game = Game.new()
+	_game.setup(_config, 7)
+	_vp.add_child(_game)
+	_game.set_process(false)
+	await get_tree().process_frame
+
+
+func _click(pos: Vector2) -> void:
+	for pressed in [true, false]:
+		var ev := InputEventMouseButton.new()
+		ev.button_index = MOUSE_BUTTON_LEFT
+		ev.pressed = pressed
+		ev.position = pos
+		ev.global_position = pos
+		_vp.push_input(ev)
+	await get_tree().process_frame
+
+
+func _click_control(c: Control) -> void:
+	assert_bool(c.is_visible_in_tree()).override_failure_message("%s hidden" % c.name).is_true()
+	await _click(c.get_global_rect().get_center())
+
+
+func _buildable_cell() -> Vector2i:
+	var m := _game.sim.state.map
+	for y in m.height:
+		for x in m.width:
+			if m.is_buildable(Vector2i(x, y)) and not _game.sim.state.tower_at.has(Vector2i(x, y)):
+				return Vector2i(x, y)
+	return Vector2i(-1, -1)
+
+
+func _open_picker() -> void:
+	var cell := _buildable_cell()
+	await _click(_game.board.position + (Vector2(cell) + Vector2(0.5, 0.5)) * Board.CELL)
+	assert_bool(_game.picker.visible).is_true()
+	await get_tree().process_frame
+
+
+## Ids of `kind` in config order.
+func _ids_of(kind: String) -> Array:
+	var out := []
+	for id: String in _config.towers:
+		if _config.towers[id].kind == kind:
+			out.append(id)
+	return out
+
+
+## The picker's children by name, in order.
+func _child_names() -> Array:
+	var out := []
+	for c in _game.picker.get_children():
+		out.append(String(c.name))
+	return out
+
+
+func _expected_children(mundane: Array, occult: Array) -> Array:
+	var out := ["Title", "Group_mundane"]
+	for id: String in mundane:
+		out.append_array(["Tower_" + id, "Info_" + id])
+	out.append("Group_occult")
+	for id: String in occult:
+		out.append_array(["Tower_" + id, "Info_" + id])
+	out.append("CancelButton")
+	return out
+
+
+## Role line (when set) + the L1 info lines, as before LT-55.
+func _full_info(id: String) -> String:
+	var def: TowerDef = _config.towers[id]
+	var text := PackedStringArray()
+	if not def.role.is_empty():
+		text.append(def.role)
+	text.append_array(TowerInfo.lines(def, def.levels[0], _config.sanity))
+	return "\n".join(text)
+
+
+# --- grouping, order, headers ---------------------------------------------------------------
+
+func test_data_towers_are_grouped_mundane_then_occult_in_data_order() -> void:
+	await _start_game(_data_config())
+	assert_array(_ids_of("mundane")).is_not_empty()
+	assert_array(_ids_of("occult")).is_not_empty()
+	assert_array(_child_names()).is_equal(_expected_children(_ids_of("mundane"), _ids_of("occult")))
+
+
+func test_ten_towers_group_by_kind_and_keep_data_order_inside_each_group() -> void:
+	await _start_game(_ten_config())
+	# The fixture interleaves kinds, so a data-order list would not match.
+	assert_array(_config.towers.keys().slice(5)).is_equal(
+		["shoggoth_binder", "lamplighter", "yithian_lens", "harbour_watchman", "mi_go_cylinder"])
+	assert_array(_child_names()).is_equal(_expected_children(TEN_MUNDANE, TEN_OCCULT))
+	assert_int(_game.picker.buttons.size()).is_equal(10)
+	assert_int(_game.picker.infos.size()).is_equal(10)
+	for id: String in _config.towers:
+		assert_str(String(_game.picker.buttons[id].name)).is_equal("Tower_" + id)
+		assert_str(String(_game.picker.infos[id].name)).is_equal("Info_" + id)
+
+
+func test_group_headers_read_mundane_and_occult() -> void:
+	await _start_game(_ten_config())
+	await _open_picker()
+	for pair: Array in [["Group_mundane", "Mundane"], ["Group_occult", "Occult"]]:
+		var h := _game.picker.get_node(pair[0]) as Label
+		assert_object(h).is_not_null()
+		assert_str(h.text).is_equal(pair[1])
+		assert_bool(h.is_visible_in_tree()).is_true()
+
+
+# --- tooltip and the single role line -------------------------------------------------------
+
+func test_tooltip_carries_the_full_l1_info_and_the_label_keeps_it() -> void:
+	await _start_game(_ten_config())
+	for id: String in _config.towers:
+		var full := _full_info(id)
+		assert_str(_game.picker.buttons[id].tooltip_text).is_equal(full)
+		assert_str(_game.picker.infos[id].text).is_equal(full)
+		assert_str(full.split("\n")[0]).is_equal(_config.towers[id].role)
+	# Damage and range for a shooter, the reserve for an occult tower.
+	var rifle := _game.picker.buttons[RIFLE].tooltip_text
+	assert_str(rifle).contains("Range %s cells" % TowerInfo.num(_config.towers[RIFLE].levels[0].range_cells))
+	assert_int(rifle.split("\n").size()).is_greater(2)
+	var sign: TowerDef = _config.towers[SIGN]
+	assert_str(_game.picker.buttons[SIGN].tooltip_text).contains(
+		"Reserves %s sanity" % TowerInfo.num(sign.levels[0].sanity_reserve))
+
+
+func test_only_the_role_line_is_drawn_under_each_button() -> void:
+	await _start_game(_ten_config())
+	await _open_picker()
+	await get_tree().process_frame
+	for id: String in _config.towers:
+		var info: Label = _game.picker.infos[id]
+		assert_int(info.text.split("\n").size()).is_greater(1)
+		assert_int(info.get_visible_line_count()) \
+			.override_failure_message("%s draws %d lines" % [id, info.get_visible_line_count()]) \
+			.is_equal(1)
+		# Its box is one line tall: shorter than two lines of its font.
+		assert_float(info.size.y).is_less(2.0 * info.get_line_height())
+
+
+# --- fit: 10 towers, 1152x648, no scrolling -------------------------------------------------
+
+func _assert_fits(state: String) -> void:
+	var scroll := _game.side_panel.scroll
+	var views := scroll.get_child(0) as Control
+	var r := SidePanel.panel_rect(_game.sim.state.map)
+	assert_int(scroll.scroll_vertical).is_equal(0)
+	assert_float(views.get_combined_minimum_size().y).override_failure_message(
+		"%s: content %.1f px > scroll %.1f px" % [state, views.get_combined_minimum_size().y,
+			scroll.size.y]).is_less_equal(scroll.size.y)
+	assert_bool(scroll.get_v_scroll_bar().visible) \
+		.override_failure_message("%s: vertical scroll bar shown" % state).is_false()
+	assert_that(_game.side_panel.get_global_rect()).is_equal(r)
+	var shown: Array[Control] = [_game.picker.get_node("CancelButton") as Control]
+	for id: String in _config.towers:
+		shown.append_array([_game.picker.buttons[id], _game.picker.infos[id]])
+	for c: Control in shown:
+		assert_bool(scroll.get_global_rect().encloses(c.get_global_rect())).override_failure_message(
+			"%s: %s at %s outside %s" % [state, c.name, c.get_global_rect(), scroll.get_global_rect()]) \
+			.is_true()
+
+
+func test_ten_affordable_towers_fit_the_panel_without_scrolling_at_1152x648() -> void:
+	await _start_game(_ten_config())
+	assert_that(_vp.size).is_equal(Vector2i(1152, 648))
+	_game.sim.state.gold = 10000
+	await _open_picker()
+	await get_tree().process_frame
+	for id: String in _config.towers:
+		assert_bool(_game.picker.buttons[id].disabled).is_false()
+	_assert_fits("affordable")
+
+
+## Disabled buttons carry a reason, the longest text a button gets (and the usual state early
+## in a run, when most towers are unaffordable).
+func test_ten_unaffordable_towers_fit_the_panel_without_scrolling_at_1152x648() -> void:
+	await _start_game(_ten_config())
+	_game.sim.state.gold = 0
+	await _open_picker()
+	await get_tree().process_frame
+	for id: String in _config.towers:
+		assert_bool(_game.picker.buttons[id].disabled).is_true()
+	_assert_fits("not enough money")
+
+
+# --- states and pressing, both groups -------------------------------------------------------
+
+func test_refresh_states_hold_for_all_ten_buttons() -> void:
+	await _start_game(_ten_config())
+	_game.sim.state.gold = 10000
+	await _open_picker()
+	for id: String in _config.towers:
+		var def: TowerDef = _config.towers[id]
+		var b: Button = _game.picker.buttons[id]
+		assert_bool(b.disabled).is_false()
+		assert_str(b.text).starts_with("%s — %s" % [def.name, TowerInfo.cost_text(def.cost)])
+	_game.sim.state.gold = 0
+	_game.picker.refresh()
+	for id: String in _config.towers:
+		var b: Button = _game.picker.buttons[id]
+		assert_bool(b.disabled).is_true()
+		assert_str(b.text).ends_with(" (not enough money)")
+
+
+func test_pressing_a_button_in_either_group_builds_it_and_closes_the_picker() -> void:
+	await _start_game(_ten_config())
+	for id: String in ["harbour_watchman", "mi_go_cylinder"]:
+		_game.sim.state.gold = 10000
+		var cell := _buildable_cell()
+		await _open_picker()
+		await _click_control(_game.picker.buttons[id])
+		assert_bool(_game.sim.state.tower_at.has(cell)) \
+			.override_failure_message("%s not built" % id).is_true()
+		assert_str(_game.sim.tower_by_id(_game.sim.state.tower_at[cell]).def.id).is_equal(id)
+		assert_bool(_game.picker.visible).is_false()
