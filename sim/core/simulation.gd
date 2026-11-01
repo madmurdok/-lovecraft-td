@@ -38,6 +38,8 @@ enum CommandResult {
 
 ## Sanity change reasons that may move sanity while in MADNESS (LT-13): the exit rules.
 const MADNESS_EXIT_REASONS: PackedStringArray = ["buyout", "auto_restore"]
+## SimEnemy.status timers that only count down to 0 and go (LT-29 pull, LT-51 banish).
+const IMMUNITY_KEYS: PackedStringArray = ["pull_immune_ticks", "banish_immune_ticks"]
 
 var state: SimState
 var config: GameConfig
@@ -367,10 +369,11 @@ func _reserve_drives_mad(delta: float) -> bool:
 		and state.sanity_state != SimState.SanityState.MADNESS
 
 
-## Whether `t` picks a target when it fires (LT-31): its current level deals damage.
-## False for an aura tower (Elder Sign), which has no target priority to switch.
+## Whether `t` picks a target when it fires (LT-31): its current level acts (deals damage
+## or banishes, LT-51 P9). False for an aura tower (Elder Sign), which has no target
+## priority to switch.
 func has_targeting(t: SimTower) -> bool:
-	return t.stats().damage > 0.0
+	return t.stats().acts()
 
 
 ## Whether set_target_priority(tower_id, mode) would be applied now; OK or the first
@@ -1266,7 +1269,7 @@ func _apply_auras() -> void:
 	var auras: Array[SimTower] = []
 	for t in state.towers:
 		var s := t.stats()
-		if s.damage <= 0.0 and (s.effects.has("slow") or s.effects.has("damage_taken_multiplier")
+		if not s.acts() and (s.effects.has("slow") or s.effects.has("damage_taken_multiplier")
 				or s.effects.has("strip_armor") or s.effects.get("reveal_fakes", 0.0) > 0.0):
 			auras.append(t)
 	if auras.is_empty():
@@ -1360,7 +1363,10 @@ func _fire_towers() -> void:
 			if t.cooldown_ticks > 0:
 				continue
 		var s := t.stats()
-		if s.damage <= 0.0:
+		if not s.acts():
+			continue
+		if s.is_banish():
+			_cast_banish(t, s)  # LT-51: its own cast; no miss, crit or shot shape
 			continue
 		var in_range := _candidates(t, s)
 		var target: SimEnemy = null
@@ -1466,6 +1472,71 @@ func _fire_towers() -> void:
 		if lit_mundane:
 			interval *= beam.mundane_fire_interval_mult  # LT-30: decided at the shot
 		t.cooldown_ticks = maxi(1, SimTime.ticks(interval))
+
+
+## LT-51 (§2.2, Q4): a Silver Key cast. Picks (by target_priority) up to banish_targets of
+## the tower's candidates that may be banished (_banishable), moves each back banish_cells
+## along its own route (P5 _push_back, the Chain pull's rewind; x occult_power_mult when the
+## tower is lit) and gives it banish_immune_seconds of banish immunity (its own status key:
+## pull immunity does not block a banish, nor the reverse). A level with damage (Corrupted)
+## then hits each one (armor applies; x occult_power_mult lit, x the madness multiplier).
+## No candidate: no cast and no cooldown, the gate stays ready. In MADNESS a
+## madness_affected gate goes astray (LT-13, one roll per cast): its picks are drawn at
+## random from the banishable reals in range, or from the banishable fakes in range
+## (revealed ones too), or the cast moves nothing ("empty") and still spends the cooldown.
+## One SHOT per moved enemy {banish, target, hits [id], from, to: its position before and
+## after}, before the damage (SHOT -> DIED).
+func _cast_banish(t: SimTower, s: TowerDef.Level) -> void:
+	var n := s.banish_targets()
+	var picks := _ranked_targets(t, _banishable(s, _candidates(t, s)), n)
+	if picks.is_empty():
+		return
+	var beam := config.economy.beam
+	var power := beam.occult_power_mult if t.lit and t.def.kind == "occult" else 1.0
+	var damage := s.damage * power
+	var astray := ""
+	if s.madness_affected and state.sanity_state == SimState.SanityState.MADNESS:
+		damage *= config.sanity.madness.damage_multiplier
+		astray = _roll_astray()
+		var pool: Array[SimEnemy] = []
+		if astray == "real":
+			for e in _candidates(t, s):
+				if not e.is_fake:
+					pool.append(e)
+		elif astray == "fake":
+			pool = _ground_filter(t, live_fakes_in_range(t.cell, s.range_cells))
+		pool = _banishable(s, pool)
+		picks = []
+		var stream := rng(SimRng.Stream.MADNESS)
+		while picks.size() < n and not pool.is_empty():
+			picks.append(pool.pop_at(stream.randi_range(0, pool.size() - 1)))
+	var cells: float = s.effects.get("banish_cells", 0.0) * power
+	var immune := SimTime.ticks(float(s.effects.get("banish_immune_seconds", 0.0)))
+	for e in picks:
+		var from := e.route.position_at(e.distance)
+		_push_back(e, cells)
+		if immune > 0:
+			e.status["banish_immune_ticks"] = immune
+		var shot := {"def": t.def.id, "target": e.id, "hits": [e.id], "banish": true,
+			"from": from, "to": e.route.position_at(e.distance), "miss": false}
+		if astray != "":
+			shot["astray"] = true
+		_emit(SimEvent.Type.SHOT, t.id, shot)
+	if damage > 0.0:
+		for e in picks:
+			apply_damage(e.id, damage, t.def.id)
+	t.cooldown_ticks = maxi(1, SimTime.ticks(s.fire_interval))
+
+
+## LT-51 (Q4 "HP cap per level"): those of `enemies` a gate with stats `s` may banish:
+## max_hp <= banish_max_hp (Dagon's is above every cap) and no banish immunity.
+func _banishable(s: TowerDef.Level, enemies: Array[SimEnemy]) -> Array[SimEnemy]:
+	var cap: float = s.effects.get("banish_max_hp", 0.0)
+	var out: Array[SimEnemy] = []
+	for e in enemies:
+		if e.max_hp <= cap and int(e.status.get("banish_immune_ticks", 0)) <= 0:
+			out.append(e)
+	return out
 
 
 ## LT-46 P1: the enemies `t` may fire at with stats `s`: live ones in range (fakes too,
@@ -1739,16 +1810,17 @@ func _apply_bleed(e: SimEnemy, dps: float, seconds: float, source: String) -> vo
 ## Slot 2 (LT-29 P6): every live enemy (fakes too) in id order counts its status timers down.
 ## Bleed: each second one pulse of bleed_dps through apply_damage (armor once per pulse,
 ## Q1; this tick's strip, vuln and madness buff apply), credited to bleed_source; the keys
-## are erased when the duration ends. Pull immunity: erased at 0.
+## are erased when the duration ends. Pull and banish (LT-51) immunity: erased at 0.
 func _tick_statuses() -> void:
 	for e in state.enemies:
 		if not e.is_live() or e.status.is_empty():
 			continue
 		var st := e.status
-		if st.has("pull_immune_ticks"):
-			st["pull_immune_ticks"] = int(st["pull_immune_ticks"]) - 1
-			if int(st["pull_immune_ticks"]) <= 0:
-				st.erase("pull_immune_ticks")
+		for key: String in IMMUNITY_KEYS:
+			if st.has(key):
+				st[key] = int(st[key]) - 1
+				if int(st[key]) <= 0:
+					st.erase(key)
 		if st.has("bleed_ticks"):
 			st["bleed_ticks"] = int(st["bleed_ticks"]) - 1
 			st["bleed_pulse"] = int(st["bleed_pulse"]) - 1

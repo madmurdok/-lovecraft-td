@@ -107,7 +107,7 @@ class Level:
 	## LT-48 (P4): dead zone, cells; enemies whose cell-centre distance is strictly less
 	## are not candidates. Default 0; >= 0 and < range; only on towers with damage.
 	var min_range: float
-	var damage: float  ## per hit, >= 0 (0 = support tower)
+	var damage: float  ## per hit, >= 0 (0 and no banish = support tower, see acts())
 	var fire_interval: float  ## seconds between shots; required > 0 when damage > 0
 	## Total sanity cap this tower holds while it stands at this level (LT-23 §1), not added
 	## to lower levels; >= 0, default 0, > 0 only on occult towers.
@@ -122,7 +122,16 @@ class Level:
 		"pull_immune_seconds": INF, "slow": 1.0, "damage_taken_multiplier": INF,
 		"strip_armor": INF, "aoe_radius": INF, "fuse_seconds": INF,
 		"ignore_armor": 1.0, "reveal_fakes": 1.0, "sanity_scaling": INF,
+		"banish_cells": INF, "banish_targets": INF, "banish_max_hp": INF,
+		"banish_immune_seconds": INF,
 	}
+	## LT-51: the keys that only mean something on a banishing level (banish_cells > 0).
+	const BANISH_KEYS: PackedStringArray = ["banish_targets", "banish_max_hp",
+		"banish_immune_seconds"]
+	## LT-51: shot shapes a banish cast does not have (it moves its picks, nothing else).
+	const NOT_WITH_BANISH: PackedStringArray = ["pierce", "aoe_radius", "fuse_seconds",
+		"burst_targets", "pull_cells", "sanity_scaling", "slow", "damage_taken_multiplier",
+		"strip_armor", "reveal_fakes"]
 	## LT-48/LT-49: flag effects, 0 or 1 (not amounts).
 	const FLAG_EFFECTS: PackedStringArray = ["ignore_armor", "reveal_fakes"]
 
@@ -139,6 +148,19 @@ class Level:
 	## that one stays a live candidate (SimTower.locked_id).
 	func is_beam() -> bool:
 		return effects.get("sanity_scaling", 0.0) > 0.0
+
+	## LT-51 (LT-46 P9): a level that acts on enemies every fire_interval: it has damage or
+	## it banishes. "Support" (an aura, no targeting) is `not acts()`.
+	func acts() -> bool:
+		return damage > 0.0 or is_banish()
+
+	## LT-51: a Silver Key level, moving its picks back `banish_cells` along their route.
+	func is_banish() -> bool:
+		return effects.get("banish_cells", 0.0) > 0.0
+
+	## LT-51: how many enemies one cast moves (banish_targets, default 1).
+	func banish_targets() -> int:
+		return maxi(1, int(effects.get("banish_targets", 1.0)))
 
 	## LT-50 (§7 Q2, current sanity on the full bar): the damage factor at `sanity` of
 	## `max_sanity`, 1 + sanity_scaling x (1 - sanity / max), sanity clamped to 0..max;
@@ -234,4 +256,29 @@ class Level:
 			if l.effects.get("sanity_scaling", 0.0) > 0.0 and l.damage <= 0.0:
 				r.error(ConfigReader.join(ep, "sanity_scaling"), "needs damage > 0")
 				l.effects["sanity_scaling"] = 0.0
+			_check_banish(r, l, ep)
+		if l.is_banish() and l.fire_interval <= 0.0:
+			# LT-51: a gate with no damage still casts every fire_interval.
+			r.error(ConfigReader.join(path, "fire_interval"), "required > 0 with banish_cells")
 		return l
+
+	## LT-51 (§2.2, Q4 "HP cap per level"): a banishing level needs its HP cap
+	## (banish_max_hp > 0: Dagon is never banished, so "no cap" is not offered), a whole
+	## banish_targets >= 1, and no other shot shape; the other banish keys need banish_cells.
+	static func _check_banish(r: ConfigReader, l: Level, ep: String) -> void:
+		if not l.is_banish():
+			for key in BANISH_KEYS:
+				if l.effects.get(key, 0.0) > 0.0:
+					r.error(ConfigReader.join(ep, key), "needs banish_cells > 0")
+			return
+		if l.effects.get("banish_max_hp", 0.0) <= 0.0:
+			r.error(ConfigReader.join(ep, "banish_cells"), "needs banish_max_hp > 0")
+		if l.effects.has("banish_targets"):
+			var n: float = l.effects["banish_targets"]
+			if n < 1.0 or n != floorf(n):
+				r.error(ConfigReader.join(ep, "banish_targets"),
+					"must be a whole number >= 1, got %s" % n)
+				l.effects["banish_targets"] = 1.0
+		for key in NOT_WITH_BANISH:
+			if l.effects.get(key, 0.0) > 0.0:
+				r.error(ConfigReader.join(ep, key), "cannot combine with banish_cells")

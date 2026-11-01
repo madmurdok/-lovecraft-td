@@ -43,6 +43,7 @@ const EFFECT_GROUPS := [
 	["reveal_fakes"], ["slow"], ["damage_taken_multiplier"],
 	["crit_chance", "crit_multiplier"], ["burst_targets"], ["bleed_dps", "bleed_seconds"],
 	["pull_cells", "pull_max_hp", "pull_immune_seconds"], ["strip_armor"],
+	["banish_cells", "banish_targets"], ["banish_max_hp", "banish_immune_seconds"],
 ]
 
 
@@ -78,8 +79,11 @@ static func is_pending(key: String) -> bool:
 static func lines(def: TowerDef, s: TowerDef.Level, sanity: SanityConfig,
 		current_sanity := NAN) -> PackedStringArray:
 	var out := PackedStringArray()
-	if s.damage > 0.0:
-		out.append(_damage_text(s))
+	if s.acts():
+		if s.damage > 0.0:
+			out.append(_damage_text(s))
+		else:  # LT-51: a gate with no damage still casts on a timer
+			out.append(cast_text(s.fire_interval))
 		out.append("Range %s cells" % num(s.range_cells))
 		if s.min_range > 0.0:
 			out.append(dead_zone_text(s.min_range))
@@ -95,6 +99,11 @@ static func lines(def: TowerDef, s: TowerDef.Level, sanity: SanityConfig,
 		out.append(sanity_factor_text(s.sanity_factor(current_sanity, sanity.max_sanity)))
 	out.append_array(kind_lines(def, s, sanity))
 	return out
+
+
+## LT-51: the timer line of a level that acts without damage (Silver Key L1/L2/Pure).
+static func cast_text(interval: float) -> String:
+	return "Casts every %s s" % num(interval)
 
 
 ## LT-50: the live line of a sanity-scaled level.
@@ -148,9 +157,12 @@ static func kind_lines(def: TowerDef, s: TowerDef.Level, sanity: SanityConfig) -
 		# LT-49: a mundane support tower (Searchlight) never shoots, so it never misses.
 		if s.damage > 0.0 and fraying != null and fraying.miss_chance > 0.0:
 			out.append("May miss while Fraying (%s%%)" % num(fraying.miss_chance * 100.0))
-	elif s.damage > 0.0:
-		# Madness changes shots only (x damage, astray); an aura has none.
-		if s.madness_affected:
+	elif s.acts():
+		# Madness changes shots only (x damage, astray); an aura has none. LT-51: a gate
+		# without damage only goes astray.
+		if s.madness_affected and s.damage <= 0.0:
+			out.append("Madness: astray")
+		elif s.madness_affected:
 			var mult := sanity.madness.damage_multiplier if sanity != null else 0.0
 			out.append("Madness: x%s, astray" % num(mult))
 		else:
@@ -164,7 +176,7 @@ static func kind_lines(def: TowerDef, s: TowerDef.Level, sanity: SanityConfig) -
 static func delta_lines(from: TowerDef.Level, to: TowerDef.Level) -> PackedStringArray:
 	var out := PackedStringArray()
 	var stats := PackedStringArray()
-	var support := to.damage <= 0.0
+	var support := not to.acts()
 	_delta(stats, "Aura radius" if support else "Range", from.range_cells, to.range_cells)
 	if not support:
 		_delta(stats, "Dead zone", from.min_range, to.min_range)
@@ -208,7 +220,7 @@ static func delta_lines(from: TowerDef.Level, to: TowerDef.Level) -> PackedStrin
 	out.append_array(effect_lines(shown))
 	for line in effect_lines(removed, false):
 		out.append(REMOVED + line)
-	if from.madness_affected != to.madness_affected and to.damage > 0.0:
+	if from.madness_affected != to.madness_affected and to.acts():
 		out.append("Affected by madness" if to.madness_affected else "Unaffected by madness")
 	return out
 
@@ -272,4 +284,12 @@ static func _effect_text(first_key: String, e: Dictionary) -> String:
 				num(e.get("pull_max_hp", 0.0)), num(e.get("pull_immune_seconds", 0.0))]
 		"strip_armor":
 			return "Foes lose %s armor" % num(e.get("strip_armor", 0.0))
+		"banish_cells":  # LT-51
+			var n: float = e.get("banish_targets", 1.0)
+			if n > 1.0:
+				return "Banish %s foes %s cells" % [num(n), num(e.get("banish_cells", 0.0))]
+			return "Banish %s cells back" % num(e.get("banish_cells", 0.0))
+		"banish_max_hp":  # LT-51 (Q4): the cap is shown
+			return "Max %s HP; immune %s s" % [num(e.get("banish_max_hp", 0.0)),
+				num(e.get("banish_immune_seconds", 0.0))]
 	return "%s: %s" % [first_key, num(e.get(first_key, 0.0))]
