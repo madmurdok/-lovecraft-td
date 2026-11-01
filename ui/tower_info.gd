@@ -39,7 +39,7 @@ const PRIORITY_NAMES := {
 
 ## Effect lines in display order: the keys one line reads (a pair shares a line).
 const EFFECT_GROUPS := [
-	["pierce"], ["aoe_radius"], ["fuse_seconds"], ["slow"], ["damage_taken_multiplier"],
+	["pierce"], ["aoe_radius"], ["fuse_seconds"], ["ignore_armor"], ["slow"], ["damage_taken_multiplier"],
 	["crit_chance", "crit_multiplier"], ["burst_targets"], ["bleed_dps", "bleed_seconds"],
 	["pull_cells", "pull_max_hp", "pull_immune_seconds"], ["strip_armor"],
 ]
@@ -77,6 +77,8 @@ static func lines(def: TowerDef, s: TowerDef.Level, sanity: SanityConfig) -> Pac
 	if s.damage > 0.0:
 		out.append(_damage_text(s))
 		out.append("Range %s cells" % num(s.range_cells))
+		if s.min_range > 0.0:
+			out.append(dead_zone_text(s.min_range))
 		if def.ground_only():
 			out.append(GROUND_ONLY)
 	else:
@@ -152,6 +154,8 @@ static func delta_lines(from: TowerDef.Level, to: TowerDef.Level) -> PackedStrin
 	var stats := PackedStringArray()
 	var support := to.damage <= 0.0
 	_delta(stats, "Aura radius" if support else "Range", from.range_cells, to.range_cells)
+	if not support:
+		_delta(stats, "Dead zone", from.min_range, to.min_range)
 	_delta(stats, "Damage", from.damage, to.damage)
 	if not support:
 		_delta(stats, "Interval", from.fire_interval, to.fire_interval, " s")
@@ -204,6 +208,11 @@ static func _keys_dict(keys: Array) -> Dictionary:
 	return d
 
 
+## LT-48: the line for a tower's dead zone (`min_range` cells).
+static func dead_zone_text(cells: float) -> String:
+	return "Dead zone: %s cells" % num(cells)
+
+
 static func _damage_text(s: TowerDef.Level) -> String:
 	return "Damage %s every %s s (%s DPS)" % [num(s.damage), num(s.fire_interval), num(_dps(s))]
 
@@ -227,6 +236,8 @@ static func _effect_text(first_key: String, e: Dictionary) -> String:
 			return "Blast radius %s cells" % num(e.get("aoe_radius", 0.0))
 		"fuse_seconds":
 			return "Fuse %s s, thrown ahead" % num(e.get("fuse_seconds", 0.0))
+		"ignore_armor":
+			return "Ignores armor"
 		"slow":
 			return "Slows enemies %s%%" % num(e.get("slow", 0.0) * 100.0)
 		"damage_taken_multiplier":

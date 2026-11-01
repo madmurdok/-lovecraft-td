@@ -98,6 +98,16 @@ const DYN_STICK_PX := 7.0  ## half length of the stick
 const BLAST_SECONDS := 0.5
 const BLAST_FLASH := 0.08
 const BLAST_DEBRIS := 8
+## LT-48 Coast battery: a muzzle flash and smoke puff at the gun, a heavy shell racing to
+## `to` in SHELL_TRAVEL with a smoke trail, then an impact: a dust burst (AP) or a ring out
+## to aoe_radius (HE). A miss lands off target and only throws up dust.
+const SHELL_COLOR := Color(2.5, 0.8, 0.55)
+const SHELL_SMOKE := Color(0.7, 0.68, 0.65)
+const SHELL_TRAVEL := 0.14
+const SHELL_SECONDS := 0.55  ## travel + impact
+const SHELL_MUZZLE := 0.09
+const SHELL_IMPACT_CELLS := 0.45  ## burst radius of a shell without aoe_radius
+const DEAD_ZONE_DASH := 5.0  ## px per dash of the selected tower's dead-zone ring
 
 ## LT-14 visual tunables.
 @export var flicker_rate := 13.0  ## flicker steps per second
@@ -190,8 +200,8 @@ func on_event(ev: SimEvent) -> void:
 
 
 ## LT-25 §1: the attack look from the tower's current stats (so upgrades and branches
-## change it): pierce -> "harpoon", fuse_seconds -> "dynamite" (LT-47), aoe_radius ->
-## "wave", support level -> "aura", otherwise "tracer".
+## change it): pierce -> "harpoon", fuse_seconds -> "dynamite" (LT-47), min_range ->
+## "shell" (LT-48), aoe_radius -> "wave", support level -> "aura", otherwise "tracer".
 static func shot_kind(t: SimTower) -> String:
 	var s := t.stats()
 	if s.damage <= 0.0:
@@ -200,6 +210,8 @@ static func shot_kind(t: SimTower) -> String:
 		return "harpoon"
 	if s.effects.get("fuse_seconds", 0.0) > 0.0:
 		return "dynamite"
+	if s.min_range > 0.0:
+		return "shell"
 	if s.effects.get("aoe_radius", 0.0) > 0.0:
 		return "wave"
 	return "tracer"
@@ -275,6 +287,11 @@ func _shot_fx(t: SimTower, data: Dictionary) -> Dictionary:
 			"wave":
 				fx["radius"] = t.stats().effects.get("aoe_radius", 0.0)
 				fx["ttl"] = WAVE_SECONDS
+			"shell":
+				fx["radius"] = t.stats().effects.get("aoe_radius", 0.0)
+				fx["ttl"] = SHELL_SECONDS
+				if fx["miss"]:
+					fx["end"] = _miss_end(fx["from"], to)
 			"dynamite":
 				# Sim time: tick_effects keeps ttl at what is left until detonate_tick
 				# (+ DYN_DUD_TICKS for a dud); the BLAST event draws the explosion.
@@ -429,8 +446,30 @@ func _draw() -> void:
 	if game.sim.state.map.in_bounds(selected_cell):
 		draw_rect(Rect2(cell_origin(selected_cell), Vector2(CELL, CELL)), COLOR_SELECT, false, 2.0)
 		if selected_range > 0.0:
-			draw_arc((Vector2(selected_cell) + Vector2(0.5, 0.5)) * CELL, selected_range * CELL,
-				0, TAU, 48, COLOR_SELECT, 1.0)
+			var sc := (Vector2(selected_cell) + Vector2(0.5, 0.5)) * CELL
+			draw_arc(sc, selected_range * CELL, 0, TAU, 48, COLOR_SELECT, 1.0)
+			var dz := selected_dead_zone()
+			if dz > 0.0:  # LT-48: the dead zone, a dashed ring over a faint fill
+				draw_circle(sc, dz * CELL, Color(COLOR_LEAK, 0.08))
+				_draw_dashed_circle(sc, dz * CELL, Color(COLOR_LEAK, 0.7))
+
+
+## LT-48: the min_range (cells) of the tower on selected_cell while its range ring shows;
+## 0 when none.
+func selected_dead_zone() -> float:
+	if selected_range <= 0.0 or game == null or game.sim == null:
+		return 0.0
+	for t in game.sim.state.towers:
+		if t.cell == selected_cell:
+			return t.stats().min_range
+	return 0.0
+
+
+func _draw_dashed_circle(c: Vector2, r: float, color: Color) -> void:
+	var n := maxi(8, int(TAU * r / (DEAD_ZONE_DASH * 2.0)))
+	for i in n:
+		var a0 := TAU * float(i) / n
+		draw_arc(c, r, a0, a0 + TAU / n * 0.5, 3, color, 1.5)
 
 
 func _draw_phantom() -> void:
@@ -458,6 +497,8 @@ static func attack_color(kind: String) -> Color:
 			return WARD_COLOR
 		"dynamite":
 			return DYNAMITE_COLOR
+		"shell":
+			return SHELL_COLOR
 	return Color.BLACK
 
 
@@ -558,6 +599,8 @@ func _draw_effects() -> void:
 				_draw_astray(fx)
 			"dynamite":
 				_draw_charge(fx)
+			"shell":
+				_draw_shell(fx)
 			"blast":
 				_draw_blast(fx)
 			"death":
@@ -685,6 +728,55 @@ func _draw_wave(fx: Dictionary) -> void:
 	if be < WAVE_FLASH:
 		for p: Vector2 in fx["hit_pos"]:
 			draw_arc(p * CELL, CELL * 0.3, 0, TAU, 20, Color(rim, 1.0 - be / WAVE_FLASH), 2.0)
+
+
+## LT-48 Coast battery: a muzzle flash and a smoke puff drifting off the gun, the shell (a
+## bright slug with a smoke trail) racing to `end`, then the impact: a ring to the HE
+## `radius` (or a small burst) with debris and a flash on each hit enemy. A miss lands
+## beside the aim point and throws up only grey dust.
+func _draw_shell(fx: Dictionary) -> void:
+	var el := _elapsed(fx)
+	var a: Vector2 = fx["from"] * CELL
+	var b: Vector2 = fx["end"] * CELL
+	var dir := (b - a).normalized()
+	var k_all := clampf(el / SHELL_SECONDS, 0.0, 1.0)
+	# Smoke puff at the gun, rising and fading over the whole effect.
+	draw_circle(a + dir * CELL * 0.35 + Vector2(0, -CELL * 0.25 * k_all),
+		CELL * (0.18 + 0.22 * k_all), Color(SHELL_SMOKE, 0.5 * (1.0 - k_all)))
+	if el < SHELL_MUZZLE:
+		var mk := 1.0 - el / SHELL_MUZZLE
+		draw_circle(a + dir * CELL * 0.3, CELL * 0.2 * (0.6 + 0.4 * mk), Color(3.0, 2.4, 1.4, mk))
+	if el < SHELL_TRAVEL:
+		var kk := clampf(el / SHELL_TRAVEL, 0.0, 1.0)
+		var head := a.lerp(b, kk)
+		var tail := head - dir * minf(CELL * 1.2, head.distance_to(a))
+		draw_line(tail, head, Color(SHELL_SMOKE, 0.45), 4.0)
+		draw_line(head - dir * CELL * 0.3, head, SHELL_COLOR, 4.0)
+		draw_circle(head, 3.5, Color(3.0, 2.6, 2.0))
+		return
+	var ie := el - SHELL_TRAVEL
+	var k := clampf(ie / (SHELL_SECONDS - SHELL_TRAVEL), 0.0, 1.0)
+	var grow := 1.0 - (1.0 - k) * (1.0 - k)
+	if fx["miss"]:
+		draw_circle(b + Vector2(0, -CELL * 0.2 * k), CELL * (0.15 + 0.25 * grow),
+			Color(SHELL_SMOKE, 0.6 * (1.0 - k)))
+		return
+	var radius: float = fx.get("radius", 0.0)
+	var r := CELL * (radius if radius > 0.0 else SHELL_IMPACT_CELLS)
+	draw_circle(b, r * (0.5 + 0.5 * grow), Color(SHELL_SMOKE, 0.4 * (1.0 - k)))
+	if ie < BLAST_FLASH:
+		draw_circle(b, r * 0.5, Color(3.0, 2.6, 1.6, 1.0 - ie / BLAST_FLASH))
+	draw_arc(b, r * (0.3 + 0.7 * grow), 0, TAU, 40, Color(SHELL_COLOR, 1.0 - k * k), 3.0)
+	var sd: int = fx["seed"]
+	for i in 6:
+		var ang := float((sd >> i) % 628) * 0.01 + i * TAU / 6.0
+		draw_circle(b + Vector2.from_angle(ang) * r * (0.3 + 0.8 * grow), 2.0,
+			Color(SHELL_COLOR, 1.0 - k))
+	if ie < WAVE_FLASH:
+		var ray := CRIT_SPARK_SCALE if fx.get("crit", false) else 1.0
+		for p: Vector2 in fx["hit_pos"]:
+			draw_arc(p * CELL, CELL * 0.3 * ray, 0, TAU, 20,
+				Color(SHELL_COLOR, 1.0 - ie / WAVE_FLASH), 2.0)
 
 
 ## LT-47 Dynamite crew: the stick flies on an arc to `to` (a dotted trail behind it, its

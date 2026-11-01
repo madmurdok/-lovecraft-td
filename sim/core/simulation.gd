@@ -172,13 +172,15 @@ func spawn_enemy(def_id: String, is_fake := false) -> int:
 ## (capped at the remaining hp, so overkill is not counted); 0 for an unknown, dead or
 ## leaked enemy, or once the outcome is set (then nothing changes and no event is emitted).
 ## A killed enemy emits DIED and is removed at the end of the current/next tick.
-func apply_damage(enemy_id: int, amount: float, source: String) -> float:
+## `ignore_armor` (LT-48 P7): the hit skips armor; damage_taken_mult still applies.
+func apply_damage(enemy_id: int, amount: float, source: String, ignore_armor := false) -> float:
 	if state.outcome != SimState.Outcome.NONE:
 		return 0.0
 	var e := enemy_by_id(enemy_id)
 	if e == null or not e.is_live():
 		return 0.0
-	var armor := maxf(0.0, e.def.armor + e.armor_bonus)
+	# LT-48 (P7): an ignore_armor hit skips the whole armor (base and bonus).
+	var armor := 0.0 if ignore_armor else maxf(0.0, e.def.armor + e.armor_bonus)
 	var taken := maxf(0.0, amount - armor) * e.damage_taken_mult
 	var removed := minf(taken, e.hp)
 	e.hp -= taken
@@ -1382,7 +1384,8 @@ func _fire_towers() -> void:
 					if not e.is_fake:
 						pool.append(e)
 			elif astray == "fake":
-				pool = _ground_filter(t, live_fakes_in_range(t.cell, s.range_cells))
+				pool = _outside_dead_zone(t, s,
+					_ground_filter(t, live_fakes_in_range(t.cell, s.range_cells)))
 			if pool.is_empty():
 				astray = "empty"
 			else:
@@ -1435,8 +1438,9 @@ func _fire_towers() -> void:
 			shot["radius"] = aoe
 			shot["blast"] = 0 if dud else _queue_blast(t, s, to, damage, fuse_ticks)
 		_emit(SimEvent.Type.SHOT, t.id, shot)
+		var no_armor: bool = s.effects.get("ignore_armor", 0.0) > 0.0
 		for e in hits:
-			apply_damage(e.id, damage, t.def.id)
+			apply_damage(e.id, damage, t.def.id, no_armor)
 		if fuse_ticks == 0:
 			_on_hit_effects(t, s, target, hits, shot)
 		var interval := s.fire_interval
@@ -1446,9 +1450,28 @@ func _fire_towers() -> void:
 
 
 ## LT-46 P1: the enemies `t` may fire at with stats `s`: live ones in range (fakes too),
-## without flyers for a ground tower (P3). Id order.
+## without flyers for a ground tower (P3) and without those inside `min_range` (P4). Id
+## order.
 func _candidates(t: SimTower, s: TowerDef.Level) -> Array[SimEnemy]:
-	return _ground_filter(t, enemies_in_range(t.cell, s.range_cells))
+	return _outside_dead_zone(t, s, _ground_filter(t, enemies_in_range(t.cell, s.range_cells)))
+
+
+## LT-48 (P4): `enemies` without those whose cell-centre distance from `t` is strictly less
+## than `s.min_range`; `enemies` itself when the level has no dead zone.
+func _outside_dead_zone(t: SimTower, s: TowerDef.Level,
+		enemies: Array[SimEnemy]) -> Array[SimEnemy]:
+	if s.min_range <= 0.0:
+		return enemies
+	var c := t.centre()
+	var r2 := s.min_range * s.min_range
+	var out: Array[SimEnemy] = []
+	for e in enemies:
+		var p := e.route.position_at(e.distance)
+		var dx := float(p.x) - float(c.x)
+		var dy := float(p.y) - float(c.y)
+		if dx * dx + dy * dy >= r2:
+			out.append(e)
+	return out
 
 
 ## `enemies` without flyers if `t` is ground only (LT-47 P3), else `enemies` itself.
@@ -1510,8 +1533,9 @@ func _settle_blasts() -> void:
 			ids.append(e.id)
 		_emit(SimEvent.Type.BLAST, b.id, {"tower": b.tower, "def": b.source, "at": b.at,
 			"radius": b.radius, "hits": ids})
+		var no_armor: bool = b.effects.get("ignore_armor", 0.0) > 0.0
 		for e in hits:
-			apply_damage(e.id, b.damage, b.source)
+			apply_damage(e.id, b.damage, b.source, no_armor)
 		_apply_bleed_hits(hits, b.effects, b.source)
 	state.blasts = left
 
