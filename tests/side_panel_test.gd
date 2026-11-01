@@ -223,19 +223,36 @@ func test_build_buttons_show_name_cost_and_role_first() -> void:
 		"Reserves %s sanity" % TowerInfo.num(sign.levels[0].sanity_reserve))
 
 
+## LT-55: the reason goes on the line under the button (in place of the role, STATUS_COLOR),
+## never in the button text, so the ellipsis can never cut the price.
+func _assert_status(id: String, status: String) -> void:
+	var def: TowerDef = _config.towers[id]
+	var b: Button = _game.picker.buttons[id]
+	var info: Label = _game.picker.infos[id]
+	assert_str(b.text).is_equal("%s — %s" % [def.name, TowerInfo.cost_text(def.cost)])
+	if status.is_empty():
+		assert_str(_first_line(info)).is_equal(def.role)
+		assert_that(info.get_theme_color("font_color")).is_equal(SidePanel.COLOR_INFO)
+	else:
+		assert_str(_first_line(info)).is_equal(status)
+		assert_str(info.text.split("\n")[1]).is_equal(def.role)
+		assert_that(info.get_theme_color("font_color")).is_equal(TowerPicker.STATUS_COLOR)
+	assert_str(b.tooltip_text).is_equal(b.text + "\n" + info.text)
+
+
 func test_build_buttons_are_disabled_with_the_reason() -> void:
 	await _start_game()
 	await _click_cell(_buildable_cell())
 	_game.sim.state.gold = 0
 	_game.picker.refresh()
 	for id: String in _config.towers:
-		var b: Button = _game.picker.buttons[id]
-		assert_bool(b.disabled).is_true()
-		assert_str(b.text).ends_with(" (not enough money)")
+		assert_bool(_game.picker.buttons[id].disabled).is_true()
+		_assert_status(id, "(not enough money)")
 	_game.sim.state.gold = 10000
 	_game.picker.refresh()
 	assert_bool(_game.picker.buttons[RIFLE].disabled).is_false()
-	assert_str(_game.picker.buttons[RIFLE].text).not_contains("(")
+	_assert_status(RIFLE, "")
+	assert_str(_first_line(_game.picker.infos[RIFLE])).not_contains("(not enough money)")
 
 
 func test_no_role_line_when_the_role_is_empty() -> void:
@@ -384,6 +401,7 @@ func test_a_tower_without_a_reserve_never_warns() -> void:
 ## LT-23 pin 25: an enabled build button warns when the L1 reserve would take the cap to 0;
 ## never for a reserve of 0, in MADNESS, or on a disabled button.
 func test_build_button_warns_when_its_reserve_takes_the_cap_to_zero() -> void:
+	var mad := TowerInfo.MADNESS_WARNING.strip_edges()
 	var l1 := _config.towers[SIGN].levels[0]
 	l1.sanity_reserve = _config.sanity.max_sanity
 	await _start_game()
@@ -391,20 +409,22 @@ func test_build_button_warns_when_its_reserve_takes_the_cap_to_zero() -> void:
 	await _click_cell(_buildable_cell())
 	_game.picker.refresh()
 	assert_bool(_game.picker.buttons[SIGN].disabled).is_false()
-	assert_str(_game.picker.buttons[SIGN].text).ends_with(TowerInfo.MADNESS_WARNING)
-	assert_str(_game.picker.buttons[RIFLE].text).not_contains("drives you mad")
+	assert_str(mad).is_equal("(drives you mad!)")
+	_assert_status(SIGN, mad)
+	_assert_status(RIFLE, "")
 	l1.sanity_reserve = _config.sanity.max_sanity - 1.0
 	_game.picker.refresh()
-	assert_str(_game.picker.buttons[SIGN].text).not_contains("drives you mad")
+	_assert_status(SIGN, "")
 	l1.sanity_reserve = _config.sanity.max_sanity
 	_game.sim.state.gold = 0
 	_game.picker.refresh()
-	assert_str(_game.picker.buttons[SIGN].text).ends_with(" (not enough money)")
-	assert_str(_game.picker.buttons[SIGN].text).not_contains("drives you mad")
+	_assert_status(SIGN, "(not enough money)")
+	assert_str(_game.picker.infos[SIGN].text).not_contains("drives you mad")
 	_game.sim.state.gold = 10000
 	_game.sim.state.sanity = 0.0
 	_game.sim.state.sanity_state = SimState.SanityState.MADNESS
 	_game.picker.refresh()
+	assert_str(_game.picker.infos[SIGN].text).not_contains("drives you mad")
 	assert_str(_game.picker.buttons[SIGN].text).not_contains("drives you mad")
 
 

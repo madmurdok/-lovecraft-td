@@ -110,7 +110,8 @@ func test_picker_enables_every_buildable_tower_and_disables_unaffordable_ones() 
 	_game.sim.state.gold = _cost(RIFLE) - 1
 	_game.advance(0.0)
 	assert_bool(_game.picker.buttons[RIFLE].disabled).is_true()
-	assert_str(_game.picker.buttons[RIFLE].text).contains("not enough money")
+	assert_str(_game.picker.buttons[RIFLE].text).not_contains("not enough money")
+	assert_str(_game.picker.infos[RIFLE].text.split("\n")[0]).is_equal("(not enough money)")
 	# A disabled button builds nothing.
 	await _click_control(_game.picker.buttons[RIFLE])
 	assert_int(_game.sim.state.towers.size()).is_equal(0)

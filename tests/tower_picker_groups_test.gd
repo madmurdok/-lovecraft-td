@@ -256,21 +256,87 @@ func test_ten_unaffordable_towers_fit_the_panel_without_scrolling_at_1152x648() 
 
 # --- states and pressing, both groups -------------------------------------------------------
 
+func _button_text(id: String) -> String:
+	var def: TowerDef = _config.towers[id]
+	return "%s — %s" % [def.name, TowerInfo.cost_text(def.cost)]
+
+
 func test_refresh_states_hold_for_all_ten_buttons() -> void:
 	await _start_game(_ten_config())
 	_game.sim.state.gold = 10000
 	await _open_picker()
 	for id: String in _config.towers:
-		var def: TowerDef = _config.towers[id]
 		var b: Button = _game.picker.buttons[id]
 		assert_bool(b.disabled).is_false()
-		assert_str(b.text).starts_with("%s — %s" % [def.name, TowerInfo.cost_text(def.cost)])
+		assert_str(b.text).is_equal(_button_text(id))
+		assert_str(_game.picker.infos[id].text).is_equal(_full_info(id))
+		assert_that(_game.picker.infos[id].get_theme_color("font_color")).is_equal(SidePanel.COLOR_INFO)
 	_game.sim.state.gold = 0
 	_game.picker.refresh()
 	for id: String in _config.towers:
 		var b: Button = _game.picker.buttons[id]
+		var info: Label = _game.picker.infos[id]
 		assert_bool(b.disabled).is_true()
-		assert_str(b.text).ends_with(" (not enough money)")
+		assert_str(b.text).is_equal(_button_text(id))
+		assert_str(info.text).is_equal("(not enough money)\n" + _full_info(id))
+		assert_that(info.get_theme_color("font_color")).is_equal(TowerPicker.STATUS_COLOR)
+	# Affordable again: the status line goes away and the role line is back.
+	_game.sim.state.gold = 10000
+	_game.picker.refresh()
+	for id: String in _config.towers:
+		assert_str(_game.picker.infos[id].text).is_equal(_full_info(id))
+		assert_that(_game.picker.infos[id].get_theme_color("font_color")).is_equal(SidePanel.COLOR_INFO)
+
+
+## F1: the tooltip the player sees is the one refresh() sets: button text, the status line
+## (when any), then the full role + L1 info.
+func test_tooltip_after_refresh_carries_the_status_line_and_the_full_info() -> void:
+	await _start_game(_ten_config())
+	_game.sim.state.gold = 10000
+	await _open_picker()
+	for id: String in _config.towers:
+		assert_str(_game.picker.buttons[id].tooltip_text) \
+			.is_equal(_button_text(id) + "\n" + _full_info(id))
+	_game.sim.state.gold = 0
+	_game.picker.refresh()
+	for id: String in _config.towers:
+		var tip: String = _game.picker.buttons[id].tooltip_text
+		assert_str(tip).is_equal(_button_text(id) + "\n(not enough money)\n" + _full_info(id))
+		assert_int(tip.split("\n").size()).is_greater(3)
+
+
+## The button text is only "Name — $cost" in every state: the reason never enters it.
+func test_button_text_never_contains_the_reason() -> void:
+	await _start_game(_ten_config())
+	await _open_picker()
+	for gold in [0, 10000]:
+		_game.sim.state.gold = gold
+		_game.picker.refresh()
+		for id: String in _config.towers:
+			var t: String = _game.picker.buttons[id].text
+			assert_str(t).is_equal(_button_text(id))
+			assert_str(t).not_contains("(")
+			for r: String in TowerInfo.REASONS.values():
+				assert_str(t).not_contains(r)
+
+
+## Verify of LT-55: "Necronomicon Reader — $15…" for $150. Every shipped tower's button text
+## fits its button's content width at ENTRY_FONT_SIZE, so no ellipsis cuts the price.
+func test_every_shipped_towers_price_is_visible_in_full() -> void:
+	await _start_game(_data_config())
+	_game.sim.state.gold = 0
+	await _open_picker()
+	await get_tree().process_frame
+	for id: String in _config.towers:
+		var b: Button = _game.picker.buttons[id]
+		assert_bool(b.disabled).is_true()
+		var font := b.get_theme_font("font")
+		var text_w := font.get_string_size(b.text, HORIZONTAL_ALIGNMENT_LEFT, -1,
+			TowerPicker.ENTRY_FONT_SIZE).x
+		var content_w := b.size.x - b.get_theme_stylebox("disabled").get_minimum_size().x
+		assert_float(text_w).override_failure_message("%s: \"%s\" is %.1f px, button content %.1f px"
+			% [id, b.text, text_w, content_w]).is_less_equal(content_w)
+		assert_str(b.text).ends_with(TowerInfo.cost_text(_config.towers[id].cost))
 
 
 func test_pressing_a_button_in_either_group_builds_it_and_closes_the_picker() -> void:
