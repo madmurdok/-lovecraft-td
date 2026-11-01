@@ -51,9 +51,10 @@ extends SceneTree
 ## allows, then call_wave() at once (lighting the lamp at once gives the night its maximum
 ## luck). During a wave (night) building, upgrades and sales are refused, so the bot only
 ## tries buy_sanity() (occult, mixed), re-checking every second.
-## Lighthouse (LT-30 §3.2/§3.4, LT-57 §5): by day, after sell_relics(), the bot tops the lamp
-## oil up to one flare's flare.cost_oil (buy_oil() until the stock is there or a call is
-## refused), and in the
+## Lighthouse (LT-30 §3.2/§3.4, LT-57 §5): by day, once the board has BUILD_FIRST towers
+## (towers first, then the oil reserve; LT-57 S2 decision), the bot tops the lamp oil up to
+## one flare's flare.cost_oil (buy_oil() until the stock is there or a call is refused),
+## before any upgrade, and in the
 ## purchase loop buys the next lighthouse level when its cost is at most the cheapest tower
 ## upgrade's (or no tower upgrade is left); a refused level is not retried that day and the
 ## loop falls through to tower upgrades and builds (LT-30 S10); at night it fires the flare when at least
@@ -334,12 +335,14 @@ func _act(sim: Simulation, strat: String, idx: int, built: Dictionary) -> int:
 		_night_flare(sim)
 		return idx  # LT-27 §3: night; builds, upgrades and sales are day only
 	sim.sell_relics()  # refused with an empty stash
-	if _flare:
-		while sim.state.oil < _bot_oil_target(sim) \
-				and sim.buy_oil() == Simulation.CommandResult.OK:
-			pass  # refused: no oil block, full, or too poor
 	var lighthouse_refused := false  # a refused lighthouse buy falls through to the builds
+	var topped := not _flare  # LT-57: the oil reserve comes after the BUILD_FIRST towers
 	while true:
+		if not topped and sim.state.towers.size() >= BUILD_FIRST:
+			topped = true
+			while sim.state.oil < _bot_oil_target(sim) \
+					and sim.buy_oil() == Simulation.CommandResult.OK:
+				pass  # refused: no oil block, full, or too poor
 		if _upgrades and _lighthouse and not lighthouse_refused \
 				and sim.state.towers.size() >= BUILD_FIRST and _lighthouse_next(sim, strat):
 			if sim.upgrade_lighthouse() != Simulation.CommandResult.OK:
