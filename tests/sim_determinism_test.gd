@@ -51,10 +51,17 @@ func _pack_sizes(run_seed: int) -> Array[int]:
 	var sim := Simulation.new(real_config(), run_seed)
 	var sizes: Array[int] = []
 	for i in PACKS:
-		var before := sim.state.next_id
-		sim.spawn_enemy("deep_one")
-		sizes.append(sim.state.next_id - before)
+		sizes.append(_spawn_pack(sim))
 	return sizes
+
+
+## Spawns one deep_one pack and steps until all its members entered (LT-63); its size.
+func _spawn_pack(sim: Simulation) -> int:
+	var before := sim.state.next_id
+	sim.spawn_enemy("deep_one")
+	for t in pack_span_ticks(sim.config, "deep_one"):
+		sim.step()
+	return sim.state.next_id - before
 
 
 func test_same_seed_gives_identical_events_and_state() -> void:
@@ -126,9 +133,7 @@ func test_rolls_on_another_stream_do_not_change_pack_sizes() -> void:
 			sim.rng(SimRng.Stream.MADNESS).randf()
 		var sizes: Array[int] = []
 		for i in PACKS:
-			var before := sim.state.next_id
-			sim.spawn_enemy("deep_one")
-			sizes.append(sim.state.next_id - before)
+			sizes.append(_spawn_pack(sim))
 		assert_bool(sizes == plain).override_failure_message(
 			"seed %d: %s vs %s" % [run_seed, sizes, plain]).is_true()
 

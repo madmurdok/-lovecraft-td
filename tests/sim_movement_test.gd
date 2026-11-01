@@ -29,7 +29,8 @@ func test_cultist_on_real_map_leaks_on_tick_1210_not_earlier() -> void:
 	assert_int(sim.state.lighthouse_hp).is_equal(hp - cfg.enemies["cultist"].leak_damage)
 
 
-func test_deep_one_pack_on_real_map_leaks_together() -> void:
+## LT-63: members enter one by one, so each leaks 750 ticks after its own spawn tick.
+func test_deep_one_pack_on_real_map_leaks_member_by_member() -> void:
 	var cfg := real_config()
 	var def: EnemyDef = cfg.enemies["deep_one"]
 	var upt := SimTime.units_per_tick(def.speed)
@@ -41,11 +42,11 @@ func test_deep_one_pack_on_real_map_leaks_together() -> void:
 	var before := run_to(sim, leak - 1)
 	assert_array(of_type(before, SimEvent.Type.LEAKED)).is_empty()
 	var spawned := of_type(before, SimEvent.Type.SPAWNED)
-	var leaks := of_type(run(sim, 1), SimEvent.Type.LEAKED)
+	var leaks := of_type(run(sim, pack_span_ticks(cfg, "deep_one") + 1), SimEvent.Type.LEAKED)
 	assert_int(leaks.size()).is_equal(spawned.size())
 	assert_array(ids_of(leaks)).is_equal(ids_of(spawned))
-	for l in leaks:
-		assert_int(l.tick).is_equal(leak)
+	for i in leaks.size():
+		assert_int(leaks[i].tick).is_equal(expected_leak_tick(spawned[i].tick, length, upt))
 
 
 # --- formula over lengths and spawn ticks -----------------------------------

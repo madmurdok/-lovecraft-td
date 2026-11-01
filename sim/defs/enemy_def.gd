@@ -21,13 +21,16 @@ var horror_drain: float  ## sanity per second near towers, >= 0 (GDD §5.3)
 var contact_dps: float
 ## Known traits and their required parameters (schema, not balance).
 const TRAITS := {
-	"pack": ["min", "max"],  # spawns min..max per spawn event (integers >= 1)
+	# spawns min..max per spawn event (integers >= 1), one by one: member k enters
+	# k x spacing_s seconds after the first (LT-63; > 0 and at least one tick)
+	"pack": ["min", "max", "spacing_s"],
 	"tower_harass": ["stop_seconds", "fire_rate_multiplier", "debuff_seconds"],
 	"tower_lift": ["from_wave", "drop_cells", "disable_seconds"],
 	"regen": ["hp_percent_per_second"],
 }
 
-## Trait id (from TRAITS) -> parameters (String -> float), e.g. "pack": {"min": 4, "max": 6}.
+## Trait id (from TRAITS) -> parameters (String -> float), e.g.
+## "pack": {"min": 4, "max": 6, "spacing_s": 0.5}.
 var traits: Dictionary = {}
 
 
@@ -82,6 +85,12 @@ static func _parse_trait(r: ConfigReader, trait_id: String, params: Dictionary,
 			r.error(ConfigReader.join(path, "max"), "must be >= min (%d), got %d" % [lo, hi])
 		out["min"] = float(lo)
 		out["max"] = float(hi)
+		n = r.errors.size()
+		var spacing := r.req_number(params, "spacing_s", path, 0.0, INF, true)
+		if r.errors.size() == n and spacing < SimTime.DT - 1e-9:  # 1e-9: DT written out in JSON (0.0333...) rounds just below DT
+			r.error(ConfigReader.join(path, "spacing_s"),
+				"must be at least one tick (%s s), got %s" % [SimTime.DT, spacing])
+		out["spacing_s"] = spacing
 		return out
 	for key: String in names:
 		out[key] = r.req_number(params, key, path, 0.0)

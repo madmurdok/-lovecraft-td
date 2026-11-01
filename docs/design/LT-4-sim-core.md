@@ -305,6 +305,12 @@ not change movement, leaks, ids, events or the outcome check.
 один такт"; flyers: "Пока будет S но давай отметим проверить вариант с точкой F" — flyers
 start at `S` now; a separate `F` spawn cell is to be checked later (GDD open topics).
 
+**Superseded (LT-63, 2026-11-02):** Q5 pack layout. Owner: members stacked on one spot hide
+each other ("убиваешь их, а они исчезают а под ними еще одни"); chosen "Разнести по времени
+в симе (Recommended)". `spawn_enemy` still rolls the size at once (same stream and order);
+the first member enters now, member k enters k x `pack.spacing_s` later (slot 7, before the
+spawner). A wave is not cleared, and the run not won, while a real member is queued.
+
 ---
 
 ## 8. Edit map for the code slice (LT-4/S2)
