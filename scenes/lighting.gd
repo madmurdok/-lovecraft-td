@@ -22,9 +22,11 @@ const BEAM_COLOR := Color(1.0, 0.94, 0.72)
 const BEAM_ENERGY := 2.6  ## LT-58: was 1.6 ("readable but weak", LT-54 playtest)
 ## LT-58 cone texture shape (fractions of the half angle / of the reach):
 const BEAM_FILL_EDGE_START := 0.8  ## the fill stays solid up to here, then drops to 0 at 1.0 (was 0.55)
-const BEAM_RIM_START := 0.62  ## a brighter band along each edge, inside the cone
+## The rim term lifts the 0.8..1.0 falloff back towards full (the fill is already 1 below 0.8,
+## so the clamp hides it there): a wider solid cone with a sharper edge, not a brighter band.
+const BEAM_RIM_START := 0.62
 const BEAM_RIM_PEAK := 0.9
-const BEAM_RIM_GAIN := 0.35  ## extra brightness of that band over the fill
+const BEAM_RIM_GAIN := 0.35  ## how far the falloff zone is lifted (0 = plain smoothstep edge)
 const BEAM_FALLOFF_POWER := 0.5  ## brightness ~ (1 - d)^power along the length (was 0.8)
 const LIGHTHOUSE_GLOW_CELLS := 3.0
 const TOWER_LIGHT_COLOR := Color(1.0, 0.78, 0.48)
