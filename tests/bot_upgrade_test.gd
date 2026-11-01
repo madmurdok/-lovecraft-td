@@ -593,3 +593,81 @@ func test_lighthouse_waits_for_cheaper_tower_upgrades() -> void:
 	assert_bool(b.call("_lighthouse_next", sim, "mundane")).is_true()
 	sim.state.lighthouse_level = cfg.economy.beam.levels.size() - 1
 	assert_bool(b.call("_lighthouse_next", sim, "mundane")).is_false()  # at the top
+
+
+# --- LT-30 S10: a refused lighthouse buy falls through to the day's builds -----------------
+
+## A sim that counts upgrade_lighthouse() calls (refused ones included). Past
+## RETRY_GUARD calls it lifts the lighthouse to its top level, so _lighthouse_next turns
+## false and a bot retrying a refused buy in one day ends instead of hanging the suite.
+class CountingSim extends Simulation:
+	const RETRY_GUARD := 20
+	var lighthouse_calls := 0
+
+	func _init(p_config: GameConfig, run_seed: int) -> void:
+		super(p_config, run_seed)
+
+	func upgrade_lighthouse() -> Simulation.CommandResult:
+		lighthouse_calls += 1
+		if lighthouse_calls > RETRY_GUARD:
+			state.lighthouse_level = config.economy.beam.levels.size() - 1
+		return super()
+
+
+## _five_l3_rifles on a CountingSim: no tower upgrade left, so the lighthouse is next.
+func _counting_five_l3(gold: int) -> CountingSim:
+	var cfg := real_config()
+	var sim := CountingSim.new(cfg, 1000)
+	sim.set_spawner(WaveDirector.new(cfg.waves))
+	sim.step()
+	assert_int(sim.state.phase).is_equal(SimState.Phase.BUILD)
+	sim.state.gold = gold
+	sim.drain_events()
+	for i in 5:
+		_place(sim, RIFLE, 2, "a")
+	sim.state.oil = 4  # no oil top-up in the way
+	assert_bool(_bot().call("_lighthouse_next", sim, "mundane")).is_true()
+	return sim
+
+
+func test_a_refused_lighthouse_buy_falls_through_to_the_days_build() -> void:
+	var lh_cost: int = real_config().economy.beam.levels[1].upgrade_cost
+	var id: String = _bot().call("_order", "mundane", 5, null, {})
+	var build_cost: int = real_config().towers[id].cost
+	assert_int(build_cost).is_less(lh_cost)  # affords the build, not the lighthouse
+	var sim := _five_l3_rifles(build_cost)
+	var idx: int = _bot().call("_act", sim, "mundane", 5, {})
+	assert_int(idx).is_equal(6)
+	assert_int(sim.state.towers.size()).is_equal(6)
+	assert_str(sim.state.towers[5].def.id).is_equal(id)
+	assert_int(sim.state.lighthouse_level).is_equal(0)
+	assert_int(sim.state.gold).is_equal(0)
+
+
+func test_a_refused_lighthouse_buy_is_not_retried_the_same_day() -> void:
+	var sim := _counting_five_l3(real_config().economy.beam.levels[1].upgrade_cost - 1)
+	_bot().call("_act", sim, "mundane", 5, {})
+	assert_int(sim.lighthouse_calls).is_equal(1)
+	assert_int(sim.state.lighthouse_level).is_equal(0)
+
+
+func test_the_lighthouse_is_tried_again_the_next_day() -> void:
+	var lh_cost: int = real_config().economy.beam.levels[1].upgrade_cost
+	var sim := _counting_five_l3(0)  # day 1: refused, nothing affordable, the wave is called
+	var b := _bot()
+	b.call("_act", sim, "mundane", 5, {})
+	assert_int(sim.lighthouse_calls).is_equal(1)
+	assert_int(sim.state.phase).is_equal(SimState.Phase.WAVE)
+	var steps := 0
+	while sim.state.phase != SimState.Phase.BUILD and steps < 100000:
+		sim.step()
+		steps += 1
+	assert_int(sim.state.phase).is_equal(SimState.Phase.BUILD)
+	assert_int(sim.state.outcome).is_equal(SimState.Outcome.NONE)
+	sim.state.gold = lh_cost  # day 2: the same bot affords the level
+	sim.state.oil = 4
+	sim.drain_events()
+	b.call("_act", sim, "mundane", 5, {})
+	assert_int(sim.state.lighthouse_level).is_equal(1)
+	# Day 2: level 1 bought, level 2 refused once (too poor), not retried.
+	assert_int(sim.lighthouse_calls).is_equal(3)
