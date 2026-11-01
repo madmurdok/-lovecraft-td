@@ -113,3 +113,20 @@ func test_panel_and_hud_flare_texts_come_from_the_config() -> void:
 	s.lighthouse_level = 1
 	h.refresh()
 	assert_str(h.flare_button.tooltip_text).is_equal("Lights everything within 7.5 cells for 3 s")
+
+
+## LT-59: a flare radius of one cell reads "1 cell" in the panel's oil label and the HUD tooltip.
+func test_a_one_cell_flare_radius_reads_singular_in_the_panel_and_hud() -> void:
+	var p := _game.lighthouse_panel
+	var h := _game.hud
+	var s := _game.sim.state
+	_game.sim.config.economy.flare.radius_cells[0] = 1.0
+	s.gold = 100000
+	p.open()
+	p.refresh()
+	assert_str(p.oil_label.text).contains("radius 1 cell, ")
+	s.oil = 5
+	assert_int(_game.call_wave()).is_equal(R.OK)
+	h.refresh()
+	assert_str(h.flare_button.tooltip_text) \
+		.is_equal("Lights everything within 1 cell for %s s" % ConfigReader.fmt(_game.sim.config.economy.flare.seconds))

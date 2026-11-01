@@ -502,3 +502,110 @@ func test_no_table_value_is_cut_at_1280x720() -> void:
 					_game.close_panels()
 					assert_int(_game.sell(t.id)).is_equal(Simulation.CommandResult.OK)
 	assert_array(cuts).is_empty()
+
+
+# --- LT-59: value-column gap -----------------------------------------------------------------
+
+## The widest text of value column `col` over its head and unspanned cells, as _fit_columns
+## measures it (ceil of the font width).
+func _col_text_w(table: StatsTable, col: int) -> float:
+	var w := 0.0
+	var col_labels: Array[Label] = [table.heads[col]]
+	for key: String in table.cells:
+		if table.cells[key].size() == table.heads.size():
+			col_labels.append(table.cells[key][col])
+	for l in col_labels:
+		w = maxf(w, l.get_theme_font("font").get_string_size(l.text,
+			HORIZONTAL_ALIGNMENT_LEFT, -1, l.get_theme_font_size("font_size")).x)
+	return ceilf(w)
+
+
+## The free px after value column `col` (its head's minimum width less its widest text).
+func _gap_after(table: StatsTable, col: int) -> float:
+	return table.heads[col].custom_minimum_size.x - _col_text_w(table, col)
+
+
+## The widest row of the table, minimum width (label + value columns + separations).
+func _widest_row(table: StatsTable) -> float:
+	var w := 0.0
+	for row: Control in table.get_children():
+		if row.visible:
+			w = maxf(w, row.get_combined_minimum_size().x)
+	return w
+
+
+## A free-standing 3-column table (Now | A | B) of the Summoning Circle at L2.
+func _circle_table(max_width: int) -> StatsTable:
+	var def: TowerDef = _config.towers["summoning_circle"]
+	var cols: Array[Dictionary] = []
+	for s: TowerDef.Level in [def.levels[1], def.branches["a"], def.branches["b"]]:
+		cols.append(TowerInfo.row_values(def, s, _config, 80.0))
+	var table := StatsTable.new()
+	table.max_width = max_width
+	_vp.add_child(table)
+	table.set_columns(PackedStringArray(["Now", "A", "B"]), cols)
+	return table
+
+
+func test_every_value_column_but_the_last_ends_in_the_full_column_gap() -> void:
+	var table := _circle_table(0)
+	assert_int(table.heads.size()).is_equal(3)
+	for col in 2:
+		assert_float(_gap_after(table, col)).override_failure_message("col %d" % col) \
+			.is_equal(float(StatsTable.COLUMN_GAP))
+	assert_float(_gap_after(table, 2)).is_equal(0.0)
+	# The gap is the same in every row, so the columns stay aligned.
+	for key: String in table.cells:
+		if table.cells[key].size() == 3:
+			for col in 3:
+				assert_float(table.cells[key][col].custom_minimum_size.x) \
+					.override_failure_message("%s col %d" % [key, col]) \
+					.is_equal(table.heads[col].custom_minimum_size.x)
+
+
+func test_the_gap_shrinks_only_when_the_row_would_pass_max_width() -> void:
+	var full := _widest_row(_circle_table(0))
+	# Room for the full gap: nothing shrinks.
+	var roomy := _circle_table(int(full))
+	for col in 2:
+		assert_float(_gap_after(roomy, col)).is_equal(float(StatsTable.COLUMN_GAP))
+	# 4 px short over 2 gaps: each loses 2 px and the row ends exactly at max_width.
+	var tight := _circle_table(int(full) - 4)
+	for col in 2:
+		assert_float(_gap_after(tight, col)).override_failure_message("col %d" % col) \
+			.is_equal(float(StatsTable.COLUMN_GAP - 2))
+	assert_float(_widest_row(tight)).is_less_equal(full - 4.0)
+	# Far too narrow: the gap bottoms out at 0, never negative.
+	var squeezed := _circle_table(1)
+	for col in 2:
+		assert_float(_gap_after(squeezed, col)).is_equal(0.0)
+
+
+func test_three_column_cards_keep_the_full_gap_and_fit_the_usable_width() -> void:
+	await _start_game()
+	var widest := {"id": "", "w": 0.0}
+	var three := 0
+	for id: String in _config.towers:
+		_game.close_panels()
+		var t := await _tower(id, [""])
+		await get_tree().process_frame
+		await get_tree().process_frame
+		var table := _table()
+		if table.heads.size() != 3:
+			continue
+		three += 1
+		var scroll := _game.side_panel.scroll
+		var usable := scroll.size.x - scroll.get_v_scroll_bar().get_combined_minimum_size().x
+		assert_int(table.max_width).override_failure_message(id).is_equal(int(usable))
+		for col in 2:
+			assert_float(_gap_after(table, col)).override_failure_message("%s col %d" % [id, col]) \
+				.is_equal(float(StatsTable.COLUMN_GAP))
+		var w := _widest_row(table)
+		assert_float(w).override_failure_message("%s row %.1f > %.1f" % [id, w, usable]) \
+			.is_less_equal(usable)
+		if w > widest["w"]:
+			widest = {"id": id, "w": w}
+		_game.close_panels()
+		assert_int(_game.sell(t.id)).is_equal(Simulation.CommandResult.OK)
+	assert_int(three).is_greater(0)
+	assert_str(widest["id"]).is_equal("summoning_circle")

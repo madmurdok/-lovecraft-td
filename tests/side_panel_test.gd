@@ -123,8 +123,10 @@ func test_panel_rect_is_right_of_the_board_below_the_hud() -> void:
 	assert_float(r.end.x).is_equal(1200.0)
 	assert_float(r.end.y).is_equal(675.0)
 	assert_bool(r.intersects(board)).is_false()
+	assert_float(r.size.x).is_equal(1200.0 - map.width * Board.CELL)
 	if map.width * Board.CELL == 960:
 		assert_that(r).is_equal(Rect2(960, 48, 240, 627))
+		assert_float(_game.side_panel.size.x).is_equal(240.0)
 	assert_that(_game.side_panel.get_global_rect()).is_equal(r)
 
 
@@ -512,6 +514,31 @@ func test_targeting_towers_show_the_switch_between_stats_and_upgrade_first_marke
 	var sorted := idx.duplicate()
 	sorted.sort()
 	assert_array(idx).is_equal(sorted)
+
+
+## LT-59: Upgrade (or the branch buttons), then "Max level", then Target, then Sell.
+func test_target_section_follows_upgrade_and_max_level_and_precedes_sell() -> void:
+	await _start_game()
+	var p := _game.tower_panel
+	for path: Array in [[], [""], ["", "a"]]:
+		await _open_tower(RIFLE, path)
+		var chain: Array[Control] = [p.get_node("UpgradeTitle")]
+		for k: String in p.upgrade_buttons:
+			chain.append(p.upgrade_buttons[k])
+		chain.append_array([p.get_node("MaxLevel"), p.get_node("PriorityTitle"),
+			p.get_node("Priority_first"), p.get_node("Priority_strongest"),
+			p.get_node("Priority_fastest"), p.get_node("SellButton")])
+		var last := -1
+		for c in chain:
+			assert_object(c.get_parent()).override_failure_message(c.name).is_same(p)
+			assert_int(c.get_index()).override_failure_message("%s %s" % [path, c.name]) \
+				.is_greater(last)
+			last = c.get_index()
+		# What is shown keeps that order too: Max level only at L3, always above Target.
+		assert_bool(p.get_node("MaxLevel").visible).is_equal(path.size() == 2)
+		assert_bool(_prio_title().visible).is_true()
+		assert_bool(p.get_node("SellButton").visible).is_true()
+		_game.close_panels()
 
 
 func test_elder_sign_hides_the_switch_at_every_level() -> void:

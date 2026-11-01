@@ -581,3 +581,29 @@ func test_trait_text_rule_order_blast_and_dash_fallbacks() -> void:
 	var plain := TowerDef.Level.new()
 	assert_str(TowerInfo.trait_text(mundane, plain)).is_equal(TowerInfo.CELL_DASH)
 	assert_str(TowerInfo.trait_text(occult, plain)).is_equal(TowerInfo.CELL_DASH)  # reserve 0
+
+
+# --- LT-59: "1 cell" / "N cells" ---------------------------------------------------------------
+
+func test_cells_text_is_singular_only_for_exactly_one() -> void:
+	assert_str(TowerInfo.cells_text("1")).is_equal("1 cell")
+	for n: String in ["0", "0.5", "1.5", "2", "10"]:
+		assert_str(TowerInfo.cells_text(n)).override_failure_message(n).is_equal(n + " cells")
+
+
+func test_blast_banish_and_back_lines_count_cells_in_the_singular_at_one() -> void:
+	assert_array(Array(TowerInfo.effect_lines({"aoe_radius": 1.0}))) \
+		.is_equal(["Blast radius 1 cell"])
+	assert_array(Array(TowerInfo.effect_lines({"aoe_radius": 1.5}))) \
+		.is_equal(["Blast radius 1.5 cells"])
+	assert_array(Array(TowerInfo.effect_lines({"banish_cells": 1.0}))) \
+		.is_equal(["Banish 1 cell back"])
+	assert_array(Array(TowerInfo.effect_lines({"banish_cells": 6.0}))) \
+		.is_equal(["Banish 6 cells back"])
+	assert_array(Array(TowerInfo.effect_lines({"banish_cells": 1.0, "banish_targets": 3.0}))) \
+		.is_equal(["Banish 3 foes 1 cell"])
+	assert_array(Array(TowerInfo.effect_lines({"banish_cells": 2.0, "banish_targets": 3.0}))) \
+		.is_equal(["Banish 3 foes 2 cells"])
+	assert_str(TowerInfo.special_short(_level({"banish_cells": 1.0}))).contains("ack 1 cell")
+	assert_str(TowerInfo.special_short(_level({"banish_cells": 1.0}))).not_contains("cells")
+	assert_str(TowerInfo.special_short(_level({"banish_cells": 4.0}))).contains("ack 4 cells")

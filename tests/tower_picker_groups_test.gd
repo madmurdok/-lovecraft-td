@@ -385,7 +385,8 @@ func _font_of(l: Label) -> int:
 	return l.get_theme_font_size("font_size")
 
 
-## The widths of the four cells add up to the panel's 224 px, and each cell has its width.
+## The widths of the four cells add up to the panel's inner width (240 px panel less both
+## margins = 224 px), and each cell has its width.
 func test_row_cells_have_their_column_widths_summing_to_224() -> void:
 	await _start_game(_data_config())
 	_game.sim.state.gold = 10000
@@ -393,8 +394,10 @@ func test_row_cells_have_their_column_widths_summing_to_224() -> void:
 	await get_tree().process_frame
 	var sum := TowerPicker.NAME_W + TowerPicker.COST_W + TowerPicker.COST_GAP \
 		+ TowerPicker.DPS_W + TowerPicker.TRAIT_W
+	var inner := SidePanel.panel_rect(_game.sim.state.map).size.x - 2.0 * SidePanel.MARGIN
+	assert_int(sum).is_equal(int(inner))
 	assert_int(sum).is_equal(224)
-	assert_float(_game.picker.size.x).is_equal(224.0)
+	assert_float(_game.picker.size.x).is_equal(float(sum))
 	for id: String in _config.towers:
 		assert_float(_game.picker.names[id].size.x).override_failure_message(id) \
 			.is_equal(float(TowerPicker.NAME_W))
@@ -570,3 +573,10 @@ func test_heads_are_on_the_first_group_line_only_with_tooltips() -> void:
 		assert_str(h.tooltip_text).is_not_empty()
 	var occult := _game.picker.find_child("Group_occult", true, false)
 	assert_int(occult.get_child_count()).is_equal(1)
+
+
+## LT-59: the Blind tooltip says "1 cell" for one and "N cells" otherwise.
+func test_blind_tooltip_counts_cells_in_the_singular_at_one() -> void:
+	assert_str(TowerPicker._trait_tip("Blind 1")).is_equal("Blind 1: can't fire within 1 cell")
+	assert_str(TowerPicker._trait_tip("Blind 2")).is_equal("Blind 2: can't fire within 2 cells")
+	assert_str(TowerPicker._trait_tip("Blind 1.5")).is_equal("Blind 1.5: can't fire within 1.5 cells")
