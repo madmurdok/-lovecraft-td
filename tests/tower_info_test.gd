@@ -530,3 +530,54 @@ func test_resonator_reads_its_scaling_and_the_factor_at_current_sanity() -> void
 	var rifle := _def("rifleman")
 	assert_str(TowerInfo.row_values(rifle, rifle.levels[0], _cfg, 40.0)["dps"]) \
 		.is_equal(_row("rifleman", rifle.levels[0])["dps"])
+
+
+# --- LT-61 §2: the build list's Trait cell ---------------------------------------------------
+
+## trait_text for each shipped tower's L1, the numbers read from config: an occult reserve
+## "Res N" first, then Ground, Blind N (min_range), Line (pierce), Reveal, else the dash.
+func test_trait_text_of_every_shipped_tower() -> void:
+	var want := {
+		"rifleman": TowerInfo.CELL_DASH,
+		"harpooner": "Line",
+		"elder_sign": "Res " + _n(_def("elder_sign").levels[0].sanity_reserve),
+		"necronomicon_reader": "Res " + _n(_def("necronomicon_reader").levels[0].sanity_reserve),
+		"dynamite_crew": "Ground",
+		"coast_battery": "Blind " + _n(_def("coast_battery").levels[0].min_range),
+		"searchlight": "Reveal",
+		"resonator": "Res " + _n(_def("resonator").levels[0].sanity_reserve),
+		"silver_key": "Res " + _n(_def("silver_key").levels[0].sanity_reserve),
+		"summoning_circle": "Res " + _n(_def("summoning_circle").levels[0].sanity_reserve),
+	}
+	assert_array(_cfg.towers.keys()).contains_exactly_in_any_order(want.keys())
+	for id: String in want:
+		assert_str(TowerInfo.trait_text(_def(id), _def(id).levels[0])).override_failure_message(id) \
+			.is_equal(want[id])
+
+
+## The rule order on synthetic levels: a reserve beats Ground beats Blind beats Line beats
+## Reveal beats Blast; a mundane reserve is no "Res"; a level with none of them is the dash.
+func test_trait_text_rule_order_blast_and_dash_fallbacks() -> void:
+	var occult := TowerDef.new()
+	occult.kind = "occult"
+	var mundane := TowerDef.new()
+	mundane.kind = "mundane"
+	var ground := TowerDef.new()
+	ground.kind = "mundane"
+	ground.targets = "ground"
+	var l := TowerDef.Level.new()
+	l.effects = {"aoe_radius": 1.5}
+	assert_str(TowerInfo.trait_text(mundane, l)).is_equal("Blast")
+	l.effects = {"aoe_radius": 1.5, "reveal_fakes": 1}
+	assert_str(TowerInfo.trait_text(mundane, l)).is_equal("Reveal")
+	l.effects = {"aoe_radius": 1.5, "reveal_fakes": 1, "pierce": 1}
+	assert_str(TowerInfo.trait_text(mundane, l)).is_equal("Line")
+	l.min_range = 2.5
+	assert_str(TowerInfo.trait_text(mundane, l)).is_equal("Blind 2.5")
+	assert_str(TowerInfo.trait_text(ground, l)).is_equal("Ground")
+	l.sanity_reserve = 7.0
+	assert_str(TowerInfo.trait_text(ground, l)).is_equal("Ground")  # mundane: no "Res"
+	assert_str(TowerInfo.trait_text(occult, l)).is_equal("Res 7")
+	var plain := TowerDef.Level.new()
+	assert_str(TowerInfo.trait_text(mundane, plain)).is_equal(TowerInfo.CELL_DASH)
+	assert_str(TowerInfo.trait_text(occult, plain)).is_equal(TowerInfo.CELL_DASH)  # reserve 0

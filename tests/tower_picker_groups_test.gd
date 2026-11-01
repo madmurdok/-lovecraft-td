@@ -341,3 +341,237 @@ func test_pressing_a_button_in_either_group_builds_it_and_closes_the_picker() ->
 			.override_failure_message("%s not built" % id).is_true()
 		assert_str(_game.sim.tower_by_id(_game.sim.state.tower_at[cell]).def.id).is_equal(id)
 		assert_bool(_game.picker.visible).is_false()
+
+
+# --- LT-61 §2, §5: columns, names, scrolling -----------------------------------------------
+
+## res://data towers plus clones of the first mundane one (own id, long name, free glyph)
+## until the list has `total` towers.
+func _total_config(total: int) -> GameConfig:
+	var dir := make_dir()
+	var d: Dictionary = JSON.parse_string(read_file(dir, "towers.json"))
+	var towers: Dictionary = d["towers"]
+	var template: Dictionary = {}
+	var used := {}
+	for id: String in towers:
+		used[String(towers[id].get("glyph", String(towers[id]["name"]).left(1)))] = true
+		if template.is_empty() and towers[id]["kind"] == "mundane":
+			template = towers[id]
+	var free := []
+	for c in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
+		if not used.has(c):
+			free.append(c)
+	var n := 0
+	while towers.size() < total:
+		n += 1
+		var t: Dictionary = template.duplicate(true)
+		t["name"] = "Extra Harbour Gunner %d" % n
+		t.erase("short")
+		t["glyph"] = free.pop_front()
+		towers["extra_gunner_%d" % n] = t
+	d["towers"] = towers
+	write_file(dir, "towers.json", JSON.stringify(d, "  ", false))
+	var r := GameConfig.load_from_dir(dir)
+	assert_bool(r.ok).override_failure_message("\n".join(r.errors)).is_true()
+	assert_int(r.config.towers.size()).is_equal(total)
+	return r.config
+
+
+func _name_w(l: Label, fs: int) -> float:
+	return l.get_theme_font("font").get_string_size(l.text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+
+
+func _font_of(l: Label) -> int:
+	return l.get_theme_font_size("font_size")
+
+
+## The widths of the four cells add up to the panel's 176 px, and each cell has its width.
+func test_row_cells_have_their_column_widths_summing_to_176() -> void:
+	await _start_game(_data_config())
+	_game.sim.state.gold = 10000
+	await _open_picker()
+	await get_tree().process_frame
+	var sum := TowerPicker.NAME_W + TowerPicker.COST_W + TowerPicker.COST_GAP \
+		+ TowerPicker.DPS_W + TowerPicker.TRAIT_W
+	assert_int(sum).is_equal(176)
+	assert_float(_game.picker.size.x).is_equal(176.0)
+	for id: String in _config.towers:
+		assert_float(_game.picker.names[id].size.x).override_failure_message(id) \
+			.is_equal(float(TowerPicker.NAME_W))
+		assert_float(_game.picker.costs[id].size.x).is_equal(float(TowerPicker.COST_W))
+		assert_float(_game.picker.cells[id]["dps"].size.x).is_equal(float(TowerPicker.DPS_W))
+		assert_float(_game.picker.cells[id]["trait"].size.x).is_equal(float(TowerPicker.TRAIT_W))
+		var row: Control = _game.picker.buttons[id].find_child("Gap", true, false)
+		assert_float(row.size.x).is_equal(float(TowerPicker.COST_GAP))
+
+
+## Every shipped name fits NAME_W whole, with no ellipsis: the owner's short names at the
+## full 12 px, the unchanged names (a few px wider) shrunk by at most to the 10 px floor.
+func test_shipped_names_fit_the_name_column_whole() -> void:
+	await _start_game(_data_config())
+	await _open_picker()
+	await get_tree().process_frame
+	var shortened := 0
+	for id: String in _config.towers:
+		var def: TowerDef = _config.towers[id]
+		var l: Label = _game.picker.names[id]
+		var fs := _font_of(l)
+		assert_str(l.text).is_equal(def.short_name)
+		assert_int(fs).is_between(TowerPicker.NAME_FONT_MIN, TowerPicker.FONT_SIZE)
+		assert_float(_name_w(l, fs)).override_failure_message(
+			"%s '%s' %.1f px at %d > %d" % [id, l.text, _name_w(l, fs), fs, TowerPicker.NAME_W]) \
+			.is_less_equal(float(TowerPicker.NAME_W))
+		if def.short_name != def.name:
+			shortened += 1
+			assert_int(fs).override_failure_message("%s '%s'" % [id, l.text]) \
+				.is_equal(TowerPicker.FONT_SIZE)
+	assert_int(shortened).is_greater(0)
+
+
+## A name wider than NAME_W shrinks 12 -> 10 until it fits, at 10 it ends in an ellipsis.
+## The expectation is recomputed here from the font, not read from the picker.
+func test_a_long_name_shrinks_to_10_px_then_ends_in_an_ellipsis() -> void:
+	await _start_game(_total_config(11))
+	await _open_picker()
+	var shrunk := 0
+	var ellipsis := 0
+	for id: String in _config.towers:
+		var l: Label = _game.picker.names[id]
+		var want := TowerPicker.FONT_SIZE
+		while want > TowerPicker.NAME_FONT_MIN and _name_w(l, want) > TowerPicker.NAME_W:
+			want -= 1
+		assert_int(_font_of(l)).override_failure_message("%s '%s'" % [id, l.text]).is_equal(want)
+		shrunk += 1 if want < TowerPicker.FONT_SIZE else 0
+		if _name_w(l, want) > TowerPicker.NAME_W:
+			ellipsis += 1
+			assert_int(want).is_equal(TowerPicker.NAME_FONT_MIN)
+			assert_int(l.text_overrun_behavior).is_equal(TextServer.OVERRUN_TRIM_ELLIPSIS)
+	assert_int(shrunk).override_failure_message("fixture has no long name").is_greater(0)
+	assert_int(ellipsis).override_failure_message("fixture has no over-long name").is_greater(0)
+
+
+## 10 shipped towers: no scrolling in the list (neither way), the whole list inside 176 px.
+func test_ten_towers_need_no_scrolling_in_the_list() -> void:
+	await _start_game(_data_config())
+	_game.sim.state.gold = 10000
+	await _open_picker()
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var rows := _game.picker.rows_scroll
+	assert_int(rows.horizontal_scroll_mode).is_equal(ScrollContainer.SCROLL_MODE_DISABLED)
+	assert_bool(rows.get_h_scroll_bar().visible).is_false()
+	assert_bool(rows.get_v_scroll_bar().visible).is_false()
+	var body: Control = rows.get_child(0)
+	assert_float(body.get_combined_minimum_size().y).is_less_equal(rows.size.y)
+	assert_float(body.get_combined_minimum_size().x).is_less_equal(rows.size.x)
+	assert_float(rows.custom_minimum_size.y).is_equal(float(
+		_config.towers.size() * TowerPicker.ROW_H + TowerPicker.GROUP_H))
+	assert_float(rows.size.y).is_equal(rows.custom_minimum_size.y)
+
+
+## Each shipped tower's card, shown below the list, fits the side panel without scrolling.
+func test_every_card_fits_below_the_list_without_scrolling() -> void:
+	await _start_game(_data_config())
+	_game.sim.state.gold = 10000
+	await _open_picker()
+	var sp := _game.side_panel
+	for id: String in _config.towers:
+		sp.show_card(id)
+		await get_tree().process_frame
+		await get_tree().process_frame
+		var bar := sp.scroll.get_v_scroll_bar()
+		assert_bool(bar.visible).override_failure_message("%s card scrolls" % id).is_false()
+		assert_float(sp.card.get_global_rect().position.y).is_greater_equal(
+			_game.picker.get_global_rect().end.y)
+		assert_bool(SidePanel.panel_rect(_game.sim.state.map).encloses(sp.card.get_global_rect())) \
+			.override_failure_message("%s card %s" % [id, sp.card.get_global_rect()]).is_true()
+
+
+## Exactly LIST_MAX_ROWS rows do not scroll: no scrollbar, no spacer in the pinned heads.
+func test_fourteen_towers_still_fit_without_a_scrollbar() -> void:
+	await _start_game(_total_config(TowerPicker.LIST_MAX_ROWS))
+	await _open_picker()
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var rows := _game.picker.rows_scroll
+	assert_float(rows.custom_minimum_size.y).is_equal(float(
+		TowerPicker.LIST_MAX_ROWS * TowerPicker.ROW_H + TowerPicker.GROUP_H))
+	assert_bool(rows.get_v_scroll_bar().visible).is_false()
+	var pinned := _game.picker.get_node("Group_mundane")
+	assert_int(pinned.get_child_count()).is_equal(1 + TowerPicker.HEADS.size())
+
+
+## LT-61 §5: the 15th row scrolls the list at LIST_MAX_ROWS rows; the first group line with
+## its heads stays pinned and the heads are narrowed by the real scrollbar's width, so each
+## head still sits over its column; the names narrow by it too.
+func test_fifteen_towers_scroll_the_list_and_pin_heads_aligned_to_the_scrollbar() -> void:
+	await _start_game(_total_config(TowerPicker.LIST_MAX_ROWS + 1))
+	_game.sim.state.gold = 10000
+	await _open_picker()
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var picker := _game.picker
+	var rows := picker.rows_scroll
+	assert_float(rows.custom_minimum_size.y).is_equal(float(
+		TowerPicker.LIST_MAX_ROWS * TowerPicker.ROW_H + TowerPicker.GROUP_H))
+	var bar := rows.get_v_scroll_bar()
+	assert_bool(bar.visible).is_true()
+	assert_float(bar.max_value).is_greater(bar.page)
+	assert_bool(rows.get_h_scroll_bar().visible).is_false()
+	assert_int(picker.scrollbar_w()).is_greater(0)
+	assert_float(bar.size.x).override_failure_message("scrollbar %s" % bar.size) \
+		.is_equal(float(picker.scrollbar_w()))
+	# The first group line is pinned (outside the scrolled Body), the second scrolls with it.
+	var pinned: Control = picker.get_node("Group_mundane")
+	assert_object(pinned.get_parent()).is_same(picker)
+	assert_object(picker.find_child("Group_occult", true, false).get_parent()) \
+		.is_same(rows.get_child(0))
+	rows.scroll_vertical = int(bar.max_value)
+	await get_tree().process_frame
+	assert_bool(pinned.is_visible_in_tree()).is_true()
+	assert_float(pinned.get_global_rect().position.y).is_less(rows.get_global_rect().position.y)
+	rows.scroll_vertical = 0
+	await get_tree().process_frame
+	# Alignment: each head's right edge is its column's right edge in a row.
+	var id: String = picker.buttons.keys()[0]
+	var tol := 0.51
+	var heads: Dictionary = {}
+	for h: Label in pinned.get_children().filter(func(c: Node) -> bool: return c is Label):
+		heads[h.name] = h
+	assert_float(heads["Head_DPS"].get_global_rect().end.x).is_equal_approx(
+		picker.cells[id]["dps"].get_global_rect().end.x, tol)
+	assert_float(heads["Head_Trait"].get_global_rect().end.x).is_equal_approx(
+		picker.cells[id]["trait"].get_global_rect().end.x, tol)
+	assert_float(heads["Head_$"].get_global_rect().end.x).is_equal_approx(
+		picker.costs[id].get_global_rect().end.x + TowerPicker.COST_GAP, tol)
+	# The scrollbar takes the right edge: rows end where the bar starts.
+	assert_float(picker.cells[id]["trait"].get_global_rect().end.x).is_equal_approx(
+		bar.get_global_rect().position.x, tol)
+	# Names fit what is left of NAME_W, or sit at the minimum font (ellipsis).
+	var avail := TowerPicker.NAME_W - picker.scrollbar_w()
+	var narrowed := 0
+	for tid: String in picker.names:
+		var l: Label = picker.names[tid]
+		var fs := _font_of(l)
+		if fs > TowerPicker.NAME_FONT_MIN:
+			assert_float(_name_w(l, fs)).override_failure_message("%s '%s' %d px" % [tid, l.text, fs]) \
+				.is_less_equal(float(avail))
+		if _name_w(l, TowerPicker.FONT_SIZE) > avail and _name_w(l, TowerPicker.FONT_SIZE) <= TowerPicker.NAME_W:
+			narrowed += 1
+			assert_int(fs).is_less(TowerPicker.FONT_SIZE)
+	assert_int(narrowed).override_failure_message("no name between %d and %d px" % [avail,
+		TowerPicker.NAME_W]).is_greater(0)
+
+
+## The column heads (LT-61 §3) sit on the first group line only, each with its tooltip.
+func test_heads_are_on_the_first_group_line_only_with_tooltips() -> void:
+	await _start_game(_data_config())
+	await _open_picker()
+	var pinned: Control = _game.picker.get_node("Group_mundane")
+	for head: Array in TowerPicker.HEADS:
+		var h := pinned.get_node("Head_" + head[0]) as Label
+		assert_str(h.text).is_equal(head[0])
+		assert_str(h.tooltip_text).is_equal(head[1])
+		assert_str(h.tooltip_text).is_not_empty()
+	var occult := _game.picker.find_child("Group_occult", true, false)
+	assert_int(occult.get_child_count()).is_equal(1)

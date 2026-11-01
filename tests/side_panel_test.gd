@@ -52,7 +52,7 @@ func _click(pos: Vector2) -> void:
 
 func _click_control(c: Control) -> void:
 	assert_bool(c.is_visible_in_tree()).override_failure_message("%s hidden" % c.name).is_true()
-	if _game != null and _game.side_panel.is_ancestor_of(c):
+	if _game != null and _game.side_panel.scroll.is_ancestor_of(c):
 		# Long views scroll: bring the control into the panel before clicking it.
 		_game.side_panel.scroll.ensure_control_visible(c)
 		await get_tree().process_frame

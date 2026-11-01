@@ -170,6 +170,26 @@ func test_table_spans_equal_rows_golds_changed_cells_and_marks_lit_now() -> void
 	st.queue_free()
 
 
+## LT-61 §1: the build card is one column with no head; the table drops its head row only
+## when every head is "" (a tower's panel keeps it), and the rows stay.
+func test_head_row_is_hidden_only_when_every_head_is_empty() -> void:
+	var st := StatsTable.new()
+	_vp.add_child(st)
+	var one: Array[Dictionary] = [_dict({})]
+	st.set_columns(PackedStringArray([""]), one)
+	var head_row: Control = st.get_node("Head")
+	assert_bool(head_row.visible).is_false()
+	assert_bool(st.get_node("Row_" + st.row_keys[0]).visible).is_true()
+	st.set_columns(PackedStringArray(["L1"]), one)
+	assert_bool(st.get_node("Head").visible).is_true()
+	st.set_columns(PackedStringArray([""]), one)
+	assert_bool(st.get_node("Head").visible).is_false()
+	var two: Array[Dictionary] = [_dict({}), _dict({})]
+	st.set_columns(PackedStringArray(["", "B"]), two)
+	assert_bool(st.get_node("Head").visible).is_true()
+	st.queue_free()
+
+
 # --- the panel: same rows as the picker, heads per level ------------------------------------
 
 ## §1 "every tower shows the same 10 rows": the panel table (Special under it as lines)
