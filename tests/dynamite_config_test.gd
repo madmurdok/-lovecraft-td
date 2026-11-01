@@ -23,7 +23,9 @@ func test_shipped_crew_is_ground_only_with_glyph_d_and_others_default() -> void:
 		if id == "dynamite_crew":
 			continue
 		var t: TowerDef = r.config.towers[id]
-		if id != "coast_battery":  # LT-48 sets glyph "B" on purpose
+		if id == "coast_battery":  # LT-48 sets glyph "B" on purpose (name "Coast battery")
+			assert_str(t.glyph).override_failure_message(id).is_equal("B")
+		else:
 			assert_str(t.glyph).override_failure_message(id).is_equal(t.name.left(1))
 		assert_str(t.targets).override_failure_message(id).is_equal("all")
 		assert_bool(t.ground_only()).override_failure_message(id).is_false()

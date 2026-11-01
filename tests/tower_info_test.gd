@@ -458,3 +458,40 @@ func test_a_removed_effect_pair_shows_once_without_coming_soon() -> void:
 		assert_bool(TowerInfo.is_pending(key)).override_failure_message(key).is_false()
 	assert_array(Array(TowerInfo.delta_lines(from, _level({})))) \
 		.is_equal([TowerInfo.REMOVED + "50% crit, x3 damage"])
+
+
+# --- LT-48: the Coast battery's dead zone and AP / HE shells ---------------------------------
+
+func test_battery_shows_its_dead_zone_after_the_range_and_its_shell_effects() -> void:
+	var d := _def("coast_battery")
+	var l1 := d.levels[0]
+	assert_array(_lines("coast_battery", l1)).is_equal(_attack(l1)
+		+ ["Dead zone: %s cells" % _n(l1.min_range)] + _mundane_kind())
+	# Spec example at today's config.
+	if l1.range_cells == 7.0 and l1.min_range == 2.0:
+		var got := _lines("coast_battery", l1)
+		assert_array(got.slice(1, 3)).is_equal(["Range 7 cells", "Dead zone: 2 cells"])
+	assert_array(_lines("coast_battery", d.branches["a"])).contains(["Ignores armor"])
+	assert_array(_lines("coast_battery", d.branches["b"])).contains(["Blast radius 1 cells"])
+	assert_array(_lines("coast_battery", d.branches["b"])).not_contains(["Ignores armor"])
+	for id: String in ["rifleman", "harpooner", "dynamite_crew"]:
+		for line: String in _lines(id, _def(id).levels[0]):
+			assert_bool(line.begins_with("Dead zone")).override_failure_message(id).is_false()
+
+
+func _shell(min_range: float) -> TowerDef.Level:
+	var l := TowerDef.Level.new()
+	l.range_cells = 7.0
+	l.min_range = min_range
+	l.damage = 70.0
+	l.fire_interval = 3.0
+	return l
+
+
+func test_delta_shows_the_dead_zone_only_when_it_changes() -> void:
+	assert_array(Array(TowerInfo.delta_lines(_shell(2.0), _shell(3.0)))) \
+		.is_equal([_arrow("Dead zone", 2.0, 3.0)])
+	assert_array(Array(TowerInfo.delta_lines(_shell(2.0), _shell(2.0)))).is_empty()
+	var d := _def("coast_battery")
+	for line: String in TowerInfo.delta_lines(d.levels[0], d.levels[1]):
+		assert_bool(line.contains("Dead zone")).override_failure_message(line).is_false()
