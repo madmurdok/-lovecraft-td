@@ -8,6 +8,8 @@ extends SceneTree
 ##   [--branch=<tower>:<a|b>[,<tower>:<a|b>...]] (LT-29: override BRANCH_PICK for these
 ##   tower def ids in every strategy, e.g. --branch=rifleman:b,harpooner:b; other towers keep
 ##   the strategy's pick; a branch other than a or b is an error)
+##   [--strategies=<name>[,<name>...]] (LT-56: play only these strategies, in STRATEGIES
+##   order; an unknown name is an error. tools/balance/ runs one strategy per process)
 ## For each strategy x seed it plays one full run on data/ with a fresh Simulation +
 ## WaveDirector and prints one "RUN {json}" line per run, then a "SUMMARY {json}" line.
 ##
@@ -83,6 +85,7 @@ var _upgrades := true  ## false with --upgrades=0
 var _lighthouse := true  ## false with --lighthouse=0
 var _flare := true  ## false with --flare=0
 var _branch_override := {}  ## tower def id -> branch from --branch=, wins over BRANCH_PICK
+var _strategies: Array = STRATEGIES  ## strategies to play, narrowed by --strategies=
 
 
 func _init() -> void:
@@ -110,6 +113,18 @@ func _init() -> void:
 					quit(1)
 					return
 				_branch_override[kv[0]] = kv[1]
+		elif a.begins_with("--strategies="):
+			var picked := a.substr(13).split(",", false)
+			for name in picked:
+				if name not in STRATEGIES:
+					printerr("unknown strategy in --strategies: ", name, " (known: ", STRATEGIES, ")")
+					quit(1)
+					return
+			_strategies = STRATEGIES.filter(func(x): return x in picked)
+			if _strategies.is_empty():
+				printerr("--strategies names no strategy")
+				quit(1)
+				return
 	var res := GameConfig.load_from_dir(data_dir) if data_dir != "" else GameConfig.load_from_dir()
 	if not res.ok:
 		printerr("config errors: ", res.errors)
@@ -117,7 +132,7 @@ func _init() -> void:
 		return
 	_cfg = res.config
 	var runs: Array = []
-	for strat in STRATEGIES:
+	for strat in _strategies:
 		for s in seeds:
 			var r := _play(strat, 1000 + s)
 			runs.append(r)

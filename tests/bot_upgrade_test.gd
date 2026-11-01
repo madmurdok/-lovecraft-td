@@ -739,3 +739,92 @@ func test_the_lighthouse_is_tried_again_the_next_day() -> void:
 	assert_int(sim.state.lighthouse_level).is_equal(1)
 	# Day 2: level 1 bought, level 2 refused once (too poor), not retried.
 	assert_int(sim.lighthouse_calls).is_equal(3)
+
+
+# --- LT-56: --strategies=a,b -----------------------------------------------------------------
+
+## Members appended to the copy of the bot whose _init runs with `_test_args` as its command
+## line: _play, quit and printerr are recorded instead of played / quitting / printed.
+const MAIN_HARNESS := """
+
+var _test_args := PackedStringArray()
+var _test_played: Array = []
+var _test_exit := -1
+var _test_errors := ""
+
+
+func _test_play(strat: String, run_seed: int) -> Dictionary:
+	_test_played.append(strat)
+	return {"strategy": strat, "seed": run_seed}
+
+
+func _test_quit(code := 0) -> void:
+	if _test_exit == -1:
+		_test_exit = code
+
+
+func _test_printerr(a: Variant = "", b: Variant = "", c: Variant = "", d: Variant = "",
+		e: Variant = "", f: Variant = "") -> void:
+	_test_errors += str(a, b, c, d, e, f) + "\\n"
+"""
+
+var _main_script: GDScript
+
+
+## Runs the bot's _init on `args` (a copy of its source: _init renamed to _test_main, the
+## command line, _play, quit and printerr redirected to MAIN_HARNESS). Returns the instance.
+func _run_main(args: Array) -> Object:
+	if _main_script == null:
+		var src := FileAccess.get_file_as_string(BOT_PATH)
+		for s in ["func _init() -> void:", "OS.get_cmdline_user_args()",
+				"var r := _play(strat, 1000 + s)", "quit(", "printerr("]:
+			assert_bool(src.contains(s)).override_failure_message(s).is_true()
+		src = src.replace("func _init() -> void:", "func _test_main() -> void:") \
+			.replace("OS.get_cmdline_user_args()", "_test_args") \
+			.replace("var r := _play(strat, 1000 + s)", "var r := _test_play(strat, 1000 + s)") \
+			.replace("quit(", "_test_quit(").replace("printerr(", "_test_printerr(")
+		_main_script = GDScript.new()
+		_main_script.source_code = src + MAIN_HARNESS
+		assert_int(_main_script.reload()).is_equal(OK)
+	var b: Object = _main_script.new()
+	_bots.append(b)
+	b.set("_test_args", PackedStringArray(args))
+	b.call("_test_main")
+	return b
+
+
+func test_strategies_flag_plays_only_those_strategies_in_strategies_order() -> void:
+	var b := _run_main(["--seeds=2", "--strategies=occult,mundane"])
+	assert_int(b.get("_test_exit")).is_equal(0)
+	assert_array(b.get("_test_played")).is_equal(["mundane", "mundane", "occult", "occult"])
+	b = _run_main(["--strategies=battery", "--seeds=1"])
+	assert_int(b.get("_test_exit")).is_equal(0)
+	assert_array(b.get("_test_played")).is_equal(["battery"])
+
+
+func test_without_strategies_flag_every_strategy_is_played() -> void:
+	var b := _run_main(["--seeds=1"])
+	var strategies: Array = _main_script.get_script_constant_map()["STRATEGIES"]
+	assert_int(b.get("_test_exit")).is_equal(0)
+	assert_array(strategies).contains(["mundane", "occult", "battery"])
+	assert_array(b.get("_test_played")).is_equal(strategies)
+
+
+func test_unknown_strategy_name_quits_1_before_any_run() -> void:
+	var b := _run_main(["--seeds=1", "--strategies=mundane,nosuch"])
+	assert_int(b.get("_test_exit")).is_equal(1)
+	assert_array(b.get("_test_played")).is_empty()
+	assert_str(b.get("_test_errors")).contains("unknown strategy in --strategies")
+	assert_str(b.get("_test_errors")).contains("nosuch")
+
+
+func test_unknown_strategy_name_exits_1_as_a_process() -> void:
+	# The real script, command line and exit code: it quits in argument parsing, no game runs.
+	var out: Array = []
+	var code := OS.execute(OS.get_executable_path(), ["--headless", "--path",
+		ProjectSettings.globalize_path("res://"), "-s", BOT_PATH, "--", "--seeds=1",
+		"--strategies=nosuch"], out, true)
+	var text := "\n".join(PackedStringArray(out))
+	assert_int(code).override_failure_message("exit %d:\n%s" % [code, text]).is_equal(1)
+	assert_str(text).contains("unknown strategy in --strategies")
+	assert_bool(text.contains("RUN ")).override_failure_message(text).is_false()
