@@ -10,22 +10,31 @@ extends ConfigTestBase
 const RIFLE := "rifleman"
 const SIGN := "elder_sign"
 
-## Appended after the five data towers, kinds interleaved so data order != group order.
-## Names near the longest real one, roles at the 24-char limit: the worst case for the fit.
-const EXTRA := [
-	["shoggoth_binder", "occult", SIGN, "Shoggoth Binder", "Binds foes, then crushes", "S"],
-	["lamplighter", "mundane", RIFLE, "Lamplighter", "Lamps reveal the unseen!", "L"],
-	["yithian_lens", "occult", SIGN, "Yithian Scrying Lens", "Scrying lens marks prey.", "Y"],
-	["harbour_watchman", "mundane", RIFLE, "Harbour Watchman", "Warns of foes far ahead.", "W"],
-	["mi_go_cylinder", "occult", SIGN, "Mi-Go Brain Cylinder", "Burns wide cones of foes", "M"],
-]
-const TEN_MUNDANE := ["rifleman", "harpooner", "dynamite_crew", "lamplighter", "harbour_watchman"]
-const TEN_OCCULT := ["elder_sign", "necronomicon_reader", "shoggoth_binder", "yithian_lens",
-	"mi_go_cylinder"]
+const PER_KIND := 5
+## Padding per kind, used in this order until the kind has PER_KIND towers. Names near the
+## longest real one, roles at the 24-char limit: the worst case for the fit.
+const DUMMIES := {
+	"mundane": [
+		["lamplighter", "Lamplighter", "Lamps reveal the unseen!", "L"],
+		["harbour_watchman", "Harbour Watchman", "Warns of foes far ahead.", "W"],
+		["dock_sniper", "Innsmouth Dock Sniper", "Picks off the far stragg", "D"],
+		["net_thrower", "Fishing Net Thrower", "Nets slow a whole column", "N"],
+		["flare_gunner", "Lighthouse Flare Gun", "Flares light the shallow", "F"],
+	],
+	"occult": [
+		["shoggoth_binder", "Shoggoth Binder", "Binds foes, then crushes", "S"],
+		["yithian_lens", "Yithian Scrying Lens", "Scrying lens marks prey.", "Y"],
+		["mi_go_cylinder", "Mi-Go Brain Cylinder", "Burns wide cones of foes", "M"],
+		["dagon_idol", "Idol of Father Dagon", "Calls the deep to drown", "I"],
+		["silver_key", "The Silver Key Gate", "Opens a gate under foes", "K"],
+	],
+}
 
 var _vp: SubViewport
 var _game: Game
 var _config: GameConfig
+var _ten_mundane: Array = []  ## the 10-tower fixture's mundane ids, config order
+var _ten_occult: Array = []
 
 
 func before_test() -> void:
@@ -47,22 +56,43 @@ func _data_config() -> GameConfig:
 	return r.config
 
 
-## res://data plus EXTRA, loaded through the real towers.json parser. Written with
-## sort_keys off: ConfigTestBase.edit's JSON.stringify sorts keys and would lose data order.
+## Exactly PER_KIND mundane + PER_KIND occult towers, whatever res://data ships: the real
+## towers of each kind in data order (any past PER_KIND dropped), then DUMMIES padding with
+## kinds alternating, so config order != group order. Each dummy copies the first real tower
+## of its kind. Loaded through the real towers.json parser, written with sort_keys off:
+## ConfigTestBase.edit's JSON.stringify sorts keys and would lose data order.
 func _ten_config() -> GameConfig:
 	var dir := make_dir()
 	var d: Dictionary = JSON.parse_string(read_file(dir, "towers.json"))
-	for e: Array in EXTRA:
-		var t: Dictionary = d["towers"][e[2]].duplicate(true)
-		t["kind"] = e[1]
-		t["name"] = e[3]
-		t["role"] = e[4]
-		t["glyph"] = e[5]
-		d["towers"][e[0]] = t
+	var real: Dictionary = d["towers"]
+	var out := {}
+	var ids := {"mundane": [], "occult": []}
+	for id: String in real:
+		var kind: String = real[id]["kind"]
+		if ids[kind].size() < PER_KIND:
+			out[id] = real[id]
+			ids[kind].append(id)
+	var templates := {"mundane": ids["mundane"][0], "occult": ids["occult"][0]}
+	var next := {"mundane": 0, "occult": 0}
+	while ids["mundane"].size() < PER_KIND or ids["occult"].size() < PER_KIND:
+		for kind: String in ["occult", "mundane"]:
+			if ids[kind].size() >= PER_KIND:
+				continue
+			var e: Array = DUMMIES[kind][next[kind]]
+			next[kind] += 1
+			var t: Dictionary = real[templates[kind]].duplicate(true)
+			t["name"] = e[1]
+			t["role"] = e[2]
+			t["glyph"] = e[3]
+			out[e[0]] = t
+			ids[kind].append(e[0])
+	d["towers"] = out
 	write_file(dir, "towers.json", JSON.stringify(d, "  ", false))
 	var r := GameConfig.load_from_dir(dir)
 	assert_bool(r.ok).override_failure_message("\n".join(r.errors)).is_true()
-	assert_int(r.config.towers.size()).is_equal(10)
+	assert_int(r.config.towers.size()).is_equal(2 * PER_KIND)
+	_ten_mundane = ids["mundane"]
+	_ten_occult = ids["occult"]
 	return r.config
 
 
@@ -156,10 +186,13 @@ func test_data_towers_are_grouped_mundane_then_occult_in_data_order() -> void:
 
 func test_ten_towers_group_by_kind_and_keep_data_order_inside_each_group() -> void:
 	await _start_game(_ten_config())
+	assert_array(_ten_mundane).has_size(PER_KIND)
+	assert_array(_ten_occult).has_size(PER_KIND)
+	assert_array(_ids_of("mundane")).is_equal(_ten_mundane)
+	assert_array(_ids_of("occult")).is_equal(_ten_occult)
 	# The fixture interleaves kinds, so a data-order list would not match.
-	assert_array(_config.towers.keys().slice(5)).is_equal(
-		["shoggoth_binder", "lamplighter", "yithian_lens", "harbour_watchman", "mi_go_cylinder"])
-	assert_array(_child_names()).is_equal(_expected_children(TEN_MUNDANE, TEN_OCCULT))
+	assert_array(_config.towers.keys()).is_not_equal(_ten_mundane + _ten_occult)
+	assert_array(_child_names()).is_equal(_expected_children(_ten_mundane, _ten_occult))
 	assert_int(_game.picker.buttons.size()).is_equal(10)
 	assert_int(_game.picker.infos.size()).is_equal(10)
 	for id: String in _config.towers:
@@ -341,7 +374,7 @@ func test_every_shipped_towers_price_is_visible_in_full() -> void:
 
 func test_pressing_a_button_in_either_group_builds_it_and_closes_the_picker() -> void:
 	await _start_game(_ten_config())
-	for id: String in ["harbour_watchman", "mi_go_cylinder"]:
+	for id: String in [_ten_mundane[-1], _ten_occult[-1]]:
 		_game.sim.state.gold = 10000
 		var cell := _buildable_cell()
 		await _open_picker()
