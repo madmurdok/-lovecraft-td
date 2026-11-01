@@ -149,35 +149,25 @@ func test_beam_texture_edge_band_is_brighter_than_the_old_soft_ramp() -> void:
 		assert_float(profile).is_greater(old + 0.1)
 
 
-## LT-58 (behaviour 2b): the rim makes the band brighter than the axis fill alone would be.
-func test_beam_texture_rim_is_brighter_than_the_fill() -> void:
+## LT-58 (behaviour 2b): the rim lifts the falloff zone (t 0.8..1.0), so near the edge the
+## texture is brighter than the plain smoothstep edge times the length falloff.
+func test_beam_texture_rim_widens_the_solid_cone_near_the_edge() -> void:
 	var ha := 0.5
 	var tex := Lighting._beam_texture(ha)
-	var p := _beam_px(tex, ha, 0.4, 0.75)
-	var radial := pow(1.0 - p["d"], Lighting.BEAM_FALLOFF_POWER)
-	var axis := _beam_px(tex, ha, 0.4, 0.0)
-	# axis has no rim (smoothstep = 0 at t = 0): value 1.0 * radial; rim band must exceed 1.0
-	# where edge + rim > 1 is clamped, so assert it reaches the clamp (profile ~ 1) at the peak
-	var peak := _beam_px(tex, ha, 0.4, Lighting.BEAM_RIM_PEAK - 0.02)
-	var edge := 1.0 - smoothstep(Lighting.BEAM_FILL_EDGE_START, 1.0, peak["t"])
-	var rim := smoothstep(Lighting.BEAM_RIM_START, Lighting.BEAM_RIM_PEAK, peak["t"]) * edge \
-		* Lighting.BEAM_RIM_GAIN
-	assert_float(rim).is_greater(0.0)
-	assert_float(peak["a"] / pow(1.0 - peak["d"], Lighting.BEAM_FALLOFF_POWER)) \
-		.is_greater_equal(minf(edge + rim, 1.0) - 0.02)
-	assert_float(axis["a"] / pow(1.0 - axis["d"], Lighting.BEAM_FALLOFF_POWER)).is_greater(0.97)
-	assert_float(p["a"] / radial).is_greater(0.0)
+	var p := _beam_px(tex, ha, 0.4, 0.9)
+	var plain := (1.0 - smoothstep(Lighting.BEAM_FILL_EDGE_START, 1.0, p["t"])) \
+		* pow(1.0 - p["d"], Lighting.BEAM_FALLOFF_POWER)
+	assert_float(p["a"]).is_greater(plain + 0.02)
 
 
-## LT-58 (behaviour 3): the far end (d = 0.8) keeps at least 0.2^BEAM_FALLOFF_POWER of the
-## near brightness (near ~ 1 on the axis).
-func test_beam_texture_far_end_keeps_its_brightness() -> void:
+## LT-58 (behaviour 3): the far end (d = 0.8, on the axis) is brighter than the pre-LT-58
+## length falloff gave.
+func test_beam_texture_far_end_is_brighter_than_the_old_falloff() -> void:
 	var ha := 0.5
 	var tex := Lighting._beam_texture(ha)
+	var old_falloff_power := 0.8  # pre-LT-58 shape: pow(1 - d, 0.8)
 	var far := _beam_px(tex, ha, 0.8, 0.0)
-	var near := _beam_px(tex, ha, 0.1, 0.0)
-	var near_a: float = near["a"] / pow(1.0 - near["d"], Lighting.BEAM_FALLOFF_POWER)
-	assert_float(far["a"]).is_greater_equal(near_a * pow(0.2, Lighting.BEAM_FALLOFF_POWER) - 0.01)
+	assert_float(far["a"]).is_greater(pow(1.0 - far["d"], old_falloff_power) + 0.02)
 
 
 ## LT-58 (behaviour 4): beam energy is BEAM_ENERGY * night (2.6 at full night).
