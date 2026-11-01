@@ -105,3 +105,81 @@ func test_ambient_is_day_by_day_and_night_after_the_fade_at_night() -> void:
 	_game.sim.state.phase = SimState.Phase.BUILD
 	l.ease_night(10.0)
 	assert_that(l.modulate_node.color).is_equal(Lighting.AMBIENT_DAY)
+
+
+## LT-58: one beam-texture pixel at radius frac d (0..1) and angle t * half_angle off the
+## axis; returns the alpha with the pixel's own d and t (the shape is evaluated at pixel centres).
+func _beam_px(tex: ImageTexture, half_angle: float, d_want: float, t_want: float) -> Dictionary:
+	var img := tex.get_image()
+	var half := Lighting.BEAM_TEX_SIZE * 0.5
+	var ang := t_want * half_angle
+	var px := Vector2i(int(half + cos(ang) * d_want * half), int(half + sin(ang) * d_want * half))
+	var v := Vector2(px.x + 0.5 - half, px.y + 0.5 - half)
+	return {"a": img.get_pixelv(px).a, "d": v.length() / half, "t": absf(v.angle()) / half_angle}
+
+
+## LT-58 (behaviour 1): on the axis near the source the beam is at full brightness for its
+## falloff, and nothing is lit outside the half-angle or behind the lighthouse.
+func test_beam_texture_axis_is_bright_and_outside_the_cone_is_dark() -> void:
+	var ha := 0.5
+	var tex := Lighting._beam_texture(ha)
+	var near := _beam_px(tex, ha, 0.1, 0.0)
+	assert_float(near["a"]).is_equal_approx(pow(1.0 - near["d"], Lighting.BEAM_FALLOFF_POWER), 0.01)
+	var out := _beam_px(tex, ha, 0.5, 1.3)
+	assert_float(out["t"]).is_greater(1.0)
+	assert_float(out["a"]).is_equal(0.0)
+	var img := tex.get_image()
+	assert_float(img.get_pixel(20, 128).a).is_equal(0.0)  # behind the source (x < centre)
+
+
+## LT-58 (behaviour 2): the edge band is solid up to BEAM_FILL_EDGE_START plus the rim, so
+## at t in 0.6..0.9 it is at least the fill ramp from the constant (and clearly above the
+## pre-change soft ramp that started at 0.55 with no rim).
+func test_beam_texture_edge_band_is_brighter_than_the_old_soft_ramp() -> void:
+	var ha := 0.5
+	var tex := Lighting._beam_texture(ha)
+	var old_ramp_start := 0.55  # pre-LT-58 value of BEAM_FILL_EDGE_START, no rim
+	for t_want in [0.65, 0.75, 0.85]:
+		var p := _beam_px(tex, ha, 0.4, t_want)
+		var radial := pow(1.0 - p["d"], Lighting.BEAM_FALLOFF_POWER)
+		var profile: float = p["a"] / radial
+		var fill := 1.0 - smoothstep(Lighting.BEAM_FILL_EDGE_START, 1.0, p["t"])
+		var old := 1.0 - smoothstep(old_ramp_start, 1.0, p["t"])
+		assert_float(profile).is_greater_equal(fill - 0.02)
+		assert_float(profile).is_greater(old + 0.1)
+
+
+## LT-58 (behaviour 2b): the rim lifts the falloff zone (t 0.8..1.0), so near the edge the
+## texture is brighter than the plain smoothstep edge times the length falloff.
+func test_beam_texture_rim_widens_the_solid_cone_near_the_edge() -> void:
+	var ha := 0.5
+	var tex := Lighting._beam_texture(ha)
+	var p := _beam_px(tex, ha, 0.4, 0.9)
+	var plain := (1.0 - smoothstep(Lighting.BEAM_FILL_EDGE_START, 1.0, p["t"])) \
+		* pow(1.0 - p["d"], Lighting.BEAM_FALLOFF_POWER)
+	assert_float(p["a"]).is_greater(plain + 0.02)
+
+
+## LT-58 (behaviour 3): the far end (d = 0.8, on the axis) is brighter than the pre-LT-58
+## length falloff gave.
+func test_beam_texture_far_end_is_brighter_than_the_old_falloff() -> void:
+	var ha := 0.5
+	var tex := Lighting._beam_texture(ha)
+	var old_falloff_power := 0.8  # pre-LT-58 shape: pow(1 - d, 0.8)
+	var far := _beam_px(tex, ha, 0.8, 0.0)
+	assert_float(far["a"]).is_greater(pow(1.0 - far["d"], old_falloff_power) + 0.02)
+
+
+## LT-58 (behaviour 4): beam energy is BEAM_ENERGY * night (2.6 at full night).
+func test_beam_energy_is_beam_energy_times_night() -> void:
+	assert_float(Lighting.BEAM_ENERGY).is_equal(2.6)
+	var l := _game.lighting
+	assert_int(_game.call_wave()).is_equal(Simulation.CommandResult.OK)
+	l.ease_night(10.0)
+	assert_float(l.night).is_equal(1.0)
+	for b: PointLight2D in l.beams:
+		assert_float(b.energy).is_equal_approx(Lighting.BEAM_ENERGY, 1e-5)
+	l.night = 0.5
+	l._apply_night()
+	for b: PointLight2D in l.beams:
+		assert_float(b.energy).is_equal_approx(Lighting.BEAM_ENERGY * 0.5, 1e-5)
