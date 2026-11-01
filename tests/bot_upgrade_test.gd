@@ -183,6 +183,20 @@ func test_demolition_builds_the_dynamite_crew_and_buys_branch_a() -> void:
 	assert_array(_next(sim, "demolition")).is_equal([dyn.id, "a"])
 
 
+## LT-51 (LT-46 §5): the "gate" strategy builds the Silver Key Gate in the mundane order's
+## third slot and takes Gate of Slumber (a) at L3.
+func test_gate_builds_the_silver_key_and_buys_branch_a() -> void:
+	var b := _bot()
+	assert_array(b.get_script().get_script_constant_map()["STRATEGIES"]).contains(["gate"])
+	var sim := _sim()
+	var order: Array = []
+	for i in 6:
+		order.append(b.call("_order", "gate", i, sim, {}))
+	assert_array(order).is_equal([RIFLE, RIFLE, "silver_key", RIFLE, RIFLE, "silver_key"])
+	var gate := _place(sim, "silver_key", 1)
+	assert_array(_next(sim, "gate")).is_equal([gate.id, "a"])
+
+
 ## LT-29 §4.3: `--branch=<tower>:<a|b>` wins over BRANCH_PICK for that tower (in every
 ## strategy, even one without a pick for it); other towers keep the strategy's pick.
 func test_branch_override_wins_over_branch_pick() -> void:
