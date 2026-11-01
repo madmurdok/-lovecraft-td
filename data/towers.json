@@ -137,6 +137,29 @@
                "upgrade_cost": 100, "range": 3.5,
                "effects": { "reveal_fakes": 1, "slow": 0.4, "damage_taken_multiplier": 1.2 } }
       }
+    },
+    "resonator": {
+      "name": "Tillinghast Resonator",
+      "role": "Beam, low sanity hurts",
+      "kind": "occult",
+      "glyph": "T",
+      "cost": 130,
+      "levels": [
+        { "range": 3, "damage": 3, "fire_interval": 0.2, "sanity_reserve": 8,
+          "effects": { "ignore_armor": 1, "sanity_scaling": 2 } },
+        { "upgrade_cost": 100, "range": 3.5, "damage": 4, "fire_interval": 0.2, "sanity_reserve": 14,
+          "effects": { "ignore_armor": 1, "sanity_scaling": 2 } }
+      ],
+      "branches": {
+        "a": { "name": "Tuned Resonator", "role": "Steady; shows fakes",
+               "upgrade_cost": 160, "range": 3.5, "damage": 6, "fire_interval": 0.2,
+               "sanity_reserve": 20, "madness_affected": false,
+               "effects": { "ignore_armor": 1, "sanity_scaling": 1, "reveal_fakes": 1 } },
+        "b": { "name": "Open Resonator", "role": "Feeds on lost sanity",
+               "upgrade_cost": 160, "range": 3.5, "damage": 4.5, "fire_interval": 0.2,
+               "sanity_reserve": 45,
+               "effects": { "ignore_armor": 1, "sanity_scaling": 4 } }
+      }
     }
   }
 }

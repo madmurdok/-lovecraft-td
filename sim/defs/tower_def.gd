@@ -121,7 +121,7 @@ class Level:
 		"bleed_dps": INF, "bleed_seconds": INF, "pull_cells": INF, "pull_max_hp": INF,
 		"pull_immune_seconds": INF, "slow": 1.0, "damage_taken_multiplier": INF,
 		"strip_armor": INF, "aoe_radius": INF, "fuse_seconds": INF,
-		"ignore_armor": 1.0, "reveal_fakes": 1.0,
+		"ignore_armor": 1.0, "reveal_fakes": 1.0, "sanity_scaling": INF,
 	}
 	## LT-48/LT-49: flag effects, 0 or 1 (not amounts).
 	const FLAG_EFFECTS: PackedStringArray = ["ignore_armor", "reveal_fakes"]
@@ -134,6 +134,20 @@ class Level:
 
 	## Branch/level-specific numeric parameters (String -> float), keys from EFFECTS.
 	var effects: Dictionary = {}
+
+	## LT-50 (LT-46 P13/P14): a sanity-scaled level is a beam: it keeps its target while
+	## that one stays a live candidate (SimTower.locked_id).
+	func is_beam() -> bool:
+		return effects.get("sanity_scaling", 0.0) > 0.0
+
+	## LT-50 (§7 Q2, current sanity on the full bar): the damage factor at `sanity` of
+	## `max_sanity`, 1 + sanity_scaling x (1 - sanity / max), sanity clamped to 0..max;
+	## 1 for a level without sanity_scaling.
+	func sanity_factor(sanity: float, max_sanity: float) -> float:
+		var k: float = effects.get("sanity_scaling", 0.0)
+		if k <= 0.0 or max_sanity <= 0.0:
+			return 1.0
+		return 1.0 + k * (1.0 - clampf(sanity, 0.0, max_sanity) / max_sanity)
 
 	## True when any PENDING effect key is non-zero on this level.
 	func has_pending() -> bool:
@@ -209,10 +223,15 @@ class Level:
 				if f != 0.0 and f != 1.0:
 					r.error(ConfigReader.join(ep, key), "must be 0 or 1, got %s" % f)
 					l.effects[key] = 0.0
-			# LT-49 (P8): the sim reveals fakes from an aura only (a support level). The
-			# on-hit reveal of a tower with damage (Resonator Pure) is LT-50's to wire.
-			if l.effects.get("reveal_fakes", 0.0) > 0.0 and l.damage > 0.0:
-				r.error(ConfigReader.join(ep, "reveal_fakes"),
-					"only support towers (damage 0) reveal fakes")
+			# LT-49/LT-50 (P8): a support level reveals the fakes in its aura, a level with
+			# damage the fakes its shot hits (_on_hit_effects). A fused charge hits at the
+			# blast, which reveals nothing, so it may not carry the flag.
+			if l.effects.get("reveal_fakes", 0.0) > 0.0 \
+					and l.effects.get("fuse_seconds", 0.0) > 0.0:
+				r.error(ConfigReader.join(ep, "reveal_fakes"), "cannot combine with fuse_seconds")
 				l.effects["reveal_fakes"] = 0.0
+			# LT-50 (P13): the sanity factor scales shot damage, so it needs an attack.
+			if l.effects.get("sanity_scaling", 0.0) > 0.0 and l.damage <= 0.0:
+				r.error(ConfigReader.join(ep, "sanity_scaling"), "needs damage > 0")
+				l.effects["sanity_scaling"] = 0.0
 		return l

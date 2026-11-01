@@ -399,6 +399,7 @@ func set_target_priority(tower_id: int, mode: String) -> CommandResult:
 		return result
 	var t := tower_by_id(tower_id)
 	t.target_priority = mode
+	t.locked_id = -1  # LT-50: a beam re-picks by the new mode at its next shot
 	state.command_log.append([state.tick, "set_target_priority", tower_id, mode])
 	_emit(SimEvent.Type.TARGET_PRIORITY_SET, t.id, {"def": t.def.id, "cell": t.cell,
 		"mode": mode})
@@ -1348,7 +1349,10 @@ func _madness_buff_blocked(e: SimEnemy) -> bool:
 ## ranked targets (round robin, SimTower.burst_index). A shot that hits and whose level has
 ## `crit_chance` rolls once on CRIT after the miss roll (lit towers skip the miss roll but
 ## still crit): damage x crit_multiplier on every hit, before armor; SHOT {crit: true}.
-## After the damage, _on_hit_effects applies bleed and the chain pull.
+## After the damage, _on_hit_effects applies bleed, the on-hit fake reveal and the chain pull.
+## LT-50: a `sanity_scaling` level (Resonator, TowerDef.Level.is_beam) keeps its target while
+## it stays a candidate (_beam_target) and deals damage x sanity_factor (current sanity on
+## the full bar, §7 Q2) before the lit and madness multipliers; SHOT {beam, sanity_factor}.
 func _fire_towers() -> void:
 	for t in state.towers:
 		if t.cooldown_ticks > 0:
@@ -1369,6 +1373,8 @@ func _fire_towers() -> void:
 				var m := ranked.size()
 				target = ranked[t.burst_index % m]
 				t.burst_index = (t.burst_index % m + 1) % m
+		elif s.is_beam():
+			target = _beam_target(t, in_range)
 		else:
 			target = _pick_target(t, in_range)
 		if target == null:
@@ -1376,7 +1382,10 @@ func _fire_towers() -> void:
 		# LT-13: a madness_affected tower in MADNESS deals x damage_multiplier and its shot
 		# goes astray (shot_split on MADNESS): centred on a random real / fake in range, or
 		# on nothing. An empty shot keeps the usual target as its aim point.
-		var damage := s.damage
+		# LT-50 (§7 Q2): a sanity_scaling level x 1 + k x (1 - sanity / max) on the full bar,
+		# before the lit x0.7 and the madness x2.
+		var factor := s.sanity_factor(state.sanity, config.sanity.max_sanity)
+		var damage := s.damage * factor
 		var beam := config.economy.beam
 		var lit_mundane := t.lit and t.def.kind == "mundane"
 		if t.lit and t.def.kind == "occult":
@@ -1438,6 +1447,9 @@ func _fire_towers() -> void:
 			shot["astray"] = true
 		if crit:
 			shot["crit"] = true
+		if s.is_beam():
+			shot["beam"] = true  # LT-50: the board holds one beam per tower
+			shot["sanity_factor"] = factor
 		if fuse_ticks > 0:
 			# LT-47: a dud (a Fraying miss) is thrown but never explodes; blast 0.
 			shot["fuse"] = true
@@ -1467,6 +1479,19 @@ func _candidates(t: SimTower, s: TowerDef.Level) -> Array[SimEnemy]:
 		if not e.revealed:
 			out.append(e)
 	return _outside_dead_zone(t, s, _ground_filter(t, out))
+
+
+## LT-50 (P14): a beam keeps `t.locked_id` while that enemy is still among `candidates`
+## (live, in range, not a revealed fake); otherwise it locks on _pick_target's choice (or
+## clears the lock when there is none).
+func _beam_target(t: SimTower, candidates: Array[SimEnemy]) -> SimEnemy:
+	if t.locked_id >= 0:
+		for e in candidates:
+			if e.id == t.locked_id:
+				return e
+	var target := _pick_target(t, candidates)
+	t.locked_id = target.id if target != null else -1
+	return target
 
 
 ## LT-48 (P4): `enemies` without those whose cell-centre distance from `t` is strictly less
@@ -1666,6 +1691,12 @@ func _push_back(e: SimEnemy, cells: float) -> void:
 func _on_hit_effects(t: SimTower, s: TowerDef.Level, target: SimEnemy, hits: Array[SimEnemy],
 		shot: Dictionary) -> void:
 	_apply_bleed_hits(hits, s.effects, t.def.id)
+	if s.effects.get("reveal_fakes", 0.0) > 0.0:
+		# LT-50 (P8, Resonator Pure): a fake the shot hit is revealed for good; _candidates
+		# then drops it, so the beam lets go of it at its next shot.
+		for e in hits:
+			if e.is_fake:
+				e.revealed = true
 	var pull: float = s.effects.get("pull_cells", 0.0)
 	if pull <= 0.0:
 		return

@@ -2,8 +2,8 @@ class_name SearchlightConfigTest
 extends ConfigTestBase
 ## LT-49 config (docs/design/LT-46-tower-roster.md §2.2 Q1 B, §2.3): the shipped Coast Guard
 ## searchlight (mundane, glyph S, cost 80, damage 0, the §2.2 table, reveal_fakes 1 on every
-## level); `effects.reveal_fakes` is a 0/1 flag and only a support level (damage 0) may carry
-## it (the on-hit reveal is LT-50's).
+## level); `effects.reveal_fakes` is a 0/1 flag; since LT-50 a level with damage may carry it
+## (on-hit reveal), except a fused one.
 
 const T := "towers.json"
 const SLP := "towers.searchlight"
@@ -61,11 +61,14 @@ func test_reveal_fakes_is_a_zero_or_one_flag() -> void:
 	assert_rejected(two, T, SLP + ".branches.a.effects.reveal_fakes")
 
 
-func test_reveal_fakes_on_a_level_with_damage_is_rejected() -> void:
+func test_reveal_fakes_on_a_fused_level_is_rejected() -> void:
+	# LT-50 lifted LT-49's "support only" rule: a shot reveals the fakes it hits.
+	_ok(load_json_edit(T, func(d: Dictionary) -> void:
+		d["towers"]["rifleman"]["levels"][0]["effects"] = {"reveal_fakes": 1}))
 	var r := load_json_edit(T, func(d: Dictionary) -> void:
-		d["towers"]["rifleman"]["levels"][0]["effects"] = {"reveal_fakes": 1})
-	assert_rejected(r, T, "towers.rifleman.levels[0].effects.reveal_fakes",
-		"only support towers (damage 0) reveal fakes")
+		d["towers"]["dynamite_crew"]["levels"][0]["effects"]["reveal_fakes"] = 1)
+	assert_rejected(r, T, "towers.dynamite_crew.levels[0].effects.reveal_fakes",
+		"cannot combine with fuse_seconds")
 	# 0 is "no flag": allowed anywhere.
 	var off := load_json_edit(T, func(d: Dictionary) -> void:
 		d["towers"]["rifleman"]["levels"][0]["effects"] = {"reveal_fakes": 0})
