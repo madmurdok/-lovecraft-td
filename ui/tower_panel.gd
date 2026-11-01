@@ -182,9 +182,11 @@ func _refresh_table(t: SimTower, s: TowerDef.Level, branches: PackedStringArray)
 	var lit_fx := TowerInfo.lit_effects(t.def, s, cfg) if t.lit else {}
 	var fx: Variant = null if lit_fx.is_empty() else lit_fx
 	var now := TowerInfo.special_lines(s, fx)
-	if not lit_fx.is_empty():
+	if not lit_fx.is_empty():  # LT-43 §5: "*" only on the lines the beam changes
+		var base := TowerInfo.special_lines(s)
 		for i in now.size():
-			now[i] += TowerInfo.LIT_MARK
+			if not base.has(now[i]):
+				now[i] += TowerInfo.LIT_MARK
 	var prefix := "Now: " if not targets.is_empty() else ""
 	for line in now:
 		lines.append(prefix + line)

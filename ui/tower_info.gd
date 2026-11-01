@@ -319,7 +319,8 @@ static func beam_percent(def: TowerDef, s: TowerDef.Level, cfg: GameConfig) -> f
 
 ## LT-43 §5 (Q4): the cells the beam changes on a lit tower, value + LIT_MARK, keyed like
 ## row_values: mundane Every x fire_interval_mult and DPS / it; occult Damage and DPS x
-## power_mult (a circle's units are not lit). Empty when nothing changes.
+## power_mult (a circle: its unit DPS and DPS, as Simulation._summon gives the units
+## it summons while lit). Empty when nothing changes.
 static func lit_values(def: TowerDef, s: TowerDef.Level, cfg: GameConfig,
 		sanity_now := -1.0) -> Dictionary:
 	var out := {}
@@ -334,23 +335,29 @@ static func lit_values(def: TowerDef, s: TowerDef.Level, cfg: GameConfig,
 		if s.damage > 0.0 and m > 0.0 and m != 1.0:
 			out["every"] = num(s.fire_interval * m) + LIT_MARK
 			out["dps"] = one_decimal(dps / m) + LIT_MARK
-	elif s.damage > 0.0 and not s.is_summon() and b.occult_power_mult != 1.0:
-		out["damage"] = num(s.damage * b.occult_power_mult) + LIT_MARK
-		out["dps"] = one_decimal(dps * b.occult_power_mult) + LIT_MARK
+	elif b.occult_power_mult != 1.0 and (s.damage > 0.0 or s.is_summon() and dps > 0.0):
+		var pm := b.occult_power_mult
+		if s.is_summon():
+			# "12.6*", no "/s": "12.6/s*" is cut in a 3-column panel
+			var unit: float = s.effects.get("summon_dps", 0.0) * pm
+			out["damage"] = one_decimal(unit) + LIT_MARK
+		else:
+			out["damage"] = num(s.damage * pm) + LIT_MARK
+		out["dps"] = one_decimal(dps * pm) + LIT_MARK
 	return out
 
 
-## LT-43 §5: the effects of an occult aura or gate while lit (slow, the taken bonus, the
-## armor strip and the banish distance x power_mult, as Simulation applies them); {} when
-## the beam does not change them.
+## LT-43 §5: the effects of an occult aura, gate or circle while lit (slow, the taken bonus,
+## the armor strip, the banish distance and a new unit's summon_dps x power_mult, as
+## Simulation applies them); {} when the beam does not change them.
 static func lit_effects(def: TowerDef, s: TowerDef.Level, cfg: GameConfig) -> Dictionary:
 	if def.kind != "occult" or cfg == null or cfg.economy == null or cfg.economy.beam == null:
 		return {}
 	var pm := cfg.economy.beam.occult_power_mult
-	if pm == 1.0 or (s.acts() and not s.is_banish()):  # an aura or a gate only
-		return {}
+	if pm == 1.0 or (s.acts() and not s.is_banish() and not s.is_summon()):
+		return {}  # an aura, a gate or a circle only
 	var e := s.effects.duplicate()
-	for key: String in ["slow", "strip_armor", "banish_cells"]:
+	for key: String in ["slow", "strip_armor", "banish_cells", "summon_dps"]:
 		if e.has(key):
 			e[key] = e[key] * pm
 	if e.has("damage_taken_multiplier"):
@@ -361,7 +368,7 @@ static func lit_effects(def: TowerDef, s: TowerDef.Level, cfg: GameConfig) -> Di
 ## LT-43 §5: the status line under the role of a lit tower; "" when the beam changes nothing.
 static func lit_line(def: TowerDef, s: TowerDef.Level, cfg: GameConfig) -> String:
 	var pct := beam_percent(def, s, cfg)
-	if pct == 0.0 or s.is_summon():  # a circle's units are not lit
+	if pct == 0.0:
 		return ""
 	if def.kind == "mundane":
 		var t := NOW_LIT + "fire +%s%%" % num(roundf(pct))

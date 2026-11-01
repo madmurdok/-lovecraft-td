@@ -7,8 +7,9 @@ extends PanelContainer
 ## ring stay visible. Each column is one button (Q5: one click builds); hovering it frames
 ## it, shows its range on the cell and emits hovered_changed (the side panel's L1 card).
 ## A column is disabled whenever Simulation.can_build refuses it: unaffordable dims it and
-## reddens the cost, any other refusal puts the reason in the cost cell; a reserve that
-## would take the sanity cap to 0 (LT-23 Q3) marks the Reserve cell red with "!".
+## reddens the cost, any other refusal puts a short reason in the cost cell (CELL_REASONS;
+## the full one in the tooltip); a reserve that would take the sanity cap to 0 (LT-23 Q3)
+## marks the Reserve cell red with "!".
 ## Cancel, Esc, or a click elsewhere on the board closes it. `visible` is "the build view
 ## is shown".
 
@@ -17,6 +18,12 @@ signal hovered_changed(def_id: String)  ## "" when no column is hovered
 ## Kept for callers of the LT-7 name; the texts live in TowerInfo.REASONS.
 const REASONS := TowerInfo.REASONS
 
+## LT-43 §3: short refusal reasons for the narrow cost cell (the tooltip keeps REASONS).
+const CELL_REASONS := {
+	Simulation.CommandResult.NOT_BUILD_PHASE: "by day",
+	Simulation.CommandResult.NOT_AVAILABLE: "locked",
+	Simulation.CommandResult.OUTCOME_REACHED: "over",
+}
 const GROUP_TITLES := {"mundane": "MUNDANE", "occult": "OCCULT"}
 const STATUS_COLOR := Color(0.95, 0.55, 0.45)  ## refusal reason, unaffordable cost, "!"
 const DIM := Color(1, 1, 1, 0.5)  ## a refused column's cells (the cost cell excepted)
@@ -249,7 +256,7 @@ func refresh() -> void:
 			status = TowerInfo.reason(r)
 		elif b.disabled:
 			status = TowerInfo.reason(r)
-			cost.text += " · " + status
+			cost.text = _cost_with_reason(cost, def.cost, r)
 		cost.add_theme_color_override("font_color",
 			StatsTable.COLOR_VALUE if status.is_empty() else STATUS_COLOR)
 		var mad := not b.disabled and game.sim.would_drive_mad_build(id)
@@ -268,6 +275,19 @@ func refresh() -> void:
 		elif mad:
 			tip += TowerInfo.MADNESS_WARNING
 		b.tooltip_text = tip
+
+
+## LT-43 §3: the cost cell of a column refused for a reason other than money, "$50 · by day"
+## (CELL_REASONS, else TowerInfo.REASONS); the price alone when that would not fit the
+## cell. The full reason stays in the tooltip.
+func _cost_with_reason(cost: Label, gold: int, r: Simulation.CommandResult) -> String:
+	var price := TowerInfo.cost_text(gold)
+	var short: String = CELL_REASONS.get(r, TowerInfo.reason(r))
+	var t := price + " · " + short
+	var font := cost.get_theme_font("font")
+	var w := font.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1,
+		cost.get_theme_font_size("font_size")).x
+	return t if w <= col_w - 2 * PAD else price
 
 
 func _input(event: InputEvent) -> void:
