@@ -194,7 +194,7 @@ Answered:
 - Q3: "Скрывается, как сейчас"
 - Q4: "Только Esc, как сейчас (Recommended)"
 
-Open:
+Answered in round 2 (A, see above); the options as presented:
 
 1. **Q1. The trait column** (the owner's own option: "Может сделать колонку под особенности?
    у оккультных башен - там безумие, у динамита - только по земле?"). Example: Silver Key at
