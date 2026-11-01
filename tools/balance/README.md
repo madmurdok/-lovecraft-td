@@ -93,3 +93,10 @@ Shipped examples reproduce LT-30 S13 arms: `baseline` (A), `beam_off` (B), `flar
 
 Wins vary with seeds (loot is random): 2 seeds tell whether a variant runs, not whether it is
 balanced. Compare variants at 20 seeds.
+
+## Tests
+
+```sh
+python3 -m unittest discover -s tools/balance/tests -v   # balance.py, no Godot (stdlib only)
+scripts/test.sh tests/bot_upgrade_test.gd                 # the bot's --strategies= flag (gdUnit)
+```
