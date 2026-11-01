@@ -1258,12 +1258,15 @@ func _count_down_flare() -> void:
 ## several signs an enemy gets each modifier once, the strongest among the covering signs.
 ## The speed modifier scales this tick's movement (slot 3); the damage modifier applies to
 ## every hit this tick (slot 5), after armor (apply_damage).
+## LT-49 (LT-46 P8): a `reveal_fakes` aura (Searchlight) also sets `revealed` on every live
+## fake inside, for good; _candidates then drops it, so no tower targets it again. A lit
+## mundane aura is unchanged (LT-30 modifiers apply to firing and to occult auras only).
 func _apply_auras() -> void:
 	var auras: Array[SimTower] = []
 	for t in state.towers:
 		var s := t.stats()
 		if s.damage <= 0.0 and (s.effects.has("slow") or s.effects.has("damage_taken_multiplier")
-				or s.effects.has("strip_armor")):
+				or s.effects.has("strip_armor") or s.effects.get("reveal_fakes", 0.0) > 0.0):
 			auras.append(t)
 	if auras.is_empty():
 		return
@@ -1275,6 +1278,7 @@ func _apply_auras() -> void:
 		var slow := 0.0
 		var mult := 1.0
 		var strip := 0.0
+		var reveal := false
 		for t in auras:
 			var s := t.stats()
 			var c := t.centre()
@@ -1296,10 +1300,13 @@ func _apply_auras() -> void:
 			slow = maxf(slow, t_slow)
 			mult = maxf(mult, t_mult)
 			strip = maxf(strip, t_strip)
+			reveal = reveal or s.effects.get("reveal_fakes", 0.0) > 0.0
 		if inside:
 			e.speed_mult *= 1.0 - slow
 			e.damage_taken_mult *= mult
 			e.armor_bonus -= strip
+			if reveal and e.is_fake:
+				e.revealed = true
 
 
 ## Slot 2, after _apply_auras (LT-23 §3): in MADNESS every live enemy, real and fake alike,
@@ -1449,11 +1456,17 @@ func _fire_towers() -> void:
 		t.cooldown_ticks = maxi(1, SimTime.ticks(interval))
 
 
-## LT-46 P1: the enemies `t` may fire at with stats `s`: live ones in range (fakes too),
-## without flyers for a ground tower (P3) and without those inside `min_range` (P4). Id
-## order.
+## LT-46 P1: the enemies `t` may fire at with stats `s`: live ones in range (fakes too,
+## except revealed ones, LT-49 P8), without flyers for a ground tower (P3) and without those
+## inside `min_range` (P4). Id order. A revealed fake is still hit by blasts, line shots and
+## madness astray shots (those pick from live_fakes_in_range, LT-13): it is only never a
+## chosen target.
 func _candidates(t: SimTower, s: TowerDef.Level) -> Array[SimEnemy]:
-	return _outside_dead_zone(t, s, _ground_filter(t, enemies_in_range(t.cell, s.range_cells)))
+	var out: Array[SimEnemy] = []
+	for e in enemies_in_range(t.cell, s.range_cells):
+		if not e.revealed:
+			out.append(e)
+	return _outside_dead_zone(t, s, _ground_filter(t, out))
 
 
 ## LT-48 (P4): `enemies` without those whose cell-centre distance from `t` is strictly less

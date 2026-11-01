@@ -121,8 +121,10 @@ class Level:
 		"bleed_dps": INF, "bleed_seconds": INF, "pull_cells": INF, "pull_max_hp": INF,
 		"pull_immune_seconds": INF, "slow": 1.0, "damage_taken_multiplier": INF,
 		"strip_armor": INF, "aoe_radius": INF, "fuse_seconds": INF,
-		"ignore_armor": 1.0,
+		"ignore_armor": 1.0, "reveal_fakes": 1.0,
 	}
+	## LT-48/LT-49: flag effects, 0 or 1 (not amounts).
+	const FLAG_EFFECTS: PackedStringArray = ["ignore_armor", "reveal_fakes"]
 
 	## Config keys (EFFECTS or stats) that parse but the sim does not apply yet (LT-24
 	## Decision 1). The UI marks them "(coming soon)" and bots skip branches using them;
@@ -201,9 +203,16 @@ class Level:
 					r.error(ConfigReader.join(ep, "fuse_seconds"), "cannot combine with pierce")
 				if l.effects.get("pull_cells", 0.0) > 0.0:
 					r.error(ConfigReader.join(ep, "fuse_seconds"), "cannot combine with pull_cells")
-			# LT-48: a flag, not an amount.
-			var ia: float = l.effects.get("ignore_armor", 0.0)
-			if ia != 0.0 and ia != 1.0:
-				r.error(ConfigReader.join(ep, "ignore_armor"), "must be 0 or 1, got %s" % ia)
-				l.effects["ignore_armor"] = 0.0
+			# LT-48/LT-49: flags, not amounts.
+			for key in FLAG_EFFECTS:
+				var f: float = l.effects.get(key, 0.0)
+				if f != 0.0 and f != 1.0:
+					r.error(ConfigReader.join(ep, key), "must be 0 or 1, got %s" % f)
+					l.effects[key] = 0.0
+			# LT-49 (P8): the sim reveals fakes from an aura only (a support level). The
+			# on-hit reveal of a tower with damage (Resonator Pure) is LT-50's to wire.
+			if l.effects.get("reveal_fakes", 0.0) > 0.0 and l.damage > 0.0:
+				r.error(ConfigReader.join(ep, "reveal_fakes"),
+					"only support towers (damage 0) reveal fakes")
+				l.effects["reveal_fakes"] = 0.0
 		return l
