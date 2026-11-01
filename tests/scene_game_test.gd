@@ -95,8 +95,8 @@ func test_picker_has_one_button_per_config_tower_with_name_and_cost() -> void:
 	assert_int(_game.picker.buttons.size()).is_equal(_config.towers.size())
 	for def_id: String in _config.towers:
 		var def: TowerDef = _config.towers[def_id]
-		# LT-43 §3: a column shows the name and the cost in its own cells.
-		assert_str(_game.picker.names[def_id].text).is_equal(def.name)
+		# LT-61 §4: a row shows the short name and the cost in its own cells.
+		assert_str(_game.picker.names[def_id].text).is_equal(def.short_name)
 		assert_str(_game.picker.costs[def_id].text).is_equal("$%d" % def.cost)
 		assert_str(_game.picker.buttons[def_id].tooltip_text).contains(
 			"%s — $%d" % [def.name, def.cost])

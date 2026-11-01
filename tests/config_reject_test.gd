@@ -202,6 +202,24 @@ func test_enum_values() -> void:
 	assert_rejected(r2, S, "madness.exit_rule", "magic")
 
 
+## LT-61 §4: `short` (the build list's name) must be a non-blank string; a rejected one is
+## reported at its path and the tower keeps its full name.
+func test_short_name_must_be_a_non_blank_string() -> void:
+	assert_rejected(load_json_edit(T, func(d: Dictionary) -> void:
+		d["towers"]["rifleman"]["short"] = 5), T, "towers.rifleman.short", "expected string")
+	assert_rejected(load_json_edit(T, func(d: Dictionary) -> void:
+		d["towers"]["rifleman"]["short"] = ""), T, "towers.rifleman.short", "must not be empty")
+	assert_rejected(load_json_edit(T, func(d: Dictionary) -> void:
+		d["towers"]["rifleman"]["short"] = "   "), T, "towers.rifleman.short", "must not be empty")
+	for bad: Variant in [5, " "]:
+		var reader := ConfigReader.new(T)
+		assert_str(TowerDef.parse_short(reader, {"short": bad}, "towers.x", "Full Name")) \
+			.is_equal("Full Name")
+		assert_int(reader.errors.size()).is_equal(1)
+	assert_str(TowerDef.parse_short(ConfigReader.new(T), {}, "towers.x", "Full Name")) \
+		.is_equal("Full Name")
+
+
 func test_empty_values() -> void:
 	assert_rejected(load_json_edit(T, func(d: Dictionary) -> void:
 		d["towers"]["rifleman"]["name"] = ""), T, "towers.rifleman.name", "must not be empty")

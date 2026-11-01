@@ -2,7 +2,8 @@ class_name TowerDef
 extends RefCounted
 ## One tower from towers.json (GDD §6): L1 and L2 in `levels`, L3 as branch "a" or "b".
 
-const FIELDS := ["name", "role", "kind", "glyph", "targets", "cost", "levels", "branches"]
+const FIELDS := ["name", "short", "role", "kind", "glyph", "targets", "cost", "levels",
+	"branches"]
 const KINDS: PackedStringArray = ["mundane", "occult"]
 ## LT-47 (LT-46 §2.3): "all" (default) or "ground": flyers are never candidates of a
 ## ground tower and never hit by its shots or blasts.
@@ -14,6 +15,8 @@ const ROLE_MAX_CHARS := 24
 
 var id: String
 var name: String
+## LT-61 §4: the name in the side-panel build list; defaults to `name`.
+var short_name: String
 ## One-line player-facing role (no numbers); "" when absent (LT-24 §1).
 var role: String
 var kind: String  ## "mundane" | "occult"
@@ -31,6 +34,7 @@ static func parse(r: ConfigReader, id: String, obj: Dictionary, path: String) ->
 	var t := TowerDef.new()
 	t.id = id
 	t.name = r.req_string(obj, "name", path)
+	t.short_name = parse_short(r, obj, path, t.name)
 	t.role = parse_role(r, obj, path)
 	t.kind = r.req_string(obj, "kind", path, KINDS)
 	t.glyph = t.name.left(1)
@@ -72,6 +76,23 @@ static func parse(r: ConfigReader, id: String, obj: Dictionary, path: String) ->
 ## LT-47: flyers are not candidates of this tower and not hit by its shots or blasts.
 func ground_only() -> bool:
 	return targets == "ground"
+
+
+## LT-61 §4: optional `short` of `obj`, a non-blank string (stripped); `name` when absent
+## or rejected.
+static func parse_short(r: ConfigReader, obj: Dictionary, path: String,
+		fallback: String) -> String:
+	if not obj.has("short"):
+		return fallback
+	var sp := ConfigReader.join(path, "short")
+	if typeof(obj["short"]) != TYPE_STRING:
+		r.error(sp, "expected string, got %s" % ConfigReader.type_name(obj["short"]))
+		return fallback
+	var s: String = (obj["short"] as String).strip_edges()
+	if s.is_empty():
+		r.error(sp, "must not be empty")
+		return fallback
+	return s
 
 
 ## Optional `role` of `obj`: a non-blank string of at most ROLE_MAX_CHARS characters

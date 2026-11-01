@@ -43,6 +43,7 @@ const COLOR_LEAK := Color(1, 0.1, 0.1)
 const COLOR_DISSOLVE := Color(0.6, 0.6, 0.75)
 const COLOR_DEBUG_FAKE := Color(1, 0, 1)  ## debug outline (--reveal-fakes), LT-12 §1
 const COLOR_SELECT := Color(1, 1, 1, 0.8)
+const GHOST_GLYPH_ALPHA := 0.55  ## LT-61 §7: the selected_glyph ghost letter
 const COLOR_LETTER_PLATE := Color(0.06, 0.05, 0.08)  ## LT-28: contrast plate under the letter
 const LETTER_PLATE := Rect2(4, 4, 15, 19)  ## in the tower tile, under the 16 px letter
 const COLOR_ASTRAY := Color(2.0, 1.5, 2.6)  ## over 1: stays bright under the darkness
@@ -165,6 +166,8 @@ var game: Game
 var alpha := 0.0  ## render interpolation between the last two ticks
 var selected_cell := Vector2i(-1, -1)  ## outlined while the build or tower view is open
 var selected_range := 0.0  ## range ring (cells) for a selected tower; 0 = none
+## LT-61 §7: the hovered build-list tower's board letter, a ghost in selected_cell; "" = none.
+var selected_glyph := ""
 ## Short-lived effects: {kind, from, to, ttl, ...} in cell units. Attack effects (LT-25)
 ## also carry tower, end, hits, hit_pos, miss, astray, dur (initial ttl), seed.
 var effects: Array[Dictionary] = []
@@ -530,6 +533,10 @@ func _draw() -> void:
 	_draw_effects()
 	if game.sim.state.map.in_bounds(selected_cell):
 		draw_rect(Rect2(cell_origin(selected_cell), Vector2(CELL, CELL)), COLOR_SELECT, false, 2.0)
+		if not selected_glyph.is_empty():  # LT-61 §7: placed like _draw_tower's letter
+			var g := Rect2(cell_origin(selected_cell), Vector2(CELL, CELL)).grow(-6)
+			draw_string(ThemeDB.fallback_font, g.position + Vector2(8, 20), selected_glyph,
+				HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(COLOR_SELECT, GHOST_GLYPH_ALPHA))
 		if selected_range > 0.0:
 			var sc := (Vector2(selected_cell) + Vector2(0.5, 0.5)) * CELL
 			draw_arc(sc, selected_range * CELL, 0, TAU, 48, COLOR_SELECT, 1.0)
