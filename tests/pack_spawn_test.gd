@@ -99,6 +99,24 @@ func test_pack_size_is_rolled_at_the_spawn_call_on_the_spawn_stream() -> void:
 	assert_int(sim.state.next_id - 1).is_equal(want[0] + want[1] + want[2])
 
 
+## Releasing queued members draws no RNG: pack 2, spawned after pack 1 was fully released,
+## gets the size the SPAWN stream yields after exactly one earlier size draw.
+func test_releasing_queued_members_draws_no_rng() -> void:
+	var cfg := real_config()
+	var pack: Dictionary = cfg.enemies["deep_one"].traits["pack"]
+	var sim := Simulation.new(cfg, 42)
+	var ref := Simulation.new(cfg, 42)
+	var n1 := ref.rng(SimRng.Stream.SPAWN).randi_range(int(pack["min"]), int(pack["max"]))
+	var n2 := ref.rng(SimRng.Stream.SPAWN).randi_range(int(pack["min"]), int(pack["max"]))
+	var first1 := sim.spawn_enemy("deep_one")
+	run(sim, pack_span_ticks(cfg, "deep_one") + 1)
+	assert_int(_members(sim, first1).size()).is_equal(n1)
+	assert_bool(sim.has_queued_real_members()).is_false()
+	var first2 := sim.spawn_enemy("deep_one")
+	run(sim, pack_span_ticks(cfg, "deep_one") + 1)
+	assert_int(_members(sim, first2).size()).is_equal(n2)
+
+
 func _replay_log(run_seed: int) -> Array[String]:
 	var sim := Simulation.new(real_config(), run_seed)
 	sim.set_spawner(ScriptedSpawner.new([[1, "deep_one"], [7, "cultist"], [12, "deep_one"],
