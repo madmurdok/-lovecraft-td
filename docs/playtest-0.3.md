@@ -104,3 +104,30 @@ final 0.88-0.94).
 raw JSON. Run: the config tests, `wave_director`, `bot_upgrade`, `sanity`, `madness_buff`,
 `madness`, `sim_damage`, `sim_outcome`, `sim_determinism`, `hallucination` and the eight per-tower
 config tests: 20 files, 353 cases, 0 failures (real 66.01, user 57.14). No full suite.
+
+## Owner playtest (LT-54)
+
+One full run on 2026-11-01, release-0.3.0 at bc922ea (seed 2255122698).
+The log showed no errors. Verdicts, quoted verbatim from the owner's answers:
+
+| Question | Verdict |
+|---|---|
+| Do the lighthouse beam cones read on the board? | "Читаются, но слабо" |
+| Is the lighthouse upgrade worth buying? | "Не покупал" |
+| Radial flare ($80, radius 6/8/10) | "Не использовал" |
+| Difficulty after LT-45: no longer too easy? | "Да, в самый раз (Recommended)" |
+| LT-52 Summoning Circle choices | "Круг не ставил" |
+| LT-53 cosmetic leftovers | "Одна задача в бэклог (Recommended)" |
+
+Follow-ups:
+
+- The beam cones read too weakly. A backlog task covers their contrast.
+- The LT-53 cosmetics go into one backlog task:
+  - Target comes before Upgrade;
+  - the Hits row has no gaps at 3 columns;
+  - "Blast radius 1 cells";
+  - the picker overflows at an 11th tower.
+- Not checked in play, so they carry to the next playtest:
+  - the lighthouse upgrade;
+  - the radial flare, including the open buy-button choice;
+  - the LT-52 circle choices.
