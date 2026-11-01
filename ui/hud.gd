@@ -31,7 +31,7 @@ var _fps_shown := -1
 var footer: ColorRect  ## LT-28: covers the strip below the board (range rings end there)
 
 const COLOR_LUCK := Color(0.75, 0.9, 1.0)
-const FONT_SIZE := 14  ## LT-27: the bar fits the 1152 px base width, buyout included
+const FONT_SIZE := 14  ## LT-27: the bar fits the 1200 px base width, buyout included
 const SEPARATION := 10
 const MARGIN := 8  ## bar inset from the right edge
 const FPS_INTERVAL_MSEC := 250  ## LT-44: the FPS label refreshes a few times per second
@@ -69,7 +69,7 @@ func _ready() -> void:
 	var bar := HBoxContainer.new()
 	bar.name = "Bar"
 	# LT-27: two-line columns (money over relics, phase over lighthouse HP) keep the bar
-	# inside the 1152 px base width with every button shown; children centre vertically.
+	# inside the 1200 px base width with every button shown; children centre vertically.
 	# LT-28: the bar spans the width in three groups (purse | day and night | speed, pause
 	# and sanity) split by expanding gaps, so spare width goes between groups.
 	bar.position = Vector2(RELIC_SLOT, 2)
@@ -192,8 +192,8 @@ func _refresh_flare() -> void:
 	var can := sim.can_fire_flare()
 	flare_button.disabled = can != Simulation.CommandResult.OK
 	# LT-57: the flare lights a circle around the lighthouse.
-	flare_button.tooltip_text = "Lights everything within %s cells for %s s" % [
-		ConfigReader.fmt(sim.flare_radius()), ConfigReader.fmt(flare.seconds)]
+	flare_button.tooltip_text = "Lights everything within %s for %s s" % [
+		TowerInfo.cells_text(ConfigReader.fmt(sim.flare_radius())), ConfigReader.fmt(flare.seconds)]
 	if s.flare_ticks_left > 0:
 		flare_button.text = "Flare burning"
 	elif s.flare_cooldown_ticks > 0:

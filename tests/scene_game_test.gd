@@ -1,6 +1,6 @@
 class_name SceneGameTest
 extends GdUnitTestSuite
-## LT-7 scene tests: real mouse events pushed into a 1152x648 SubViewport (the headless
+## LT-7 scene tests: real mouse events pushed into a 1200x675 SubViewport (the headless
 ## root is 64x64 and drops GUI clicks) drive the Game scene; assertions read sim state.
 
 const RIFLE := "rifleman"
@@ -16,7 +16,7 @@ func before_test() -> void:
 	assert_bool(r.ok).override_failure_message("\n".join(r.errors)).is_true()
 	_config = r.config
 	_vp = SubViewport.new()
-	_vp.size = Vector2i(1152, 648)
+	_vp.size = Vector2i(1200, 675)
 	add_child(_vp)
 
 
@@ -163,7 +163,7 @@ func test_a_click_below_the_board_closes_both_panels() -> void:
 	var below := Vector2(_game.board.position.x + Board.CELL * 0.5,
 		_game.board.position.y + m.height * Board.CELL + 10.0)
 	assert_bool(m.in_bounds(_game.board.cell_at(below - _game.board.position))).is_false()
-	assert_float(below.y).is_less(648.0)
+	assert_float(below.y).is_less(675.0)
 	var cell := _buildable_cell()
 	await _click_cell(cell)
 	assert_bool(_game.picker.visible).is_true()

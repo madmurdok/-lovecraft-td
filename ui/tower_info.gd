@@ -58,6 +58,11 @@ static func num(v: float) -> String:
 	return "0" if s == "-0" else s
 
 
+## "1 cell" / "2.5 cells": `n` is an already formatted number (LT-59).
+static func cells_text(n: String) -> String:
+	return n + (" cell" if n == "1" else " cells")
+
+
 ## "$40" (sanity is reserved, not paid: LT-23).
 static func cost_text(gold: int) -> String:
 	return money(gold)
@@ -432,7 +437,7 @@ static func special_short(s: TowerDef.Level, effects: Variant = null) -> String:
 	if is_active(e, "strip_armor"):
 		parts.append("%s%s armor" % [MINUS, num(e["strip_armor"])])
 	if is_active(e, "banish_cells"):
-		parts.append("back %s cells" % num(e["banish_cells"]))
+		parts.append("back " + cells_text(num(e["banish_cells"])))
 	if e.get("banish_targets", 1.0) > 1.0:
 		parts.append("%s foes" % num(e["banish_targets"]))
 	if is_active(e, "banish_max_hp"):
@@ -486,7 +491,7 @@ static func _effect_text(first_key: String, e: Dictionary) -> String:
 		"pierce":
 			return "Pierce: %s-cell-wide line" % num(e.get("pierce", 0.0))
 		"aoe_radius":
-			return "Blast radius %s cells" % num(e.get("aoe_radius", 0.0))
+			return "Blast radius " + cells_text(num(e.get("aoe_radius", 0.0)))
 		"fuse_seconds":
 			return "Fuse %s s, thrown ahead" % num(e.get("fuse_seconds", 0.0))
 		"ignore_armor":
@@ -516,8 +521,8 @@ static func _effect_text(first_key: String, e: Dictionary) -> String:
 		"banish_cells":  # LT-51
 			var n: float = e.get("banish_targets", 1.0)
 			if n > 1.0:
-				return "Banish %s foes %s cells" % [num(n), num(e.get("banish_cells", 0.0))]
-			return "Banish %s cells back" % num(e.get("banish_cells", 0.0))
+				return "Banish %s foes %s" % [num(n), cells_text(num(e.get("banish_cells", 0.0)))]
+			return "Banish %s back" % cells_text(num(e.get("banish_cells", 0.0)))
 		"summon_max":  # LT-52
 			var n: float = e.get("summon_max", 0.0)
 			return "Up to %s unit%s, %s s each" % [num(n), "" if n == 1.0 else "s",
