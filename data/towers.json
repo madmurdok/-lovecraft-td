@@ -76,6 +76,29 @@
                "upgrade_cost": 200, "range": 3.5, "damage": 150, "fire_interval": 3,
                "sanity_reserve": 45, "effects": { "aoe_radius": 1.5 } }
       }
+    },
+    "dynamite_crew": {
+      "name": "Dynamite crew",
+      "role": "Lobbed charges, ground",
+      "kind": "mundane",
+      "glyph": "D",
+      "targets": "ground",
+      "cost": 90,
+      "levels": [
+        { "range": 3.5, "damage": 45, "fire_interval": 2.5,
+          "effects": { "aoe_radius": 1.0, "fuse_seconds": 1.0 } },
+        { "upgrade_cost": 70, "range": 4, "damage": 60, "fire_interval": 2.4,
+          "effects": { "aoe_radius": 1.2, "fuse_seconds": 1.0 } }
+      ],
+      "branches": {
+        "a": { "name": "Demolition man", "role": "Huge charge, long fuse",
+               "upgrade_cost": 120, "range": 4, "damage": 110, "fire_interval": 3.0,
+               "effects": { "aoe_radius": 1.5, "fuse_seconds": 1.2 } },
+        "b": { "name": "Shrapnel charges", "role": "Blast makes foes bleed",
+               "upgrade_cost": 120, "range": 4, "damage": 60, "fire_interval": 2.2,
+               "effects": { "aoe_radius": 1.3, "fuse_seconds": 1.0, "bleed_dps": 8,
+                            "bleed_seconds": 3 } }
+      }
     }
   }
 }

@@ -67,6 +67,23 @@ func test_harpooner_shows_the_line_shot_barbed_bleed_and_the_chain_pull() -> voi
 		assert_array(_lines("harpooner", c)).contains(["Pull 1.5c, ≤500 HP, 3s"])
 
 
+## LT-47: a ground-only tower says it cannot hit flyers right after its range; the fuse
+## line follows the blast radius (EFFECT_GROUPS order).
+func test_dynamite_shows_ground_only_the_blast_and_the_fuse() -> void:
+	var d := _def("dynamite_crew")
+	var l1 := d.levels[0]
+	var e: Dictionary = l1.effects
+	assert_array(_lines("dynamite_crew", l1)).is_equal(_attack(l1) + [TowerInfo.GROUND_ONLY,
+		"Blast radius %s cells" % _n(e["aoe_radius"]),
+		"Fuse %s s, thrown ahead" % _n(e["fuse_seconds"])] + _mundane_kind())
+	assert_str(TowerInfo.GROUND_ONLY).is_equal("Cannot hit flyers")
+	# Spec example at today's config.
+	if e["fuse_seconds"] == 1.0:
+		assert_array(_lines("dynamite_crew", l1)).contains(["Fuse 1 s, thrown ahead"])
+	for id: String in ["rifleman", "harpooner", "necronomicon_reader"]:
+		assert_array(_lines(id, _def(id).levels[0])).not_contains([TowerInfo.GROUND_ONLY])
+
+
 func test_elder_sign_is_support_with_aura_and_effects_and_no_kind_line() -> void:
 	var l1 := _def("elder_sign").levels[0]
 	assert_array(_lines("elder_sign", l1)).is_equal([
@@ -200,6 +217,7 @@ func _numbers_for(key: String, e: Dictionary) -> Array:
 		"pull_cells": return [_n(e["pull_cells"]) + "c", "≤" + _n(e["pull_max_hp"]),
 			_n(e["pull_immune_seconds"]) + "s"]
 		"strip_armor": return [_n(e["strip_armor"])]
+		"fuse_seconds": return [_n(e["fuse_seconds"]) + " s"]
 	return []
 
 
@@ -216,7 +234,8 @@ func test_shipped_effect_lines_fit_24_chars_and_keep_their_numbers() -> void:
 				assert_int(line.length()).override_failure_message("%s '%s'" % [id, line]) \
 					.is_less_equal(LINE_MAX)
 			for key: String in ["pierce", "aoe_radius", "slow", "damage_taken_multiplier",
-					"crit_chance", "burst_targets", "bleed_dps", "pull_cells", "strip_armor"]:
+					"crit_chance", "burst_targets", "bleed_dps", "pull_cells", "strip_armor",
+			"fuse_seconds"]:
 				if not TowerInfo.is_active(s.effects, key):
 					continue
 				var text := "|".join(lines)
@@ -226,7 +245,8 @@ func test_shipped_effect_lines_fit_24_chars_and_keep_their_numbers() -> void:
 				covered[key] = true
 	# every Tier B template was actually exercised by the shipped data
 	for key: String in ["pierce", "aoe_radius", "slow", "damage_taken_multiplier",
-			"crit_chance", "burst_targets", "bleed_dps", "pull_cells", "strip_armor"]:
+			"crit_chance", "burst_targets", "bleed_dps", "pull_cells", "strip_armor",
+			"fuse_seconds"]:
 		assert_bool(covered.has(key)).override_failure_message("not in shipped data: " + key).is_true()
 
 

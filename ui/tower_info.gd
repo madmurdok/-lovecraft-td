@@ -11,6 +11,7 @@ const COMING_SOON := " (coming soon)"  ## appended to lines whose key is in Leve
 const MINUS := "−"  ## U+2212, for sanity drains
 const MADNESS_WARNING := " (drives you mad!)"  ## LT-23 Q3: build/upgrade takes the cap to 0
 const REMOVED := "Loses: "  ## LT-28: before the old line of an effect an upgrade removes
+const GROUND_ONLY := "Cannot hit flyers"  ## LT-47: a tower with targets "ground"
 
 ## Player-facing text for a refused build or upgrade (presentation only).
 const REASONS := {
@@ -38,7 +39,7 @@ const PRIORITY_NAMES := {
 
 ## Effect lines in display order: the keys one line reads (a pair shares a line).
 const EFFECT_GROUPS := [
-	["pierce"], ["aoe_radius"], ["slow"], ["damage_taken_multiplier"],
+	["pierce"], ["aoe_radius"], ["fuse_seconds"], ["slow"], ["damage_taken_multiplier"],
 	["crit_chance", "crit_multiplier"], ["burst_targets"], ["bleed_dps", "bleed_seconds"],
 	["pull_cells", "pull_max_hp", "pull_immune_seconds"], ["strip_armor"],
 ]
@@ -76,6 +77,8 @@ static func lines(def: TowerDef, s: TowerDef.Level, sanity: SanityConfig) -> Pac
 	if s.damage > 0.0:
 		out.append(_damage_text(s))
 		out.append("Range %s cells" % num(s.range_cells))
+		if def.ground_only():
+			out.append(GROUND_ONLY)
 	else:
 		out.append("Support (no damage)")
 		out.append("Aura radius %s cells" % num(s.range_cells))
@@ -222,6 +225,8 @@ static func _effect_text(first_key: String, e: Dictionary) -> String:
 			return "Pierce: %s-cell-wide line" % num(e.get("pierce", 0.0))
 		"aoe_radius":
 			return "Blast radius %s cells" % num(e.get("aoe_radius", 0.0))
+		"fuse_seconds":
+			return "Fuse %s s, thrown ahead" % num(e.get("fuse_seconds", 0.0))
 		"slow":
 			return "Slows enemies %s%%" % num(e.get("slow", 0.0) * 100.0)
 		"damage_taken_multiplier":

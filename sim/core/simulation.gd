@@ -111,6 +111,9 @@ func step() -> void:
 	# cost since LT-23); madness damage and astray shots (LT-13). Kills drop relic tokens
 	# (LT-27 §1.3).
 	_fire_towers()
+	# 5b. Fused charges (LT-47 P2) whose fuse ran out explode, in throw order; a charge
+	# thrown this tick waits at least one tick.
+	_settle_blasts()
 	# 6. Sanity (LT-10): horror drain. Kill regen is paid in slot 5 (_on_enemy_killed),
 	# between-waves regen in slot 8 (wave system), each through _add_sanity.
 	_horror_drain()
@@ -1346,7 +1349,7 @@ func _fire_towers() -> void:
 		var s := t.stats()
 		if s.damage <= 0.0:
 			continue
-		var in_range := enemies_in_range(t.cell, s.range_cells)
+		var in_range := _candidates(t, s)
 		var target: SimEnemy = null
 		var burst := int(s.effects.get("burst_targets", 0.0))
 		if burst > 0:
@@ -1379,29 +1382,40 @@ func _fire_towers() -> void:
 					if not e.is_fake:
 						pool.append(e)
 			elif astray == "fake":
-				pool = live_fakes_in_range(t.cell, s.range_cells)
+				pool = _ground_filter(t, live_fakes_in_range(t.cell, s.range_cells))
 			if pool.is_empty():
 				astray = "empty"
 			else:
 				target = pool[rng(SimRng.Stream.MADNESS).randi_range(0, pool.size() - 1)]
 		var pierce: float = s.effects.get("pierce", 0.0)
 		var aoe: float = s.effects.get("aoe_radius", 0.0)
+		var fuse_ticks := 0
+		if s.effects.get("fuse_seconds", 0.0) > 0.0:
+			fuse_ticks = maxi(1, SimTime.ticks(float(s.effects["fuse_seconds"])))
 		var hits: Array[SimEnemy] = [target]
 		var to := target.route.position_at(target.distance)
-		if pierce > 0.0:
+		if fuse_ticks > 0:
+			# LT-47 (Q5 "lead"): thrown where the target will be after the fuse at its speed
+			# this tick; who is hit is decided when it explodes (_settle_blasts).
+			to = _lead_point(target, fuse_ticks)
+			hits = []
+		elif pierce > 0.0:
 			to = _line_end(t.centre(), to, s.range_cells)
-			hits = _line_hits(t.centre(), to, pierce * 0.5, target)
+			hits = _ground_filter(t, _line_hits(t.centre(), to, pierce * 0.5, target))
 		elif aoe > 0.0:
-			hits = enemies_near(to, aoe)
+			hits = _ground_filter(t, enemies_near(to, aoe))
 		# LT-12 §4: a mundane shot may miss as a whole (Q3: occult towers never miss).
 		# LT-30: a lit mundane tower with ignore_miss never misses (no COMBAT draw).
 		var miss := t.def.kind == "mundane" and not (lit_mundane and beam.mundane_ignore_miss) \
 			and _roll_miss()
-		if miss or astray == "empty":
+		var dud := miss or astray == "empty"
+		if dud:
 			hits = []
 		# LT-29 §1.1: one CRIT roll per shot that hits, after the miss roll; all before armor
-		# (power_mult x madness x crit), so apply_damage subtracts armor from the crit.
-		var crit := not hits.is_empty() and _roll_crit(float(s.effects.get("crit_chance", 0.0)))
+		# (power_mult x madness x crit), so apply_damage subtracts armor from the crit. A
+		# fused charge that is not a dud rolls at the throw.
+		var lands := (not dud) if fuse_ticks > 0 else (not hits.is_empty())
+		var crit := lands and _roll_crit(float(s.effects.get("crit_chance", 0.0)))
 		if crit:
 			damage *= float(s.effects.get("crit_multiplier", 1.0))
 		var ids: Array[int] = []
@@ -1414,14 +1428,92 @@ func _fire_towers() -> void:
 			shot["astray"] = true
 		if crit:
 			shot["crit"] = true
+		if fuse_ticks > 0:
+			# LT-47: a dud (a Fraying miss) is thrown but never explodes; blast 0.
+			shot["fuse"] = true
+			shot["detonate_tick"] = state.tick + fuse_ticks
+			shot["radius"] = aoe
+			shot["blast"] = 0 if dud else _queue_blast(t, s, to, damage, fuse_ticks)
 		_emit(SimEvent.Type.SHOT, t.id, shot)
 		for e in hits:
 			apply_damage(e.id, damage, t.def.id)
-		_on_hit_effects(t, s, target, hits, shot)
+		if fuse_ticks == 0:
+			_on_hit_effects(t, s, target, hits, shot)
 		var interval := s.fire_interval
 		if lit_mundane:
 			interval *= beam.mundane_fire_interval_mult  # LT-30: decided at the shot
 		t.cooldown_ticks = maxi(1, SimTime.ticks(interval))
+
+
+## LT-46 P1: the enemies `t` may fire at with stats `s`: live ones in range (fakes too),
+## without flyers for a ground tower (P3). Id order.
+func _candidates(t: SimTower, s: TowerDef.Level) -> Array[SimEnemy]:
+	return _ground_filter(t, enemies_in_range(t.cell, s.range_cells))
+
+
+## `enemies` without flyers if `t` is ground only (LT-47 P3), else `enemies` itself.
+func _ground_filter(t: SimTower, enemies: Array[SimEnemy]) -> Array[SimEnemy]:
+	return _ground_only(enemies) if t.def.ground_only() else enemies
+
+
+static func _ground_only(enemies: Array[SimEnemy]) -> Array[SimEnemy]:
+	var out: Array[SimEnemy] = []
+	for e in enemies:
+		if not e.def.flying:
+			out.append(e)
+	return out
+
+
+## LT-47 (Q5): where `e` will be after `ticks` more moves at this tick's speed (as _move
+## rounds it), clamped to its route.
+func _lead_point(e: SimEnemy, ticks: int) -> Vector2:
+	var step_units := roundi(e.base_units_per_tick * e.speed_mult)
+	return e.route.position_at(clampi(e.distance + step_units * ticks, 0, e.route.length))
+
+
+## LT-47 (P2): queues a charge from `t` at `at` exploding `fuse_ticks` from now; its id.
+func _queue_blast(t: SimTower, s: TowerDef.Level, at: Vector2, damage: float,
+		fuse_ticks: int) -> int:
+	var b := SimBlast.new()
+	b.id = state.next_blast_id
+	state.next_blast_id += 1
+	b.tower = t.id
+	b.source = t.def.id
+	b.at = at
+	b.throw_tick = state.tick
+	b.detonate_tick = state.tick + fuse_ticks
+	b.damage = damage
+	b.radius = float(s.effects.get("aoe_radius", 0.0))
+	b.ground_only = t.def.ground_only()
+	b.effects = s.effects
+	state.blasts.append(b)
+	return b.id
+
+
+## Slot 5b (LT-47 P2): every charge whose detonate_tick has come explodes, in id order:
+## BLAST {tower, def, at, radius, hits}, then its damage to each live enemy (fakes too;
+## flyers only if not ground_only) within `radius` of `at` now, credited to its def id, then
+## its on-hit bleed. Enemies slowed, sped up or pushed back since the throw may be outside.
+func _settle_blasts() -> void:
+	if state.blasts.is_empty():
+		return
+	var left: Array[SimBlast] = []
+	for b in state.blasts:
+		if b.detonate_tick > state.tick:
+			left.append(b)
+			continue
+		var hits := enemies_near(b.at, b.radius)
+		if b.ground_only:
+			hits = _ground_only(hits)
+		var ids: Array[int] = []
+		for e in hits:
+			ids.append(e.id)
+		_emit(SimEvent.Type.BLAST, b.id, {"tower": b.tower, "def": b.source, "at": b.at,
+			"radius": b.radius, "hits": ids})
+		for e in hits:
+			apply_damage(e.id, b.damage, b.source)
+		_apply_bleed_hits(hits, b.effects, b.source)
+	state.blasts = left
 
 
 ## The target `t` fires at among `candidates` by its target_priority: the top of
@@ -1536,12 +1628,7 @@ func _push_back(e: SimEnemy, cells: float) -> void:
 ## Dictionary by reference.
 func _on_hit_effects(t: SimTower, s: TowerDef.Level, target: SimEnemy, hits: Array[SimEnemy],
 		shot: Dictionary) -> void:
-	var bleed_dps: float = s.effects.get("bleed_dps", 0.0)
-	var bleed_seconds: float = s.effects.get("bleed_seconds", 0.0)
-	if bleed_dps > 0.0 and bleed_seconds > 0.0:
-		for e in hits:
-			if e.is_live():
-				_apply_bleed(e, bleed_dps, bleed_seconds, t.def.id)
+	_apply_bleed_hits(hits, s.effects, t.def.id)
 	var pull: float = s.effects.get("pull_cells", 0.0)
 	if pull <= 0.0:
 		return
@@ -1555,6 +1642,16 @@ func _on_hit_effects(t: SimTower, s: TowerDef.Level, target: SimEnemy, hits: Arr
 			target.status["pull_immune_ticks"] = immune
 		pulled.append(target.id)
 	shot["pulled"] = pulled
+
+
+## Bleed from `effects` (bleed_dps, bleed_seconds) on every hit still live, in hit order.
+func _apply_bleed_hits(hits: Array[SimEnemy], effects: Dictionary, source: String) -> void:
+	var bleed_dps: float = effects.get("bleed_dps", 0.0)
+	var bleed_seconds: float = effects.get("bleed_seconds", 0.0)
+	if bleed_dps > 0.0 and bleed_seconds > 0.0:
+		for e in hits:
+			if e.is_live():
+				_apply_bleed(e, bleed_dps, bleed_seconds, source)
 
 
 ## LT-29 §1.3 (shared with later bleeders): refresh, never stack. The duration restarts

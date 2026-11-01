@@ -169,6 +169,20 @@ func test_mundane_buys_the_marksman_then_barbed() -> void:
 	assert_array(_next(sim, "mundane")).is_equal([harp.id, "a"])
 
 
+## LT-47 (LT-46 §5): the "demolition" strategy builds the Dynamite crew in the mundane
+## order's third slot and takes Demolition man (a) at L3.
+func test_demolition_builds_the_dynamite_crew_and_buys_branch_a() -> void:
+	var b := _bot()
+	assert_array(b.get_script().get_script_constant_map()["STRATEGIES"]).contains(["demolition"])
+	var sim := _sim()
+	var order: Array = []
+	for i in 6:
+		order.append(b.call("_order", "demolition", i, sim, {}))
+	assert_array(order).is_equal([RIFLE, RIFLE, "dynamite_crew", RIFLE, RIFLE, "dynamite_crew"])
+	var dyn := _place(sim, "dynamite_crew", 1)
+	assert_array(_next(sim, "demolition")).is_equal([dyn.id, "a"])
+
+
 ## LT-29 §4.3: `--branch=<tower>:<a|b>` wins over BRANCH_PICK for that tower (in every
 ## strategy, even one without a pick for it); other towers keep the strategy's pick.
 func test_branch_override_wins_over_branch_pick() -> void:
