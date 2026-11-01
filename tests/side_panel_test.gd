@@ -4,7 +4,7 @@ extends GdUnitTestSuite
 ## lines, button texts and disabled reasons, the madness warning, upgrading from the panel,
 ## and closing. Also the HUD bar fix (22a9d9c): the bar spans the full width above the
 ## board, so a range ring near the top edge is drawn under it. Real mouse events go into a
-## 1152x648 SubViewport like scene_game_test; text formats come from the design note,
+## 1200x675 SubViewport like scene_game_test; text formats come from the design note,
 ## numbers from config.
 
 const RIFLE := "rifleman"

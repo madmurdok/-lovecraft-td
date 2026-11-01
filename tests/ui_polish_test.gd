@@ -1,6 +1,6 @@
 class_name UiPolishTest
 extends GdUnitTestSuite
-## LT-28: the HUD bar groups fit a 1280x720 window (the 1152x648 base stretched, as
+## LT-28: the HUD bar groups fit a 1280x720 window (the 1200x675 base stretched, as
 ## canvas_items does) with no two bar items overlapping and none squashed; the sanity threshold ticks stay out
 ## of the label's band; the tower letter sits on a dark plate inside its tile. Draw calls are
 ## not observable headless, so the last two pin the geometry the drawing uses (text metrics

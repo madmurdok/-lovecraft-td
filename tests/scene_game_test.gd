@@ -1,6 +1,6 @@
 class_name SceneGameTest
 extends GdUnitTestSuite
-## LT-7 scene tests: real mouse events pushed into a 1152x648 SubViewport (the headless
+## LT-7 scene tests: real mouse events pushed into a 1200x675 SubViewport (the headless
 ## root is 64x64 and drops GUI clicks) drive the Game scene; assertions read sim state.
 
 const RIFLE := "rifleman"

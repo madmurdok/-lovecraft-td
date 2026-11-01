@@ -503,7 +503,7 @@ func test_resonator_dps_is_a_range_in_the_picker_and_live_in_the_panel() -> void
 
 # --- nothing cut at 1280x720 -----------------------------------------------------------------
 
-## At 1280x720 (base 1152x648 stretched) by day and at night: every cell of the 10 shipped
+## At 1280x720 (base 1200x675 stretched) by day and at night: every cell of the 10 shipped
 ## rows is at least as wide as its text, and the list is inside the side panel.
 func test_no_picker_text_is_cut_at_1280x720() -> void:
 	_vp.size = Vector2i(1280, 720)

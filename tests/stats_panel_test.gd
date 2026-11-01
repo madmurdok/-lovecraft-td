@@ -468,7 +468,7 @@ func test_the_flare_circle_lights_a_tower_and_the_panel_marks_it() -> void:
 
 # --- §4: nothing cut at 1280x720 ------------------------------------------------------------
 
-## LT-53/S8 probe as a test: at 1280x720 (base 1152x648 stretched, as canvas_items does) no
+## LT-53/S8 probe as a test: at 1280x720 (base 1200x675 stretched, as canvas_items does) no
 ## label of the panel table is narrower than its text, and the table stays inside the side
 ## panel, for every tower at L1, L2 and branch B, lit and unlit (the Resonator also at low
 ## sanity, where its DPS is widest).
