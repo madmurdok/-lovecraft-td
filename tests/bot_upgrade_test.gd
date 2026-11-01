@@ -197,6 +197,21 @@ func test_gate_builds_the_silver_key_and_buys_branch_a() -> void:
 	assert_array(_next(sim, "gate")).is_equal([gate.id, "a"])
 
 
+## LT-52 (LT-46 §5): the "circle" strategy builds the Summoning Circle in the mundane order's
+## third slot and takes Bound ghouls (a) at L3.
+func test_circle_builds_the_summoning_circle_and_buys_branch_a() -> void:
+	var b := _bot()
+	assert_array(b.get_script().get_script_constant_map()["STRATEGIES"]).contains(["circle"])
+	var sim := _sim()
+	var order: Array = []
+	for i in 6:
+		order.append(b.call("_order", "circle", i, sim, {}))
+	assert_array(order).is_equal([RIFLE, RIFLE, "summoning_circle", RIFLE, RIFLE,
+		"summoning_circle"])
+	var circle := _place(sim, "summoning_circle", 1)
+	assert_array(_next(sim, "circle")).is_equal([circle.id, "a"])
+
+
 ## LT-29 §4.3: `--branch=<tower>:<a|b>` wins over BRANCH_PICK for that tower (in every
 ## strategy, even one without a pick for it); other towers keep the strategy's pick.
 func test_branch_override_wins_over_branch_pick() -> void:

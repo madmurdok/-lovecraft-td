@@ -124,6 +124,8 @@ class Level:
 		"ignore_armor": 1.0, "reveal_fakes": 1.0, "sanity_scaling": INF,
 		"banish_cells": INF, "banish_targets": INF, "banish_max_hp": INF,
 		"banish_immune_seconds": INF,
+		"summon_max": INF, "summon_hp": INF, "summon_dps": INF, "summon_lifetime": INF,
+		"summon_speed": INF, "summon_flying": 1.0,
 	}
 	## LT-51: the keys that only mean something on a banishing level (banish_cells > 0).
 	const BANISH_KEYS: PackedStringArray = ["banish_targets", "banish_max_hp",
@@ -132,8 +134,19 @@ class Level:
 	const NOT_WITH_BANISH: PackedStringArray = ["pierce", "aoe_radius", "fuse_seconds",
 		"burst_targets", "pull_cells", "sanity_scaling", "slow", "damage_taken_multiplier",
 		"strip_armor", "reveal_fakes"]
-	## LT-48/LT-49: flag effects, 0 or 1 (not amounts).
-	const FLAG_EFFECTS: PackedStringArray = ["ignore_armor", "reveal_fakes"]
+	## LT-52: the keys that only mean something on a summoning level (summon_max > 0).
+	const SUMMON_KEYS: PackedStringArray = ["summon_hp", "summon_dps", "summon_lifetime",
+		"summon_speed", "summon_flying"]
+	## LT-52: a summoning level's units must have these (> 0): a unit with no HP never
+	## appears, one that cannot move never engages, one with no lifetime never makes room.
+	const SUMMON_REQUIRED: PackedStringArray = ["summon_hp", "summon_lifetime", "summon_speed"]
+	## LT-52: a circle only summons; its units do the damage (no shot shape, no banish).
+	const NOT_WITH_SUMMON: PackedStringArray = ["pierce", "aoe_radius", "fuse_seconds",
+		"burst_targets", "pull_cells", "sanity_scaling", "slow", "damage_taken_multiplier",
+		"strip_armor", "reveal_fakes", "crit_chance", "bleed_dps", "ignore_armor",
+		"banish_cells"]
+	## LT-48/LT-49: flag effects, 0 or 1 (not amounts). LT-52: summon_flying.
+	const FLAG_EFFECTS: PackedStringArray = ["ignore_armor", "reveal_fakes", "summon_flying"]
 
 	## Config keys (EFFECTS or stats) that parse but the sim does not apply yet (LT-24
 	## Decision 1). The UI marks them "(coming soon)" and bots skip branches using them;
@@ -149,10 +162,22 @@ class Level:
 	func is_beam() -> bool:
 		return effects.get("sanity_scaling", 0.0) > 0.0
 
-	## LT-51 (LT-46 P9): a level that acts on enemies every fire_interval: it has damage or
-	## it banishes. "Support" (an aura, no targeting) is `not acts()`.
+	## LT-51 (LT-46 P9): a level that acts on enemies every fire_interval: it has damage,
+	## it banishes or (LT-52) it summons. "Support" (an aura, no targeting) is `not acts()`.
 	func acts() -> bool:
-		return damage > 0.0 or is_banish()
+		return damage > 0.0 or is_banish() or is_summon()
+
+	## LT-52: a Summoning Circle level, keeping up to summon_max allied units on the board.
+	func is_summon() -> bool:
+		return effects.get("summon_max", 0.0) > 0.0
+
+	## LT-52: how many of its units a circle keeps live at once (summon_max, whole).
+	func summon_max() -> int:
+		return int(effects.get("summon_max", 0.0))
+
+	## LT-52: true when this level's units fly (engage flyers too).
+	func summon_flying() -> bool:
+		return effects.get("summon_flying", 0.0) > 0.0
 
 	## LT-51: a Silver Key level, moving its picks back `banish_cells` along their route.
 	func is_banish() -> bool:
@@ -257,10 +282,36 @@ class Level:
 				r.error(ConfigReader.join(ep, "sanity_scaling"), "needs damage > 0")
 				l.effects["sanity_scaling"] = 0.0
 			_check_banish(r, l, ep)
+			_check_summon(r, l, ep, path)
 		if l.is_banish() and l.fire_interval <= 0.0:
 			# LT-51: a gate with no damage still casts every fire_interval.
 			r.error(ConfigReader.join(path, "fire_interval"), "required > 0 with banish_cells")
+		if l.is_summon() and l.fire_interval <= 0.0:
+			# LT-52: a circle summons every fire_interval.
+			r.error(ConfigReader.join(path, "fire_interval"), "required > 0 with summon_max")
 		return l
+
+	## LT-52 (§2.2): a summoning level needs a whole summon_max >= 1, summon_hp,
+	## summon_lifetime and summon_speed > 0, no damage of its own and no other attack
+	## shape; the other summon keys need summon_max.
+	static func _check_summon(r: ConfigReader, l: Level, ep: String, path: String) -> void:
+		if not l.is_summon():
+			for key in SUMMON_KEYS:
+				if l.effects.get(key, 0.0) > 0.0:
+					r.error(ConfigReader.join(ep, key), "needs summon_max > 0")
+			return
+		var n: float = l.effects["summon_max"]
+		if n != floorf(n):
+			r.error(ConfigReader.join(ep, "summon_max"), "must be a whole number >= 1, got %s" % n)
+			l.effects["summon_max"] = maxf(1.0, floorf(n))
+		for key in SUMMON_REQUIRED:
+			if l.effects.get(key, 0.0) <= 0.0:
+				r.error(ConfigReader.join(ep, "summon_max"), "needs %s > 0" % key)
+		if l.damage > 0.0:
+			r.error(ConfigReader.join(path, "damage"), "cannot combine with summon_max")
+		for key in NOT_WITH_SUMMON:
+			if l.effects.get(key, 0.0) > 0.0:
+				r.error(ConfigReader.join(ep, key), "cannot combine with summon_max")
 
 	## LT-51 (§2.2, Q4 "HP cap per level"): a banishing level needs its HP cap
 	## (banish_max_hp > 0: Dagon is never banished, so "no cap" is not offered), a whole

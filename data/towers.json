@@ -184,6 +184,31 @@
                "effects": { "banish_cells": 8, "banish_max_hp": 4000,
                             "banish_immune_seconds": 8 } }
       }
+    },
+    "summoning_circle": {
+      "name": "Summoning Circle",
+      "role": "Ghouls hold foes back",
+      "kind": "occult",
+      "glyph": "C",
+      "cost": 160,
+      "levels": [
+        { "range": 2.5, "fire_interval": 10, "sanity_reserve": 12,
+          "effects": { "summon_max": 1, "summon_hp": 120, "summon_dps": 15,
+                       "summon_lifetime": 20, "summon_speed": 1.5 } },
+        { "upgrade_cost": 120, "range": 3, "fire_interval": 9, "sanity_reserve": 20,
+          "effects": { "summon_max": 2, "summon_hp": 150, "summon_dps": 18,
+                       "summon_lifetime": 20, "summon_speed": 1.5 } }
+      ],
+      "branches": {
+        "a": { "name": "Bound ghouls", "role": "Three sturdier ghouls",
+               "upgrade_cost": 180, "range": 3, "fire_interval": 8, "sanity_reserve": 26,
+               "effects": { "summon_max": 3, "summon_hp": 200, "summon_dps": 20,
+                            "summon_lifetime": 20, "summon_speed": 1.5 } },
+        "b": { "name": "Byakhee", "role": "Winged, hits flyers",
+               "upgrade_cost": 180, "range": 4, "fire_interval": 10, "sanity_reserve": 45,
+               "effects": { "summon_max": 1, "summon_hp": 150, "summon_dps": 45,
+                            "summon_lifetime": 20, "summon_speed": 3, "summon_flying": 1 } }
+      }
     }
   }
 }

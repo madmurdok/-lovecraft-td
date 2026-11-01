@@ -136,6 +136,14 @@ const BEAM_WIDTH := 2.0  ## core px at factor 1; + BEAM_WIDTH_PER_FACTOR per fac
 const BEAM_WIDTH_PER_FACTOR := 1.2
 const BEAM_QUIVER_HZ := 9.0
 const BEAM_RIM_CELLS := 0.42  ## the beam leaves the tower tile this far from its centre
+## LT-52 Summoning Circle: the tower's rim and letter, a faint leash ring (range + 1) and
+## its units: a bone body with a violet rim (a Byakhee also gets two wing strokes), a teal
+## HP bar under the body (enemy bars are red, above), a claw line to the enemy it holds.
+const SUMMON_COLOR := Color(2.2, 0.8, 1.7)
+const ALLY_BODY := Color(0.86, 0.8, 0.68)
+const ALLY_HP := Color(0.35, 1.6, 1.25)
+const ALLY_RADIUS_CELLS := 0.2
+const SUMMON_RING_ALPHA := 0.18
 ## LT-51 Silver Key Gate: per banished enemy, a silver thread from the gate to the enemy's
 ## old spot, a keyhole there while the enemy "folds" (arcs collapsing on a fading ghost),
 ## a dotted trail back to where it reappears and a ring opening around it there. Banish
@@ -251,6 +259,7 @@ func on_event(ev: SimEvent) -> void:
 ## change it): sanity_scaling -> "beam" (LT-50), pierce -> "harpoon", fuse_seconds ->
 ## "dynamite" (LT-47), min_range -> "shell" (LT-48), aoe_radius -> "wave", support level ->
 ## "aura" ("searchlight" with reveal_fakes, LT-49), banish_cells -> "banish" (LT-51),
+## summon_max -> "summon" (LT-52: no SHOT, its units are drawn by _draw_allies),
 ## otherwise "tracer".
 static func shot_kind(t: SimTower) -> String:
 	var s := t.stats()
@@ -258,6 +267,8 @@ static func shot_kind(t: SimTower) -> String:
 		return "searchlight" if s.effects.get("reveal_fakes", 0.0) > 0.0 else "aura"
 	if s.is_banish():
 		return "banish"
+	if s.is_summon():
+		return "summon"
 	if s.is_beam():
 		return "beam"
 	if s.effects.get("pierce", 0.0) > 0.0:
@@ -515,6 +526,7 @@ func _draw() -> void:
 	for t in s.towers:
 		_draw_tower(t)
 	_draw_enemies(s)
+	_draw_allies(s)
 	_draw_effects()
 	if game.sim.state.map.in_bounds(selected_cell):
 		draw_rect(Rect2(cell_origin(selected_cell), Vector2(CELL, CELL)), COLOR_SELECT, false, 2.0)
@@ -578,6 +590,8 @@ static func attack_color(kind: String) -> Color:
 			return BEAM_COLOR
 		"banish":
 			return BANISH_COLOR
+		"summon":
+			return SUMMON_COLOR
 	return Color.BLACK
 
 
@@ -695,6 +709,34 @@ func _draw_enemies(s: SimState) -> void:
 		draw_rect(bar, Color(COLOR_HP_BACK, 1.0 - dip))
 		bar.size.x = w * clampf(e.hp / e.max_hp, 0.0, 1.0)
 		draw_rect(bar, Color(COLOR_HP, 1.0 - dip))
+
+
+## LT-52 (P10): each circle's leash ring (faint), then every live ally at its interpolated
+## position over the enemies: a claw line to its held enemy, the body (wing strokes when it
+## flies) and its HP bar below the body.
+func _draw_allies(s: SimState) -> void:
+	for t in s.towers:
+		if shot_kind(t) == "summon":
+			draw_arc(t.centre() * CELL, (t.stats().range_cells + 1.0) * CELL, 0, TAU, 64,
+				Color(SUMMON_COLOR, SUMMON_RING_ALPHA), 1.0)
+	for a in s.allies:
+		if not a.is_live():
+			continue
+		var px := game.sim.ally_position(a, alpha) * CELL
+		if a.held_id >= 0 and _last_pos.has(a.held_id):
+			draw_line(px, _last_pos[a.held_id] * CELL, Color(SUMMON_COLOR, 0.9), 2.0)
+		var r := CELL * ALLY_RADIUS_CELLS
+		if a.flying:
+			for side: float in [-1.0, 1.0]:
+				draw_line(px + Vector2(side * r * 0.6, 0), px + Vector2(side * r * 1.9, -r * 0.9),
+					SUMMON_COLOR, 2.0)
+		draw_circle(px, r, ALLY_BODY)
+		draw_arc(px, r, 0, TAU, 20, SUMMON_COLOR, 2.0)
+		var w := CELL * 0.5
+		var bar := Rect2(px + Vector2(-w * 0.5, r + 3.0), Vector2(w, 3))
+		draw_rect(bar, COLOR_HP_BACK)
+		bar.size.x = w * clampf(a.hp / a.max_hp, 0.0, 1.0) if a.max_hp > 0.0 else 0.0
+		draw_rect(bar, ALLY_HP)
 
 
 func _draw_effects() -> void:

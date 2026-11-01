@@ -17,7 +17,11 @@ enum Type {SPAWNED, LEAKED, DIED, OUTCOME, TOWER_BUILT, TOWER_SOLD, GOLD_CHANGED
 		LIGHTHOUSE_UPGRADED, TOWER_LIT, FLARE_FIRED, OIL_CHANGED,
 		## LT-47, id = the blast (SimState.next_blast_id): {tower, def, at, radius, hits}
 		## when a fused charge (SHOT {fuse: true, blast}) explodes; hits in id order
-		BLAST}
+		BLAST,
+		## LT-52 (P10), id = the ally: {tower, source, at, hp, flying, expires_tick} when
+		## spawn_ally places it; {tower, reason: "killed" | "expired" | "dismissed", by
+		## (killed only: the enemy id)} when it is gone (removed at the end of the tick)
+		ALLY_SUMMONED, ALLY_GONE}
 
 var type: Type
 var tick: int

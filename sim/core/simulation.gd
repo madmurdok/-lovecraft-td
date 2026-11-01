@@ -40,6 +40,8 @@ enum CommandResult {
 const MADNESS_EXIT_REASONS: PackedStringArray = ["buyout", "auto_restore"]
 ## SimEnemy.status timers that only count down to 0 and go (LT-29 pull, LT-51 banish).
 const IMMUNITY_KEYS: PackedStringArray = ["pull_immune_ticks", "banish_immune_ticks"]
+## LT-52 (LT-46 §2.2): an allied unit within this many cells of an enemy it chases holds it.
+const ALLY_CONTACT := 0.4
 
 var state: SimState
 var config: GameConfig
@@ -104,15 +106,21 @@ func step() -> void:
 	_apply_madness_buff()
 	_apply_flare_slow()
 	_tick_statuses()
+	# LT-52 (P10): allies past their lifetime are gone; the rest hold their enemy
+	# (speed_mult 0, after every other speed modifier).
+	_tick_allies()
 	_count_down_flare()
-	# 3. Movement.
+	# 3. Movement: enemies, then allies chase them (LT-52; contact starts a hold).
 	_move()
+	_move_allies()
 	# 4. Leaks.
 	_leak()
 	# 5. Towers fire / damage: single and line shots (LT-6), AoE casts (LT-11, no sanity
 	# cost since LT-23); madness damage and astray shots (LT-13). Kills drop relic tokens
 	# (LT-27 §1.3).
 	_fire_towers()
+	# LT-52 (P10): each holding ally and its enemy trade damage, in ally id order.
+	_ally_combat()
 	# 5b. Fused charges (LT-47 P2) whose fuse ran out explode, in throw order; a charge
 	# thrown this tick waits at least one tick.
 	_settle_blasts()
@@ -125,8 +133,9 @@ func step() -> void:
 	if _spawner != null:
 		_spawner.tick(self)
 		_hallucinations.tick(self, _spawner)
-	# 8. Remove dead and leaked enemies; then the wave system settles a cleared wave
-	# (its bonus is paid before the outcome check, so the last wave's bonus lands too).
+	# 8. Remove dead and leaked enemies and gone allies (LT-52); then the wave system settles
+	# a cleared wave (its bonus is paid before the outcome check, so the last wave's bonus
+	# lands too).
 	_compact()
 	if _spawner != null:
 		_spawner.end_tick(self)
@@ -261,6 +270,7 @@ func sell_tower(tower_id: int) -> CommandResult:
 	var reserve := reserve_of(t)
 	state.towers.erase(t)
 	state.tower_at.erase(t.cell)
+	_dismiss_allies(t.id)
 	state.command_log.append([state.tick, "sell", tower_id])
 	_emit(SimEvent.Type.TOWER_SOLD, t.id, {"def": t.def.id, "cell": t.cell, "refund": refund})
 	_add_gold(refund, "sell", t.id)
@@ -371,9 +381,11 @@ func _reserve_drives_mad(delta: float) -> bool:
 
 ## Whether `t` picks a target when it fires (LT-31): its current level acts (deals damage
 ## or banishes, LT-51 P9). False for an aura tower (Elder Sign), which has no target
-## priority to switch.
+## priority to switch, and (LT-52) for a Summoning Circle: it acts, but its units pick the
+## nearest enemy themselves, so a priority would change nothing.
 func has_targeting(t: SimTower) -> bool:
-	return t.stats().acts()
+	var s := t.stats()
+	return s.acts() and not s.is_summon()
 
 
 ## Whether set_target_priority(tower_id, mode) would be applied now; OK or the first
@@ -891,6 +903,60 @@ func enemy_position(e: SimEnemy, alpha: float) -> Vector2:
 	return e.route.position_at(d)
 
 
+## LT-52 (LT-46 P10): places an allied unit at `at` (cell units; also its leash centre) and
+## emits ALLY_SUMMONED. `tower` is the summoning tower's id (0 = none), `source` the kill
+## credit; `dps` is dealt to the held enemy (armor: Simulation._ally_combat), `speed` in
+## cells/s, `flying` lets it engage flyers, `leash` (cells from `at`) bounds whom it
+## engages; `lifetime_ticks` <= 0 = no lifetime. Returns the new id, or 0 if the outcome
+## is set or `hp` <= 0 (then nothing changes and no event is emitted).
+func spawn_ally(tower: int, source: String, at: Vector2, hp: float, dps: float, speed: float,
+		flying: bool, lifetime_ticks: int, leash: float) -> int:
+	if state.outcome != SimState.Outcome.NONE or hp <= 0.0:
+		return 0
+	var a := SimAlly.new()
+	a.id = state.next_id
+	state.next_id += 1
+	a.tower = tower
+	a.source = source
+	a.home = at
+	a.leash = maxf(0.0, leash)
+	a.pos = at
+	a.prev_pos = at
+	a.hp = hp
+	a.max_hp = hp
+	a.dps = maxf(0.0, dps)
+	a.speed = maxf(0.0, speed)
+	a.flying = flying
+	a.summon_tick = state.tick
+	a.expires_tick = state.tick + lifetime_ticks if lifetime_ticks > 0 else 0
+	state.allies.append(a)
+	_emit(SimEvent.Type.ALLY_SUMMONED, a.id, {"tower": tower, "source": source, "at": at,
+		"hp": hp, "flying": flying, "expires_tick": a.expires_tick})
+	return a.id
+
+
+## The ally with this id, or null (also null once removed).
+func ally_by_id(id: int) -> SimAlly:
+	for a in state.allies:
+		if a.id == id:
+			return a
+	return null
+
+
+## Live allies of tower `tower_id`, id order (a summoner counts them against its maximum).
+func allies_of(tower_id: int) -> Array[SimAlly]:
+	var out: Array[SimAlly] = []
+	for a in state.allies:
+		if a.is_live() and a.tower == tower_id:
+			out.append(a)
+	return out
+
+
+## Position in cell units, interpolated between the last two ticks by `alpha` (0..1).
+func ally_position(a: SimAlly, alpha: float) -> Vector2:
+	return a.prev_pos.lerp(a.pos, alpha)
+
+
 ## Every event since the last drain, oldest first; clears the buffer.
 func drain_events() -> Array[SimEvent]:
 	var out := events
@@ -1368,6 +1434,9 @@ func _fire_towers() -> void:
 		if s.is_banish():
 			_cast_banish(t, s)  # LT-51: its own cast; no miss, crit or shot shape
 			continue
+		if s.is_summon():
+			_summon(t, s)  # LT-52: allied units do the damage (slot 5 _ally_combat)
+			continue
 		var in_range := _candidates(t, s)
 		var target: SimEnemy = null
 		var burst := int(s.effects.get("burst_targets", 0.0))
@@ -1526,6 +1595,25 @@ func _cast_banish(t: SimTower, s: TowerDef.Level) -> void:
 		for e in picks:
 			apply_damage(e.id, damage, t.def.id)
 	t.cooldown_ticks = maxi(1, SimTime.ticks(s.fire_interval))
+
+
+## LT-52 (§2.2): a Summoning Circle with fewer than summon_max live units summons one at
+## its centre (spawn_ally: leash = range + 1, lifetime summon_lifetime) and spends the
+## cooldown. At its maximum it does not summon and stays ready, so a unit gone frees a
+## slot at once. A circle lit at summon time gives the unit summon_dps x occult_power_mult
+## for its whole life (§3 "lit at summon time"); madness is applied live by _ally_combat.
+## No miss, crit or astray (a unit bites what it holds).
+func _summon(t: SimTower, s: TowerDef.Level) -> void:
+	if allies_of(t.id).size() >= s.summon_max():
+		return
+	var dps: float = s.effects.get("summon_dps", 0.0)
+	if t.lit and t.def.kind == "occult":
+		dps *= config.economy.beam.occult_power_mult
+	var id := spawn_ally(t.id, t.def.id, t.centre(), s.effects.get("summon_hp", 0.0), dps,
+		s.effects.get("summon_speed", 0.0), s.summon_flying(),
+		SimTime.ticks(float(s.effects.get("summon_lifetime", 0.0))), s.range_cells + 1.0)
+	if id != 0:
+		t.cooldown_ticks = maxi(1, SimTime.ticks(s.fire_interval))
 
 
 ## LT-51 (Q4 "HP cap per level"): those of `enemies` a gate with stats `s` may banish:
@@ -1832,6 +1920,157 @@ func _tick_statuses() -> void:
 					st.erase(key)
 
 
+## LT-52 slot 2: an ally whose lifetime ran out is gone ("expired"); a live ally's held
+## enemy gets speed_mult 0. A hold that is no longer valid (_holds: the enemy died, was
+## revealed as a fake, or was pushed out of contact by a pull / banish in the last slot 5)
+## is dropped first, so that enemy is not frozen for another tick.
+func _tick_allies() -> void:
+	for a in state.allies:
+		if not a.is_live():
+			continue
+		if a.expires_tick > 0 and state.tick >= a.expires_tick:
+			_ally_gone(a, "expired")
+			continue
+		if a.held_id < 0:
+			continue
+		var e := enemy_by_id(a.held_id)
+		if not _holds(a, e):
+			a.held_id = -1
+			continue
+		e.speed_mult = 0.0
+
+
+## LT-52: true while `a` may keep holding `e`: live, not a revealed fake (units never
+## engage one) and within ALLY_CONTACT of `a` (a push back breaks the hold).
+func _holds(a: SimAlly, e: SimEnemy) -> bool:
+	return e != null and e.is_live() and not e.revealed \
+		and _dist2(a.pos, e.route.position_at(e.distance)) <= ALLY_CONTACT * ALLY_CONTACT
+
+
+## LT-52 slot 3, after enemies move; allies in id order. A holding ally stays while its enemy
+## is live and within ALLY_CONTACT (a push back breaks the hold). Otherwise it picks the
+## nearest enemy (to itself; ties by id) it may engage: live, not a revealed fake, ground
+## only unless it flies, not held by another ally, position within `leash` of `home`; it
+## moves `speed x DT` straight toward that enemy and holds it once within ALLY_CONTACT. With
+## no such enemy it walks back toward `home`.
+func _move_allies() -> void:
+	if state.allies.is_empty():
+		return
+	var held: Dictionary[int, bool] = {}
+	for a in state.allies:
+		if a.is_live() and a.held_id >= 0:
+			held[a.held_id] = true
+	for a in state.allies:
+		if not a.is_live():
+			continue
+		a.prev_pos = a.pos
+		if a.held_id >= 0:
+			if _holds(a, enemy_by_id(a.held_id)):
+				a.target_id = a.held_id
+				continue
+			held.erase(a.held_id)
+			a.held_id = -1
+		var target := _ally_target(a, held)
+		var step_cells := a.speed * SimTime.DT
+		if target == null:
+			a.target_id = -1
+			a.pos = _step_toward(a.pos, a.home, step_cells)
+			continue
+		a.target_id = target.id
+		var p := target.route.position_at(target.distance)
+		a.pos = _step_toward(a.pos, p, step_cells)
+		if _dist2(a.pos, p) <= ALLY_CONTACT * ALLY_CONTACT:
+			a.held_id = target.id
+			held[target.id] = true
+
+
+## The enemy `a` chases this tick (see _move_allies), or null.
+func _ally_target(a: SimAlly, held: Dictionary[int, bool]) -> SimEnemy:
+	var leash2 := a.leash * a.leash
+	var best: SimEnemy = null
+	var best_d2 := INF
+	for e in state.enemies:
+		if not e.is_live() or e.revealed or held.has(e.id):
+			continue
+		if e.def.flying and not a.flying:
+			continue
+		var p := e.route.position_at(e.distance)
+		if _dist2(p, a.home) > leash2:
+			continue
+		var d2 := _dist2(p, a.pos)
+		if d2 < best_d2:
+			best = e
+			best_d2 = d2
+	return best
+
+
+## LT-52 slot 5 (after the towers fire), allies in id order: a holding ally deals
+## `max(0, dps - armor) x DT` to its enemy (armor once per second, not per tick, LT-46 P10;
+## the hit skips armor, damage_taken_mult applies; kill credit `source`); an enemy still
+## live then deals `contact_dps x DT` to the ally, which is gone ("killed") at 0 HP.
+## Unrevealed fakes are engaged and hit back like real enemies (the unit cannot tell); a
+## hold this slot's shots broke (_holds: pushed out of contact, fake revealed) is dropped
+## with no damage either way. The unit's dps is x madness.damage_multiplier while sanity is
+## in MADNESS and its circle is madness_affected, read every tick (§3 "units deal").
+func _ally_combat() -> void:
+	var madness := state.sanity_state == SimState.SanityState.MADNESS
+	for a in state.allies:
+		if not a.is_live() or a.held_id < 0:
+			continue
+		var e := enemy_by_id(a.held_id)
+		if not _holds(a, e):
+			a.held_id = -1
+			continue
+		var dps := a.dps
+		if madness:
+			var t := tower_by_id(a.tower)
+			if t != null and t.stats().madness_affected:
+				dps *= config.sanity.madness.damage_multiplier
+		var armor := maxf(0.0, e.def.armor + e.armor_bonus)
+		apply_damage(e.id, maxf(0.0, dps - armor) * SimTime.DT, a.source, true)
+		if not e.is_live():
+			a.held_id = -1
+			continue
+		a.hp -= e.def.contact_dps * SimTime.DT
+		if a.hp <= 0.0:
+			a.hp = 0.0
+			_ally_gone(a, "killed", e.id)
+
+
+## Marks `a` gone (removed in slot 8), dropping its hold, and emits ALLY_GONE.
+func _ally_gone(a: SimAlly, reason: String, by := 0) -> void:
+	a.gone = true
+	a.held_id = -1
+	a.target_id = -1
+	var data := {"tower": a.tower, "reason": reason}
+	if reason == "killed":
+		data["by"] = by
+	_emit(SimEvent.Type.ALLY_GONE, a.id, data)
+
+
+## A sold tower's live allies are gone ("dismissed"), in id order.
+func _dismiss_allies(tower_id: int) -> void:
+	for a in allies_of(tower_id):
+		_ally_gone(a, "dismissed")
+
+
+## `from` moved up to `max_step` cells straight toward `to`; `to` itself when within reach.
+static func _step_toward(from: Vector2, to: Vector2, max_step: float) -> Vector2:
+	var dx := float(to.x) - float(from.x)
+	var dy := float(to.y) - float(from.y)
+	var d := sqrt(dx * dx + dy * dy)
+	if d <= max_step:
+		return to
+	var k := max_step / d
+	return Vector2(float(from.x) + dx * k, float(from.y) + dy * k)
+
+
+static func _dist2(p: Vector2, q: Vector2) -> float:
+	var dx := float(p.x) - float(q.x)
+	var dy := float(p.y) - float(q.y)
+	return dx * dx + dy * dy
+
+
 ## Every enemy at the end of its route leaks; all leaks of the tick are processed (§5).
 ## A fake never leaks: it dissolves there (LT-12 §3), no HP change and no LEAKED.
 func _leak() -> void:
@@ -1912,6 +2151,13 @@ func _compact() -> void:
 		if e.is_live():
 			live.append(e)
 	state.enemies = live
+	if state.allies.is_empty():
+		return
+	var kept: Array[SimAlly] = []
+	for a in state.allies:
+		if a.is_live():
+			kept.append(a)
+	state.allies = kept
 
 
 ## Lose first, so a leak that empties HP on the last enemy is a loss (§5).

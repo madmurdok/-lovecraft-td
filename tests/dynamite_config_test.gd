@@ -27,6 +27,8 @@ func test_shipped_crew_is_ground_only_with_glyph_d_and_others_default() -> void:
 			assert_str(t.glyph).override_failure_message(id).is_equal("B")
 		elif id == "silver_key":  # LT-51 sets glyph "K" ("S" is the Searchlight's)
 			assert_str(t.glyph).override_failure_message(id).is_equal("K")
+		elif id == "summoning_circle":  # LT-52 sets glyph "C" ("S" is the Searchlight's)
+			assert_str(t.glyph).override_failure_message(id).is_equal("C")
 		else:
 			assert_str(t.glyph).override_failure_message(id).is_equal(t.name.left(1))
 		assert_str(t.targets).override_failure_message(id).is_equal("all")

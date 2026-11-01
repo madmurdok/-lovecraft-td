@@ -3,7 +3,7 @@ extends RefCounted
 ## One enemy type from enemies.json (GDD §7).
 
 const FIELDS := ["name", "hp", "speed", "armor", "leak_damage", "drops", "flying",
-	"horror_drain", "traits"]
+	"horror_drain", "traits", "contact_dps"]
 
 var id: String
 var name: String
@@ -16,6 +16,9 @@ var leak_damage: int  ## lighthouse HP lost when it leaks, >= 0
 var drops: Dictionary[String, int] = {}
 var flying: bool  ## ignores the path, flies straight to the lighthouse
 var horror_drain: float  ## sanity per second near towers, >= 0 (GDD §5.3)
+## LT-52 (LT-46 §7 Q3): damage per second it deals to an allied unit holding it, >= 0;
+## optional in enemies.json, default leak_damage x 10.
+var contact_dps: float
 ## Known traits and their required parameters (schema, not balance).
 const TRAITS := {
 	"pack": ["min", "max"],  # spawns min..max per spawn event (integers >= 1)
@@ -52,6 +55,7 @@ static func parse(r: ConfigReader, id: String, obj: Dictionary, path: String) ->
 			r.error(dp, "weights must sum to > 0")
 	e.flying = r.opt_bool(obj, "flying", path, false)
 	e.horror_drain = r.opt_number(obj, "horror_drain", path, 0.0, 0.0)
+	e.contact_dps = r.opt_number(obj, "contact_dps", path, e.leak_damage * 10.0, 0.0)
 	var traits: Variant = r.opt_object(obj, "traits", path)
 	if traits != null:
 		var tp := ConfigReader.join(path, "traits")

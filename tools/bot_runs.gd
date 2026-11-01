@@ -35,6 +35,8 @@ extends SceneTree
 ##              cap, and lower sanity is what it feeds on).
 ##   gate     : rifleman, rifleman, silver_key repeated (LT-51): the same with the Silver
 ##              Key Gate in that slot; no cap guard.
+##   circle   : rifleman, rifleman, summoning_circle repeated (LT-52): the same with the
+##              Summoning Circle in that slot; no cap guard.
 ## Placement (greedy): the free buildable cell with the most path cells whose centre is
 ## within the tower's L1 range (and not inside its L1 min_range, LT-48); ties go to the
 ## lowest row-major cell. No sells.
@@ -64,7 +66,7 @@ extends SceneTree
 ## A run is capped at 30 simulated minutes (outcome "timeout").
 
 const STRATEGIES := ["mundane", "occult", "mixed", "madness", "demolition", "battery",
-	"resonator", "gate"]
+	"resonator", "gate", "circle"]
 const BOT_OIL_TARGET := 4  ## oil the bot keeps by day: two flares (tunable)
 const FLARE_MIN_LIT := 3  ## live lit enemies that make the bot fire the flare (tunable)
 const MAX_TICKS := 30 * 60 * 30
@@ -85,6 +87,7 @@ const BRANCH_PICK := {
 	"battery": {"rifleman": "a", "coast_battery": "a"},
 	"resonator": {"rifleman": "a", "resonator": "a"},
 	"gate": {"rifleman": "a", "silver_key": "a"},
+	"circle": {"rifleman": "a", "summoning_circle": "a"},
 }
 
 var _cfg: GameConfig
@@ -296,6 +299,8 @@ func _order(strat: String, i: int, sim: Simulation, built: Dictionary) -> String
 			return "resonator" if i % 3 == 2 else "rifleman"
 		"gate":
 			return "silver_key" if i % 3 == 2 else "rifleman"
+		"circle":
+			return "summoning_circle" if i % 3 == 2 else "rifleman"
 		"occult":
 			if i == 0:
 				return "rifleman"
