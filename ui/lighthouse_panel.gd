@@ -2,7 +2,7 @@ class_name LighthousePanel
 extends VBoxContainer
 ## Lighthouse view of the side panel (LT-30 §3.2), opened by a click on the lighthouse cell:
 ## level, beams, how much of the sea the beams cover, the upgrade button (money, by day) and
-## the lamp oil stock with "Buy oil" (by day). Buttons are disabled with the reason whenever
+## the lamp oil stock with "Buy oil for a flare" (by day; LT-57: one flare's oil per click). Buttons are disabled with the reason whenever
 ## the sim refuses the command; refresh() re-reads everything each frame.
 ## `visible` is "the lighthouse view is shown"; SidePanel shows its idle text otherwise.
 
@@ -31,7 +31,7 @@ func _ready() -> void:
 	add_child(upgrade_button)
 	oil_label = SidePanel.make_label("OilLabel", SidePanel.COLOR_INFO)
 	add_child(oil_label)
-	oil_button = SidePanel.make_button("BuyOilButton", game.buy_oil)
+	oil_button = SidePanel.make_button("BuyOilButton", game.buy_flare_oil)
 	add_child(oil_button)
 	add_child(SidePanel.make_button("CancelButton", close, "Cancel"))
 
@@ -72,7 +72,11 @@ func refresh() -> void:
 		upgrade_button.text = "Max level"
 	else:
 		var next_beams: int = eco.beam.levels[level + 1].beams
-		upgrade_button.text = "Upgrade: %d beams (%s)" % [next_beams, TowerInfo.money(cost)]
+		var next_flare := ""
+		if eco.flare != null and level + 1 < eco.flare.radius_cells.size():
+			next_flare = ", flare radius %s" % ConfigReader.fmt(eco.flare.radius_cells[level + 1])
+		upgrade_button.text = "Upgrade: %d beams%s (%s)" % [next_beams, next_flare,
+			TowerInfo.money(cost)]
 		if REASONS.has(up):
 			upgrade_button.text += "\n" + REASONS[up]
 	upgrade_button.disabled = up != Simulation.CommandResult.OK
@@ -83,9 +87,17 @@ func refresh() -> void:
 		return
 	oil_label.text = "Lamp oil: %d / %d" % [sim.state.oil, eco.oil.cap]
 	if eco.flare != null:
-		oil_label.text += "\nFlare costs %d oil; fired at night." % eco.flare.cost_oil
+		oil_label.text += "\nFlare: %d oil, radius %s cells, %s s; fired at night." % [
+			eco.flare.cost_oil, ConfigReader.fmt(sim.flare_radius()),
+			ConfigReader.fmt(eco.flare.seconds)]
 	var buy := sim.can_buy_oil()
-	oil_button.text = "Buy oil (%s)" % TowerInfo.money(eco.oil.price)
+	if eco.flare != null:
+		var units := game.flare_oil_to_buy()
+		if units == 0:
+			units = eco.flare.cost_oil
+		oil_button.text = "Buy oil for a flare (%s)" % TowerInfo.money(units * eco.oil.price)
+	else:
+		oil_button.text = "Buy oil (%s)" % TowerInfo.money(eco.oil.price)
 	if buy != Simulation.CommandResult.OK and REASONS.has(buy):
 		oil_button.text += "\n" + REASONS[buy]
 	oil_button.disabled = buy != Simulation.CommandResult.OK

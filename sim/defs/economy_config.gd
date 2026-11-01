@@ -13,7 +13,7 @@ const BEAM_PATTERNS: PackedStringArray = ["rotate", "sweep"]
 ## Beam counts the trig-free direction set supports (LT-26 §1.1).
 const BEAM_COUNTS: Array[int] = [1, 2, 4, 8]
 const OIL_FIELDS := ["price", "start", "cap"]
-const FLARE_FIELDS := ["cost_oil", "cooldown_seconds", "seconds", "width_mult", "hold_beams",
+const FLARE_FIELDS := ["cost_oil", "cooldown_seconds", "seconds", "radius_cells",
 	"enemy_speed_mult"]
 
 var starting_gold: int  ## money at the start, >= 0
@@ -75,15 +75,17 @@ class OilConfig:
 	var cap: int  ## >= flare.cost_oil (>= 1)
 
 
-## The flare (LT-30 §1.1): a night-only command paid with oil.
+## The flare (LT-30 §1.1, LT-57): a night-only command paid with oil; while it burns,
+## everything within radius_cells of the lighthouse is lit, in every direction.
 class FlareConfig:
 	extends RefCounted
 
 	var cost_oil: int  ## >= 1
 	var cooldown_seconds: float  ## > seconds, from the activation
 	var seconds: float  ## > 0
-	var width_mult: float  ## >= 1, multiplies half_width_ratio while the flare burns
-	var hold_beams: bool  ## beams stop turning while the flare burns
+	## LT-57: the lit circle's radius in cells by lighthouse level (L1 first), one entry per
+	## beam.levels, each in [0, beam.reach_cells] (0: the flare lights nothing).
+	var radius_cells: Array[float] = []
 	var enemy_speed_mult: float  ## (0, 1], lit enemies while the flare burns
 
 
@@ -131,7 +133,7 @@ static func parse(r: ConfigReader, root: Dictionary) -> EconomyConfig:
 		if lighthouse.has("flare"):
 			var fo: Variant = r.as_object(lighthouse["flare"], "lighthouse.flare")
 			if fo != null:
-				c.flare = _parse_flare(r, fo, "lighthouse.flare")
+				c.flare = _parse_flare(r, fo, "lighthouse.flare", c.beam)
 		if lighthouse.has("oil"):
 			var oo: Variant = r.as_object(lighthouse["oil"], "lighthouse.oil")
 			if oo != null:
@@ -226,7 +228,8 @@ static func _parse_edges(r: ConfigReader, o: Dictionary, path: String) -> Array:
 	return out
 
 
-static func _parse_flare(r: ConfigReader, o: Dictionary, path: String) -> FlareConfig:
+static func _parse_flare(r: ConfigReader, o: Dictionary, path: String,
+		beam: BeamConfig) -> FlareConfig:
 	r.check_keys(o, FLARE_FIELDS, path)
 	var f := FlareConfig.new()
 	f.cost_oil = r.req_int(o, "cost_oil", path, 1)
@@ -236,10 +239,28 @@ static func _parse_flare(r: ConfigReader, o: Dictionary, path: String) -> FlareC
 	if r.errors.size() == n and f.cooldown_seconds <= f.seconds:
 		r.error(ConfigReader.join(path, "cooldown_seconds"), "must be > seconds (%s), got %s"
 			% [ConfigReader.fmt(f.seconds), ConfigReader.fmt(f.cooldown_seconds)])
-	f.width_mult = r.req_number(o, "width_mult", path, 1.0)
-	f.hold_beams = r.req_bool(o, "hold_beams", path)
+	f.radius_cells = _parse_radius_cells(r, o, path, beam)
 	f.enemy_speed_mult = r.req_number(o, "enemy_speed_mult", path, 0.0, 1.0, true)
 	return f
+
+
+## LT-57: flare.radius_cells, one number per beam level in [0, reach_cells]. Without a
+## parsed beam only the range check against 0 runs (the beam's own errors are reported).
+static func _parse_radius_cells(r: ConfigReader, o: Dictionary, path: String,
+		beam: BeamConfig) -> Array[float]:
+	var out: Array[float] = []
+	var rp := ConfigReader.join(path, "radius_cells")
+	var arr: Variant = r.req_array(o, "radius_cells", path)
+	if arr == null:
+		return out
+	var reach := beam.reach_cells if beam != null and beam.reach_cells > 0.0 else INF
+	if beam != null and beam.levels.size() > 0 and arr.size() != beam.levels.size():
+		r.error(rp, "must have one entry per beam level (%d), got %d"
+			% [beam.levels.size(), arr.size()])
+		return out
+	for i in arr.size():
+		out.append(r.as_number(arr[i], ConfigReader.index(rp, i), 0.0, reach))
+	return out
 
 
 static func _parse_oil(r: ConfigReader, o: Dictionary, path: String,

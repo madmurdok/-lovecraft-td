@@ -353,3 +353,8 @@ All findings from the 2026-10-29 pass were resolved in the body of the document.
   lighthouse is upgradeable and its levels add beams 1 → 2 → 4. Lit mundane towers fire 25 %
   faster and never miss; lit occult towers lose 30 % power but drain half (LT-23); lit enemies
   lose the Madness buff (LT-23). Lamp oil stays a later beam resource.
+  Flare (LT-30, radial since LT-57, `docs/design/LT-57-radial-flare.md`): a night command
+  paid with lamp oil bought by day ($10/unit, tank 16, start 0). For 5 s everything within
+  6 / 8 / 10 cells of the lighthouse (by lighthouse level) is lit in every direction, with
+  the same lit rules as the beams (towers and enemies; lit enemies move at x0.5); it costs
+  8 oil ($80), cooldown 30 s, and does not reveal hallucinations.

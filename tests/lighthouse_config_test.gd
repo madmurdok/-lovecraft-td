@@ -76,6 +76,7 @@ func test_beam_levels() -> void:
 	])
 	var c := _accepts(func(l: Dictionary) -> void:
 		l["beam"]["levels"].append({"beams": 8, "upgrade_cost": 1})
+		l["flare"]["radius_cells"].append(10)  # LT-57: one radius per level
 		l["beam"]["levels"][1]["beams"] = 1)  # equal is not a decrease
 	assert_array(c.economy.beam.levels.map(func(v: EconomyConfig.BeamLevel) -> int:
 		return v.beams)).is_equal([1, 1, 4, 8])
@@ -129,16 +130,16 @@ func test_oil_values() -> void:
 	_rejects([
 		["lighthouse.oil.price", func(l: Dictionary) -> void: l["oil"]["price"] = 0, "must be"],
 		["lighthouse.oil.cap", func(l: Dictionary) -> void: l["oil"]["cap"] = 1, "must be"],
-		["lighthouse.oil.start", func(l: Dictionary) -> void: l["oil"]["start"] = 7, "must be"],
+		["lighthouse.oil.start", func(l: Dictionary) -> void: l["oil"]["start"] = 17, "must be"],
 		["lighthouse.oil.start", func(l: Dictionary) -> void: l["oil"]["start"] = -1, "must be"],
 		["lighthouse.oil.cap", func(l: Dictionary) -> void: l["oil"].erase("cap"),
 			"missing required field"],
 	])
 	# cap may equal cost_oil and start may equal cap; without a flare cap >= 1 suffices.
 	var c := _accepts(func(l: Dictionary) -> void:
-		l["oil"]["cap"] = 2
-		l["oil"]["start"] = 2)
-	assert_int(c.economy.oil.cap).is_equal(2)
+		l["oil"]["cap"] = 8
+		l["oil"]["start"] = 8)
+	assert_int(c.economy.oil.cap).is_equal(8)
 	var lone := _accepts(func(l: Dictionary) -> void:
 		l.erase("flare")
 		l["oil"]["cap"] = 1
@@ -153,22 +154,45 @@ func test_flare_values() -> void:
 		["lighthouse.flare.seconds", func(l: Dictionary) -> void: l["flare"]["seconds"] = 0,
 			"must be"],
 		["lighthouse.flare.cooldown_seconds",
-			func(l: Dictionary) -> void: l["flare"]["cooldown_seconds"] = 3, "must be > seconds"],
-		["lighthouse.flare.width_mult", func(l: Dictionary) -> void: l["flare"]["width_mult"] = 0.9,
-			"must be"],
+			func(l: Dictionary) -> void: l["flare"]["cooldown_seconds"] = 5, "must be > seconds"],
+		["lighthouse.flare.radius_cells[0]",
+			func(l: Dictionary) -> void: l["flare"]["radius_cells"][0] = -1, "must be"],
 		["lighthouse.flare.enemy_speed_mult",
 			func(l: Dictionary) -> void: l["flare"]["enemy_speed_mult"] = 0, "must be"],
 		["lighthouse.flare.enemy_speed_mult",
 			func(l: Dictionary) -> void: l["flare"]["enemy_speed_mult"] = 1.5, "must be"],
-		["lighthouse.flare.hold_beams", func(l: Dictionary) -> void: l["flare"]["hold_beams"] = 0,
-			"expected boolean"],
+		["lighthouse.flare.width_mult", func(l: Dictionary) -> void: l["flare"]["width_mult"] = 2,
+			"unknown field"],  # LT-57: the cone no longer widens
 	])
 	var c := _accepts(func(l: Dictionary) -> void:
-		l["flare"]["width_mult"] = 1
+		l["flare"]["radius_cells"] = [0, 0, 0]
 		l["flare"]["enemy_speed_mult"] = 1
-		l["flare"]["cooldown_seconds"] = 3.01)
-	assert_float(c.economy.flare.width_mult).is_equal(1.0)
+		l["flare"]["cooldown_seconds"] = 5.01)
+	assert_array(c.economy.flare.radius_cells).is_equal([0.0, 0.0, 0.0])
 	assert_float(c.economy.flare.enemy_speed_mult).is_equal(1.0)
+
+
+## LT-57 §7 b8: flare.radius_cells has one entry per beam level, each in [0, beam.reach_cells];
+## the LT-30 cone keys width_mult / hold_beams are gone.
+func test_flare_radius_cells_one_per_level_within_reach() -> void:
+	_rejects([
+		["lighthouse.flare.radius_cells",
+			func(l: Dictionary) -> void: l["flare"]["radius_cells"] = [6, 8], "one entry per beam level"],
+		["lighthouse.flare.radius_cells",
+			func(l: Dictionary) -> void: l["flare"]["radius_cells"] = [6, 8, 10, 12],
+			"one entry per beam level"],
+		["lighthouse.flare.radius_cells[2]",
+			func(l: Dictionary) -> void: l["flare"]["radius_cells"][2] = 16.01, "must be"],
+		["lighthouse.flare.radius_cells[1]",
+			func(l: Dictionary) -> void: l["flare"]["radius_cells"][1] = -0.5, "must be"],
+		["lighthouse.flare.radius_cells", func(l: Dictionary) -> void: l["flare"].erase("radius_cells"),
+			"missing required field"],
+		["lighthouse.flare.hold_beams", func(l: Dictionary) -> void: l["flare"]["hold_beams"] = true,
+			"unknown field"],
+	])
+	var c := _accepts(func(l: Dictionary) -> void:
+		l["flare"]["radius_cells"] = [0, 8.5, 16])  # the reach (16) itself is allowed
+	assert_array(c.economy.flare.radius_cells).is_equal([0.0, 8.5, 16.0])
 
 
 func test_unknown_fields() -> void:
@@ -190,7 +214,8 @@ func test_shipped_values_are_the_addendum_numbers() -> void:
 	assert_array(e.beam.levels.map(func(v: EconomyConfig.BeamLevel) -> int: return v.beams)) \
 		.is_equal([1, 2, 4])
 	assert_float(e.beam.occult_power_mult).is_equal(0.7)
-	assert_array([e.oil.price, e.oil.start, e.oil.cap]).is_equal([10, 2, 6])
+	# LT-57 (owner Q1 "$80 (8 масла)", Q4 "Растёт: 6/8/10"): the radial flare.
+	assert_array([e.oil.price, e.oil.start, e.oil.cap]).is_equal([10, 0, 16])
 	assert_array([e.flare.cost_oil, e.flare.seconds, e.flare.cooldown_seconds,
-		e.flare.width_mult, e.flare.enemy_speed_mult]).is_equal([2, 3.0, 20.0, 2.0, 0.5])
-	assert_bool(e.flare.hold_beams).is_true()
+		e.flare.enemy_speed_mult]).is_equal([8, 5.0, 30.0, 0.5])
+	assert_array(e.flare.radius_cells).is_equal([6.0, 8.0, 10.0])
