@@ -19,7 +19,13 @@ const AMBIENT_DAY := Color(0.80, 0.80, 0.76)  ## LT-27 §4: grey daylight
 const NIGHT_EASE_SECONDS := 0.6  ## time constant of the day <-> night fade
 const FOG_DAY_ALPHA := 0.45  ## fog opacity by day, relative to the night fog
 const BEAM_COLOR := Color(1.0, 0.94, 0.72)
-const BEAM_ENERGY := 1.6
+const BEAM_ENERGY := 2.6  ## LT-58: was 1.6 ("readable but weak", LT-54 playtest)
+## LT-58 cone texture shape (fractions of the half angle / of the reach):
+const BEAM_FILL_EDGE_START := 0.8  ## the fill stays solid up to here, then drops to 0 at 1.0 (was 0.55)
+const BEAM_RIM_START := 0.62  ## a brighter band along each edge, inside the cone
+const BEAM_RIM_PEAK := 0.9
+const BEAM_RIM_GAIN := 0.35  ## extra brightness of that band over the fill
+const BEAM_FALLOFF_POWER := 0.5  ## brightness ~ (1 - d)^power along the length (was 0.8)
 const LIGHTHOUSE_GLOW_CELLS := 3.0
 const TOWER_LIGHT_COLOR := Color(1.0, 0.78, 0.48)
 const TOWER_LIGHT_ENERGY := 0.9
@@ -252,9 +258,11 @@ static func _beam_texture(half_angle: float) -> ImageTexture:
 				var d := v.length() / half
 				var a := 0.0
 				if d < 1.0 and v.x > 0.0:
-					var edge := 1.0 - smoothstep(half_angle * 0.55, half_angle,
-						absf(v.angle()))
-					a = edge * pow(1.0 - d, 0.8) * smoothstep(0.0, 0.04, d)
+					var t := absf(v.angle()) / half_angle  # 0 on the axis, 1 at the edge
+					var edge := 1.0 - smoothstep(BEAM_FILL_EDGE_START, 1.0, t)
+					var rim := smoothstep(BEAM_RIM_START, BEAM_RIM_PEAK, t) * edge * BEAM_RIM_GAIN
+					a = minf(edge + rim, 1.0) * pow(1.0 - d, BEAM_FALLOFF_POWER) \
+						* smoothstep(0.0, 0.04, d)
 				a = maxf(a, 0.0)
 				img.set_pixel(x, y, Color(a, a, a, a))
 		_beam_texs[key] = ImageTexture.create_from_image(img)
