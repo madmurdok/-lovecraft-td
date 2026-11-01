@@ -10,13 +10,24 @@ const SCRIPT := [
 	[90, "deep_one"], [120, "cultist"], [150, "deep_one"], [200, "shoggoth"], [240, "deep_one"],
 	[300, "deep_one"],
 ]
+## Buildable cell west of the path's first southward run (map.json row 3: ".....#").
+const CIRCLE_CELL := Vector2i(4, 3)
 
 
 ## Runs the scripted mixed wave with periodic damage to the lowest-id live enemy and
-## returns every event plus a snapshot of the final state, as strings.
-func _scenario(run_seed: int) -> Array[String]:
+## returns every event plus a snapshot of the final state, as strings. With `circle` a Pure
+## Summoning Circle (LT-52) stands beside the path's first bend, so allies are summoned,
+## hold, trade damage and expire during the run.
+func _scenario(run_seed: int, circle := false) -> Array[String]:
 	var sim := Simulation.new(real_config(), run_seed)
 	sim.set_spawner(ScriptedSpawner.new(SCRIPT))
+	if circle:
+		sim.state.gold = 100000
+		var ok := Simulation.CommandResult.OK
+		assert_int(sim.build_tower("summoning_circle", CIRCLE_CELL)).is_equal(ok)
+		var id: int = sim.state.tower_at[CIRCLE_CELL]
+		assert_int(sim.upgrade_tower(id)).is_equal(ok)
+		assert_int(sim.upgrade_tower(id, "a")).is_equal(ok)
 	var out: Array[String] = []
 	for t in TICKS:
 		sim.step()
@@ -29,6 +40,9 @@ func _scenario(run_seed: int) -> Array[String]:
 	for e in s.enemies:
 		out.append("enemy %d %s hp=%s d=%d pd=%d" % [e.id, e.def.id, e.hp, e.distance,
 			e.prev_distance])
+	for a in s.allies:
+		out.append("ally %d tower=%d hp=%s pos=%s pp=%s held=%d target=%d exp=%d" % [a.id,
+			a.tower, a.hp, a.pos, a.prev_pos, a.held_id, a.target_id, a.expires_tick])
 	return out
 
 
@@ -48,6 +62,21 @@ func test_same_seed_gives_identical_events_and_state() -> void:
 		var a := _scenario(run_seed)
 		var b := _scenario(run_seed)
 		assert_int(a.size()).is_greater(20)
+		assert_bool(a == b).override_failure_message(
+			"seed %d diverged:\n%s\n---\n%s" % [run_seed, "\n".join(a), "\n".join(b)]).is_true()
+
+
+## LT-52: allies are part of the state; a run with a Summoning Circle replays identically.
+func test_same_seed_with_a_summoning_circle_gives_identical_events_and_allies() -> void:
+	for run_seed: int in [1, 42]:
+		var a := _scenario(run_seed, true)
+		var b := _scenario(run_seed, true)
+		var summoned := a.filter(func(s: String) -> bool: return s.begins_with("ALLY_SUMMONED"))
+		assert_int(summoned.size()).is_greater_equal(3)
+		assert_bool(a.any(func(s: String) -> bool: return s.begins_with("ALLY_GONE"))).is_true()
+		assert_bool(a.any(func(s: String) -> bool:
+			return s.contains("\"source\": \"summoning_circle\"") and s.begins_with("DIED"))) \
+			.override_failure_message("no ally kill:\n%s" % "\n".join(a)).is_true()
 		assert_bool(a == b).override_failure_message(
 			"seed %d diverged:\n%s\n---\n%s" % [run_seed, "\n".join(a), "\n".join(b)]).is_true()
 
