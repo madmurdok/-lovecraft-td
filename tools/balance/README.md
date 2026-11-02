@@ -88,6 +88,10 @@ Shipped examples reproduce LT-30 S13 arms: `baseline` (A), `beam_off` (B), `flar
 - The header records the commit (`(dirty)` when `sim/`, `tools/` or `data/` has uncommitted
   changes), seeds, target, and `uptime` at start and end: compare timings only between reports
   taken under similar load.
+- A second table, "Where runs end" (LT-68), shows per strategy the losses in wave 1..N joined
+  by `.` (e.g. `0.0.3.12.5`: 3 runs lost in wave 3, 12 in wave 4, 5 in wave 5), then the mean
+  waves survived in brackets. `all losses by wave` sums the row; `early ok` is the share of all
+  runs in the row that survived the first half of the waves (waves 1..3 of 5).
 - Per-run detail (all RUN fields: flares, lighthouse level, gold, sanity, ...) is in
   `<work>/logs/<variant>.<strategy>.log`, one `RUN {json}` line per run.
 

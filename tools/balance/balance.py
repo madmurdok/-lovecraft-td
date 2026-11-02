@@ -206,6 +206,55 @@ def cell(runs, need):
     return s + (" **yes**" if lost >= need else " no"), lost >= need
 
 
+def _end_wave(run):
+    """The wave a run ended in: a won run cleared its last wave, a lost (or timed-out) run
+    ended in the wave after the ones it survived (LT-68). None without waves_survived."""
+    ws = run.get("waves_survived")
+    if ws is None:
+        return None
+    return ws if run["outcome"] == "won" else ws + 1
+
+
+def waves_table(variants, strategies, results):
+    """LT-68: where runs end. One row per variant; a strategy cell lists its losses per wave
+    (wave 1 first, joined by '.'), then the mean waves survived. The 'all' columns sum every
+    strategy: losses per wave and the share of runs that survived the first `early` waves.
+    Empty when no run carries waves_survived (an old bot or a test fake)."""
+    every = [r for v in variants for s in strategies for r in results[(v["name"], s)]["runs"]]
+    ends = [_end_wave(r) for r in every if _end_wave(r) is not None]
+    if not ends:
+        return []
+    nwaves = max(ends)
+    early = max(1, (nwaves + 1) // 2)  # 5 waves -> the first 3 are "early"
+
+    def per_wave(rs):
+        n = [0] * nwaves
+        for r in rs:
+            if r["outcome"] == "lost" and _end_wave(r) is not None:
+                n[_end_wave(r) - 1] += 1
+        return ".".join(str(x) for x in n)
+
+    lines = [
+        "",
+        f"Where runs end (LT-68): losses in wave 1..{nwaves} joined by '.', then the mean "
+        f"waves survived; `early ok` = share of all runs that survived waves 1..{early}.",
+        "",
+        "| variant | " + " | ".join(strategies) + " | all losses by wave | early ok |",
+        "|---|" + "---|" * len(strategies) + "---|---|",
+    ]
+    for v in variants:
+        row, allr = [], []
+        for s in strategies:
+            rs = [r for r in results[(v["name"], s)]["runs"] if "waves_survived" in r]
+            allr += rs
+            mean = sum(r["waves_survived"] for r in rs) / len(rs) if rs else 0.0
+            row.append(f"{per_wave(rs)} ({mean:.1f})" if rs else "?")
+        ok = sum(r["waves_survived"] >= early for r in allr)
+        share = f"{ok}/{len(allr)} ({100 * ok / len(allr):.0f}%)" if allr else "?"
+        lines.append(f"| {v['name']} | " + " | ".join(row) + f" | {per_wave(allr)} | {share} |")
+    return lines
+
+
 def report(variants, strategies, results, seeds, target, meta):
     need = math.ceil(target * seeds - 1e-9)
     lines = [
@@ -240,6 +289,7 @@ def report(variants, strategies, results, seeds, target, meta):
         ur = f"{user / real:.2f}" if real else "?"
         lines.append(f"| {v['name']} | " + " | ".join(row)
                      + f" | {met}/{len(strategies)} | {spr} | {ur} |")
+    lines += waves_table(variants, strategies, results)
     lines += ["", "Variants:", ""]
     for v in variants:
         extra = f" flags: `{' '.join(v['flags'])}`" if v["flags"] else ""
