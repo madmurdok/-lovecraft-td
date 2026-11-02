@@ -1,0 +1,10 @@
+{
+  "description": "wave_bonus.base 50 -> 80: +30 gold every dawn, compounds into mid game (LT-68)",
+  "patch": {
+    "economy.json": {
+      "wave_bonus": {
+        "base": 80
+      }
+    }
+  }
+}
