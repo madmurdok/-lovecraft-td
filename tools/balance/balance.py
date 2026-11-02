@@ -198,12 +198,31 @@ def run_job(godot, job, seeds, logdir):
     return dict(job, runs=runs, times=times, problem=problem, log=out_p, err=err_p)
 
 
-def cell(runs, need):
+EARLY_SURVIVE = 0.75  # LT-68 part 1: survive the early waves in at least this share of runs
+
+
+def early_waves(results):
+    """Number of 'early' waves (the first half, rounded up) or None when no run carries
+    waves_survived. Same rule as the 'Where runs end' table."""
+    ends = [_end_wave(r) for res in results.values() for r in res["runs"]]
+    ends = [e for e in ends if e is not None]
+    return max(1, (max(ends) + 1) // 2) if ends else None
+
+
+def cell(runs, need, early=None, early_need=0):
+    """LT-68 target, two parts: (2) loses at least `need` runs; with `early` set (flare-on
+    variants with waves_survived data), also (1) survives waves 1..early in >= `early_need`
+    runs. Returns the cell text and whether the strategy meets the target."""
     won = sum(r["outcome"] == "won" for r in runs)
     lost = sum(r["outcome"] == "lost" for r in runs)
     other = len(runs) - won - lost
     s = f"{won}/{lost}" + (f" ({other} t/o)" if other else "")
-    return s + (" **yes**" if lost >= need else " no"), lost >= need
+    ok = lost >= need
+    if early is not None and any("waves_survived" in r for r in runs):
+        surv = sum(r.get("waves_survived", 0) >= early for r in runs)
+        s += f" e{surv}"
+        ok = ok and surv >= early_need
+    return s + (" **yes**" if ok else " no"), ok
 
 
 def _end_wave(run):
@@ -257,11 +276,16 @@ def waves_table(variants, strategies, results):
 
 def report(variants, strategies, results, seeds, target, meta):
     need = math.ceil(target * seeds - 1e-9)
+    early = early_waves(results)
+    early_need = math.ceil(EARLY_SURVIVE * seeds - 1e-9)
     lines = [
         f"# Balance lab: {meta['started']}",
         "",
         f"- commit `{meta['commit']}`, {seeds} seeds per strategy, target: loses >= "
-        f"{need} of {seeds} (fraction {target:g}), {meta['jobs']} Godot processes at a time",
+        f"{need} of {seeds} (fraction {target:g})"
+        + (f" and, flare on, survives waves 1..{early} in at least {early_need} of {seeds} "
+           f"(LT-68 two-part target; `eN` = runs that survived them)" if early else "")
+        + f", {meta['jobs']} Godot processes at a time",
         f"- uptime at start: `{meta['uptime_start']}`",
         f"- uptime at end: `{meta['uptime_end']}`",
         f"- wall time {meta['wall']:.0f} s; logs and patched data: `{meta['work']}`",
@@ -279,7 +303,8 @@ def report(variants, strategies, results, seeds, target, meta):
         nruns = 0
         for s in strategies:
             r = results[(v["name"], s)]
-            c, ok = cell(r["runs"], need)
+            flare_off = "--flare=0" in v["flags"]  # no separate flare-off target: part 2 only
+            c, ok = cell(r["runs"], need, None if flare_off else early, early_need)
             row.append(c)
             met += ok
             real += r["times"].get("real", 0.0)

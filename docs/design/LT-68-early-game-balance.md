@@ -141,3 +141,11 @@ python3 tools/balance/balance.py baseline flare_off lt68_gold300 lt68_gold300_nf
   lt68_bonus80_nf lt68_w3soft lt68_w3soft_nf lt68_gold300_w3soft lt68_gold300_w3soft_nf \
   --seeds=20 --jobs=8
 ```
+
+## Owner decision
+
+- Tuning: "Оба: 300 денег + легче волна 3 (Recommended)" (`lt68_gold300_w3soft`, applied to `data/`).
+- Target: "Две части, только с факелом (Recommended)": with the flare on, every strategy survives
+  waves 1-3 in at least 15 of 20 runs AND loses at least 10 of 20; no separate flare-off target.
+  The lab's target column and verdict use both parts for flare-on variants (flare-off variants
+  are judged on the losses part only).

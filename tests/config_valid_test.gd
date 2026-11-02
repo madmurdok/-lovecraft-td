@@ -31,7 +31,7 @@ func test_default_dir_is_res_data() -> void:
 
 func test_economy_fields() -> void:
 	var e := _real().economy
-	assert_int(e.starting_gold).is_equal(200)
+	assert_int(e.starting_gold).is_equal(300)
 	assert_int(e.wave_bonus_base).is_equal(50)
 	assert_int(e.wave_bonus_per_wave).is_equal(10)
 	assert_float(e.sell_refund_ratio).is_equal(0.7)
@@ -301,4 +301,4 @@ func test_custom_dir_is_read_via_user_and_absolute_paths() -> void:
 	assert_array(abs_r.errors).is_empty()
 	assert_int(abs_r.config.economy.starting_gold).is_equal(999)
 	# the real data is untouched
-	assert_int(_real().economy.starting_gold).is_equal(200)
+	assert_int(_real().economy.starting_gold).is_equal(300)

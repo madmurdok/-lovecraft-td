@@ -300,6 +300,18 @@ class ReportTest(unittest.TestCase):
         self.assertIn("| 1.0.2.1.0 |", row)  # all strategies
         self.assertIn("| 2/5 (40%) |", row)  # survived waves 1..3: ws 5 and 3
 
+    def test_target_needs_both_parts_with_flare_on_only(self):
+        # 5 waves, early = 3, seeds 4 -> loses >= 2 and survives waves 1..3 in >= 3.
+        def r(outcome, ws):
+            return {"outcome": outcome, "waves_survived": ws}
+        good = [r("lost", 3), r("lost", 4), r("won", 5), r("won", 5)]  # 4 survive early, 2 losses
+        weak = [r("lost", 0), r("lost", 2), r("won", 5), r("won", 5)]  # 2 survive early
+        md = self.make({"v": {"a": good, "b": weak}}, seeds=4)
+        row = [l for l in md.splitlines() if l.startswith("| v |")][0]
+        self.assertIn("2/2 e4 **yes**", row)
+        self.assertIn("2/2 e2 no", row)
+        self.assertIn("| 1/2 |", row)
+
 
 # --- 13: run_job ---------------------------------------------------------------------------
 

@@ -84,6 +84,11 @@ Shipped examples reproduce LT-30 S13 arms: `baseline` (A), `beam_off` (B), `flar
 - A cell is `wins/losses` out of `--seeds`, then **yes** when the strategy meets the target
   (loses at least `ceil(target * seeds)`), else `no`. `(k t/o)` counts runs that hit the 30
   simulated minute cap (neither won nor lost).
+- LT-68 two-part target: with the flare on, a strategy meets the target when it loses at least
+  `ceil(target * seeds)` runs AND survives waves 1..3 (the first half of the waves) in at least
+  `ceil(0.75 * seeds)` runs (15 of 20); the cell then carries `eN`, the runs that survived them.
+  Flare-off variants (`--flare=0`) are judged on the losses part only; runs without
+  `waves_survived` too.
 - `met`: strategies meeting the target out of those played.
 - `s/run`: mean real seconds per bot run in this row. `user/real`: CPU seconds per wall second;
   near 1 the runs were CPU-bound, far below 1 they were waiting (load, disk).
