@@ -1,0 +1,22 @@
+{
+  "description": "wave 3 lighter: deep_one 6 -> 4 packs, hybrid 12 -> 8 (LT-68) ; flare off",
+  "patch": {
+    "waves.json": {
+      "waves": {
+        "2": {
+          "groups": {
+            "0": {
+              "count": 4
+            },
+            "1": {
+              "count": 8
+            }
+          }
+        }
+      }
+    }
+  },
+  "flags": [
+    "--flare=0"
+  ]
+}

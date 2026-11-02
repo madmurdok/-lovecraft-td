@@ -1,5 +1,5 @@
 {
-  "starting_gold": 200,
+  "starting_gold": 300,
   "wave_bonus": { "base": 50, "per_wave": 10 },
   "sell_refund_ratio": 0.7,
   "relics": {

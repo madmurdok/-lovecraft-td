@@ -121,11 +121,11 @@ func test_non_integer_where_integer_expected() -> void:
 func test_integer_beyond_2_pow_53_is_rejected_not_wrapped() -> void:
 	# F2: 1e20 and 9.3e18 exceed int64 / 2^53; a plain int() cast would wrap or clamp.
 	for literal in ["1e20", "9.3e18", "9007199254740993000"]:
-		var r := load_text_edit(EC, "\"starting_gold\": 200", "\"starting_gold\": " + literal)
+		var r := load_text_edit(EC, "\"starting_gold\": 300", "\"starting_gold\": " + literal)
 		assert_rejected(r, EC, "starting_gold", "must be <=")
 	var r2 := load_text_edit(E, "\"bone\": 999,", "\"bone\": 1e20,")
 	assert_rejected(r2, E, "enemies.cultist.drops.bone")
-	var r3 := load_text_edit(W, "\"count\": 8", "\"count\": 1e20")
+	var r3 := load_text_edit(W, "\"count\": 8, \"interval\": 1.2", "\"count\": 1e20, \"interval\": 1.2")
 	assert_rejected(r3, W, "waves[0].groups[0].count")
 
 
@@ -576,8 +576,8 @@ func test_duplicate_key_inside_array_element() -> void:
 
 
 func test_duplicate_key_in_flat_files() -> void:
-	assert_rejected(load_text_edit(EC, "\"starting_gold\": 200,",
-		"\"starting_gold\": 200, \"starting_gold\": 300,"), EC, "starting_gold", "duplicate key")
+	assert_rejected(load_text_edit(EC, "\"starting_gold\": 300,",
+		"\"starting_gold\": 300, \"starting_gold\": 300,"), EC, "starting_gold", "duplicate key")
 	assert_rejected(load_text_edit(S, "\"start\": 100,", "\"start\": 100, \"start\": 50,"),
 		S, "start", "duplicate key")
 

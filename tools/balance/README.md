@@ -30,7 +30,9 @@ Options:
 | `--check` | | validate and write the patched data, run nothing |
 
 Requires only `python3` and Godot (`$GODOT`, else `godot` on `PATH`, else
-`/Applications/Godot.app`). Exit code 0 ok, 1 a Godot run failed (its `.err` log is named),
+`/Applications/Godot.app`). In a fresh checkout or worktree run `godot --headless --import --path .`
+once first: without `.godot/` the bot fails to parse (`Could not find type "GameConfig"`) and every
+job reports 0 RUN lines. Exit code 0 ok, 1 a Godot run failed (its `.err` log is named),
 2 a bad variant, patch or option (nothing is run).
 
 20 seeds x 6 strategies is about 8-15 minutes of CPU per variant (LT-30 S13: 499-996 s real per
@@ -82,12 +84,21 @@ Shipped examples reproduce LT-30 S13 arms: `baseline` (A), `beam_off` (B), `flar
 - A cell is `wins/losses` out of `--seeds`, then **yes** when the strategy meets the target
   (loses at least `ceil(target * seeds)`), else `no`. `(k t/o)` counts runs that hit the 30
   simulated minute cap (neither won nor lost).
+- LT-68 two-part target: with the flare on, a strategy meets the target when it loses at least
+  `ceil(target * seeds)` runs AND survives waves 1..3 (the first half of the waves) in at least
+  `ceil(0.75 * seeds)` runs (15 of 20); the cell then carries `eN`, the runs that survived them.
+  Flare-off variants (`--flare=0`) are judged on the losses part only; runs without
+  `waves_survived` too.
 - `met`: strategies meeting the target out of those played.
 - `s/run`: mean real seconds per bot run in this row. `user/real`: CPU seconds per wall second;
   near 1 the runs were CPU-bound, far below 1 they were waiting (load, disk).
 - The header records the commit (`(dirty)` when `sim/`, `tools/` or `data/` has uncommitted
   changes), seeds, target, and `uptime` at start and end: compare timings only between reports
   taken under similar load.
+- A second table, "Where runs end" (LT-68), shows per strategy the losses in wave 1..N joined
+  by `.` (e.g. `0.0.3.12.5`: 3 runs lost in wave 3, 12 in wave 4, 5 in wave 5), then the mean
+  waves survived in brackets. `all losses by wave` sums the row; `early ok` is the share of all
+  runs in the row that survived the first half of the waves (waves 1..3 of 5).
 - Per-run detail (all RUN fields: flares, lighthouse level, gold, sanity, ...) is in
   `<work>/logs/<variant>.<strategy>.log`, one `RUN {json}` line per run.
 

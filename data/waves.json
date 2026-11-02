@@ -11,8 +11,8 @@
       { "type": "deep_one", "count": 1, "interval": 0, "delay": 24 }
     ] },
     { "groups": [
-      { "type": "deep_one", "count": 6, "interval": 7 },
-      { "type": "hybrid", "count": 12, "interval": 3.0, "delay": 3 }
+      { "type": "deep_one", "count": 4, "interval": 7 },
+      { "type": "hybrid", "count": 8, "interval": 3.0, "delay": 3 }
     ] },
     { "groups": [
       { "type": "hybrid", "count": 6, "interval": 1.8 },
