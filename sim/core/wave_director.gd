@@ -99,6 +99,16 @@ func start_wave(sim: Simulation, early: bool) -> void:
 		{"wave": s.wave_index, "early": early, "ticks_left": ticks_left})
 
 
+## LT-67 (debug, Simulation.debug_end_night): marks every spawn event of the current wave
+## fired without spawning it, so the dawn check can clear the wave. Only in WAVE.
+func debug_fire_all(sim: Simulation) -> void:
+	if sim.state.phase != SimState.Phase.WAVE:
+		return
+	var groups := _current_wave(sim.state).groups
+	for gi in groups.size():
+		_fired[gi] = groups[gi].count
+
+
 func _begin_build(sim: Simulation) -> void:
 	var s := sim.state
 	s.phase = SimState.Phase.BUILD

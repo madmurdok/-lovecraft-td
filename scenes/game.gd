@@ -15,6 +15,14 @@ const SANITY_ARG := "--sanity"
 ## `-- --frame-stats` (debug builds only, LT-38 P1): shows the wall-clock frame time
 ## (median / p90 over the last FrameStats.CAPACITY frames) in the HUD.
 const FRAME_STATS_ARG := "--frame-stats"
+## `-- --sandbox` (debug builds only, LT-67): a playtest run for late-game features. The run
+## starts with SANDBOX_GOLD money and a full oil stock (oil.start = oil.cap; the cap stays),
+## set in a copy of the config before the sim is built (GameConfig.sandboxed), so the sim stays
+## deterministic. SKIP_KEY skips ahead: by day it lights the lamp (sim call_wave), at night it
+## ends the night (sim debug_end_night, logged). The HUD shows a "SANDBOX" marker.
+const SANDBOX_ARG := "--sandbox"
+const SANDBOX_GOLD := 100000  ## enough to build and fully upgrade every tower and the lighthouse
+const SKIP_KEY := KEY_N
 const UI_LAYER := 2  ## above SanityFx.SCREEN_LAYER, so the HUD is never distorted
 
 var sim: Simulation
@@ -24,6 +32,7 @@ var paused := false
 var run_seed := 0
 var frame_stats: FrameStats  ## LT-38 P1: null unless `--frame-stats` in a debug build
 var _last_frame_usec := 0
+var sandbox := false  ## LT-67: `--sandbox` in a debug build
 
 var board: Board
 var lighting: Lighting  ## LT-8: darkness, beam, tower lights, sea fog (visual only)
@@ -40,6 +49,9 @@ var end_screen: EndScreen
 
 func setup(config: GameConfig, p_seed: int) -> void:
 	run_seed = p_seed
+	sandbox = OS.is_debug_build() and OS.get_cmdline_user_args().has(SANDBOX_ARG)
+	if sandbox:
+		config = config.sandboxed(SANDBOX_GOLD)
 	sim = Simulation.new(config, p_seed)
 	sim.set_spawner(WaveDirector.new(config.waves))
 	# LT-12 §1: debug builds only; the board then marks fakes via sim.debug_is_fake.
@@ -115,6 +127,25 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	advance(delta)
+
+
+func _unhandled_key_input(event: InputEvent) -> void:
+	var k := event as InputEventKey
+	if sandbox and k != null and k.pressed and not k.echo and k.keycode == SKIP_KEY:
+		skip_ahead()
+		get_viewport().set_input_as_handled()
+
+
+## LT-67 (sandbox only): by day lights the lamp (call_wave), at night ends the night
+## (sim debug_end_night). Refused (NOT_BUILD_PHASE) outside a sandbox run.
+func skip_ahead() -> Simulation.CommandResult:
+	if not sandbox:
+		return Simulation.CommandResult.NOT_BUILD_PHASE
+	if sim.state.phase == SimState.Phase.WAVE:
+		var r := sim.debug_end_night()
+		_after_command()
+		return r
+	return call_wave()
 
 
 ## One frame: runs the steps SimClock grants, consumes the events, redraws.

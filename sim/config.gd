@@ -91,6 +91,27 @@ static func load_from_dir(dir: String = DEFAULT_DIR) -> ConfigLoadResult:
 	return result
 
 
+## LT-67 (debug `--sandbox`, set by scenes/game.gd): a copy of this config whose
+## economy.starting_gold is `gold` and, with an oil block, oil.start = oil.cap (the cap
+## stays). Everything else is shared with this config, which is left unchanged.
+func sandboxed(gold: int) -> GameConfig:
+	var c: GameConfig = _shallow_copy(self, GameConfig.new())
+	c.economy = _shallow_copy(economy, EconomyConfig.new())
+	c.economy.starting_gold = gold
+	if economy.oil != null:
+		c.economy.oil = _shallow_copy(economy.oil, EconomyConfig.OilConfig.new())
+		c.economy.oil.start = c.economy.oil.cap
+	return c
+
+
+## Copies every script variable of `from` into `to` (by reference) and returns `to`.
+static func _shallow_copy(from: RefCounted, to: RefCounted) -> RefCounted:
+	for p in from.get_property_list():
+		if p["usage"] & PROPERTY_USAGE_SCRIPT_VARIABLE:
+			to.set(p["name"], from.get(p["name"]))
+	return to
+
+
 ## LT-27 §1.1 cross-file check: every enemy's `drops` key is a relic kind of economy.json
 ## (reported in enemies.json). Also reorders each enemy's drops into economy.relics order
 ## (the roll walks that order). Returns the errors.
