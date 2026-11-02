@@ -25,6 +25,7 @@ var flare_button: Button  ## LT-30: the night flare, in the footer strip at the 
 var oil_label: Label  ## LT-30: "Oil 4 / 6", beside the flare button
 var frame_label: Label  ## LT-38 P1: only with `--frame-stats` (debug builds)
 var _frame_label_msec := 0
+var sandbox_label: Label  ## LT-67: "SANDBOX", only in a `--sandbox` run, top-right of the board
 var fps_label: Label  ## LT-44: always-visible FPS readout, bottom-left in the footer strip
 var _fps_label_msec := -FPS_INTERVAL_MSEC
 var _fps_shown := -1
@@ -131,6 +132,17 @@ func _ready() -> void:
 		frame_label.add_theme_color_override("font_color", Color(0.6, 1.0, 0.6))
 		frame_label.position = Vector2(RELIC_SLOT, Game.BOARD_ORIGIN.y + 2)
 		add_child(frame_label)
+	if game.sandbox:
+		sandbox_label = Label.new()
+		sandbox_label.name = "SandboxLabel"
+		sandbox_label.text = "SANDBOX"
+		sandbox_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		sandbox_label.add_theme_font_size_override("font_size", 16)
+		sandbox_label.add_theme_color_override("font_color", Color(1.0, 0.75, 0.2))
+		add_child(sandbox_label)  # first, so the minimum size sees the HUD theme
+		sandbox_label.size = sandbox_label.get_minimum_size()
+		sandbox_label.position = Vector2(board_rect().end.x - sandbox_label.size.x - 6,
+			Game.BOARD_ORIGIN.y + 2)
 	# LT-14 Whispers jitter: the shader moves only the drawing, so click areas stay put.
 	if game.sanity_fx != null:
 		for c: CanvasItem in [gold_label, relics_label, hp_label, phase_label,

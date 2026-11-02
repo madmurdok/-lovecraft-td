@@ -545,6 +545,29 @@ func debug_set_sanity(value: float) -> CommandResult:
 	return CommandResult.OK
 
 
+## LT-67 (debug, `--sandbox`): ends the current night now. The WaveDirector marks every
+## spawn event of the wave fired (debug_fire_all), the pack queue is emptied, and every live
+## real enemy dies with DIED {source: "debug"} (no drop, no sanity regen, no kill reward);
+## fakes are left to the dawn. The wave is then cleared by the usual dawn check in slot 8
+## of the next tick (wage, sanity regen, BUILD_STARTED or DONE). Logged as
+## [tick, "debug_end_night"] so a replay reproduces it. OUTCOME_REACHED once the run is
+## over; NOT_NIGHT without a WaveDirector or outside a wave (phase BUILD / DONE); else OK.
+func debug_end_night() -> CommandResult:
+	if state.outcome != SimState.Outcome.NONE:
+		return CommandResult.OUTCOME_REACHED
+	if not (_spawner is WaveDirector) or state.phase != SimState.Phase.WAVE:
+		return CommandResult.NOT_NIGHT
+	state.command_log.append([state.tick, "debug_end_night"])
+	(_spawner as WaveDirector).debug_fire_all(self)
+	_pack_queue.clear()
+	for e in state.enemies:
+		if e.is_live() and not e.is_fake:
+			e.dead = true
+			_emit(SimEvent.Type.DIED, e.id, {"source": "debug"})
+	_compact()
+	return CommandResult.OK
+
+
 # --- LT-30: lighthouse levels, lamp oil and the flare (player commands) -----------------
 
 ## LT-30 (LT-26 §1.2): beams of the current lighthouse level (1, 2, 4 or 8).
@@ -694,6 +717,7 @@ const REPLAY_ARGS: Dictionary[String, Array] = {
 	"upgrade_lighthouse": [],
 	"buy_oil": [],
 	"fire_flare": [],
+	"debug_end_night": [],
 }
 
 
@@ -722,6 +746,7 @@ func replay_command(entry: Array) -> CommandResult:
 		"upgrade_lighthouse": return upgrade_lighthouse()
 		"buy_oil": return buy_oil()
 		"fire_flare": return fire_flare()
+		"debug_end_night": return debug_end_night()
 	return CommandResult.UNKNOWN_COMMAND  # unreachable: every REPLAY_ARGS key has an arm
 
 

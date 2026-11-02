@@ -488,6 +488,7 @@ const BAD_ENTRIES := {
 	"upgrade_lighthouse": [[0, "upgrade_lighthouse", 1], [0, "upgrade_lighthouse", ""]],
 	"buy_oil": [[0, "buy_oil", 1], [0, "buy_oil", null]],
 	"fire_flare": [[0, "fire_flare", ""], [0, "fire_flare", 1, 2]],
+	"debug_end_night": [[0, "debug_end_night", 1], [0, "debug_end_night", null]],
 }
 
 
