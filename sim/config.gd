@@ -91,9 +91,6 @@ static func load_from_dir(dir: String = DEFAULT_DIR) -> ConfigLoadResult:
 	return result
 
 
-## LT-27 §1.1 cross-file check: every enemy's `drops` key is a relic kind of economy.json
-## (reported in enemies.json). Also reorders each enemy's drops into economy.relics order
-## (the roll walks that order). Returns the errors.
 ## LT-67 (debug `--sandbox`, set by scenes/game.gd): a copy of this config whose
 ## economy.starting_gold is `gold` and, with an oil block, oil.start = oil.cap (the cap
 ## stays). Everything else is shared with this config, which is left unchanged.
@@ -115,6 +112,9 @@ static func _shallow_copy(from: RefCounted, to: RefCounted) -> RefCounted:
 	return to
 
 
+## LT-27 §1.1 cross-file check: every enemy's `drops` key is a relic kind of economy.json
+## (reported in enemies.json). Also reorders each enemy's drops into economy.relics order
+## (the roll walks that order). Returns the errors.
 static func _check_drops(c: GameConfig) -> Array[String]:
 	var r := ConfigReader.new(ENEMIES_FILE)
 	var kinds := c.economy.relic_ids()
