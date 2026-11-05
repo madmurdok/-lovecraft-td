@@ -36,3 +36,11 @@ Reading: staggering makes the game harder for every strategy that had room to mo
 | after (2 variants x 9 x 20) | 59.06 118.94 83.44 | 70.97 115.24 96.18 | real 371.43 user 1833.18 sys 10.64 |
 
 6 Godot processes at a time; the machine was heavily loaded from outside during the after arm (load 59-119 on 8 cores), user/real 0.66 vs 0.91. Outcomes are deterministic per seed; timings are not comparable.
+
+## Owner playtest (LT-60)
+
+Run 1, 2026-11-02, release-0.4.0 at 894bb72, `-- --frame-stats`, seed 2727173648. Machine load at exit 28.18 18.22 9.26 (outside load; FPS not judged from this run).
+
+Owner, verbatim: "сложно тестить маяк и другие штуки, потому что с текущим уровнем сложности - тупо не успеваешь развиться и что-то крутое построить."
+
+Decision: "Песочница + задача на баланс (Recommended)" -> LT-67 (`--sandbox` launch flag), LT-68 (ease the early game after LT-63). Lighthouse, flare and Summoning Circle verdicts wait for a replay with these.
