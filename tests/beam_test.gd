@@ -607,12 +607,12 @@ func test_fire_flare_pays_oil_and_emits_in_order() -> void:
 	sim.state.oil = start
 	assert_int(sim.fire_flare()).is_equal(R.OK)
 	assert_int(sim.state.oil).is_equal(start - f.cost_oil)
-	assert_int(sim.state.flare_ticks_left).is_equal(SimTime.ticks(f.seconds))
+	assert_int(sim.state.flare_ticks_left).is_equal(SimTime.ticks(sim.flare_seconds()))
 	assert_int(sim.state.flare_cooldown_ticks).is_equal(SimTime.ticks(f.cooldown_seconds))
 	var ev := sim.drain_events()
 	assert_array(ev.map(func(e: SimEvent) -> int: return e.type)).is_equal(
 		[T.FLARE_FIRED, T.OIL_CHANGED])
-	assert_dict(ev[0].data).is_equal({"ticks": SimTime.ticks(f.seconds),
+	assert_dict(ev[0].data).is_equal({"ticks": SimTime.ticks(sim.flare_seconds()),
 		"cooldown": SimTime.ticks(f.cooldown_seconds)})
 	assert_dict(ev[1].data).is_equal({"delta": -f.cost_oil, "oil": start - f.cost_oil,
 		"reason": "flare"})
@@ -658,7 +658,7 @@ func test_cooldown_runs_from_the_activation_also_by_day() -> void:
 func test_flare_burns_for_exactly_its_seconds_and_beams_keep_turning() -> void:
 	var sim := tsim()
 	sim.state.oil = sim.config.economy.flare.cost_oil
-	var n := SimTime.ticks(sim.config.economy.flare.seconds)
+	var n := SimTime.ticks(sim.flare_seconds())
 	run(sim, 3)
 	assert_int(sim.fire_flare()).is_equal(R.OK)
 	for i in n:
@@ -671,14 +671,12 @@ func test_flare_burns_for_exactly_its_seconds_and_beams_keep_turning() -> void:
 	assert_int(sim.state.flare_ticks_left).is_equal(0)
 
 
-## LT-57: while the flare burns everything within flare_radius() of the lighthouse is lit
-## (the beam aimed away from the map lights nothing here).
-func test_flare_lights_the_circle_while_it_burns() -> void:
+## LT-69: while the flare burns every tower on the map is lit, near or far from the
+## lighthouse (the beam aimed away from the map lights nothing here).
+func test_flare_lights_the_whole_map_while_it_burns() -> void:
 	var sim := _still(false)
-	var n := SimTime.ticks(sim.config.economy.flare.seconds)
-	var r := sim.flare_radius()
-	assert_float(r).is_equal(6.0)
-	# (11, 1): v = (-3, 1), inside the circle; (7, 1): v = (-7, 1), outside.
+	var n := SimTime.ticks(sim.flare_seconds())
+	# (11, 1): v = (-3, 1), near; (7, 1): v = (-7, 1), farther.
 	var near := build(sim, RIFLE, Vector2i(11, 1))
 	var far := build(sim, RIFLE, Vector2i(7, 1))
 	run(sim, 2)
@@ -688,19 +686,18 @@ func test_flare_lights_the_circle_while_it_burns() -> void:
 	var t0 := sim.state.tick
 	var ev := run(sim, n + 2)
 	assert_array(_lit_events(ev, near.id)).is_equal([[t0 + 1, true], [t0 + n + 1, false]])
-	assert_array(_lit_events(ev, far.id)).is_empty()
-	# Direct geometry: the edge at r, inclusive.
+	assert_array(_lit_events(ev, far.id)).is_equal([[t0 + 1, true], [t0 + n + 1, false]])
+	# Direct: a point far off the map is lit only while a flare burns.
 	sim.state.flare_cooldown_ticks = 0
-	assert_bool(_lit(sim, -r, 0.0)).is_false()
+	assert_bool(_lit(sim, -30.0, 0.0)).is_false()
 	sim.fire_flare()
-	assert_bool(_lit(sim, -r, 0.0)).is_true()
-	assert_bool(_lit(sim, -r * (1.0 + EPS), 0.0)).is_false()
+	assert_bool(_lit(sim, -30.0, 0.0)).is_true()
 
 
 func test_flare_slows_lit_enemies_only_while_it_burns() -> void:
 	var sim := _still()
 	var f := sim.config.economy.flare
-	var n := SimTime.ticks(f.seconds)
+	var n := SimTime.ticks(sim.flare_seconds())
 	var real := put(sim, "cultist", 3.0)
 	var fake := put(sim, "cultist", 3.0, HUGE_HP, true)
 	run(sim, 2)
@@ -718,11 +715,3 @@ func test_flare_slows_lit_enemies_only_while_it_burns() -> void:
 			else:
 				assert_float(e.speed_mult).is_equal(1.0)
 	assert_dict(slowed).is_equal({"real": n, "fake": n})
-	# Unlit enemies are not slowed by a flare.
-	var away := _still(false)
-	var e3 := put(away, "cultist", 3.0)
-	away.state.oil = f.cost_oil
-	away.fire_flare()
-	run(away, 1)
-	assert_bool(e3.lit).is_false()
-	assert_float(e3.speed_mult).is_equal(1.0)

@@ -77,8 +77,9 @@ func test_beams_follow_the_sim_directions_and_have_no_timer() -> void:
 	assert_bool(held[0] != day[0]).is_true()  # the night ticks did turn it
 
 
-## LT-57: the flare no longer widens the cone; a radial light of flare_radius() burns instead.
-func test_flare_keeps_the_cone_and_burns_a_radial_light() -> void:
+## LT-57: the flare no longer widens the cone; LT-69: a light covering the whole board burns
+## instead.
+func test_flare_keeps_the_cone_and_burns_a_whole_board_light() -> void:
 	var l := _game.lighting
 	var eco := _game.sim.config.economy
 	var normal := Lighting._beam_texture(atan(eco.beam.half_width_ratio))
@@ -93,8 +94,9 @@ func test_flare_keeps_the_cone_and_burns_a_radial_light() -> void:
 	l._sync_flare()
 	assert_bool(l.flare_light.visible).is_true()
 	assert_float(l.flare_light.texture_scale).is_equal_approx(
-		_game.sim.flare_radius() * 2.0 * Board.CELL / Lighting.FLARE_TEX_SIZE, 1e-6)
-	_steps(SimTime.ticks(eco.flare.seconds))
+		Lighting.flare_cover_cells(_game.sim.state.map) * 2.0 * Board.CELL
+		/ Lighting.FLARE_TEX_SIZE, 1e-6)
+	_steps(SimTime.ticks(_game.sim.flare_seconds()))
 	await get_tree().process_frame
 	assert_int(_game.sim.state.flare_ticks_left).is_equal(0)
 	l._sync_flare()
@@ -195,9 +197,9 @@ func test_flare_button_shows_at_night_with_its_states() -> void:
 	h.refresh()
 	assert_str(h.flare_button.text).is_equal("Flare burning")
 	assert_bool(h.flare_button.disabled).is_true()
-	_steps(SimTime.ticks(f.seconds))
+	_steps(SimTime.ticks(_game.sim.flare_seconds()))
 	h.refresh()
-	var left := SimTime.ticks(f.cooldown_seconds) - SimTime.ticks(f.seconds)
+	var left := SimTime.ticks(f.cooldown_seconds) - SimTime.ticks(_game.sim.flare_seconds())
 	assert_str(h.flare_button.text).is_equal("Flare %d s" % ceili(float(left) / SimTime.TICK_RATE))
 	assert_bool(h.flare_button.disabled).is_true()
 	s.flare_cooldown_ticks = 0

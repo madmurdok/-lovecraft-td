@@ -73,8 +73,8 @@ func refresh() -> void:
 	else:
 		var next_beams: int = eco.beam.levels[level + 1].beams
 		var next_flare := ""
-		if eco.flare != null and level + 1 < eco.flare.radius_cells.size():
-			next_flare = ", flare radius %s" % ConfigReader.fmt(eco.flare.radius_cells[level + 1])
+		if eco.flare != null and level + 1 < eco.flare.seconds.size():
+			next_flare = ", flare %s s" % ConfigReader.fmt(eco.flare.seconds[level + 1])
 		upgrade_button.text = "Upgrade: %d beams%s (%s)" % [next_beams, next_flare,
 			TowerInfo.money(cost)]
 		if REASONS.has(up):
@@ -87,9 +87,8 @@ func refresh() -> void:
 		return
 	oil_label.text = "Lamp oil: %d / %d" % [sim.state.oil, eco.oil.cap]
 	if eco.flare != null:
-		oil_label.text += "\nFlare: %d oil, radius %s, %s s; fired at night." % [
-			eco.flare.cost_oil, TowerInfo.cells_text(ConfigReader.fmt(sim.flare_radius())),
-			ConfigReader.fmt(eco.flare.seconds)]
+		oil_label.text += "\nFlare: %d oil, whole map, %s s; fired at night." % [
+			eco.flare.cost_oil, ConfigReader.fmt(sim.flare_seconds())]
 	var buy := sim.can_buy_oil()
 	if eco.flare != null:
 		var units := game.flare_oil_to_buy()

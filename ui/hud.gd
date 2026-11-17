@@ -203,9 +203,9 @@ func _refresh_flare() -> void:
 	oil_label.text = "Oil %d / %d" % [s.oil, sim.config.economy.oil.cap]
 	var can := sim.can_fire_flare()
 	flare_button.disabled = can != Simulation.CommandResult.OK
-	# LT-57: the flare lights a circle around the lighthouse.
-	flare_button.tooltip_text = "Lights everything within %s for %s s" % [
-		TowerInfo.cells_text(ConfigReader.fmt(sim.flare_radius())), ConfigReader.fmt(flare.seconds)]
+	# LT-69: the flare lights the whole map, for the current level's seconds.
+	flare_button.tooltip_text = "Lights the whole map for %s s" % ConfigReader.fmt(
+		sim.flare_seconds())
 	if s.flare_ticks_left > 0:
 		flare_button.text = "Flare burning"
 	elif s.flare_cooldown_ticks > 0:

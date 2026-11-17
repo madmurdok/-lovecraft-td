@@ -433,19 +433,16 @@ func _assert_marks_only_changed(lines: Array) -> void:
 	assert_int(marked).is_greater(0)
 
 
-## LT-57: the flare circle lights a tower like the beam (SimTower.lit), so the panel shows
+## LT-57, LT-69: the flare lights a tower like the beam (SimTower.lit), so the panel shows
 ## the lit values; without the flare it does not.
-func test_the_flare_circle_lights_a_tower_and_the_panel_marks_it() -> void:
+func test_the_flare_lights_a_tower_and_the_panel_marks_it() -> void:
 	_config.economy.beam.reach_cells = 0.0001  # the beam lights nothing; only the flare can
 	await _start_game()
-	var lh := _config.map.lighthouse
 	var cell := Vector2i(-1, -1)
-	var r: float = _config.economy.flare.radius_cells[0]
 	for y in _game.sim.state.map.height:
 		for x in _game.sim.state.map.width:
 			var c := Vector2i(x, y)
-			var d := Vector2(c) + Vector2(0.5, 0.5) - (Vector2(lh) + Vector2(0.5, 0.5))
-			if cell.x < 0 and _game.sim.state.map.is_buildable(c) and d.length() < r - 1.0:
+			if cell.x < 0 and _game.sim.state.map.is_buildable(c):
 				cell = c
 	assert_int(cell.x).is_greater_equal(0)
 	var t := await _tower(RIFLE, [], cell)
