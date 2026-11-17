@@ -611,58 +611,43 @@ func test_no_oil_below_five_towers_and_one_flare_reserve_after() -> void:
 	assert_int(part.state.oil).is_equal(cost)
 
 
-## LT-57 §5: the count is the circle, not e.lit: four beam-lit enemies outside the circle
-## do not fire the flare.
-func test_night_ignores_beam_lit_enemies_outside_the_circle() -> void:
-	var min_near: int = _bot().get_script().get_script_constant_map()["FLARE_MIN_IN_CIRCLE"]
-	var sim := _night_with_near(0)
-	for i in min_near:
-		var e := sim.enemy_by_id(sim.spawn_enemy("cultist", false))
-		e.lit = true
-		assert_bool(sim.in_flare_radius(e.route.position_at(e.distance))).is_false()
-	var log_size := sim.state.command_log.size()
-	_bot().call("_act", sim, "mundane", 5, {})
-	assert_int(sim.state.command_log.size()).is_equal(log_size)
-	assert_int(sim.state.flare_cooldown_ticks).is_equal(0)
-
-
 func test_flare_off_never_buys_oil_nor_fires() -> void:
 	var day := _sim(1000)
 	_bot(true, true, false).call("_act", day, "mundane", 0, {})
 	assert_int(day.state.oil).is_equal(real_config().economy.oil.start)
-	var night := _night_with_near(4)
+	var night := _night_with_live(4)
 	_bot(true, true, false).call("_act", night, "mundane", 5, {})
 	assert_int(night.state.flare_cooldown_ticks).is_equal(0)
 	for c: Array in day.state.command_log + night.state.command_log:
 		assert_bool(c[1] in ["buy_oil", "fire_flare"]).override_failure_message(str(c)).is_false()
 
 
-## A WAVE sim with `near` live enemies one cell before the lighthouse (inside the flare
-## circle, LT-57 §5) and one at the spawn (outside), none flagged lit, oil for a flare.
-func _night_with_near(near: int) -> Simulation:
+## A WAVE sim with exactly `live` live enemies on the map (LT-69: the bot counts them
+## anywhere), none flagged lit, oil for a flare.
+func _night_with_live(live: int) -> Simulation:
 	var sim := _sim()
 	assert_int(sim.call_wave()).is_equal(R.OK)
 	for e in sim.state.enemies:
 		e.lit = false
-	for i in near + 1:
+	for i in live:
 		var e := sim.enemy_by_id(sim.spawn_enemy("cultist", false))
 		e.lit = false
-		if i < near:
-			e.distance = e.route.length - SimTime.UNITS_PER_CELL
+	assert_int(sim.state.enemies.filter(func(e: SimEnemy) -> bool: return e.is_live()).size()) \
+		.is_equal(live)
 	sim.state.oil = sim.config.economy.flare.cost_oil
 	sim.drain_events()
 	return sim
 
 
-func test_night_fires_the_flare_at_four_enemies_in_the_circle() -> void:
-	var min_near: int = _bot().get_script().get_script_constant_map()["FLARE_MIN_IN_CIRCLE"]
-	assert_int(min_near).is_equal(4)
+func test_night_fires_the_flare_at_four_live_enemies() -> void:
+	var min_live: int = _bot().get_script().get_script_constant_map()["FLARE_MIN_LIVE"]
+	assert_int(min_live).is_equal(4)
 	var cost := real_config().economy.flare.cost_oil
-	var sim := _night_with_near(min_near)
+	var sim := _night_with_live(min_live)
 	_bot().call("_act", sim, "mundane", 5, {})
 	assert_array(sim.state.command_log.back()).is_equal([sim.state.tick, "fire_flare"])
 	assert_int(sim.state.oil).is_equal(0)
-	var few := _night_with_near(min_near - 1)
+	var few := _night_with_live(min_live - 1)
 	var log_size := few.state.command_log.size()
 	_bot().call("_act", few, "mundane", 5, {})
 	assert_int(few.state.command_log.size()).is_equal(log_size)

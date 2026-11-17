@@ -58,7 +58,8 @@ extends SceneTree
 ## purchase loop buys the next lighthouse level when its cost is at most the cheapest tower
 ## upgrade's (or no tower upgrade is left); a refused level is not retried that day and the
 ## loop falls through to tower upgrades and builds (LT-30 S10); at night it fires the flare when at least
-## FLARE_MIN_IN_CIRCLE live enemies are within the flare radius. [--lighthouse=0] never upgrades the lighthouse,
+## FLARE_MIN_LIVE live enemies are on the map (LT-69: the flare lights the whole map).
+## [--lighthouse=0] never upgrades the lighthouse,
 ## [--flare=0] never buys oil and never fires. A beam-off arm is a --data=<dir> variant.
 ## RUN lines add "lighthouse_level", "flares", "oil_bought", "oil_gold" and "lit_shots"
 ## (shots by a tower inside a beam).
@@ -69,9 +70,9 @@ extends SceneTree
 
 const STRATEGIES := ["mundane", "occult", "mixed", "madness", "demolition", "battery",
 	"resonator", "gate", "circle"]
-## LT-57 §5: live enemies (reals and fakes) within the flare radius that make the bot fire
-## the flare (tunable).
-const FLARE_MIN_IN_CIRCLE := 4
+## LT-57 §5, LT-69: live enemies (reals and fakes) anywhere on the map that make the bot
+## fire the flare (tunable).
+const FLARE_MIN_LIVE := 4
 const MAX_TICKS := 30 * 60 * 30
 ## Strategy -> lowest sanity_cap an occult build/upgrade may leave (LT-23 §4, tunable).
 const CAP_FLOOR := {"occult": 30.0, "mixed": 60.0}
@@ -392,17 +393,17 @@ static func _bot_oil_target(sim: Simulation) -> int:
 	return flare.cost_oil if flare != null else 0
 
 
-## Night: fires the flare when at least FLARE_MIN_IN_CIRCLE live enemies (reals and fakes, as
-## a player sees them) are within the flare radius (LT-57 §5: before firing they are not lit
-## by the circle yet, so e.lit is not the count). Refused on cooldown or without oil.
+## Night: fires the flare when at least FLARE_MIN_LIVE live enemies (reals and fakes, as a
+## player sees them) are on the map (LT-69: the flare lights the whole map; e.lit is not the
+## count, it is set by the beams before firing). Refused on cooldown or without oil.
 func _night_flare(sim: Simulation) -> void:
 	if not _flare:
 		return
-	var near := 0
+	var live := 0
 	for e in sim.state.enemies:
-		if e.is_live() and sim.in_flare_radius(e.route.position_at(e.distance)):
-			near += 1
-	if near >= FLARE_MIN_IN_CIRCLE:
+		if e.is_live():
+			live += 1
+	if live >= FLARE_MIN_LIVE:
 		sim.fire_flare()
 
 

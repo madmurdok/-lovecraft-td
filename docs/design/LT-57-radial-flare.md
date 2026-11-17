@@ -1,5 +1,8 @@
 # LT-57 — Radial flare: design note (S1)
 
+> Superseded by LT-69: the flare now lights the whole map; the lighthouse level scales its
+> duration (`flare.seconds` [5, 6, 7]) instead of a radius (`radius_cells` removed).
+
 Status: approved (Q1-Q4 answered, §8) · branch `feat/LT-57-radial-flare` (release-0.3.0 tip 7851dd3)
 
 Owner (verbatim): "Мне кажется вспышка должна работать не по конусу а во все стороны - такой

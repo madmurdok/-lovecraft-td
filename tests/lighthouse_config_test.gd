@@ -76,7 +76,7 @@ func test_beam_levels() -> void:
 	])
 	var c := _accepts(func(l: Dictionary) -> void:
 		l["beam"]["levels"].append({"beams": 8, "upgrade_cost": 1})
-		l["flare"]["radius_cells"].append(10)  # LT-57: one radius per level
+		l["flare"]["seconds"].append(7)  # LT-69: one duration per level
 		l["beam"]["levels"][1]["beams"] = 1)  # equal is not a decrease
 	assert_array(c.economy.beam.levels.map(func(v: EconomyConfig.BeamLevel) -> int:
 		return v.beams)).is_equal([1, 1, 4, 8])
@@ -151,12 +151,11 @@ func test_flare_values() -> void:
 	_rejects([
 		["lighthouse.flare.cost_oil", func(l: Dictionary) -> void: l["flare"]["cost_oil"] = 0,
 			"must be"],
-		["lighthouse.flare.seconds", func(l: Dictionary) -> void: l["flare"]["seconds"] = 0,
+		["lighthouse.flare.seconds[0]", func(l: Dictionary) -> void: l["flare"]["seconds"][0] = 0,
 			"must be"],
 		["lighthouse.flare.cooldown_seconds",
-			func(l: Dictionary) -> void: l["flare"]["cooldown_seconds"] = 5, "must be > seconds"],
-		["lighthouse.flare.radius_cells[0]",
-			func(l: Dictionary) -> void: l["flare"]["radius_cells"][0] = -1, "must be"],
+			func(l: Dictionary) -> void: l["flare"]["cooldown_seconds"] = 7,
+			"must be > every seconds entry"],
 		["lighthouse.flare.enemy_speed_mult",
 			func(l: Dictionary) -> void: l["flare"]["enemy_speed_mult"] = 0, "must be"],
 		["lighthouse.flare.enemy_speed_mult",
@@ -165,34 +164,56 @@ func test_flare_values() -> void:
 			"unknown field"],  # LT-57: the cone no longer widens
 	])
 	var c := _accepts(func(l: Dictionary) -> void:
-		l["flare"]["radius_cells"] = [0, 0, 0]
+		l["flare"]["seconds"] = [5, 5, 5]
 		l["flare"]["enemy_speed_mult"] = 1
 		l["flare"]["cooldown_seconds"] = 5.01)
-	assert_array(c.economy.flare.radius_cells).is_equal([0.0, 0.0, 0.0])
+	assert_array(c.economy.flare.seconds).is_equal([5.0, 5.0, 5.0])
 	assert_float(c.economy.flare.enemy_speed_mult).is_equal(1.0)
 
 
-## LT-57 §7 b8: flare.radius_cells has one entry per beam level, each in [0, beam.reach_cells];
-## the LT-30 cone keys width_mult / hold_beams are gone.
-func test_flare_radius_cells_one_per_level_within_reach() -> void:
+## LT-69: flare.seconds has one entry per beam level, each > 0; LT-57's radius_cells and the
+## LT-30 cone keys width_mult / hold_beams are gone.
+func test_flare_seconds_one_per_level() -> void:
 	_rejects([
-		["lighthouse.flare.radius_cells",
-			func(l: Dictionary) -> void: l["flare"]["radius_cells"] = [6, 8], "one entry per beam level"],
-		["lighthouse.flare.radius_cells",
-			func(l: Dictionary) -> void: l["flare"]["radius_cells"] = [6, 8, 10, 12],
+		["lighthouse.flare.seconds",
+			func(l: Dictionary) -> void: l["flare"]["seconds"] = [5, 6], "one entry per beam level"],
+		["lighthouse.flare.seconds",
+			func(l: Dictionary) -> void: l["flare"]["seconds"] = [5, 6, 7, 8],
 			"one entry per beam level"],
-		["lighthouse.flare.radius_cells[2]",
-			func(l: Dictionary) -> void: l["flare"]["radius_cells"][2] = 16.01, "must be"],
-		["lighthouse.flare.radius_cells[1]",
-			func(l: Dictionary) -> void: l["flare"]["radius_cells"][1] = -0.5, "must be"],
-		["lighthouse.flare.radius_cells", func(l: Dictionary) -> void: l["flare"].erase("radius_cells"),
+		["lighthouse.flare.seconds[1]",
+			func(l: Dictionary) -> void: l["flare"]["seconds"][1] = -0.5, "must be"],
+		["lighthouse.flare.seconds", func(l: Dictionary) -> void: l["flare"].erase("seconds"),
 			"missing required field"],
+		["lighthouse.flare.radius_cells",
+			func(l: Dictionary) -> void: l["flare"]["radius_cells"] = [6, 8, 10], "unknown field"],
 		["lighthouse.flare.hold_beams", func(l: Dictionary) -> void: l["flare"]["hold_beams"] = true,
 			"unknown field"],
 	])
 	var c := _accepts(func(l: Dictionary) -> void:
-		l["flare"]["radius_cells"] = [0, 8.5, 16])  # the reach (16) itself is allowed
-	assert_array(c.economy.flare.radius_cells).is_equal([0.0, 8.5, 16.0])
+		l["flare"]["seconds"] = [0.5, 8.5, 29])
+	assert_array(c.economy.flare.seconds).is_equal([0.5, 8.5, 29.0])
+
+
+## LT-69/S2: a scalar seconds is rejected, and the cooldown must beat the LARGEST entry
+## (not just the first or the last one).
+func test_flare_seconds_must_be_an_array_and_cooldown_beats_the_largest() -> void:
+	_rejects([
+		["lighthouse.flare.seconds", func(l: Dictionary) -> void: l["flare"]["seconds"] = 5, ""],
+		["lighthouse.flare.cooldown_seconds",
+			func(l: Dictionary) -> void:
+				l["flare"]["seconds"] = [5, 40, 7]
+				l["flare"]["cooldown_seconds"] = 30,
+			"must be > every seconds entry"],
+		["lighthouse.flare.cooldown_seconds",
+			func(l: Dictionary) -> void:
+				l["flare"]["seconds"] = [5, 6, 29]
+				l["flare"]["cooldown_seconds"] = 29,
+			"must be > every seconds entry"],
+	])
+	var c := _accepts(func(l: Dictionary) -> void:
+		l["flare"]["seconds"] = [5, 29, 7]
+		l["flare"]["cooldown_seconds"] = 29.5)
+	assert_array(c.economy.flare.seconds).is_equal([5.0, 29.0, 7.0])
 
 
 func test_unknown_fields() -> void:
@@ -214,8 +235,9 @@ func test_shipped_values_are_the_addendum_numbers() -> void:
 	assert_array(e.beam.levels.map(func(v: EconomyConfig.BeamLevel) -> int: return v.beams)) \
 		.is_equal([1, 2, 4])
 	assert_float(e.beam.occult_power_mult).is_equal(0.7)
-	# LT-57 (owner Q1 "$80 (8 масла)", Q4 "Растёт: 6/8/10"): the radial flare.
+	# LT-57 (owner Q1 "$80 (8 масла)"); LT-69 ("Всё поле, уровень = длительность"): the
+	# whole-map flare burns 5 / 6 / 7 s by lighthouse level.
 	assert_array([e.oil.price, e.oil.start, e.oil.cap]).is_equal([10, 0, 16])
-	assert_array([e.flare.cost_oil, e.flare.seconds, e.flare.cooldown_seconds,
-		e.flare.enemy_speed_mult]).is_equal([8, 5.0, 30.0, 0.5])
-	assert_array(e.flare.radius_cells).is_equal([6.0, 8.0, 10.0])
+	assert_array([e.flare.cost_oil, e.flare.cooldown_seconds,
+		e.flare.enemy_speed_mult]).is_equal([8, 30.0, 0.5])
+	assert_array(e.flare.seconds).is_equal([5.0, 6.0, 7.0])

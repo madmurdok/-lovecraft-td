@@ -37,6 +37,40 @@ Reading: staggering makes the game harder for every strategy that had room to mo
 
 6 Godot processes at a time; the machine was heavily loaded from outside during the after arm (load 59-119 on 8 cores), user/real 0.66 vs 0.91. Outcomes are deterministic per seed; timings are not comparable.
 
+## Whole-map flare (LT-69): balance check
+
+The flare now lights the whole map for 5/6/7 s by lighthouse level (was a 6/8/10 cell circle for 5 s); the bot fires it at 4 or more live enemies anywhere. Target unchanged: every strategy loses at least 10 of 20 runs with the flare on.
+
+Tool: `tools/balance/balance.py baseline flare_off --seeds=20 --jobs=6`, seeds 1000..1019, all 9 strategies, after = feat/LT-69-whole-map-flare at 9b633ea. The before arm was not re-run: it is the LT-63 "after" row above (957f40a). That base predates LT-68 (starting gold 300, lighter wave 3, `release-0.4.0` 3e3f54e), so the delta mixes the LT-68 and LT-69 effects and is not a clean flare-only A/B.
+
+Cells are losses out of 20 (before / after / delta). Target: >= 10.
+
+| flare | mundane | occult | mixed | madness | demolition | battery | resonator | gate | circle | met before | met after |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| on (default) | 20/18/-2 | 18/10/-8 | 19/19/+0 | 14/8/-6 | 19/18/-1 | 20/19/-1 | 20/20/+0 | 20/20/+0 | 20/20/+0 | 9/9 | 8/9 |
+| off | 18/1/-17 | 18/8/-10 | 16/14/-2 | 20/20/+0 | 17/5/-12 | 18/9/-9 | 20/19/-1 | 20/20/+0 | 20/20/+0 | 9/9 | 5/9 |
+
+Wins/losses of the after runs:
+
+| flare | mundane | occult | mixed | madness | demolition | battery | resonator | gate | circle |
+|---|---|---|---|---|---|---|---|---|---|
+| on | 2/18 | 10/10 | 1/19 | 12/8 | 2/18 | 1/19 | 0/20 | 0/20 | 0/20 |
+| off | 19/1 | 12/8 | 6/14 | 0/20 | 15/5 | 11/9 | 1/19 | 0/20 | 0/20 |
+
+## Target check (flare on, LT-69)
+
+8 of 9 strategies have at least 10 losses with the flare on. Madness fails: 8 losses of 20 (12 wins), margin -2 (was 14). Smallest margin among the passing ones: occult, exactly 10 (margin 0). Flare off (not the target) falls from 9/9 to 5/9. The LT-68 second part (flare on, survive waves 1..3 in >= 15 of 20) is met by 8/9: gate fails it, losing in wave 3 in 17 runs (`e3`, 0 wins either way); gate is a flare-independent strategy (also 20/20 losses with the flare off), so this is an LT-68 early-game matter, not a flare one.
+
+Reading: the whole-map flare is a clear buff for the strategies that rely on it: occult -8 and madness -6 losses with the flare on, and the flare off arm shows the strategies without the flare also got easier (mundane 18 to 1, demolition 17 to 5), which points at LT-68 (more gold, lighter wave 3) rather than at the flare. Madness is the one strategy below target and needs tuning (flare cooldown/oil cost or its enemy-count trigger), or a separate check on a clean LT-68 base to split the two effects.
+
+## Machine state (LT-69)
+
+| arm | uptime at start (load avg) | uptime at end | /usr/bin/time -p |
+|---|---|---|---|
+| after (2 variants x 9 x 20) | 115.44 69.47 86.68 | 33.63 66.85 88.28 | real 1580.06 user 3333.93 sys 53.30 |
+
+6 Godot processes at a time; the machine was heavily loaded from outside (load 108-115 at start on 8 cores), user/real 0.33 (baseline) and 0.46 (flare_off), so the processes were mostly waiting. Outcomes are deterministic per seed; timings are not comparable.
+
 ## Owner playtest (LT-60)
 
 Run 1, 2026-11-02, release-0.4.0 at 894bb72, `-- --frame-stats`, seed 2727173648. Machine load at exit 28.18 18.22 9.26 (outside load; FPS not judged from this run).

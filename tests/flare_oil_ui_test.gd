@@ -2,7 +2,7 @@ class_name FlareOilUiTest
 extends GdUnitTestSuite
 ## LT-57 §4/§7 b9: Game.buy_flare_oil() buys min(flare.cost_oil, cap - oil) units, one logged
 ## sim buy_oil each, stops at the first refusal; and the flare texts in the lighthouse panel
-## and the HUD come from the config (price, oil cost, radius by level, seconds).
+## and the HUD come from the config (price, oil cost, seconds by level).
 
 const R := Simulation.CommandResult
 
@@ -88,45 +88,51 @@ func test_panel_and_hud_flare_texts_come_from_the_config() -> void:
 	p.open()
 	p.refresh()
 	assert_str(p.oil_button.text).starts_with("Buy oil for a flare (%s)" % TowerInfo.money(80))
-	assert_str(p.oil_label.text).contains("Flare: 8 oil, radius 6 cells, 5 s")
-	assert_str(p.upgrade_button.text).contains("flare radius 8")
+	assert_str(p.oil_label.text).contains("Flare: 8 oil, whole map, 5 s")
+	assert_str(p.upgrade_button.text).contains("flare 6 s")
 	s.oil = 12
 	p.refresh()
 	assert_str(p.oil_button.text).starts_with("Buy oil for a flare (%s)" % TowerInfo.money(40))
 	# Edited config: every number follows.
 	eco.oil.price = 7
 	eco.flare.cost_oil = 5
-	eco.flare.seconds = 3.0
-	eco.flare.radius_cells[0] = 4.5
-	eco.flare.radius_cells[1] = 7.5
+	eco.flare.seconds[0] = 3.0
+	eco.flare.seconds[1] = 4.5
 	s.oil = 0
 	p.refresh()
 	assert_str(p.oil_button.text).starts_with("Buy oil for a flare (%s)" % TowerInfo.money(35))
-	assert_str(p.oil_label.text).contains("Flare: 5 oil, radius 4.5 cells, 3 s")
-	assert_str(p.upgrade_button.text).contains("flare radius 7.5")
+	assert_str(p.oil_label.text).contains("Flare: 5 oil, whole map, 3 s")
+	assert_str(p.upgrade_button.text).contains("flare 4.5 s")
 	s.oil = 5
 	assert_int(_game.call_wave()).is_equal(R.OK)
 	h.refresh()
 	assert_str(h.flare_button.text).is_equal("Flare (5 oil)")
-	assert_str(h.flare_button.tooltip_text).is_equal("Lights everything within 4.5 cells for 3 s")
-	# The radius in the texts follows the lighthouse level.
+	assert_str(h.flare_button.tooltip_text).is_equal("Lights the whole map for 3 s")
+	# LT-69: the seconds in the texts follow the lighthouse level.
 	s.lighthouse_level = 1
 	h.refresh()
-	assert_str(h.flare_button.tooltip_text).is_equal("Lights everything within 7.5 cells for 3 s")
+	assert_str(h.flare_button.tooltip_text).is_equal("Lights the whole map for 4.5 s")
 
 
-## LT-59: a flare radius of one cell reads "1 cell" in the panel's oil label and the HUD tooltip.
-func test_a_one_cell_flare_radius_reads_singular_in_the_panel_and_hud() -> void:
+## LT-69/S2: shipped seconds 5 / 6 / 7 reach the HUD tooltip and the panel at every level;
+## the upgrade line names the next level's seconds and none at the top.
+func test_shipped_flare_seconds_reach_the_hud_and_the_panel_per_level() -> void:
 	var p := _game.lighthouse_panel
 	var h := _game.hud
 	var s := _game.sim.state
-	_game.sim.config.economy.flare.radius_cells[0] = 1.0
 	s.gold = 100000
-	p.open()
-	p.refresh()
-	assert_str(p.oil_label.text).contains("radius 1 cell, ")
-	s.oil = 5
+	s.oil = _game.sim.config.economy.flare.cost_oil
 	assert_int(_game.call_wave()).is_equal(R.OK)
-	h.refresh()
-	assert_str(h.flare_button.tooltip_text) \
-		.is_equal("Lights everything within 1 cell for %s s" % ConfigReader.fmt(_game.sim.config.economy.flare.seconds))
+	p.open()
+	var seconds := ["5", "6", "7"]
+	for level in 3:
+		s.lighthouse_level = level
+		h.refresh()
+		p.refresh()
+		assert_str(h.flare_button.tooltip_text).is_equal(
+			"Lights the whole map for %s s" % seconds[level])
+		assert_str(p.oil_label.text).contains("whole map, %s s" % seconds[level])
+		if level < 2:
+			assert_str(p.upgrade_button.text).contains("flare %s s" % seconds[level + 1])
+		else:
+			assert_str(p.upgrade_button.text).is_equal("Max level")

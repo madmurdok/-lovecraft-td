@@ -32,8 +32,7 @@
     "flare": {
       "cost_oil": 8,
       "cooldown_seconds": 30,
-      "seconds": 5,
-      "radius_cells": [6, 8, 10],
+      "seconds": [5, 6, 7],
       "enemy_speed_mult": 0.5
     }
   }
