@@ -674,8 +674,12 @@ func test_two_seals_strip_the_max_not_the_sum() -> void:
 	_l3(sim, SIGN, "b", Vector2i(8, 1))
 	var e := put(sim, "cultist", 7.0)
 	var mult: float = _branch(sim, SIGN, "b").effects["damage_taken_multiplier"]
-	assert_float(_hit_after_tick(sim, e)).is_equal((10.0 - 4.0) * mult)
-	assert_float(e.armor_bonus).is_equal(-1.0)
+	# LT-70 Q4: the two seals shadow each other, so each strips 1 x shadow power; the max,
+	# not the sum, still applies.
+	var pm := sim.config.economy.shadow.occult_power_mult
+	assert_float(_hit_after_tick(sim, e)).is_equal_approx(
+		(10.0 - (5.0 - pm)) * (1.0 + (mult - 1.0) * pm), 1e-9)
+	assert_float(e.armor_bonus).is_equal_approx(-pm, 1e-9)
 
 
 func test_strip_never_takes_armor_below_zero() -> void:

@@ -21,6 +21,7 @@ const COLOR_LOSS := Color(0.95, 0.45, 0.4)
 const COLOR_RESERVE := Color(0.72, 0.6, 0.95)  ## the occult violet
 const COLOR_CHANGED := Color(0.95, 0.75, 0.3)  ## gold: an upgrade changes this cell
 const COLOR_LIT := Color(1.0, 0.95, 0.6)  ## pale yellow: the beam changes this cell now
+const COLOR_SHADOW := Color(0.66, 0.56, 1.0)  ## LT-70 §5: cold violet, the shadow changes it now
 const COLOR_MUNDANE := Color(0.85, 0.8, 0.6)  ## = SidePanel.COLOR_ROLE
 const COLOR_OCCULT := COLOR_RESERVE
 
@@ -55,7 +56,7 @@ static func color_for(key: String, value: String) -> Color:
 			return COLOR_GAIN
 		"reserve":
 			return COLOR_RESERVE
-		"beam":
+		"beam", "shadow":
 			return COLOR_GAIN if value.begins_with("+") else COLOR_LOSS
 	return COLOR_VALUE
 
@@ -66,11 +67,12 @@ static func kind_color(kind: String) -> Color:
 
 
 ## Rebuilds the table: `heads[i]` over `cols[i]` (TowerInfo.row_values dictionaries);
-## `lit` (row key -> text with LIT_MARK) overrides column 0. `head_color` colours the heads;
-## the head row is hidden when every head is "" (LT-61 §1).
+## `lit` (row key -> text with LIT_MARK) overrides column 0, coloured COLOR_LIT, or
+## COLOR_SHADOW when `shadow` (LT-70 §5: a shadowed tower's cells). `head_color` colours the
+## heads; the head row is hidden when every head is "" (LT-61 §1).
 func set_columns(p_heads: PackedStringArray, cols: Array[Dictionary], lit: Dictionary = {},
-		head_color := COLOR_MUNDANE) -> void:
-	var args := [p_heads, cols, lit, head_color, max_width]
+		head_color := COLOR_MUNDANE, shadow := false) -> void:
+	var args := [p_heads, cols, lit, head_color, max_width, shadow]
 	if args == _shown:
 		return
 	_shown = args.duplicate(true)
@@ -107,7 +109,7 @@ func set_columns(p_heads: PackedStringArray, cols: Array[Dictionary], lit: Dicti
 			for i in n:
 				var color := color_for(key, shown[i])
 				if i == 0 and lit.has(key):
-					color = COLOR_LIT
+					color = COLOR_SHADOW if shadow else COLOR_LIT
 				elif i > 0 and shown[i] != String(cols[0][key]):
 					color = COLOR_CHANGED
 				var l := _label(shown[i], color)

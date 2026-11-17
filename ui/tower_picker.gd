@@ -211,6 +211,7 @@ func open_for(p_cell: Vector2i) -> void:
 	game.board.selected_cell = p_cell
 	game.board.selected_range = 0.0
 	game.board.selected_glyph = ""
+	game.board.selected_cast = ""
 	game.board.queue_redraw()
 
 
@@ -222,6 +223,7 @@ func close() -> void:
 	game.board.selected_cell = Vector2i(-1, -1)
 	game.board.selected_range = 0.0
 	game.board.selected_glyph = ""
+	game.board.selected_cast = ""
 	game.board.queue_redraw()
 
 
@@ -310,7 +312,7 @@ func _on_hover(def_id: String, entered: bool) -> void:
 
 
 ## Frames the hovered row gold, shows its L1 range ring and its letter (a ghost) on the
-## cell, tells the side panel.
+## cell (LT-70 §5: and, for a caster, its L1 light/shadow preview), tells the side panel.
 func _set_hovered(def_id: String) -> void:
 	if def_id == hovered:
 		return
@@ -319,14 +321,18 @@ func _set_hovered(def_id: String) -> void:
 	hovered = def_id
 	var r := 0.0
 	var glyph := ""
+	var cast := ""
 	if buttons.has(def_id):
 		_frame(buttons[def_id], true)
 		var def: TowerDef = game.sim.config.towers[def_id]
 		r = def.levels[0].range_cells
 		glyph = def.glyph
-	if visible and (game.board.selected_range != r or game.board.selected_glyph != glyph):
+		cast = Board.cast_of(def.levels[0])
+	if visible and (game.board.selected_range != r or game.board.selected_glyph != glyph
+			or game.board.selected_cast != cast):
 		game.board.selected_range = r
 		game.board.selected_glyph = glyph
+		game.board.selected_cast = cast
 		game.board.queue_redraw()
 	hovered_changed.emit(def_id)
 

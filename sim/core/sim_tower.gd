@@ -27,9 +27,14 @@ var burst_index := 0
 ## candidate; -1 = none, the next shot picks by target_priority. Cleared by
 ## Simulation.set_target_priority so a new mode applies at once.
 var locked_id := -1
-## LT-30: inside a lighthouse beam (centre test, slot 2); persists between ticks, a flip
-## emits TOWER_LIT {lit}.
+## LT-30, LT-70 §2.1: net light, set in slot 2 at night only: inside a lighthouse beam,
+## the flare or another tower's casts_light radius (centre test) and not shadowed. Never
+## true together with `shadowed`; persists between ticks, a flip of either emits
+## TOWER_LIT {lit, shadowed}.
 var lit := false
+## LT-70 §2.1: net shadow, set in slot 2 at night only: inside another tower's casts_shadow
+## radius (centre test) and not lit by the beam, the flare or a casts_light tower.
+var shadowed := false
 
 ## Disable/harass timers (tower_harass, tower_lift, ...) added by later tasks.
 var status: Dictionary = {}

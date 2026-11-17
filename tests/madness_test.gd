@@ -255,16 +255,18 @@ func test_madness_damage_is_doubled_once_before_armor_and_the_sign_boost() -> vo
 	var mult := sim.config.sanity.madness.damage_multiplier
 	var armor := sim.config.enemies["hybrid"].armor
 	var boost: float = sim.config.towers[SIGN].levels[0].effects["damage_taken_multiplier"]
+	# LT-70: the sign shadows the reader next to it: its damage x shadow power, before the x2.
+	var sdmg := dmg * sim.config.economy.shadow.occult_power_mult
 	assert_float(armor).is_greater(0.0)
 	assert_float(boost).is_greater(1.0)
-	var expected := (dmg * mult - armor) * boost
+	var expected := (sdmg * mult - armor) * boost
 	# The orders that would be wrong differ from the right one.
-	assert_float((dmg - armor) * mult * boost).is_not_equal(expected)
-	assert_float(dmg * mult * boost - armor).is_not_equal(expected)
+	assert_float((sdmg - armor) * mult * boost).is_not_equal(expected)
+	assert_float(sdmg * mult * boost - armor).is_not_equal(expected)
 	assert_float(_hybrid_loss(0.0, true)).is_equal_approx(expected, 0.0001)
 	assert_float(_hybrid_loss(0.0, false)).is_equal_approx(dmg * mult - armor, 0.0001)
 	# Outside madness the same cast is not multiplied.
-	assert_float(_hybrid_loss(50.0, true)).is_equal_approx((dmg - armor) * boost, 0.0001)
+	assert_float(_hybrid_loss(50.0, true)).is_equal_approx((sdmg - armor) * boost, 0.0001)
 	assert_float(_hybrid_loss(50.0, false)).is_equal_approx(dmg - armor, 0.0001)
 
 

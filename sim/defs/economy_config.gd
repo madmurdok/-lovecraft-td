@@ -1,10 +1,11 @@
 class_name EconomyConfig
 extends RefCounted
 ## economy.json (GDD §5.1, §5.2): money ("gold" internally) rules, relics (LT-27 §1.1),
-## lighthouse HP, its beam (LT-26 §1.3), lamp oil and the flare (LT-30 §1.3).
+## lighthouse HP, its beam (LT-26 §1.3), lamp oil and the flare (LT-30 §1.3), and the
+## Elder Sign shadow (LT-70 §3).
 
 const FIELDS := ["starting_gold", "wave_bonus", "sell_refund_ratio", "relics",
-	"token_fly_seconds", "ghost_vanish_seconds", "early_night_luck_per_second", "lighthouse"]
+	"token_fly_seconds", "ghost_vanish_seconds", "early_night_luck_per_second", "lighthouse", "shadow"]
 const RELIC_FIELDS := ["name", "price"]
 const LIGHTHOUSE_FIELDS := ["hp", "beam", "oil", "flare"]
 const BEAM_FIELDS := ["pattern", "turn_t", "reach_cells", "half_width_ratio", "sweep_edges",
@@ -14,6 +15,7 @@ const BEAM_PATTERNS: PackedStringArray = ["rotate", "sweep"]
 const BEAM_COUNTS: Array[int] = [1, 2, 4, 8]
 const OIL_FIELDS := ["price", "start", "cap"]
 const FLARE_FIELDS := ["cost_oil", "cooldown_seconds", "seconds", "enemy_speed_mult"]
+const SHADOW_FIELDS := ["mundane", "occult"]
 
 var starting_gold: int  ## money at the start, >= 0
 var wave_bonus_base: int  ## dawn wage = base + per_wave * wave number
@@ -28,6 +30,9 @@ var lighthouse_hp: int  ## >= 1
 var beam: BeamConfig  ## lighthouse.beam (LT-26 §1.3), required
 var oil: OilConfig  ## lighthouse.oil (LT-30 §1.2), null when absent
 var flare: FlareConfig  ## lighthouse.flare (LT-30 §1.1), null when absent (needs `oil`)
+## LT-70 §3: the shadow cast by `casts_shadow` towers; null when absent (shadowed towers then
+## get x1.0 / +0, the flag is still computed).
+var shadow: ShadowConfig
 
 
 ## One relic kind (LT-27 §1.1): sold by day for a fixed `price` in money.
@@ -72,6 +77,16 @@ class OilConfig:
 	var price: int  ## money per unit, >= 1
 	var start: int  ## stock at the start of the run, 0..cap
 	var cap: int  ## >= flare.cost_oil (>= 1)
+
+
+## Shadow (LT-70 §2.3, §3), the mirror of the beam's light: what a shadowed tower suffers
+## (mundane) or gains (occult).
+class ShadowConfig:
+	extends RefCounted
+
+	var mundane_fire_interval_mult: float  ## > 0, shadowed mundane cooldown multiplier
+	var mundane_miss_chance_add: float  ## 0..1, added to a shadowed mundane shot's miss chance
+	var occult_power_mult: float  ## > 0, shadowed occult damage / aura strength multiplier
 
 
 ## The flare (LT-30 §1.1, LT-69): a night-only command paid with oil; while it burns,
@@ -138,7 +153,30 @@ static func parse(r: ConfigReader, root: Dictionary) -> EconomyConfig:
 				c.oil = _parse_oil(r, oo, "lighthouse.oil", c.flare)
 		elif lighthouse.has("flare"):
 			r.error("lighthouse.flare", "requires lighthouse.oil")
+	if root.has("shadow"):
+		var so: Variant = r.as_object(root["shadow"], "shadow")
+		if so != null:
+			c.shadow = _parse_shadow(r, so, "shadow")
 	return c
+
+
+## LT-70 §3: shadow.mundane {fire_interval_mult > 0, miss_chance_add 0..1} and
+## shadow.occult {power_mult > 0}, both required inside the optional block.
+static func _parse_shadow(r: ConfigReader, o: Dictionary, path: String) -> ShadowConfig:
+	r.check_keys(o, SHADOW_FIELDS, path)
+	var s := ShadowConfig.new()
+	var mp := ConfigReader.join(path, "mundane")
+	var mo: Variant = r.req_object(o, "mundane", path)
+	if mo != null:
+		r.check_keys(mo, ["fire_interval_mult", "miss_chance_add"], mp)
+		s.mundane_fire_interval_mult = r.req_number(mo, "fire_interval_mult", mp, 0.0, INF, true)
+		s.mundane_miss_chance_add = r.req_number(mo, "miss_chance_add", mp, 0.0, 1.0)
+	var op := ConfigReader.join(path, "occult")
+	var oo: Variant = r.req_object(o, "occult", path)
+	if oo != null:
+		r.check_keys(oo, ["power_mult"], op)
+		s.occult_power_mult = r.req_number(oo, "power_mult", op, 0.0, INF, true)
+	return s
 
 
 static func _parse_beam(r: ConfigReader, o: Dictionary, path: String) -> BeamConfig:

@@ -107,6 +107,7 @@ func test_elder_sign_is_support_with_aura_and_effects_and_no_kind_line() -> void
 	assert_array(_special(l1)).is_equal([
 		"Slows enemies %s%%" % _n(l1.effects["slow"] * 100.0),
 		"Foes take +%s%% damage" % _n((l1.effects["damage_taken_multiplier"] - 1.0) * 100.0),
+		"Shadows nearby towers",  # LT-70 §5
 	])
 	assert_array(Array(TowerInfo.kind_lines(_def("elder_sign"), l1, _cfg.sanity))).is_empty()
 
@@ -496,10 +497,13 @@ func test_searchlight_is_support_that_reveals_and_slows_with_no_mundane_kind_lin
 	assert_array(_special(l1)).is_equal([
 		"Reveals fakes",
 		"Slows enemies %s%%" % _n(l1.effects["slow"] * 100.0),
+		"Lights towers and foes",  # LT-70 §5
 	])
 	var b := d.branches["b"]
+	# LT-70: Blinding slows hard and no longer marks foes.
 	assert_array(_special(b)).contains(["Reveals fakes",
-		"Foes take +%s%% damage" % _n((b.effects["damage_taken_multiplier"] - 1.0) * 100.0)])
+		"Slows enemies %s%%" % _n(b.effects["slow"] * 100.0)])
+	assert_bool(b.effects.has("damage_taken_multiplier")).is_false()
 	# It never shoots: no Fraying miss line and no kill regen on any level.
 	assert_float(_cfg.sanity.thresholds["fraying"].miss_chance).is_greater(0.0)
 	for l: TowerDef.Level in [d.levels[0], d.levels[1], d.branches["a"], b]:

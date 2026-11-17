@@ -538,3 +538,20 @@ func test_no_picker_text_is_cut_at_1280x720() -> void:
 						cuts.append("%s word '%s'" % [tag, word])
 		_game.picker.close()
 	assert_array(cuts).is_empty()
+
+
+# --- LT-70 §5: a hovered caster previews its light / shadow ---------------------------------
+
+func test_hovering_a_caster_sets_selected_cast_from_its_l1_and_closing_clears_it() -> void:
+	await _start_game()
+	_game.sim.state.gold = 10000
+	await _open(_buildable())
+	var want := {"searchlight": "light", SIGN: "shadow", RIFLE: "", "necronomicon_reader": ""}
+	for id: String in want:
+		await _move(_game.picker.buttons[id].get_global_rect().get_center())
+		assert_str(_game.picker.hovered).is_equal(id)
+		assert_str(_game.board.selected_cast).override_failure_message(id).is_equal(want[id])
+	await _move(_game.picker.buttons[SIGN].get_global_rect().get_center())
+	assert_str(_game.board.selected_cast).is_equal("shadow")
+	_game.picker.close()
+	assert_str(_game.board.selected_cast).is_equal("")

@@ -95,6 +95,7 @@ func close() -> void:
 	visible = false
 	game.board.selected_cell = Vector2i(-1, -1)
 	game.board.selected_range = 0.0
+	game.board.selected_cast = ""
 	game.board.queue_redraw()
 
 
@@ -134,8 +135,10 @@ func refresh() -> void:
 	sell_button.text = "Sell (+%s)" % TowerInfo.money(game.sim.sell_refund(t))
 	if sell_button.disabled:
 		sell_button.text += " (%s)" % TowerInfo.reason(sell)
-	if game.board.selected_range != s.range_cells:
+	var cast := Board.cast_of(s)  # LT-70 §5: the BUILD preview of a caster's radius
+	if game.board.selected_range != s.range_cells or game.board.selected_cast != cast:
 		game.board.selected_range = s.range_cells
+		game.board.selected_cast = cast
 		game.board.queue_redraw()
 
 
@@ -155,7 +158,7 @@ func _refresh_upgrade(b: Button, info: Label, t: SimTower, s: TowerDef.Level, br
 
 
 ## LT-43 §2, §4, §5: the table (Now + one column per upgrade target), the lit status line and
-## lit Now cells, the special lines (Now's, then each column's special_delta_lines prefixed
+## lit Now cells (LT-70 §5: the shadow numbers, line and colour while shadowed), the special lines (Now's, then each column's special_delta_lines prefixed
 ## by its head; a sanity-scaled tower first reads the sanity its DPS is at), the kind line.
 func _refresh_table(t: SimTower, s: TowerDef.Level, branches: PackedStringArray) -> void:
 	var cfg := game.sim.config
@@ -172,19 +175,23 @@ func _refresh_table(t: SimTower, s: TowerDef.Level, branches: PackedStringArray)
 		heads.append("L%d" % (t.level + 2) if branch.is_empty() else branch.to_upper())
 		cols.append(TowerInfo.row_values(t.def, target, cfg, sanity_now))
 		targets.append(target)
-	var lit := TowerInfo.lit_values(t.def, s, cfg, sanity_now) if t.lit else {}
+	var shadow := t.shadowed  # LT-70 §5: never together with t.lit
+	var marked := t.lit or shadow
+	var lit := TowerInfo.lit_values(t.def, s, cfg, sanity_now, shadow) if marked else {}
 	var bar := game.side_panel.scroll.get_v_scroll_bar()
 	stats_table.max_width = int(game.side_panel.scroll.size.x - bar.get_combined_minimum_size().x)
-	stats_table.set_columns(heads, cols, lit, StatsTable.kind_color(t.def.kind))
-	lit_label.text = TowerInfo.lit_line(t.def, s, cfg) if t.lit else ""
+	stats_table.set_columns(heads, cols, lit, StatsTable.kind_color(t.def.kind), shadow)
+	lit_label.text = TowerInfo.lit_line(t.def, s, cfg, shadow) if marked else ""
+	lit_label.add_theme_color_override("font_color",
+		StatsTable.COLOR_SHADOW if shadow else StatsTable.COLOR_LIT)
 	lit_label.visible = not lit_label.text.is_empty()
 	var lines := PackedStringArray()
 	if s.is_beam():
 		lines.append(TowerInfo.live_dps_text(sanity_now))
-	var lit_fx := TowerInfo.lit_effects(t.def, s, cfg) if t.lit else {}
+	var lit_fx := TowerInfo.lit_effects(t.def, s, cfg, shadow) if marked else {}
 	var fx: Variant = null if lit_fx.is_empty() else lit_fx
 	var now := TowerInfo.special_lines(s, fx)
-	if not lit_fx.is_empty():  # LT-43 §5: "*" only on the lines the beam changes
+	if not lit_fx.is_empty():  # LT-43 §5: "*" only on the lines the beam (or shadow) changes
 		var base := TowerInfo.special_lines(s)
 		for i in now.size():
 			if not base.has(now[i]):
@@ -198,7 +205,10 @@ func _refresh_table(t: SimTower, s: TowerDef.Level, branches: PackedStringArray)
 	special_label.text = "\n".join(lines)
 	special_label.visible = not lines.is_empty()
 	var no_misses := t.lit and cfg.economy.beam.mundane_ignore_miss
-	kind_label.text = "\n".join(TowerInfo.kind_lines(t.def, s, cfg.sanity, no_misses))
+	var shadow_miss := cfg.economy.shadow.mundane_miss_chance_add \
+		if shadow and cfg.economy.shadow != null else 0.0
+	kind_label.text = "\n".join(TowerInfo.kind_lines(t.def, s, cfg.sanity, no_misses,
+		shadow_miss))
 	kind_label.visible = not kind_label.text.is_empty()
 
 
