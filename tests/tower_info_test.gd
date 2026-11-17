@@ -202,6 +202,8 @@ func test_non_pending_effects_have_no_suffix() -> void:
 	assert_array(Array(TowerDef.Level.PENDING)).is_empty()
 	for key: String in TowerDef.Level.EFFECTS:
 		assert_bool(TowerDef.Level.PENDING.has(key)).is_false()
+		if key in TowerDef.Level.CAST_EFFECTS:
+			continue  # LT-70: caster flags have no effect line until the UI slice
 		var got := TowerInfo.effect_lines({key: 1.5})
 		assert_int(got.size()).is_equal(1)
 		assert_bool(got[0].ends_with(CS)).override_failure_message(got[0]).is_false()
@@ -498,8 +500,10 @@ func test_searchlight_is_support_that_reveals_and_slows_with_no_mundane_kind_lin
 		"Slows enemies %s%%" % _n(l1.effects["slow"] * 100.0),
 	])
 	var b := d.branches["b"]
+	# LT-70: Blinding slows hard and no longer marks foes.
 	assert_array(_special(b)).contains(["Reveals fakes",
-		"Foes take +%s%% damage" % _n((b.effects["damage_taken_multiplier"] - 1.0) * 100.0)])
+		"Slows enemies %s%%" % _n(b.effects["slow"] * 100.0)])
+	assert_bool(b.effects.has("damage_taken_multiplier")).is_false()
 	# It never shoots: no Fraying miss line and no kill regen on any level.
 	assert_float(_cfg.sanity.thresholds["fraying"].miss_chance).is_greater(0.0)
 	for l: TowerDef.Level in [d.levels[0], d.levels[1], d.branches["a"], b]:

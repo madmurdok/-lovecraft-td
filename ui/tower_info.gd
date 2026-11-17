@@ -110,6 +110,9 @@ static func effect_lines(effects: Dictionary, suffix := true) -> PackedStringArr
 		if present:
 			out.append(_effect_text(group[0], effects) + (COMING_SOON if pending and suffix else ""))
 	for key: String in effects:
+		# LT-70: the caster flags get their own text in the UI slice; never a raw line.
+		if key in TowerDef.Level.CAST_EFFECTS:
+			continue
 		if not seen.has(key) and is_active(effects, key):
 			out.append("%s: %s" % [key, num(effects[key])]
 				+ (COMING_SOON if is_pending(key) and suffix else ""))

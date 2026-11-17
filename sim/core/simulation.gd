@@ -1262,10 +1262,12 @@ func _lit_now(dirs: Array, k: float, px: float, py: float) -> bool:
 
 
 ## Slot 2, first (LT-30 §3.1): saves prev_beam_*, turns the base direction (night only; a
-## flare no longer holds it, LT-57), then sets `lit` (in a beam, or anywhere while a
-## flare burns, LT-69) of every tower (centre; TOWER_LIT {lit} on a flip, id order) and
-## of every live enemy (route position at the start of the tick, as auras). By day every
-## flag is false.
+## flare no longer holds it, LT-57), then sets the net `lit` / `shadowed` of every tower
+## (centre; TOWER_LIT {lit, shadowed} when either flips, id order) and `lit` of every live
+## enemy (route position at the start of the tick, as auras). LT-70 §2.1: a tower is lit
+## by a beam, the flare (LT-69) or another casts_light tower's radius, shadowed by another
+## casts_shadow tower's radius; both at once cancel to neither. An enemy is lit by a beam,
+## the flare or a casts_light radius; enemies have no shadow. By day every flag is false.
 func _update_beam() -> void:
 	state.prev_beam_dx = state.beam_dx
 	state.prev_beam_dy = state.beam_dy
@@ -1274,19 +1276,83 @@ func _update_beam() -> void:
 		_turn_beam()
 	var dirs := _beam_dirs() if on else []
 	var k := config.economy.beam.half_width_ratio
+	var casters: Array[SimTower] = []
+	if on:
+		casters = _casters()
 	for t in state.towers:
 		var c := t.centre()
-		var lit := on and _lit_now(dirs, k, c.x, c.y)
-		if lit != t.lit:
+		var light_any := on and (_lit_now(dirs, k, c.x, c.y)
+			or _in_cast(c, "casts_light", t.id, casters))
+		var shadow_any := on and _in_cast(c, "casts_shadow", t.id, casters)
+		var lit := light_any and not shadow_any
+		var shadowed := shadow_any and not light_any
+		if lit != t.lit or shadowed != t.shadowed:
 			t.lit = lit
-			_emit(SimEvent.Type.TOWER_LIT, t.id, {"lit": lit})
+			t.shadowed = shadowed
+			_emit(SimEvent.Type.TOWER_LIT, t.id, {"lit": lit, "shadowed": shadowed})
 	if not on:
 		return
 	for e in state.enemies:
 		if not e.is_live():
 			continue
 		var p := e.route.position_at(e.distance)
-		e.lit = _lit_now(dirs, k, p.x, p.y)
+		e.lit = _lit_now(dirs, k, p.x, p.y) or _in_cast(p, "casts_light", -1, casters)
+
+
+## LT-70 §2.2: the towers whose current level casts light or shadow, in id order.
+func _casters() -> Array[SimTower]:
+	var out: Array[SimTower] = []
+	for t in state.towers:
+		var s := t.stats()
+		if s.casts_light() or s.casts_shadow():
+			out.append(t)
+	return out
+
+
+## LT-70 §2.1: true when some caster other than `skip_id` whose current level has
+## effects[key] > 0 covers the point p (in_cast_radius of its centre and range).
+func _in_cast(p: Vector2, key: String, skip_id: int, casters: Array[SimTower]) -> bool:
+	for o in casters:
+		if o.id == skip_id:
+			continue
+		var s := o.stats()
+		if s.effects.get(key, 0.0) > 0.0 and in_cast_radius(o.centre(), s.range_cells, p):
+			return true
+	return false
+
+
+## LT-70 §2.1: the aura / cast radius test, |p - c|² <= range² (boundary inclusive), in
+## 64-bit scalars; shared by _apply_auras, _in_cast and the board's BUILD preview.
+static func in_cast_radius(c: Vector2, range_cells: float, p: Vector2) -> bool:
+	var dx := float(p.x) - c.x
+	var dy := float(p.y) - c.y
+	return dx * dx + dy * dy <= range_cells * range_cells
+
+
+## LT-30 §2, LT-70 §2.3: an occult tower's damage / aura / banish / summon multiplier from
+## its net state: beam.occult_power_mult lit, shadow.occult_power_mult shadowed (1.0 without
+## a shadow block), else 1.0. Mundane towers: 1.0.
+func _power_mult(t: SimTower) -> float:
+	if t.def.kind != "occult":
+		return 1.0
+	if t.lit:
+		return config.economy.beam.occult_power_mult
+	if t.shadowed and config.economy.shadow != null:
+		return config.economy.shadow.occult_power_mult
+	return 1.0
+
+
+## LT-30 §2, LT-70 §2.3: a mundane tower's fire interval multiplier from its net state:
+## beam.mundane_fire_interval_mult lit, shadow.mundane_fire_interval_mult shadowed (1.0
+## without a shadow block), else 1.0. Occult towers: 1.0.
+func _interval_mult(t: SimTower) -> float:
+	if t.def.kind != "mundane":
+		return 1.0
+	if t.lit:
+		return config.economy.beam.mundane_fire_interval_mult
+	if t.shadowed and config.economy.shadow != null:
+		return config.economy.shadow.mundane_fire_interval_mult
+	return 1.0
 
 
 ## Run start: "rotate" points the base direction left (SimState default); "sweep" starts at
@@ -1405,8 +1471,9 @@ func _count_down_flare() -> void:
 ## The speed modifier scales this tick's movement (slot 3); the damage modifier applies to
 ## every hit this tick (slot 5), after armor (apply_damage).
 ## LT-49 (LT-46 P8): a `reveal_fakes` aura (Searchlight) also sets `revealed` on every live
-## fake inside, for good; _candidates then drops it, so no tower targets it again. A lit
-## mundane aura is unchanged (LT-30 modifiers apply to firing and to occult auras only).
+## fake inside, for good; _candidates then drops it, so no tower targets it again. A lit or
+## shadowed mundane aura is unchanged (LT-30 / LT-70 modifiers apply to firing and to
+## occult auras only); a lit or shadowed occult aura works at _power_mult strength.
 func _apply_auras() -> void:
 	var auras: Array[SimTower] = []
 	for t in state.towers:
@@ -1427,19 +1494,16 @@ func _apply_auras() -> void:
 		var reveal := false
 		for t in auras:
 			var s := t.stats()
-			var c := t.centre()
-			var dx := float(p.x) - c.x
-			var dy := float(p.y) - c.y
-			if dx * dx + dy * dy > s.range_cells * s.range_cells:
+			if not in_cast_radius(t.centre(), s.range_cells, p):
 				continue
 			inside = true
 			var t_slow: float = s.effects.get("slow", 0.0)
 			var t_mult: float = s.effects.get("damage_taken_multiplier", 1.0)
 			var t_strip: float = s.effects.get("strip_armor", 0.0)
-			if t.lit and t.def.kind == "occult":
-				# LT-30 §2: a lit occult aura works at beam.occult.power_mult strength
-				# (LT-29 §2: the armor strip too).
-				var pm := config.economy.beam.occult_power_mult
+			var pm := _power_mult(t)
+			if pm != 1.0:
+				# LT-30 §2 / LT-70 §2.3: a lit (x0.7) or shadowed (x1.3) occult aura works at
+				# that strength (LT-29 §2: the armor strip too).
 				t_slow *= pm
 				t_mult = 1.0 + (t_mult - 1.0) * pm
 				t_strip *= pm
@@ -1473,8 +1537,9 @@ func _apply_madness_buff() -> void:
 		e.damage_taken_mult *= m.enemy_damage_taken_multiplier
 
 
-## LT-30 (LT-26 D4): true when `e` must not get the madness buff: lit by the lighthouse beam
-## this tick (real and fake alike) and beam.enemy.cancel_madness_buff is on.
+## LT-30 (LT-26 D4): true when `e` must not get the madness buff: lit this tick (the
+## lighthouse beam, the flare or, LT-70 Q1, a Searchlight's casts_light radius; real and
+## fake alike) and beam.enemy.cancel_madness_buff is on.
 func _madness_buff_blocked(e: SimEnemy) -> bool:
 	return config.economy.beam.cancel_madness_buff and e.lit
 
@@ -1536,11 +1601,10 @@ func _fire_towers() -> void:
 		# LT-50 (§7 Q2): a sanity_scaling level x 1 + k x (1 - sanity / max) on the full bar,
 		# before the lit x0.7 and the madness x2.
 		var factor := s.sanity_factor(state.sanity, config.sanity.max_sanity)
-		var damage := s.damage * factor
+		# LT-30 §2 / LT-70 §2.3: lit x0.7 / shadowed x1.3 (occult), before the madness x2.
+		var damage := s.damage * factor * _power_mult(t)
 		var beam := config.economy.beam
 		var lit_mundane := t.lit and t.def.kind == "mundane"
-		if t.lit and t.def.kind == "occult":
-			damage *= beam.occult_power_mult  # LT-30 §2, before the madness x2
 		var astray := ""
 		if s.madness_affected and state.sanity_state == SimState.SanityState.MADNESS:
 			damage *= config.sanity.madness.damage_multiplier
@@ -1576,8 +1640,12 @@ func _fire_towers() -> void:
 			hits = _ground_filter(t, enemies_near(to, aoe))
 		# LT-12 §4: a mundane shot may miss as a whole (Q3: occult towers never miss).
 		# LT-30: a lit mundane tower with ignore_miss never misses (no COMBAT draw).
+		# LT-70 §2.3: a shadowed one adds shadow.mundane.miss_chance_add to the chance.
+		var miss_add := 0.0
+		if t.shadowed and config.economy.shadow != null:
+			miss_add = config.economy.shadow.mundane_miss_chance_add
 		var miss := t.def.kind == "mundane" and not (lit_mundane and beam.mundane_ignore_miss) \
-			and _roll_miss()
+			and _roll_miss(miss_add)
 		var dud := miss or astray == "empty"
 		if dud:
 			hits = []
@@ -1613,18 +1681,17 @@ func _fire_towers() -> void:
 			apply_damage(e.id, damage, t.def.id, no_armor)
 		if fuse_ticks == 0:
 			_on_hit_effects(t, s, target, hits, shot)
-		var interval := s.fire_interval
-		if lit_mundane:
-			interval *= beam.mundane_fire_interval_mult  # LT-30: decided at the shot
+		# LT-30 / LT-70 §2.3: lit x0.8 / shadowed x1.25 (mundane), decided at the shot.
+		var interval := s.fire_interval * _interval_mult(t)
 		t.cooldown_ticks = maxi(1, SimTime.ticks(interval))
 
 
 ## LT-51 (§2.2, Q4): a Silver Key cast. Picks (by target_priority) up to banish_targets of
 ## the tower's candidates that may be banished (_banishable), moves each back banish_cells
-## along its own route (P5 _push_back, the Chain pull's rewind; x occult_power_mult when the
-## tower is lit) and gives it banish_immune_seconds of banish immunity (its own status key:
+## along its own route (P5 _push_back, the Chain pull's rewind; x _power_mult: lit x0.7,
+## LT-70 shadowed x1.3) and gives it banish_immune_seconds of banish immunity (its own status key:
 ## pull immunity does not block a banish, nor the reverse). A level with damage (Corrupted)
-## then hits each one (armor applies; x occult_power_mult lit, x the madness multiplier).
+## then hits each one (armor applies; x _power_mult, x the madness multiplier).
 ## No candidate: no cast and no cooldown, the gate stays ready. In MADNESS a
 ## madness_affected gate goes astray (LT-13, one roll per cast): its picks are drawn at
 ## random from the banishable reals in range, or from the banishable fakes in range
@@ -1636,8 +1703,7 @@ func _cast_banish(t: SimTower, s: TowerDef.Level) -> void:
 	var picks := _ranked_targets(t, _banishable(s, _candidates(t, s)), n)
 	if picks.is_empty():
 		return
-	var beam := config.economy.beam
-	var power := beam.occult_power_mult if t.lit and t.def.kind == "occult" else 1.0
+	var power := _power_mult(t)
 	var damage := s.damage * power
 	var astray := ""
 	if s.madness_affected and state.sanity_state == SimState.SanityState.MADNESS:
@@ -1676,15 +1742,14 @@ func _cast_banish(t: SimTower, s: TowerDef.Level) -> void:
 ## LT-52 (§2.2): a Summoning Circle with fewer than summon_max live units summons one at
 ## its centre (spawn_ally: leash = range + 1, lifetime summon_lifetime) and spends the
 ## cooldown. At its maximum it does not summon and stays ready, so a unit gone frees a
-## slot at once. A circle lit at summon time gives the unit summon_dps x occult_power_mult
-## for its whole life (§3 "lit at summon time"); madness is applied live by _ally_combat.
+## slot at once. A circle lit (or, LT-70, shadowed) at summon time gives the unit
+## summon_dps x _power_mult for its whole life (§3 "lit at summon time"); madness is
+## applied live by _ally_combat.
 ## No miss, crit or astray (a unit bites what it holds).
 func _summon(t: SimTower, s: TowerDef.Level) -> void:
 	if allies_of(t.id).size() >= s.summon_max():
 		return
-	var dps: float = s.effects.get("summon_dps", 0.0)
-	if t.lit and t.def.kind == "occult":
-		dps *= config.economy.beam.occult_power_mult
+	var dps: float = s.effects.get("summon_dps", 0.0) * _power_mult(t)
 	var id := spawn_ally(t.id, t.def.id, t.centre(), s.effects.get("summon_hp", 0.0), dps,
 		s.effects.get("summon_speed", 0.0), s.summon_flying(),
 		SimTime.ticks(float(s.effects.get("summon_lifetime", 0.0))), s.range_cells + 1.0)
@@ -2197,10 +2262,11 @@ func threshold() -> SanityConfig.Threshold:
 	return config.sanity.thresholds[SanityConfig.STATES[state.sanity_state]]
 
 
-## LT-12 §4 miss hook: one roll on COMBAT against the state's miss_chance; no roll (and no
-## COMBAT draw) when the chance is 0, so Lucid/Whispers consume COMBAT as before.
-func _roll_miss() -> bool:
-	var chance := threshold().miss_chance
+## LT-12 §4 miss hook: one roll on COMBAT against the state's miss_chance plus `extra`
+## (LT-70: a shadowed mundane shot), capped at 1; no roll (and no COMBAT draw) when the
+## chance is 0, so Lucid/Whispers consume COMBAT as before for unshadowed shots.
+func _roll_miss(extra := 0.0) -> bool:
+	var chance := minf(1.0, threshold().miss_chance + extra)
 	if chance <= 0.0:
 		return false
 	return rng(SimRng.Stream.COMBAT).randf() < chance

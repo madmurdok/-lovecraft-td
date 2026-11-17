@@ -217,7 +217,7 @@ func test_tower_effects_maps() -> void:
 	assert_float(chain["pull_max_hp"]).is_equal(500.0)
 	assert_float(chain["pull_immune_seconds"]).is_equal(3.0)
 	assert_dict(t["rifleman"].levels[0].effects).is_empty()
-	assert_float(t["elder_sign"].levels[0].effects["slow"]).is_equal(0.35)
+	assert_float(t["elder_sign"].levels[0].effects["slow"]).is_equal(0.2)  # LT-70
 
 
 func test_madness_affected_defaults_to_occult_kind() -> void:
