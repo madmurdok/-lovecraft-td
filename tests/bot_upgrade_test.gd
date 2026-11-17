@@ -933,3 +933,168 @@ func test_unknown_strategy_name_exits_1_as_a_process() -> void:
 	assert_int(code).override_failure_message("exit %d:\n%s" % [code, text]).is_equal(1)
 	assert_str(text).contains("unknown strategy in --strategies")
 	assert_bool(text.contains("RUN ")).override_failure_message(text).is_false()
+
+
+# --- LT-70 §6: the `light` strategy and the cast term in placement ----------------------------
+
+const SL := "searchlight"
+
+
+func _consts(b: Object) -> Dictionary:
+	return b.get_script().get_script_constant_map()
+
+
+## Builds `def_id` at `cell` (gold topped up) and returns the tower.
+func _build_at(sim: Simulation, def_id: String, cell: Vector2i) -> SimTower:
+	var gold := sim.state.gold
+	sim.state.gold = 100000
+	assert_int(sim.build_tower(def_id, cell)).is_equal(R.OK)
+	sim.state.gold = gold
+	sim.drain_events()
+	return sim.tower_by_id(sim.state.tower_at[cell])
+
+
+func _dist(a: Vector2i, b: Vector2i) -> float:
+	return Vector2(a - b).length()
+
+
+## Two free buildable cells one cell apart (inside every tower's range).
+func _pair(sim: Simulation) -> Array[Vector2i]:
+	for c in _cells(sim):
+		if sim.state.map.is_buildable(c + Vector2i(1, 0)) \
+				and not sim.state.tower_at.has(c + Vector2i(1, 0)):
+			return [c, c + Vector2i(1, 0)]
+	fail("no two adjacent buildable cells")
+	return [Vector2i.ZERO, Vector2i.ZERO]
+
+
+## A copy of the config with every casts_light / casts_shadow flag cleared.
+func _no_casts() -> GameConfig:
+	var cfg := _fresh()
+	for def: TowerDef in cfg.towers.values():
+		var all: Array = [] as Array
+		all.append_array(def.levels)
+		all.append_array(def.branches.values())
+		for l: TowerDef.Level in all:
+			l.effects.erase("casts_light")
+			l.effects.erase("casts_shadow")
+	return cfg
+
+
+func test_light_is_the_last_strategy_and_builds_a_searchlight_third() -> void:
+	var b := _bot()
+	var c := _consts(b)
+	assert_str(c["STRATEGIES"][-1]).is_equal("light")
+	var sim := _sim(0)
+	var order := []
+	for i in 6:
+		order.append(b.call("_order", "light", i, sim, {}))
+	assert_array(order).is_equal([RIFLE, RIFLE, SL, HARP, RIFLE, RIFLE])
+
+
+func test_light_buys_rifleman_a_harpooner_a_and_searchlight_b() -> void:
+	var picks: Dictionary = _consts(_bot())["BRANCH_PICK"]["light"]
+	assert_dict(picks).is_equal({RIFLE: "a", HARP: "a", SL: "b"})
+
+
+func test_cast_term_signs_of_a_caster_and_of_a_firing_tower() -> void:
+	var sim := _sim(0)
+	var b := _bot()
+	var p := _pair(sim)
+	# A new caster next to one tower: light helps mundane, hurts occult; shadow the reverse.
+	var rifle := _build_at(sim, RIFLE, p[0])
+	assert_int(b.call("_cast_term", sim, SL, p[1])).is_equal(1)
+	assert_int(b.call("_cast_term", sim, SIGN, p[1])).is_equal(-1)
+	sim.sell_tower(rifle.id)
+	sim.drain_events()
+	_build_at(sim, NECRO, p[0])
+	assert_int(b.call("_cast_term", sim, SL, p[1])).is_equal(-1)
+	assert_int(b.call("_cast_term", sim, SIGN, p[1])).is_equal(1)
+
+
+func test_cast_term_of_a_firing_tower_counts_the_casters_in_range() -> void:
+	for row: Array in [[SL, RIFLE, 1], [SL, NECRO, -1], [SIGN, RIFLE, -1], [SIGN, NECRO, 1]]:
+		var sim := _sim(0)
+		var p := _pair(sim)
+		_build_at(sim, row[0], p[0])
+		assert_int(_bot().call("_cast_term", sim, row[1], p[1])) \
+			.override_failure_message("%s" % [row]).is_equal(row[2])
+	# Out of the caster's range: nothing.
+	var sim2 := _sim(0)
+	var far: Array = _cells(sim2).filter(func(c: Vector2i) -> bool:
+		return _dist(c, _cells(sim2)[0]) > 12.0)
+	_build_at(sim2, SIGN, _cells(sim2)[0])
+	assert_int(_bot().call("_cast_term", sim2, RIFLE, far[0])).is_equal(0)
+
+
+func test_cast_term_is_zero_without_casts_flags() -> void:
+	var cfg := _no_casts()
+	var sim := _sim(0, cfg)
+	var p := _pair(sim)
+	_build_at(sim, RIFLE, p[0])
+	var b := _bot_on(cfg)
+	for id: String in [SL, SIGN]:
+		assert_int(b.call("_cast_term", sim, id, p[1])).is_equal(0)
+
+
+func test_an_elder_sign_avoids_the_cell_covering_a_rifleman_and_a_searchlight_seeks_it() -> void:
+	var weight: int = _consts(_bot())["CAST_WEIGHT"]
+	# Sign: the top-scored cell has a rifleman next to it, so the pick moves off it; with
+	# casts_* removed from the config the pick stays on the top cell (today's placement).
+	var sim := _sim(0)
+	var b := _bot()
+	var top: Vector2i = b.call("_best_cell", sim, SIGN)
+	var near: Vector2i = _cells(sim).filter(func(c: Vector2i) -> bool:
+		return c != top and _dist(c, top) <= 2.0)[0]
+	_build_at(sim, RIFLE, near)
+	assert_int(b.call("_cast_term", sim, SIGN, top)).is_equal(-1)
+	assert_bool(b.call("_best_cell", sim, SIGN) != top).is_true()
+	var cfg := _no_casts()
+	var plain := _bot_on(cfg)
+	var sim2 := _sim(0, cfg)
+	var top2: Vector2i = plain.call("_best_cell", sim2, SIGN)
+	_build_at(sim2, RIFLE, _cells(sim2).filter(func(c: Vector2i) -> bool:
+		return c != top2 and _dist(c, top2) <= 2.0)[0])
+	assert_that(plain.call("_best_cell", sim2, SIGN)).is_equal(top2)
+	# Searchlight: find a rifleman spot r and a cell c2 within the lamp's range 3 of r whose
+	# path score beats the top cell's by less than the cast weight, with the top out of r's
+	# reach; the lamp then goes to c2, while without casts it stays on the top cell.
+	var sim3 := _sim(0)
+	var b3 := _bot()
+	var top3: Vector2i = b3.call("_best_cell", sim3, SL)
+	var cache: Array = b3.get("_score_cache")[SL]
+	var top_score: int = cache[0][0]
+	var found := false
+	for r in _cells(sim3):
+		if r == top3 or _dist(r, top3) <= 3.0:
+			continue
+		for e: Array in cache:
+			var c2: Vector2i = e[1]
+			if c2 != r and _dist(c2, r) <= 3.0 and e[0] + weight > top_score:
+				_build_at(sim3, RIFLE, r)
+				assert_int(b3.call("_cast_term", sim3, SL, c2)).is_equal(1)
+				assert_that(b3.call("_best_cell", sim3, SL)).is_not_equal(top3)
+				found = true
+				break
+		if found:
+			break
+	assert_bool(found).override_failure_message("no rifleman spot found for the lamp").is_true()
+
+
+func test_shadow_radius_and_beam_lit_helpers() -> void:
+	var sim := _sim(0)
+	var b := _bot()
+	var p := _pair(sim)
+	var far: Vector2i = _cells(sim).filter(
+		func(c: Vector2i) -> bool: return _dist(c, p[0]) > 12.0)[0]
+	_build_at(sim, SIGN, p[0])
+	assert_bool(b.call("_in_shadow_radius", sim, p[1])).is_true()
+	assert_bool(b.call("_in_shadow_radius", sim, far)).is_false()
+	var sim2 := _sim(0)
+	var q := _pair(sim2)
+	_build_at(sim2, SL, q[0])
+	var r := _build_at(sim2, RIFLE, q[1])
+	assert_bool(b.call("_beam_lit", sim2, r)).is_false()  # a Searchlight covers it
+	var sim3 := _sim(0)
+	var r3 := _build_at(sim3, RIFLE, _pair(sim3)[1])
+	assert_bool(b.call("_beam_lit", sim3, r3)).is_true()
