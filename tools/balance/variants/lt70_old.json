@@ -1,0 +1,32 @@
+{
+  "description": "LT-70 arm A: pre-LT-70 numbers: Searchlight slows 0.2/0.25/0.25/0.4, Elder Sign slows 0.35, no casts_light/casts_shadow flags, neutral shadow (the old b damage_taken 1.2 cannot be patched in: a patch never adds keys)",
+  "patch": {
+    "towers.json": {
+      "towers": {
+        "searchlight": {
+          "levels": {
+            "0": { "effects": { "slow": 0.2, "casts_light": 0 } },
+            "1": { "effects": { "slow": 0.25, "casts_light": 0 } }
+          },
+          "branches": {
+            "a": { "effects": { "slow": 0.25, "casts_light": 0 } },
+            "b": { "effects": { "slow": 0.4, "casts_light": 0 } }
+          }
+        },
+        "elder_sign": {
+          "levels": { "*": { "effects": { "slow": 0.35, "casts_shadow": 0 } } },
+          "branches": {
+            "a": { "effects": { "slow": 0.35, "casts_shadow": 0 } },
+            "b": { "effects": { "slow": 0.35, "casts_shadow": 0 } }
+          }
+        }
+      }
+    },
+    "economy.json": {
+      "shadow": {
+        "mundane": { "fire_interval_mult": 1.0, "miss_chance_add": 0.0 },
+        "occult": { "power_mult": 1.0 }
+      }
+    }
+  }
+}
