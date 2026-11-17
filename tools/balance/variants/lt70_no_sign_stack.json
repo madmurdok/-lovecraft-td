@@ -1,0 +1,6 @@
+{
+  "description": "LT-70 arm C (design 6.1): shadowed occult power x1.15 instead of x1.3, a lab-only proxy for how much sign stacking is worth (signs are not made immune: a patch cannot add a flag)",
+  "patch": {
+    "economy.json": { "shadow": { "occult": { "power_mult": 1.15 } } }
+  }
+}
