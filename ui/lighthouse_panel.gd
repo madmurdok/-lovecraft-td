@@ -40,6 +40,7 @@ func open() -> void:
 	visible = true
 	game.board.selected_cell = game.sim.state.map.lighthouse
 	game.board.selected_range = 0.0
+	game.board.selected_cast = ""
 	refresh()
 
 

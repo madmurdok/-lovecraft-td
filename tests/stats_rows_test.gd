@@ -64,7 +64,7 @@ func test_rows_are_the_ten_rows_of_the_note_in_order() -> void:
 		keys.append(row[0])
 		labels.append(row[1])
 	assert_array(labels).is_equal(["Attack", "Damage", "Every, s", "DPS", "Range", "Hits",
-		"Sanity/kill", "Reserve", "In beam", "Special"])
+		"Sanity/kill", "Reserve", "In light", "In shadow", "Special"])
 	for id: String in _cfg.towers:
 		for st: Array in _states(_def(id)):
 			var v := TowerInfo.row_values(_def(id), st[1], _cfg)
@@ -345,7 +345,7 @@ func test_special_cell_says_what_no_row_says() -> void:
 	_eq(TowerInfo.row_values(_def("dynamite_crew"), dyn, _cfg)["special"],
 		"r %s, fuse %s s" % [_n(_e(dyn, "aoe_radius")), _n(_e(dyn, "fuse_seconds"))], "dynamite")
 	var sign := _def("elder_sign").levels[0]
-	_eq(TowerInfo.special_short(sign), "Slow %s%%, +%s%% taken" % [_n(_e(sign, "slow") * 100.0),
+	_eq(TowerInfo.special_short(sign), "Slow %s%%, +%s%% taken, shadows" % [_n(_e(sign, "slow") * 100.0),
 		_n((_e(sign, "damage_taken_multiplier") - 1.0) * 100.0)], "elder sign")
 	var res := _def("resonator").levels[0]
 	_eq(TowerInfo.special_short(res), "No armor, ×%s at 0 sanity" % _n(1.0

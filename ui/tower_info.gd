@@ -14,6 +14,7 @@ const CELL_DASH := "—"  ## LT-43 §1: a table cell with no value (never "0", n
 const LIT_MARK := "*"  ## LT-43 §5 (Q4): after a value the lighthouse beam changes now
 const NO_MISSES_LIT := "No misses while lit"  ## LT-43 §5: the Fraying line of a lit tower
 const NOW_LIT := "* In the beam now: "  ## LT-43 §5: the status line of a lit tower
+const NOW_SHADOW := "* In shadow now: "  ## LT-70 §5: the status line of a shadowed tower
 
 ## Player-facing text for a refused build or upgrade (presentation only).
 const REASONS := {
@@ -42,7 +43,7 @@ const PRIORITY_NAMES := {
 ## Effect lines in display order: the keys one line reads (a pair shares a line).
 const EFFECT_GROUPS := [
 	["pierce"], ["aoe_radius"], ["fuse_seconds"], ["ignore_armor"], ["sanity_scaling"],
-	["reveal_fakes"], ["slow"], ["damage_taken_multiplier"],
+	["reveal_fakes"], ["slow"], ["damage_taken_multiplier"], ["casts_light"], ["casts_shadow"],
 	["crit_chance", "crit_multiplier"], ["burst_targets"], ["bleed_dps", "bleed_seconds"],
 	["pull_cells", "pull_max_hp", "pull_immune_seconds"], ["strip_armor"],
 	["banish_cells", "banish_targets"], ["banish_max_hp", "banish_immune_seconds"],
@@ -110,9 +111,6 @@ static func effect_lines(effects: Dictionary, suffix := true) -> PackedStringArr
 		if present:
 			out.append(_effect_text(group[0], effects) + (COMING_SOON if pending and suffix else ""))
 	for key: String in effects:
-		# LT-70: the caster flags get their own text in the UI slice; never a raw line.
-		if key in TowerDef.Level.CAST_EFFECTS:
-			continue
 		if not seen.has(key) and is_active(effects, key):
 			out.append("%s: %s" % [key, num(effects[key])]
 				+ (COMING_SOON if is_pending(key) and suffix else ""))
@@ -120,10 +118,11 @@ static func effect_lines(effects: Dictionary, suffix := true) -> PackedStringArr
 
 
 ## Kind lines, one line under the stats table (LT-43 §1): mundane Fraying misses ("No
-## misses while lit" when `no_misses`: lit, with beam.mundane_ignore_miss), occult madness
-## behaviour. The kill regen is the table's Sanity/kill row, not a line here.
+## misses while lit" when `no_misses`: lit, with beam.mundane_ignore_miss; LT-70 §5: then
+## "+10% misses in shadow" when `shadow_miss` > 0: shadowed, shadow.mundane_miss_chance_add),
+## occult madness behaviour. The kill regen is the table's Sanity/kill row, not a line here.
 static func kind_lines(def: TowerDef, s: TowerDef.Level, sanity: SanityConfig,
-		no_misses := false) -> PackedStringArray:
+		no_misses := false, shadow_miss := 0.0) -> PackedStringArray:
 	var out := PackedStringArray()
 	if def.kind == "mundane":
 		if sanity == null:
@@ -133,6 +132,8 @@ static func kind_lines(def: TowerDef, s: TowerDef.Level, sanity: SanityConfig,
 		if s.damage > 0.0 and fraying != null and fraying.miss_chance > 0.0:
 			out.append(NO_MISSES_LIT if no_misses
 				else "May miss while Fraying (%s%%)" % num(fraying.miss_chance * 100.0))
+		if s.damage > 0.0 and shadow_miss > 0.0:
+			out.append("+%s%% misses in shadow" % num(shadow_miss * 100.0))
 	elif s.acts():
 		# Madness changes shots only (x damage, astray); an aura has none. LT-51: a gate
 		# without damage only goes astray. LT-52: a circle's units deal x damage, never
@@ -199,7 +200,7 @@ static func special_delta_lines(from: TowerDef.Level, to: TowerDef.Level) -> Pac
 const ROWS := [
 	["attack", "Attack"], ["damage", "Damage"], ["every", "Every, s"], ["dps", "DPS"],
 	["range", "Range"], ["hits", "Hits"], ["kill", "Sanity/kill"], ["reserve", "Reserve"],
-	["beam", "In beam"], ["special", "Special"],
+	["beam", "In light"], ["shadow", "In shadow"], ["special", "Special"],
 ]
 ## Effect keys a table row says already (Attack "Line", Hits "All"): no special line.
 const ROW_EFFECT_KEYS: PackedStringArray = ["pierce", "summon_flying"]
@@ -220,6 +221,7 @@ static func row_values(def: TowerDef, s: TowerDef.Level, cfg: GameConfig,
 		"kill": kill_text(def, s, cfg),
 		"reserve": num(s.sanity_reserve) if s.sanity_reserve > 0.0 else CELL_DASH,
 		"beam": beam_text(def, s, cfg),
+		"shadow": beam_text(def, s, cfg, true),
 		"special": special_short(s),
 	}
 
@@ -323,48 +325,62 @@ static func kill_text(def: TowerDef, s: TowerDef.Level, cfg: GameConfig) -> Stri
 	return "+" + num(cfg.sanity.regen_mundane_kill)
 
 
+## LT-70 §5: the multipliers of the light (beam.*) or, with `shadow`, of the shadow
+## (shadow.*): [mundane fire_interval_mult, occult power_mult]; [] when that block is absent.
+static func state_mults(cfg: GameConfig, shadow := false) -> Array:
+	if cfg == null or cfg.economy == null:
+		return []
+	if shadow:
+		var sh := cfg.economy.shadow
+		return [] if sh == null else [sh.mundane_fire_interval_mult, sh.occult_power_mult]
+	var b := cfg.economy.beam
+	return [] if b == null else [b.mundane_fire_interval_mult, b.occult_power_mult]
+
+
 ## LT-30 beam effect as a percent: mundane fire rate "+25%" (1 / fire_interval_mult - 1),
 ## occult power "−30%" (power_mult - 1); CELL_DASH for a mundane support tower (it never
-## fires) or a neutral multiplier.
-static func beam_text(def: TowerDef, s: TowerDef.Level, cfg: GameConfig) -> String:
-	var pct := beam_percent(def, s, cfg)
+## fires) or a neutral multiplier. LT-70: `shadow` reads the shadow block ("−20%", "+30%").
+static func beam_text(def: TowerDef, s: TowerDef.Level, cfg: GameConfig, shadow := false) -> String:
+	var pct := beam_percent(def, s, cfg, shadow)
 	if pct == 0.0:
 		return CELL_DASH
 	return ("+" if pct > 0.0 else MINUS) + num(roundf(absf(pct))) + "%"
 
 
-## The beam percent beam_text shows (0 when none applies).
-static func beam_percent(def: TowerDef, s: TowerDef.Level, cfg: GameConfig) -> float:
-	if cfg == null or cfg.economy == null or cfg.economy.beam == null:
+## The light (or, with `shadow`, the shadow) percent beam_text shows (0 when none applies).
+static func beam_percent(def: TowerDef, s: TowerDef.Level, cfg: GameConfig,
+		shadow := false) -> float:
+	var m := state_mults(cfg, shadow)
+	if m.is_empty():
 		return 0.0
-	var b := cfg.economy.beam
 	if def.kind == "mundane":
-		if s.damage <= 0.0 or b.mundane_fire_interval_mult <= 0.0:
+		if s.damage <= 0.0 or m[0] <= 0.0:
 			return 0.0
-		return (1.0 / b.mundane_fire_interval_mult - 1.0) * 100.0
-	return (b.occult_power_mult - 1.0) * 100.0
+		return (1.0 / m[0] - 1.0) * 100.0
+	return (m[1] - 1.0) * 100.0
 
 
 ## LT-43 §5 (Q4): the cells the beam changes on a lit tower, value + LIT_MARK, keyed like
 ## row_values: mundane Every x fire_interval_mult and DPS / it; occult Damage and DPS x
 ## power_mult (a circle: its unit DPS and DPS, as Simulation._summon gives the units
-## it summons while lit). Empty when nothing changes.
+## it summons while lit). Empty when nothing changes. LT-70: `shadow` takes the shadow
+## multipliers (a shadowed tower), with the same mark.
 static func lit_values(def: TowerDef, s: TowerDef.Level, cfg: GameConfig,
-		sanity_now := -1.0) -> Dictionary:
+		sanity_now := -1.0, shadow := false) -> Dictionary:
 	var out := {}
-	if cfg == null or cfg.economy == null or cfg.economy.beam == null:
+	var mults := state_mults(cfg, shadow)
+	if mults.is_empty():
 		return out
-	var b := cfg.economy.beam
 	var dps := dps_value(s)
 	if s.is_beam() and sanity_now >= 0.0:
 		dps *= s.sanity_factor(sanity_now, cfg.sanity.max_sanity)
 	if def.kind == "mundane":
-		var m := b.mundane_fire_interval_mult
+		var m: float = mults[0]
 		if s.damage > 0.0 and m > 0.0 and m != 1.0:
 			out["every"] = num(s.fire_interval * m) + LIT_MARK
 			out["dps"] = one_decimal(dps / m) + LIT_MARK
-	elif b.occult_power_mult != 1.0 and (s.damage > 0.0 or s.is_summon() and dps > 0.0):
-		var pm := b.occult_power_mult
+	elif mults[1] != 1.0 and (s.damage > 0.0 or s.is_summon() and dps > 0.0):
+		var pm: float = mults[1]
 		if s.is_summon():
 			# "12.6*", no "/s": "12.6/s*" is cut in a 3-column panel
 			var unit: float = s.effects.get("summon_dps", 0.0) * pm
@@ -377,11 +393,14 @@ static func lit_values(def: TowerDef, s: TowerDef.Level, cfg: GameConfig,
 
 ## LT-43 §5: the effects of an occult aura, gate or circle while lit (slow, the taken bonus,
 ## the armor strip, the banish distance and a new unit's summon_dps x power_mult, as
-## Simulation applies them); {} when the beam does not change them.
-static func lit_effects(def: TowerDef, s: TowerDef.Level, cfg: GameConfig) -> Dictionary:
-	if def.kind != "occult" or cfg == null or cfg.economy == null or cfg.economy.beam == null:
+## Simulation applies them); {} when the beam does not change them. LT-70: `shadow` takes
+## shadow.occult_power_mult (a shadowed tower).
+static func lit_effects(def: TowerDef, s: TowerDef.Level, cfg: GameConfig,
+		shadow := false) -> Dictionary:
+	var mults := state_mults(cfg, shadow)
+	if def.kind != "occult" or mults.is_empty():
 		return {}
-	var pm := cfg.economy.beam.occult_power_mult
+	var pm: float = mults[1]
 	if pm == 1.0 or (s.acts() and not s.is_banish() and not s.is_summon()):
 		return {}  # an aura, a gate or a circle only
 	var e := s.effects.duplicate()
@@ -394,14 +413,21 @@ static func lit_effects(def: TowerDef, s: TowerDef.Level, cfg: GameConfig) -> Di
 
 
 ## LT-43 §5: the status line under the role of a lit tower; "" when the beam changes nothing.
-static func lit_line(def: TowerDef, s: TowerDef.Level, cfg: GameConfig) -> String:
-	var pct := beam_percent(def, s, cfg)
+## LT-70 §5: with `shadow`, a shadowed tower's line: NOW_SHADOW + "fire −20%, +10% misses"
+## (mundane shooter) or "+30% power" (occult).
+static func lit_line(def: TowerDef, s: TowerDef.Level, cfg: GameConfig, shadow := false) -> String:
+	var pct := beam_percent(def, s, cfg, shadow)
 	if pct == 0.0:
 		return ""
+	var head := NOW_SHADOW if shadow else NOW_LIT
+	var signed := "%s%s%%" % [MINUS if pct < 0.0 else "+", num(roundf(absf(pct)))]
 	if def.kind == "mundane":
-		var t := NOW_LIT + "fire +%s%%" % num(roundf(pct))
+		var t := head + "fire " + signed
+		if shadow:
+			var add := cfg.economy.shadow.mundane_miss_chance_add
+			return t + (", +%s%% misses" % num(add * 100.0) if add > 0.0 else "")
 		return t + (", no misses" if cfg.economy.beam.mundane_ignore_miss else "")
-	return NOW_LIT + "%s%s%% power" % [MINUS if pct < 0.0 else "+", num(roundf(absf(pct)))]
+	return head + signed + " power"
 
 
 ## LT-43 Q3: the panel line under a sanity-scaled tower's table.
@@ -449,6 +475,10 @@ static func special_short(s: TowerDef.Level, effects: Variant = null) -> String:
 		var n: float = e["summon_max"]
 		parts.append("%s unit%s, %s HP" % [num(n), "" if n == 1.0 else "s",
 			num(e.get("summon_hp", 0.0))])
+	if is_active(e, "casts_light"):  # LT-70
+		parts.append("lights")
+	if is_active(e, "casts_shadow"):
+		parts.append("shadows")
 	if parts.is_empty():
 		return CELL_DASH
 	var t := ", ".join(parts)
@@ -537,6 +567,10 @@ static func _effect_text(first_key: String, e: Dictionary) -> String:
 			return "Unit speed %s cells/s" % num(e.get("summon_speed", 0.0))
 		"summon_flying":  # LT-52 (Byakhee)
 			return "Units fly, hold flyers"
+		"casts_light":  # LT-70 §5: at night only
+			return "Lights towers and foes"
+		"casts_shadow":  # LT-70 §5: at night only
+			return "Shadows nearby towers"
 		"banish_max_hp":  # LT-51 (Q4): the cap is shown
 			return "Max %s HP; immune %s s" % [num(e.get("banish_max_hp", 0.0)),
 				num(e.get("banish_immune_seconds", 0.0))]
