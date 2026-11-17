@@ -104,6 +104,26 @@ func test_flare_keeps_the_cone_and_burns_a_whole_board_light() -> void:
 	assert_object(l.beam.texture).is_same(normal)
 
 
+## LT-69/S2: the flare light's bright core (FLARE_CORE of its radius) reaches every board
+## corner, wherever the lighthouse stands.
+func test_flare_cover_reaches_every_board_corner() -> void:
+	var m := _game.sim.state.map
+	var maps: Array[MapDef] = [m]
+	for cell: Vector2i in [Vector2i(0, 0), Vector2i(m.width - 1, m.height - 1), Vector2i(3, 2)]:
+		var alt := MapDef.new()
+		alt.width = m.width
+		alt.height = m.height
+		alt.lighthouse = cell
+		maps.append(alt)
+	for map in maps:
+		var core := Lighting.flare_cover_cells(map) * Lighting.FLARE_CORE
+		var c := Vector2(map.lighthouse) + Vector2(0.5, 0.5)
+		for corner: Vector2 in [Vector2.ZERO, Vector2(map.width, 0), Vector2(0, map.height),
+				Vector2(map.width, map.height)]:
+			assert_float(c.distance_to(corner)).override_failure_message(
+				"lighthouse %s corner %s" % [map.lighthouse, corner]).is_less_equal(core + 1e-6)
+
+
 # --- lighthouse panel --------------------------------------------------------------------------
 
 func test_a_click_on_the_lighthouse_opens_its_panel_and_close_panels_closes_it() -> void:

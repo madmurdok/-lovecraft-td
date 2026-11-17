@@ -184,3 +184,61 @@ func test_a_mundane_tower_fires_faster_while_the_flare_burns() -> void:
 		assert_int(ticks.size()).is_greater_equal(2)
 		gaps.append(ticks[1] - ticks[0])
 	assert_array(gaps).is_equal([maxi(1, SimTime.ticks(fi)), maxi(1, SimTime.ticks(fi * m))])
+
+
+# --- LT-69/S2: duration by level, far corners, no flare block ---------------------------------
+
+## b4: the burn time follows the lighthouse level (5 / 6 / 7 s), in flare_ticks_left and in
+## the FLARE_FIRED ticks, and the light goes out after exactly that many ticks.
+func test_duration_follows_the_lighthouse_level() -> void:
+	var expected := [5.0, 6.0, 7.0]
+	for level in 3:
+		var sim := _away()
+		sim.state.lighthouse_level = level
+		assert_float(sim.flare_seconds()).is_equal(expected[level])
+		var n := SimTime.ticks(expected[level])
+		sim.state.flare_cooldown_ticks = 0
+		sim.state.oil = sim.config.economy.flare.cost_oil
+		sim.drain_events()
+		assert_int(sim.fire_flare()).is_equal(R.OK)
+		assert_int(sim.state.flare_ticks_left).override_failure_message("L%d" % (level + 1)).is_equal(n)
+		var fired := of_type(sim.drain_events(), SimEvent.Type.FLARE_FIRED)
+		assert_int(fired.size()).is_equal(1)
+		assert_int(fired[0].data["ticks"]).override_failure_message("L%d" % (level + 1)).is_equal(n)
+		run(sim, n - 1)
+		assert_bool(_lit(sim, Vector2(-30, 0))).is_true()
+		run(sim, 1)
+		assert_int(sim.state.flare_ticks_left).is_equal(0)
+		assert_bool(_lit(sim, Vector2(-30, 0))).is_false()
+
+
+## b5: no lighthouse.flare block, no seconds.
+func test_flare_seconds_is_zero_without_a_flare_block() -> void:
+	var sim := _dark()
+	assert_float(sim.flare_seconds()).is_greater(0.0)
+	sim.config.economy.flare = null
+	assert_float(sim.flare_seconds()).is_equal(0.0)
+
+
+## b1/b2: a tower and enemies at the far end of the map (the lighthouse is 14 cells away)
+## are lit and slowed only while the flare burns; real and fake alike, fakes unrevealed.
+func test_far_tower_and_enemies_are_lit_and_slowed_by_the_flare() -> void:
+	var sim := _away()
+	var f := sim.config.economy.flare
+	var tower := build(sim, RIFLE, Vector2i(0, 1))
+	var real := put(sim, "cultist", 0.0)
+	var fake := put(sim, "cultist", 0.0, HUGE_HP, true)
+	sim.step()
+	for lit_thing: Variant in [tower, real, fake]:
+		assert_bool(lit_thing.lit).is_false()
+	_fire(sim)
+	sim.step()
+	for lit_thing: Variant in [tower, real, fake]:
+		assert_bool(lit_thing.lit).is_true()
+	assert_float(real.speed_mult).is_equal_approx(f.enemy_speed_mult, 1e-9)
+	assert_float(fake.speed_mult).is_equal_approx(f.enemy_speed_mult, 1e-9)
+	assert_bool(fake.revealed).is_false()
+	run(sim, SimTime.ticks(sim.flare_seconds()))
+	for lit_thing: Variant in [tower, real, fake]:
+		assert_bool(lit_thing.lit).is_false()
+	assert_float(real.speed_mult).is_equal(1.0)

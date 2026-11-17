@@ -112,3 +112,27 @@ func test_panel_and_hud_flare_texts_come_from_the_config() -> void:
 	s.lighthouse_level = 1
 	h.refresh()
 	assert_str(h.flare_button.tooltip_text).is_equal("Lights the whole map for 4.5 s")
+
+
+## LT-69/S2: shipped seconds 5 / 6 / 7 reach the HUD tooltip and the panel at every level;
+## the upgrade line names the next level's seconds and none at the top.
+func test_shipped_flare_seconds_reach_the_hud_and_the_panel_per_level() -> void:
+	var p := _game.lighthouse_panel
+	var h := _game.hud
+	var s := _game.sim.state
+	s.gold = 100000
+	s.oil = _game.sim.config.economy.flare.cost_oil
+	assert_int(_game.call_wave()).is_equal(R.OK)
+	p.open()
+	var seconds := ["5", "6", "7"]
+	for level in 3:
+		s.lighthouse_level = level
+		h.refresh()
+		p.refresh()
+		assert_str(h.flare_button.tooltip_text).is_equal(
+			"Lights the whole map for %s s" % seconds[level])
+		assert_str(p.oil_label.text).contains("whole map, %s s" % seconds[level])
+		if level < 2:
+			assert_str(p.upgrade_button.text).contains("flare %s s" % seconds[level + 1])
+		else:
+			assert_str(p.upgrade_button.text).is_equal("Max level")

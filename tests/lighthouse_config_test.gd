@@ -194,6 +194,28 @@ func test_flare_seconds_one_per_level() -> void:
 	assert_array(c.economy.flare.seconds).is_equal([0.5, 8.5, 29.0])
 
 
+## LT-69/S2: a scalar seconds is rejected, and the cooldown must beat the LARGEST entry
+## (not just the first or the last one).
+func test_flare_seconds_must_be_an_array_and_cooldown_beats_the_largest() -> void:
+	_rejects([
+		["lighthouse.flare.seconds", func(l: Dictionary) -> void: l["flare"]["seconds"] = 5, ""],
+		["lighthouse.flare.cooldown_seconds",
+			func(l: Dictionary) -> void:
+				l["flare"]["seconds"] = [5, 40, 7]
+				l["flare"]["cooldown_seconds"] = 30,
+			"must be > every seconds entry"],
+		["lighthouse.flare.cooldown_seconds",
+			func(l: Dictionary) -> void:
+				l["flare"]["seconds"] = [5, 6, 29]
+				l["flare"]["cooldown_seconds"] = 29,
+			"must be > every seconds entry"],
+	])
+	var c := _accepts(func(l: Dictionary) -> void:
+		l["flare"]["seconds"] = [5, 29, 7]
+		l["flare"]["cooldown_seconds"] = 29.5)
+	assert_array(c.economy.flare.seconds).is_equal([5.0, 29.0, 7.0])
+
+
 func test_unknown_fields() -> void:
 	_rejects([
 		["lighthouse.beam.color", func(l: Dictionary) -> void: l["beam"]["color"] = 1, "unknown field"],
