@@ -67,16 +67,16 @@ func _escape() -> void:
 
 
 func _cell_centre(cell: Vector2i) -> Vector2:
-	return _game.board.position + (Vector2(cell) + Vector2(0.5, 0.5)) * Board.CELL
+	return _game.board.view.cell_to_screen(_game.sim.state.map.grid.centre(cell))
 
 
 func _cell_rect(cell: Vector2i) -> Rect2:
-	return Rect2(_game.board.position + Vector2(cell) * Board.CELL, Vector2.ONE * Board.CELL)
+	var v := _game.board.view
+	return Rect2(v.cell_to_screen(Vector2(cell)), Vector2.ONE * v.cells_to_px(1.0))
 
 
 func _board() -> Rect2:
-	var map := _game.sim.state.map
-	return Rect2(Game.BOARD_ORIGIN, Vector2(map.width, map.height) * Board.CELL)
+	return _game.board.view.world_rect()
 
 
 ## The first free buildable cell of row `y` (or of the whole map for y < 0).

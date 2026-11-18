@@ -82,18 +82,20 @@ static func ambient(p_night: float) -> Color:
 
 func _ready() -> void:
 	var m := game.sim.state.map
-	var lh_center := m.grid.centre(m.lighthouse) * Board.CELL
+	var view := game.board.view
+	var lh_center := view.cell_to_world(m.grid.centre(m.lighthouse))
 
 	fog = SeaFog.new()
 	fog.name = "SeaFog"
 	fog.map = m
+	fog.view = view
 	var mat := ShaderMaterial.new()
 	mat.shader = FOG_SHADER
 	fog.material = mat
 	add_child(fog)
 
 	glow = _light("LighthouseGlow", _glow_texture(), BEAM_COLOR, 1.0,
-		LIGHTHOUSE_GLOW_CELLS * 2.0 * Board.CELL / 256.0)
+		view.cells_to_px(LIGHTHOUSE_GLOW_CELLS * 2.0) / 256.0)
 	glow.position = lh_center
 	flare_light = _light("FlareLight", _flare_texture(), BEAM_COLOR, 0.0, 1.0)
 	flare_light.position = lh_center
@@ -138,10 +140,11 @@ func _apply_night() -> void:
 ## widens it: LT-69 lights the whole board instead, _sync_flare).
 func _sync_beams() -> void:
 	var sim := game.sim
-	var lh_center := sim.state.map.grid.centre(sim.state.map.lighthouse) * Board.CELL
+	var view := game.board.view
+	var lh_center := view.cell_to_world(sim.state.map.grid.centre(sim.state.map.lighthouse))
 	var cfg := sim.config.economy
 	var tex := _beam_texture(atan(cfg.beam.half_width_ratio))
-	var tex_scale := cfg.beam.reach_cells * 2.0 * Board.CELL / BEAM_TEX_SIZE
+	var tex_scale := view.cells_to_px(cfg.beam.reach_cells * 2.0) / BEAM_TEX_SIZE
 	var want := sim.beam_count()
 	while beams.size() < want:
 		var b := _light("Beam%d" % beams.size(), tex, BEAM_COLOR, BEAM_ENERGY * night, tex_scale)
@@ -164,8 +167,8 @@ func _sync_beams() -> void:
 ## over FLARE_EASE_IN after the shot and out over the last FLARE_EASE_OUT seconds, x night.
 func _sync_flare() -> void:
 	var sim := game.sim
-	flare_light.texture_scale = flare_cover_cells(sim.state.map) * 2.0 * Board.CELL \
-		/ FLARE_TEX_SIZE
+	flare_light.texture_scale = game.board.view.cells_to_px(
+		flare_cover_cells(sim.state.map) * 2.0) / FLARE_TEX_SIZE
 	flare_light.energy = FLARE_ENERGY * night * flare_strength(sim)
 	flare_light.visible = flare_light.energy > 0.0
 
@@ -205,9 +208,10 @@ func _sync_tower_lights() -> void:
 		seen[t.id] = true
 		if not _tower_lights.has(t.id):
 			var l := _light("TowerLight%d" % t.id, _glow_texture(), TOWER_LIGHT_COLOR,
-				TOWER_LIGHT_ENERGY * night, TOWER_LIGHT_CELLS * 2.0 * Board.CELL / 256.0)
+				TOWER_LIGHT_ENERGY * night,
+				game.board.view.cells_to_px(TOWER_LIGHT_CELLS * 2.0) / 256.0)
 			l.visible = night > 0.0
-			l.position = game.sim.state.map.grid.centre(t.cell) * Board.CELL
+			l.position = game.board.view.cell_to_world(game.sim.state.map.grid.centre(t.cell))
 			_tower_lights[t.id] = l
 	for id in _tower_lights.keys():
 		if not seen.has(id):
@@ -292,9 +296,9 @@ static func _beam_texture(half_angle: float) -> ImageTexture:
 ## Fog quads over every water cell; the shader does the noise.
 class SeaFog extends Node2D:
 	var map: MapDef
+	var view: BoardView  ## the board's view (tiles from GridTopology.polygon)
 
 	func _draw() -> void:
 		for c in map.grid.cells():
 			if map.kind_at(c) == MapDef.Kind.WATER:
-				draw_rect(Rect2(Vector2(c) * Board.CELL, Vector2(Board.CELL, Board.CELL)),
-					Color.WHITE)
+				draw_rect(view.cell_rect(c), Color.WHITE)

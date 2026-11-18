@@ -21,6 +21,7 @@ extends Node2D
 ## LT-41 (LT-38 P2): the static map (cells, grid, start, lighthouse) lives in a child
 ## MapLayer drawn behind the board's own draw and redrawn only when the map changes, not
 ## every frame. Same parent, so the same CanvasModulate and light mask apply to it.
+## LT-35: every pixel comes from `view` (BoardView): picking, positions, lengths and tiles.
 
 signal cell_clicked(cell: Vector2i)
 signal outside_clicked  ## LT-28: a left click no control took that misses the grid
@@ -41,7 +42,6 @@ const PREVIEW_BORDER := 2.0
 const SHADOW_MARK_COLOR := Color(0.22, 0.12, 0.4)  ## LT-70 §5: the shadowed corner dot
 const SHADOW_MARK_RIM := Color(0.85, 0.8, 1.0)  ## its pale rim (reads on a dark plate)
 const WARD_SHADOW_FILL := Color(0.05, 0.02, 0.1, 0.22)  ## LT-70 §5: a sign's shadow area
-const CELL := 40.0  ## pixels per cell
 const FLASH_SECONDS := 0.25
 
 const COLOR_BUILDABLE := Color(0.30, 0.36, 0.28)
@@ -201,11 +201,14 @@ var _phantom_ttl := 0.0
 var _time := 0.0  ## seconds of effects time, drives the flicker
 var _fx_rng := RandomNumberGenerator.new()  ## presentation-only; never the sim's RNG
 var map_layer: MapLayer  ## LT-41: the cached static map, drawn below everything else here
+var view := BoardView.new()  ## LT-35: cells <-> pixels; the only holder of the pixel scale
 
 
 func _ready() -> void:
 	_fx_rng.randomize()
+	position = view.origin()
 	map_layer = MapLayer.new()
+	map_layer.view = view
 	map_layer.name = "MapLayer"
 	map_layer.show_behind_parent = true  # below the phantom, towers, enemies and effects
 	add_child(map_layer)
@@ -216,6 +219,7 @@ func _ready() -> void:
 ## Hands the sim's current map to the map layer; it redraws only if the map changed.
 func sync_map() -> void:
 	if game != null and game.sim != null and map_layer != null:
+		view.grid = game.sim.state.map.grid
 		map_layer.set_map(game.sim.state.map)
 
 
@@ -223,26 +227,13 @@ func _unhandled_input(event: InputEvent) -> void:
 	var mb := event as InputEventMouseButton
 	if mb == null or not mb.pressed or mb.button_index != MOUSE_BUTTON_LEFT:
 		return
-	var cell := cell_at((make_input_local(mb) as InputEventMouseButton).position)
-	if game.sim.state.map.grid.contains(cell):
+	sync_map()
+	var cell := view.cell_at_screen((game.make_input_local(mb) as InputEventMouseButton).position)
+	if cell != BoardView.OFF_BOARD:
 		get_viewport().set_input_as_handled()
 		cell_clicked.emit(cell)
 	else:
 		outside_clicked.emit()
-
-
-## Local pixel position -> grid cell (may be out of bounds).
-func cell_at(local: Vector2) -> Vector2i:
-	return game.sim.state.map.grid.cell_at(local / CELL)
-
-
-## Grid cell -> top-left in this node's local pixels.
-func cell_origin(cell: Vector2i) -> Vector2:
-	return origin_of(cell)
-
-
-static func origin_of(cell: Vector2i) -> Vector2:
-	return Vector2(cell) * CELL
 
 
 func on_event(ev: SimEvent) -> void:
@@ -562,18 +553,18 @@ func _draw() -> void:
 	_draw_allies(s)
 	_draw_effects()
 	if game.sim.state.map.grid.contains(selected_cell):
-		draw_rect(Rect2(cell_origin(selected_cell), Vector2(CELL, CELL)), COLOR_SELECT, false, 2.0)
+		draw_rect(view.cell_rect(selected_cell), COLOR_SELECT, false, 2.0)
 		if not selected_glyph.is_empty():  # LT-61 §7: placed like _draw_tower's letter
-			var g := Rect2(cell_origin(selected_cell), Vector2(CELL, CELL)).grow(-6)
+			var g := view.cell_rect(selected_cell).grow(-6)
 			draw_string(ThemeDB.fallback_font, g.position + Vector2(8, 20), selected_glyph,
 				HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(COLOR_SELECT, GHOST_GLYPH_ALPHA))
 		if selected_range > 0.0:
-			var sc := game.sim.state.map.grid.centre(selected_cell) * CELL
-			draw_arc(sc, selected_range * CELL, 0, TAU, 48, COLOR_SELECT, 1.0)
+			var sc := view.cell_to_world(game.sim.state.map.grid.centre(selected_cell))
+			draw_arc(sc, view.cells_to_px(selected_range), 0, TAU, 48, COLOR_SELECT, 1.0)
 			var dz := selected_dead_zone()
 			if dz > 0.0:  # LT-48: the dead zone, a dashed ring over a faint fill
-				draw_circle(sc, dz * CELL, Color(COLOR_LEAK, 0.08))
-				_draw_dashed_circle(sc, dz * CELL, Color(COLOR_LEAK, 0.7))
+				draw_circle(sc, view.cells_to_px(dz), Color(COLOR_LEAK, 0.08))
+				_draw_dashed_circle(sc, view.cells_to_px(dz), Color(COLOR_LEAK, 0.7))
 
 
 ## LT-62 P1: invisible (alpha WARMUP_ALPHA) draws in the board corner of each primitive the
@@ -611,7 +602,7 @@ func _draw_phantom() -> void:
 	var c := COLOR_PATH
 	c.a = a
 	for cell in phantom:
-		draw_rect(Rect2(cell_origin(cell), Vector2(CELL, CELL)).grow(-2), c)
+		draw_rect(view.cell_rect(cell).grow(-2), c)
 
 
 ## The colour that links a tower to its attack look (LT-25 §1).
@@ -698,7 +689,7 @@ func preview_cast(t: SimTower) -> String:
 
 
 func _draw_tower(t: SimTower) -> void:
-	var r := Rect2(cell_origin(t.cell), Vector2(CELL, CELL)).grow(-6)
+	var r := view.cell_rect(t.cell).grow(-6)
 	var c := attack_color(shot_kind(t))
 	var preview := preview_cast(t)
 	draw_rect(r, plate_color(t, preview))
@@ -738,8 +729,8 @@ func _draw_auras(s: SimState) -> void:
 			continue
 		if kind != "aura":
 			continue
-		var c := t.centre() * CELL
-		var r := t.stats().range_cells * CELL
+		var c := view.cell_to_world(t.centre())
+		var r := view.cells_to_px(t.stats().range_cells)
 		var a := ward_alpha(t)
 		var bright := a > WARD_IDLE_ALPHA
 		if t.stats().casts_shadow():
@@ -755,8 +746,8 @@ func _draw_auras(s: SimState) -> void:
 ## from the tower to the rim turning once per SEARCH_SWEEP_SECONDS (decoration: what is
 ## revealed is the whole disc, sim state).
 func _draw_searchlight(t: SimTower) -> void:
-	var c := t.centre() * CELL
-	var r := t.stats().range_cells * CELL
+	var c := view.cell_to_world(t.centre())
+	var r := view.cells_to_px(t.stats().range_cells)
 	var a := ward_alpha(t)
 	draw_circle(c, r, Color(SEARCHLIGHT_COLOR, SEARCH_DISC_ALPHA * (1.0 + a)))
 	draw_arc(c, r, 0, TAU, 64, Color(SEARCHLIGHT_COLOR, a * 0.8), 2.0)
@@ -781,7 +772,7 @@ func _draw_enemies(s: SimState) -> void:
 			continue
 		var p := game.sim.enemy_position(e, alpha)
 		_last_pos[e.id] = p
-		var px := p * CELL
+		var px := view.cell_to_world(p)
 		var color := COLOR_ENEMY.lerp(COLOR_ENEMY_MAD, mad)
 		if e.revealed:
 			color = Color(REVEALED_BODY, REVEALED_ALPHA)
@@ -790,36 +781,36 @@ func _draw_enemies(s: SimState) -> void:
 		if dip > 0.5:  # a torn frame: a faint double a few pixels off
 			var ghost := color
 			ghost.a = 0.35
-			draw_circle(px + Vector2(CELL * 0.15, 0), CELL * 0.25, ghost)
+			draw_circle(px + Vector2(view.cells_to_px(0.15), 0), view.cells_to_px(0.25), ghost)
 		var marks := enemy_markers(e)
 		if marks.has("slow"):  # ground ring under the body
 			var sc := Color(WARD_COLOR, color.a)
 			for i in 6:
 				var st := i * TAU / 6.0
-				draw_arc(px, CELL * MARK_SLOW_CELLS, st, st + TAU / 12.0, 4, sc, 2.0)
-		draw_circle(px, CELL * 0.25, color)
+				draw_arc(px, view.cells_to_px(MARK_SLOW_CELLS), st, st + TAU / 12.0, 4, sc, 2.0)
+		draw_circle(px, view.cells_to_px(0.25), color)
 		if marks.has("bleed"):  # two red drops dripping below the body
 			for i in 2:
 				var ph := fposmod(_time / BLEED_DROP_SECONDS + i * 0.5, 1.0)
 				var dc := Color(MARK_BLEED, color.a * (1.0 - ph * 0.7))
-				draw_circle(px + Vector2((i - 0.5) * CELL * 0.22, CELL * (0.3 + 0.2 * ph)),
-					CELL * 0.09, dc)
+				draw_circle(px + Vector2(view.cells_to_px(i - 0.5) * 0.22, view.cells_to_px(0.3 + 0.2 * ph)),
+					view.cells_to_px(0.09), dc)
 		if mad > 0.0:
-			draw_arc(px, CELL * 0.25, 0, TAU, 24, Color(COLOR_ENEMY_OUTLINE, color.a * mad), 3.0)
+			draw_arc(px, view.cells_to_px(0.25), 0, TAU, 24, Color(COLOR_ENEMY_OUTLINE, color.a * mad), 3.0)
 		if marks.has("sealed"):  # LT-51: a silver lid over the body while banish-immune
-			draw_arc(px, CELL * BANISH_LID_CELLS, PI * 1.15, PI * 1.85, 10,
+			draw_arc(px, view.cells_to_px(BANISH_LID_CELLS), PI * 1.15, PI * 1.85, 10,
 				Color(BANISH_COLOR, 0.85 * color.a), 2.0)
 		if marks.has("vuln"):  # body outline
-			draw_arc(px, CELL * 0.25, 0, TAU, 24, Color(MARK_VULN, color.a), 2.0)
+			draw_arc(px, view.cells_to_px(0.25), 0, TAU, 24, Color(MARK_VULN, color.a), 2.0)
 		if e.revealed:  # LT-49: amber ring outside the dashed slow mark, slash across the body
 			var mc := Color(REVEALED_MARK, 1.0 - dip)
-			draw_arc(px, CELL * REVEALED_RING_CELLS, 0, TAU, 24, mc, 3.0)
-			var d := Vector2(1, -1).normalized() * CELL * REVEALED_SLASH_CELLS
+			draw_arc(px, view.cells_to_px(REVEALED_RING_CELLS), 0, TAU, 24, mc, 3.0)
+			var d := view.cell_to_world(Vector2(1, -1).normalized()) * REVEALED_SLASH_CELLS
 			draw_line(px - d, px + d, mc, 3.0)
 		if game.sim.debug_is_fake(e):
-			draw_arc(px, CELL * 0.3, 0, TAU, 24, COLOR_DEBUG_FAKE, 2.0)
-		var w := CELL * 0.6
-		var bar := Rect2(px + Vector2(-w * 0.5, -CELL * 0.4), Vector2(w, 4))
+			draw_arc(px, view.cells_to_px(0.3), 0, TAU, 24, COLOR_DEBUG_FAKE, 2.0)
+		var w := view.cells_to_px(0.6)
+		var bar := Rect2(px + Vector2(-w * 0.5, -view.cells_to_px(0.4)), Vector2(w, 4))
 		draw_rect(bar, Color(COLOR_HP_BACK, 1.0 - dip))
 		bar.size.x = w * clampf(e.hp / e.max_hp, 0.0, 1.0)
 		draw_rect(bar, Color(COLOR_HP, 1.0 - dip))
@@ -831,22 +822,22 @@ func _draw_enemies(s: SimState) -> void:
 func _draw_allies(s: SimState) -> void:
 	for t in s.towers:
 		if shot_kind(t) == "summon":
-			draw_arc(t.centre() * CELL, (t.stats().range_cells + 1.0) * CELL, 0, TAU, 64,
-				Color(SUMMON_COLOR, SUMMON_RING_ALPHA), 1.0)
+			draw_arc(view.cell_to_world(t.centre()), view.cells_to_px(t.stats().range_cells + 1.0), 0,
+				TAU, 64, Color(SUMMON_COLOR, SUMMON_RING_ALPHA), 1.0)
 	for a in s.allies:
 		if not a.is_live():
 			continue
-		var px := game.sim.ally_position(a, alpha) * CELL
+		var px := view.cell_to_world(game.sim.ally_position(a, alpha))
 		if a.held_id >= 0 and _last_pos.has(a.held_id):
-			draw_line(px, _last_pos[a.held_id] * CELL, Color(SUMMON_COLOR, 0.9), 2.0)
-		var r := CELL * ALLY_RADIUS_CELLS
+			draw_line(px, view.cell_to_world(_last_pos[a.held_id]), Color(SUMMON_COLOR, 0.9), 2.0)
+		var r := view.cells_to_px(ALLY_RADIUS_CELLS)
 		if a.flying:
 			for side: float in [-1.0, 1.0]:
 				draw_line(px + Vector2(side * r * 0.6, 0), px + Vector2(side * r * 1.9, -r * 0.9),
 					SUMMON_COLOR, 2.0)
 		draw_circle(px, r, ALLY_BODY)
 		draw_arc(px, r, 0, TAU, 20, SUMMON_COLOR, 2.0)
-		var w := CELL * 0.5
+		var w := view.cells_to_px(0.5)
 		var bar := Rect2(px + Vector2(-w * 0.5, r + 3.0), Vector2(w, 3))
 		draw_rect(bar, COLOR_HP_BACK)
 		bar.size.x = w * clampf(a.hp / a.max_hp, 0.0, 1.0) if a.max_hp > 0.0 else 0.0
@@ -875,25 +866,27 @@ func _draw_effects() -> void:
 			"blast":
 				_draw_blast(fx)
 			"death":
-				draw_circle(fx["from"] * CELL, CELL * 0.35, COLOR_DEATH)
+				draw_circle(view.cell_to_world(fx["from"]), view.cells_to_px(0.35), COLOR_DEATH)
 			"dissolve":
-				draw_arc(fx["from"] * CELL, CELL * 0.35, 0, TAU, 24, COLOR_DISSOLVE, 2.0)
+				draw_arc(view.cell_to_world(fx["from"]), view.cells_to_px(0.35), 0, TAU, 24,
+					COLOR_DISSOLVE, 2.0)
 			"leak":
-				draw_rect(Rect2((fx["from"] - Vector2(0.5, 0.5)) * CELL, Vector2(CELL, CELL)),
+				draw_rect(Rect2(view.cell_to_world(fx["from"] - Vector2(0.5, 0.5)),
+					Vector2.ONE * view.cells_to_px(1.0)),
 					COLOR_LEAK, false, 4.0)
 
 
 ## A wavering bolt from the tower to an empty spot, ending in a small fading ring; from a
 ## wave tower the ring is a fizzle growing to `radius` (LT-25 §3).
 func _draw_astray(fx: Dictionary) -> void:
-	var b: Vector2 = fx["to"] * CELL
+	var b: Vector2 = view.cell_to_world(fx["to"])
 	var fade := clampf(fx["ttl"] / ASTRAY_SECONDS, 0.0, 1.0)
 	var c := Color(COLOR_ASTRAY, fade)
-	draw_polyline(_waver_points(fx["from"] * CELL, b, fx["seed"]), c, 3.0)
+	draw_polyline(_waver_points(view.cell_to_world(fx["from"]), b, fx["seed"]), c, 3.0)
 	if fx.has("radius"):
-		draw_arc(b, CELL * fx["radius"] * (0.3 + 0.7 * (1.0 - fade)), 0, TAU, 20, c, 2.0)
+		draw_arc(b, view.cells_to_px(fx["radius"]) * (0.3 + 0.7 * (1.0 - fade)), 0, TAU, 20, c, 2.0)
 	else:
-		draw_arc(b, CELL * (0.4 - 0.2 * fade), 0, TAU, 20, c, 3.0)
+		draw_arc(b, view.cells_to_px(0.4 - 0.2 * fade), 0, TAU, 20, c, 3.0)
 
 
 ## The LT-14 astray waver (5 px, 3 half-waves) from a to b (pixels), phase from `key`.
@@ -921,14 +914,14 @@ func _elapsed(fx: Dictionary) -> float:
 ## on each hit enemy. A miss ends off target with no spark.
 func _draw_tracer(fx: Dictionary) -> void:
 	var el := _elapsed(fx)
-	var a: Vector2 = fx["from"] * CELL
-	var b: Vector2 = fx["end"] * CELL
+	var a: Vector2 = view.cell_to_world(fx["from"])
+	var b: Vector2 = view.cell_to_world(fx["end"])
 	var dir := (b - a).normalized()
 	if el < TRACER_MUZZLE:
-		draw_circle(a, CELL * 0.12, TRACER_COLOR)
+		draw_circle(a, view.cells_to_px(0.12), TRACER_COLOR)
 	if el < TRACER_TRAVEL:
 		var head := a.lerp(b, clampf(el / TRACER_TRAVEL, 0.0, 1.0))
-		var tail := head - dir * minf(CELL * TRACER_DASH_CELLS, head.distance_to(a))
+		var tail := head - dir * minf(view.cells_to_px(TRACER_DASH_CELLS), head.distance_to(a))
 		draw_line(tail, head, TRACER_COLOR, 2.0)
 	elif not fx["miss"]:
 		var fade := clampf(1.0 - (el - TRACER_TRAVEL) / (TRACER_SECONDS - TRACER_TRAVEL),
@@ -937,7 +930,8 @@ func _draw_tracer(fx: Dictionary) -> void:
 		for p: Vector2 in fx["hit_pos"]:
 			for i in 4:
 				var v := Vector2.from_angle(PI * 0.25 + i * PI * 0.5)
-				draw_line(p * CELL + v * CELL * 0.05, p * CELL + v * CELL * 0.2 * ray,
+				draw_line(view.cell_to_world(p) + view.cell_to_world(v) * 0.05,
+					view.cell_to_world(p) + view.cell_to_world(v) * 0.2 * ray,
 					Color(TRACER_COLOR, fade), 2.0)
 
 
@@ -945,17 +939,17 @@ func _draw_tracer(fx: Dictionary) -> void:
 ## pierced enemy as it passes. A miss leaves no ticks and the head drops at the end.
 func _draw_harpoon(fx: Dictionary) -> void:
 	var el := _elapsed(fx)
-	var a: Vector2 = fx["from"] * CELL
-	var b: Vector2 = fx["to"] * CELL
+	var a: Vector2 = view.cell_to_world(fx["from"])
+	var b: Vector2 = view.cell_to_world(fx["to"])
 	var dir := (b - a).normalized()
 	var fade := clampf(1.0 - (el - (HARPOON_SECONDS - HARPOON_FADE)) / HARPOON_FADE, 0.0, 1.0)
 	if fade > 0.0:
 		var head := a.lerp(b, clampf(el / HARPOON_TRAVEL, 0.0, 1.0))
 		if fx["miss"] and el > HARPOON_TRAVEL:
-			head += Vector2(0, CELL * 0.3 * (1.0 - fade))
-		var base := head - dir * CELL * 0.3
+			head += Vector2(0, view.cells_to_px(0.3) * (1.0 - fade))
+		var base := head - view.cell_to_world(dir) * 0.3
 		draw_line(a, base, Color(HARPOON_COLOR, 0.6 * fade), 1.0)
-		var w := dir.orthogonal() * CELL * 0.09
+		var w := view.cell_to_world(dir.orthogonal()) * 0.09
 		draw_colored_polygon(PackedVector2Array([head, base + w, base - w]),
 			Color(HARPOON_COLOR, fade))
 	if el < CHAIN_SECONDS:  # LT-29: dashed steel chain from each pulled enemy to the tower
@@ -963,16 +957,16 @@ func _draw_harpoon(fx: Dictionary) -> void:
 		var chain: Dictionary = fx.get("chain", {})
 		for id: int in chain:
 			var p: Vector2 = _last_pos.get(id, chain[id])
-			draw_dashed_line(p * CELL, a, cc, 2.0, CHAIN_DASH)
+			draw_dashed_line(view.cell_to_world(p), a, cc, 2.0, CHAIN_DASH)
 	var pos: Array = fx["hit_pos"]
 	var passes: Array = fx.get("pass_t", [])
 	for i in mini(pos.size(), passes.size()):
 		var since: float = el - passes[i]
 		if since < 0.0 or since >= HARPOON_TICK_SECONDS:
 			continue
-		var p: Vector2 = pos[i] * CELL
+		var p: Vector2 = view.cell_to_world(pos[i])
 		var c := Color(HARPOON_COLOR, 1.0 - since / HARPOON_TICK_SECONDS * 0.6)
-		var h := CELL * 0.125
+		var h := view.cells_to_px(0.125)
 		draw_line(p + Vector2(-h, -h), p + Vector2(h, h), c, 3.0)
 		draw_line(p + Vector2(-h, h), p + Vector2(h, -h), c, 3.0)
 
@@ -981,8 +975,8 @@ func _draw_harpoon(fx: Dictionary) -> void:
 ## growing to `radius` and a flash on each hit enemy. Astray: wavering tendril, astray rim.
 func _draw_wave(fx: Dictionary) -> void:
 	var el := _elapsed(fx)
-	var a: Vector2 = fx["from"] * CELL
-	var b: Vector2 = fx["to"] * CELL
+	var a: Vector2 = view.cell_to_world(fx["from"])
+	var b: Vector2 = view.cell_to_world(fx["to"])
 	var rim := COLOR_ASTRAY if fx["astray"] else WAVE_RIM
 	if el < WAVE_TENDRIL + 0.05:
 		var pts := _waver_points(a, b, fx["seed"]) if fx["astray"] \
@@ -993,25 +987,26 @@ func _draw_wave(fx: Dictionary) -> void:
 	if be < 0.0:
 		return
 	var k := clampf(be / WAVE_BLAST, 0.0, 1.0)
-	var r := lerpf(WAVE_START_CELLS, fx["radius"], k) * CELL
+	var r := view.cells_to_px(lerpf(WAVE_START_CELLS, fx["radius"], k))
 	draw_circle(b, r, Color(WAVE_FILL, WAVE_FILL.a * (1.0 - k)))
 	draw_arc(b, r, 0, TAU, 48, Color(rim, 1.0 - k * k), 3.0)
 	if be < WAVE_FLASH:
 		for p: Vector2 in fx["hit_pos"]:
-			draw_arc(p * CELL, CELL * 0.3, 0, TAU, 20, Color(rim, 1.0 - be / WAVE_FLASH), 2.0)
+			draw_arc(view.cell_to_world(p), view.cells_to_px(0.3), 0, TAU, 20,
+				Color(rim, 1.0 - be / WAVE_FLASH), 2.0)
 
 
 ## LT-50 Resonator: the held beam. Its end follows the target's drawn position while that
 ## enemy is live (else the shot's `to`); width and glow grow with `factor` (sanity_factor).
 func _draw_beam(fx: Dictionary) -> void:
-	var a: Vector2 = fx["from"] * CELL
+	var a: Vector2 = view.cell_to_world(fx["from"])
 	var end: Vector2 = fx["to"]
 	var e := game.sim.enemy_by_id(fx["target"]) if game != null and game.sim != null else null
 	if e != null and e.is_live():
 		end = game.sim.enemy_position(e, alpha)
-	var b := end * CELL
+	var b := view.cell_to_world(end)
 	# From the tile's rim, not its centre, so the glyph stays readable under the beam.
-	a += (b - a).normalized() * minf(CELL * BEAM_RIM_CELLS, a.distance_to(b))
+	a += (b - a).normalized() * minf(view.cells_to_px(BEAM_RIM_CELLS), a.distance_to(b))
 	var fade := clampf(fx["ttl"] / BEAM_FADE, 0.0, 1.0)
 	var f: float = fx.get("factor", 1.0)
 	var w := BEAM_WIDTH + BEAM_WIDTH_PER_FACTOR * maxf(0.0, f - 1.0)
@@ -1021,11 +1016,11 @@ func _draw_beam(fx: Dictionary) -> void:
 	draw_polyline(_wave_points(a, b, ph, 5.0, 1.5 + 0.5 * f, 16), Color(BEAM_COLOR, fade), w)
 	draw_line(a, b, Color(BEAM_CORE, fade), maxf(1.0, w * 0.4))
 	var pulse := 0.5 + 0.5 * sin(ph * 0.5)
-	draw_circle(a, CELL * (0.06 + 0.03 * pulse), Color(BEAM_CORE, fade))
-	draw_arc(b, CELL * (0.18 + 0.08 * pulse), 0, TAU, 16, Color(BEAM_COLOR, fade), 2.0)
+	draw_circle(a, view.cells_to_px(0.06 + 0.03 * pulse), Color(BEAM_CORE, fade))
+	draw_arc(b, view.cells_to_px(0.18 + 0.08 * pulse), 0, TAU, 16, Color(BEAM_COLOR, fade), 2.0)
 	for i in 3:
 		var v := Vector2.from_angle(ph * 0.3 + i * TAU / 3.0)
-		draw_line(b + v * CELL * 0.1, b + v * CELL * (0.22 + 0.06 * pulse),
+		draw_line(b + view.cell_to_world(v) * 0.1, b + view.cell_to_world(v) * (0.22 + 0.06 * pulse),
 			Color(BEAM_CORE, fade), 1.5)
 
 
@@ -1037,33 +1032,34 @@ func _draw_banish(fx: Dictionary) -> void:
 	var el := _elapsed(fx)
 	var dur: float = fx["dur"]
 	var k := clampf(el / dur, 0.0, 1.0)
-	var o: Vector2 = fx["origin"] * CELL
-	var a: Vector2 = fx["from"] * CELL
-	var b: Vector2 = fx["to"] * CELL
+	var o: Vector2 = view.cell_to_world(fx["origin"])
+	var a: Vector2 = view.cell_to_world(fx["from"])
+	var b: Vector2 = view.cell_to_world(fx["to"])
 	if el < BANISH_REACH:
 		var rf := 1.0 - el / BANISH_REACH
-		o += (a - o).normalized() * minf(CELL * BEAM_RIM_CELLS, o.distance_to(a))
+		o += (a - o).normalized() * minf(view.cells_to_px(BEAM_RIM_CELLS), o.distance_to(a))
 		draw_line(o, a, Color(BANISH_COLOR, 0.9 * rf), 2.0)
 	if a.distance_to(b) > 1.0:
 		draw_dashed_line(a, b, Color(BANISH_COLOR, 0.7 * (1.0 - k)), 2.5, 6.0)
 	var fold := clampf(el / BANISH_FOLD, 0.0, 1.0)
 	if fold < 1.0:
 		var left := 1.0 - fold
-		draw_circle(a, CELL * 0.3 * left, Color(BANISH_GHOST, 0.6 * left))
-		var r := CELL * (0.22 + 0.4 * left)
+		draw_circle(a, view.cells_to_px(0.3) * left, Color(BANISH_GHOST, 0.6 * left))
+		var r := view.cells_to_px(0.22 + 0.4 * left)
 		for i in 4:
 			var st := i * TAU / 4.0 + fold * PI
 			draw_arc(a, r, st, st + TAU / 7.0, 6, Color(BANISH_COLOR, 0.4 + 0.6 * left), 3.0)
 	# The keyhole outlasts the fold: the gate's mark on the old spot.
 	var kc := Color(BANISH_COLOR, 1.0 - k)
-	var hole := CELL * 0.14
+	var hole := view.cells_to_px(0.14)
 	draw_circle(a + Vector2(0, -hole * 0.6), hole, kc)
 	draw_colored_polygon(PackedVector2Array([a + Vector2(-hole * 0.45, 0),
 		a + Vector2(hole * 0.45, 0), a + Vector2(hole * 0.8, hole * 1.9),
 		a + Vector2(-hole * 0.8, hole * 1.9)]), kc)
 	if el >= BANISH_FOLD * 0.5:
 		var open := clampf((el - BANISH_FOLD * 0.5) / (dur - BANISH_FOLD * 0.5), 0.0, 1.0)
-		draw_arc(b, CELL * (0.25 + 0.35 * open), 0, TAU, 24, Color(BANISH_COLOR, 1.0 - open), 3.0)
+		draw_arc(b, view.cells_to_px(0.25 + 0.35 * open), 0, TAU, 24,
+			Color(BANISH_COLOR, 1.0 - open), 3.0)
 
 
 ## LT-48 Coast battery: a muzzle flash and a smoke puff drifting off the gun, the shell (a
@@ -1072,33 +1068,34 @@ func _draw_banish(fx: Dictionary) -> void:
 ## beside the aim point and throws up only grey dust.
 func _draw_shell(fx: Dictionary) -> void:
 	var el := _elapsed(fx)
-	var a: Vector2 = fx["from"] * CELL
-	var b: Vector2 = fx["end"] * CELL
+	var a: Vector2 = view.cell_to_world(fx["from"])
+	var b: Vector2 = view.cell_to_world(fx["end"])
 	var dir := (b - a).normalized()
 	var k_all := clampf(el / SHELL_SECONDS, 0.0, 1.0)
 	# Smoke puff at the gun, rising and fading over the whole effect.
-	draw_circle(a + dir * CELL * 0.35 + Vector2(0, -CELL * 0.25 * k_all),
-		CELL * (0.18 + 0.22 * k_all), Color(SHELL_SMOKE, 0.5 * (1.0 - k_all)))
+	draw_circle(a + view.cell_to_world(dir) * 0.35 + Vector2(0, -view.cells_to_px(0.25) * k_all),
+		view.cells_to_px(0.18 + 0.22 * k_all), Color(SHELL_SMOKE, 0.5 * (1.0 - k_all)))
 	if el < SHELL_MUZZLE:
 		var mk := 1.0 - el / SHELL_MUZZLE
-		draw_circle(a + dir * CELL * 0.3, CELL * 0.2 * (0.6 + 0.4 * mk), Color(3.0, 2.4, 1.4, mk))
+		draw_circle(a + view.cell_to_world(dir) * 0.3, view.cells_to_px(0.2) * (0.6 + 0.4 * mk),
+			Color(3.0, 2.4, 1.4, mk))
 	if el < SHELL_TRAVEL:
 		var kk := clampf(el / SHELL_TRAVEL, 0.0, 1.0)
 		var head := a.lerp(b, kk)
-		var tail := head - dir * minf(CELL * 1.2, head.distance_to(a))
+		var tail := head - dir * minf(view.cells_to_px(1.2), head.distance_to(a))
 		draw_line(tail, head, Color(SHELL_SMOKE, 0.45), 4.0)
-		draw_line(head - dir * CELL * 0.3, head, SHELL_COLOR, 4.0)
+		draw_line(head - view.cell_to_world(dir) * 0.3, head, SHELL_COLOR, 4.0)
 		draw_circle(head, 3.5, Color(3.0, 2.6, 2.0))
 		return
 	var ie := el - SHELL_TRAVEL
 	var k := clampf(ie / (SHELL_SECONDS - SHELL_TRAVEL), 0.0, 1.0)
 	var grow := 1.0 - (1.0 - k) * (1.0 - k)
 	if fx["miss"]:
-		draw_circle(b + Vector2(0, -CELL * 0.2 * k), CELL * (0.15 + 0.25 * grow),
+		draw_circle(b + Vector2(0, -view.cells_to_px(0.2) * k), view.cells_to_px(0.15 + 0.25 * grow),
 			Color(SHELL_SMOKE, 0.6 * (1.0 - k)))
 		return
 	var radius: float = fx.get("radius", 0.0)
-	var r := CELL * (radius if radius > 0.0 else SHELL_IMPACT_CELLS)
+	var r := view.cells_to_px(radius if radius > 0.0 else SHELL_IMPACT_CELLS)
 	draw_circle(b, r * (0.5 + 0.5 * grow), Color(SHELL_SMOKE, 0.4 * (1.0 - k)))
 	if ie < BLAST_FLASH:
 		draw_circle(b, r * 0.5, Color(3.0, 2.6, 1.6, 1.0 - ie / BLAST_FLASH))
@@ -1111,7 +1108,7 @@ func _draw_shell(fx: Dictionary) -> void:
 	if ie < WAVE_FLASH:
 		var ray := CRIT_SPARK_SCALE if fx.get("crit", false) else 1.0
 		for p: Vector2 in fx["hit_pos"]:
-			draw_arc(p * CELL, CELL * 0.3 * ray, 0, TAU, 20,
+			draw_arc(view.cell_to_world(p), view.cells_to_px(0.3) * ray, 0, TAU, 20,
 				Color(SHELL_COLOR, 1.0 - ie / WAVE_FLASH), 2.0)
 
 
@@ -1122,9 +1119,10 @@ func _draw_charge(fx: Dictionary) -> void:
 	var el := float(game.sim.state.tick - int(fx["throw_tick"])) + alpha  # ticks
 	var fuse := maxf(1.0, float(int(fx["detonate_tick"]) - int(fx["throw_tick"])))
 	var flight := minf(float(DYN_FLIGHT_TICKS), fuse)
-	var a: Vector2 = fx["from"] * CELL
-	var b: Vector2 = fx["to"] * CELL
-	var h := _arc_lift(a, b) * CELL * (DYN_ARC_BASE + DYN_ARC_PER_CELL * a.distance_to(b) / CELL)
+	var a: Vector2 = view.cell_to_world(fx["from"])
+	var b: Vector2 = view.cell_to_world(fx["to"])
+	var h := view.cell_to_world(_arc_lift(a, b)) \
+		* (DYN_ARC_BASE + view.px_to_cells(DYN_ARC_PER_CELL * a.distance_to(b)))
 	var k := clampf(el / flight, 0.0, 1.0)
 	var pos := _arc_point(a, b, h, k)
 	if k < 1.0:
@@ -1143,7 +1141,7 @@ func _draw_charge(fx: Dictionary) -> void:
 	if left > 0.0:
 		var urgency := 1.0 - clampf(left / maxf(1.0, fuse - flight), 0.0, 1.0)
 		var pulse := 0.5 + 0.5 * sin(_time * TAU * (2.0 + 6.0 * urgency))
-		var r := CELL * float(fx["radius"])
+		var r := view.cells_to_px(float(fx["radius"]))
 		draw_circle(b, r, Color(DYNAMITE_COLOR, 0.04 + 0.06 * urgency))
 		draw_arc(b, r, 0, TAU, 40, Color(DYNAMITE_COLOR, 0.25 + 0.35 * pulse * urgency + 0.1), 1.5)
 		_draw_stick(b, Vector2.RIGHT.rotated(0.35), not fx["miss"] or left > fuse * 0.3, lying)
@@ -1151,7 +1149,7 @@ func _draw_charge(fx: Dictionary) -> void:
 		# A dud: the stick lies dead and a grey puff rises.
 		var dk := clampf(-left / DYN_DUD_TICKS, 0.0, 1.0)
 		_draw_stick(b, Vector2.RIGHT.rotated(0.35), false, lying)
-		draw_circle(b + Vector2(0, -CELL * 0.3 * dk), CELL * (0.15 + 0.2 * dk),
+		draw_circle(b + Vector2(0, -view.cells_to_px(0.3) * dk), view.cells_to_px(0.15 + 0.2 * dk),
 			Color(DYN_SMOKE, 0.6 * (1.0 - dk)))
 
 
@@ -1193,8 +1191,8 @@ func _draw_stick(p: Vector2, dir: Vector2, burning: bool, el: float) -> void:
 ## disc, flying debris, and a flash ring on each hit enemy.
 func _draw_blast(fx: Dictionary) -> void:
 	var el := _elapsed(fx)
-	var c: Vector2 = fx["from"] * CELL
-	var r := CELL * float(fx["radius"])
+	var c: Vector2 = view.cell_to_world(fx["from"])
+	var r := view.cells_to_px(float(fx["radius"]))
 	var k := clampf(el / BLAST_SECONDS, 0.0, 1.0)
 	var grow := 1.0 - (1.0 - k) * (1.0 - k) * (1.0 - k)  # fast out, slow end
 	draw_circle(c, r * (0.6 + 0.4 * grow), Color(DYN_SMOKE, 0.45 * (1.0 - k)))
@@ -1208,7 +1206,7 @@ func _draw_blast(fx: Dictionary) -> void:
 		draw_circle(c + Vector2.from_angle(ang) * d, 2.0, Color(DYNAMITE_COLOR, 1.0 - k))
 	if el < WAVE_FLASH:
 		for p: Vector2 in fx["hit_pos"]:
-			draw_arc(p * CELL, CELL * 0.3, 0, TAU, 20,
+			draw_arc(view.cell_to_world(p), view.cells_to_px(0.3), 0, TAU, 20,
 				Color(DYNAMITE_COLOR, 1.0 - el / WAVE_FLASH), 2.0)
 
 
@@ -1217,12 +1215,14 @@ func _draw_blast(fx: Dictionary) -> void:
 ## Nothing here depends on towers, enemies, sanity or day/night (lighting is the canvas's).
 class MapLayer extends Node2D:
 	var map: MapDef
+	var view := BoardView.new()  ## the board's view once added (tiles from GridTopology.polygon)
 
 	## Redraws only when `m` is a different map from the one drawn.
 	func set_map(m: MapDef) -> void:
 		if m == map:
 			return
 		map = m
+		view.grid = m.grid
 		queue_redraw()
 
 	func _draw() -> void:
@@ -1236,12 +1236,12 @@ class MapLayer extends Node2D:
 					color = Board.COLOR_BUILDABLE
 				MapDef.Kind.PATH:
 					color = Board.COLOR_PATH
-			var r := Rect2(Board.origin_of(c), Vector2(CELL, CELL))
+			var r := view.cell_rect(c)
 			draw_rect(r, color)
 			draw_rect(r, Board.COLOR_GRID, false, 1.0)
-		draw_rect(Rect2(Board.origin_of(m.spawn), Vector2(CELL, CELL)).grow(-4),
+		draw_rect(view.cell_rect(m.spawn).grow(-4),
 			Board.COLOR_START)
-		var lh := Rect2(Board.origin_of(m.lighthouse), Vector2(CELL, CELL)).grow(-4)
+		var lh := view.cell_rect(m.lighthouse).grow(-4)
 		draw_rect(lh, Board.COLOR_LIGHTHOUSE)
 		draw_string(ThemeDB.fallback_font, lh.position + Vector2(9, 24), "L",
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color.BLACK)

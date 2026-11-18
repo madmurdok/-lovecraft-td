@@ -126,8 +126,7 @@ func target_level() -> float:
 ## The board in base viewport units (same as Hud.board_rect): the only area the screen
 ## pass draws on.
 func board_rect() -> Rect2:
-	var m := game.sim.state.map
-	return Rect2(Game.BOARD_ORIGIN, Vector2(m.width, m.height) * Board.CELL)
+	return game.board.view.world_rect()
 
 
 ## LT-62/S13: gl_compatibility applies a BackBufferCopy rect in render-target pixels, without

@@ -136,7 +136,7 @@ func _buildable_cell() -> Vector2i:
 
 func _open_picker() -> void:
 	var cell := _buildable_cell()
-	await _click(_game.board.position + (Vector2(cell) + Vector2(0.5, 0.5)) * Board.CELL)
+	await _click(_game.board.view.cell_to_screen(_game.sim.state.map.grid.centre(cell)))
 	assert_bool(_game.picker.visible).is_true()
 	await get_tree().process_frame
 
