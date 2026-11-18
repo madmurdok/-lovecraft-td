@@ -204,7 +204,7 @@ func _refresh_table(t: SimTower, s: TowerDef.Level, branches: PackedStringArray)
 			lines.append("%s: %s" % [heads[i + 1], line])
 	special_label.text = "\n".join(lines)
 	special_label.visible = not lines.is_empty()
-	var light := TowerRules.light_effect(t.def, cfg, t.lit, shadow)
+	var light := game.sim.tower_mults(t.id)
 	kind_label.text = "\n".join(TowerInfo.kind_lines(t.def, s, cfg.sanity, light["ignore_miss"],
 		light["miss_add"]))
 	kind_label.visible = not kind_label.text.is_empty()

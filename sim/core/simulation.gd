@@ -931,6 +931,15 @@ func sanity_state_for(s: float) -> SimState.SanityState:
 	return SimState.SanityState.FRAYING
 
 
+## LT-76 (LT-65 §3.2) read-only: TowerRules.light_effect of tower `tower_id` in its net light
+## state now ({power_mult, interval_mult, ignore_miss, miss_add}); {} for no such tower.
+func tower_mults(tower_id: int) -> Dictionary:
+	var t := tower_by_id(tower_id)
+	if t == null:
+		return {}
+	return TowerRules.light_effect(t.def, config, t.lit, t.shadowed)
+
+
 ## LT-76 (LT-65 §3.2): the tower standing on `cell` (built or building), or null.
 func tower_at_cell(cell: Vector2i) -> SimTower:
 	if not state.tower_at.has(cell):
@@ -1682,7 +1691,7 @@ func _fire_towers() -> void:
 		# on nothing. An empty shot keeps the usual target as its aim point.
 		# LT-50 (§7 Q2): a sanity_scaling level x 1 + k x (1 - sanity / max) on the full bar,
 		# before the lit x0.7 and the madness x2.
-		var factor := TowerRules.sanity_factor(s, config, state.sanity)
+		var factor := TowerRules.shot_factor(s, config, state.sanity)
 		# LT-30 §2 / LT-70 §2.3: lit x0.7 / shadowed x1.15 (occult), before the madness x2.
 		var damage := TowerRules.shot_damage(s, factor, _power_mult(t))
 		var astray := ""

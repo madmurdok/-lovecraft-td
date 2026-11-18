@@ -377,15 +377,9 @@ static func lit_effects(def: TowerDef, s: TowerDef.Level, cfg: GameConfig,
 	if def.kind != "occult" or fx.is_empty():
 		return {}
 	var pm: float = fx["power_mult"]
-	if pm == 1.0 or (s.acts() and not s.is_banish() and not s.is_summon()):
-		return {}  # an aura, a gate or a circle only
-	var e := s.effects.duplicate()
-	for key: String in ["slow", "strip_armor", "banish_cells", "summon_dps"]:
-		if e.has(key):
-			e[key] = e[key] * pm
-	if e.has("damage_taken_multiplier"):
-		e["damage_taken_multiplier"] = TowerRules.powered_taken_mult(
-			e["damage_taken_multiplier"], pm)
+	if pm == 1.0:
+		return {}
+	var e := TowerRules.powered_effects(s, pm)  # an aura, a gate or a circle only
 	return e if e != s.effects else {}
 
 

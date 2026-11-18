@@ -70,6 +70,14 @@ static func sanity_factor(s: TowerDef.Level, cfg: GameConfig, sanity: float) -> 
 	return s.sanity_factor(sanity, cfg.sanity.max_sanity)
 
 
+## LT-50: the sanity factor of one attack of level `s`: sanity_factor for a shooter, 1.0 for
+## a banish cast or a summon (the sim never scales those by sanity; shooter-only, F5).
+static func shot_factor(s: TowerDef.Level, cfg: GameConfig, sanity: float) -> float:
+	if s.is_banish() or s.is_summon():
+		return 1.0
+	return sanity_factor(s, cfg, sanity)
+
+
 ## One shot's damage before madness, crits and armor: damage x sanity factor x power mult
 ## (LT-50, then LT-30 / LT-70 lit x0.7 / shadowed x1.15). A banish cast passes factor 1.0.
 static func shot_damage(s: TowerDef.Level, factor: float, power: float) -> float:
@@ -123,8 +131,8 @@ static func effective(def: TowerDef, s: TowerDef.Level, cfg: GameConfig, lit := 
 	var fx := light_effect(def, cfg, lit, shadowed)
 	var power: float = fx["power_mult"]
 	var factor := 1.0
-	if sanity >= 0.0 and cfg != null and not s.is_banish() and not s.is_summon():
-		factor = sanity_factor(s, cfg, sanity)
+	if sanity >= 0.0 and cfg != null:
+		factor = shot_factor(s, cfg, sanity)
 	var im: float = fx["interval_mult"]
 	var interval := fire_interval(s, im)
 	var base := dps(s, s.damage, s.fire_interval, s.effects.get("summon_dps", 0.0))
@@ -136,6 +144,28 @@ static func effective(def: TowerDef, s: TowerDef.Level, cfg: GameConfig, lit := 
 		"unit_dps": unit_dps(s, power),
 		"factor": factor,
 	}
+
+
+## LT-30 §2 / LT-70 §2.3: the effects a power mult scales on an occult aura, gate or circle
+## (Simulation._apply_auras, _cast_banish, _summon); damage_taken_multiplier scales by
+## powered_taken_mult. A shooter's power scales its damage only.
+const POWER_SCALED_EFFECTS: PackedStringArray = ["slow", "strip_armor", "banish_cells",
+	"summon_dps"]
+
+
+## The effects of level `s` at power mult `power`: a copy of s.effects with
+## POWER_SCALED_EFFECTS x power and damage_taken_multiplier by powered_taken_mult; for a
+## shooter (acts, neither banish nor summon) an unchanged copy.
+static func powered_effects(s: TowerDef.Level, power: float) -> Dictionary:
+	var e := s.effects.duplicate()
+	if s.acts() and not s.is_banish() and not s.is_summon():
+		return e
+	for key: String in POWER_SCALED_EFFECTS:
+		if e.has(key):
+			e[key] = e[key] * power
+	if e.has("damage_taken_multiplier"):
+		e["damage_taken_multiplier"] = powered_taken_mult(e["damage_taken_multiplier"], power)
+	return e
 
 
 ## LT-48 (P4): the dead-zone radius of level `s` in cells (min_range; 0: none).
