@@ -89,7 +89,7 @@ func test_flare_keeps_the_cone_and_burns_a_whole_board_light() -> void:
 	l._sync_flare()
 	assert_bool(l.flare_light.visible).is_true()
 	assert_float(l.flare_light.texture_scale).is_equal_approx(
-		Lighting.flare_cover_cells(_game.sim.state.map) * 2.0 * Board.CELL
+		_game.board.view.cells_to_px(Lighting.flare_cover_cells(_game.sim.state.map) * 2.0)
 		/ Lighting.FLARE_TEX_SIZE, 1e-6)
 	_steps(SimTime.ticks(_game.sim.flare_seconds()))
 	await get_tree().process_frame

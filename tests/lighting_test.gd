@@ -49,7 +49,8 @@ func test_one_light_per_tower_added_and_removed_with_it() -> void:
 	assert_int(_game.lighting._tower_lights.size()).is_equal(2)
 	var t := _game.sim.tower_by_id(_game.sim.state.tower_at[cells[0]])
 	var light := _game.lighting._tower_lights[t.id]
-	assert_vector(light.position).is_equal((Vector2(cells[0]) + Vector2(0.5, 0.5)) * Board.CELL)
+	assert_vector(light.position).is_equal(
+		_game.board.view.cell_to_world(Vector2(cells[0]) + Vector2(0.5, 0.5)))
 	_game.sell(t.id)
 	await get_tree().process_frame
 	assert_int(_game.lighting._tower_lights.size()).is_equal(1)

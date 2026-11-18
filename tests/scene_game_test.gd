@@ -48,7 +48,7 @@ func _click_control(c: Control) -> void:
 
 
 func _click_cell(cell: Vector2i) -> void:
-	await _click(_game.board.position + (Vector2(cell) + Vector2(0.5, 0.5)) * Board.CELL)
+	await _click(_game.board.view.cell_to_screen(_game.sim.state.map.grid.centre(cell)))
 
 
 func _buildable_cell() -> Vector2i:
@@ -155,9 +155,9 @@ func test_clicking_water_closes_open_panels_and_opens_nothing() -> void:
 func test_a_click_below_the_board_closes_both_panels() -> void:
 	await _start_game()
 	var m := _game.sim.state.map
-	var below := Vector2(_game.board.position.x + Board.CELL * 0.5,
-		_game.board.position.y + m.height * Board.CELL + 10.0)
-	assert_bool(m.grid.contains(_game.board.cell_at(below - _game.board.position))).is_false()
+	var board := _game.board.view.world_rect()
+	var below := Vector2(board.position.x + _game.board.view.cells_to_px(0.5), board.end.y + 10.0)
+	assert_bool(m.grid.contains(_game.board.view.cell_at_screen(below))).is_false()
 	assert_float(below.y).is_less(675.0)
 	var cell := _buildable_cell()
 	await _click_cell(cell)
@@ -321,4 +321,4 @@ func test_restart_button_creates_a_fresh_game() -> void:
 
 
 func _click_cell_of(g: Game, cell: Vector2i) -> void:
-	await _click(g.board.position + (Vector2(cell) + Vector2(0.5, 0.5)) * Board.CELL)
+	await _click(g.board.view.cell_to_screen(g.sim.state.map.grid.centre(cell)))

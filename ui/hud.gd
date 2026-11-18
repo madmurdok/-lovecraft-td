@@ -44,10 +44,11 @@ func _ready() -> void:
 	theme = UiStyle.theme(FONT_SIZE)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var base_w := float(ProjectSettings.get_setting("display/window/size/viewport_width"))
+	var bar_h := board_rect().position.y  # the HUD bar is the strip above the board
 	var bg := ColorRect.new()
 	bg.name = "Background"
 	bg.color = UiStyle.COLOR_BG
-	bg.custom_minimum_size = Vector2(0, Game.BOARD_ORIGIN.y)
+	bg.custom_minimum_size = Vector2(0, bar_h)
 	bg.set_anchors_preset(Control.PRESET_TOP_WIDE)
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(bg)
@@ -74,7 +75,7 @@ func _ready() -> void:
 	# LT-28: the bar spans the width in three groups (purse | day and night | speed, pause
 	# and sanity) split by expanding gaps, so spare width goes between groups.
 	bar.position = Vector2(RELIC_SLOT, 2)
-	bar.custom_minimum_size = Vector2(base_w - RELIC_SLOT - MARGIN, Game.BOARD_ORIGIN.y - 4)
+	bar.custom_minimum_size = Vector2(base_w - RELIC_SLOT - MARGIN, bar_h - 4)
 	bar.add_theme_constant_override("separation", SEPARATION)
 	add_child(bar)
 	var purse := _column(bar, "Purse")
@@ -130,7 +131,7 @@ func _ready() -> void:
 		frame_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		frame_label.add_theme_font_size_override("font_size", 13)
 		frame_label.add_theme_color_override("font_color", Color(0.6, 1.0, 0.6))
-		frame_label.position = Vector2(RELIC_SLOT, Game.BOARD_ORIGIN.y + 2)
+		frame_label.position = Vector2(RELIC_SLOT, board_rect().position.y + 2)
 		add_child(frame_label)
 	if game.sandbox:
 		sandbox_label = Label.new()
@@ -142,7 +143,7 @@ func _ready() -> void:
 		add_child(sandbox_label)  # first, so the minimum size sees the HUD theme
 		sandbox_label.size = sandbox_label.get_minimum_size()
 		sandbox_label.position = Vector2(board_rect().end.x - sandbox_label.size.x - 6,
-			Game.BOARD_ORIGIN.y + 2)
+			board_rect().position.y + 2)
 	# LT-14 Whispers jitter: the shader moves only the drawing, so click areas stay put.
 	if game.sanity_fx != null:
 		for c: CanvasItem in [gold_label, relics_label, hp_label, phase_label,
@@ -175,11 +176,11 @@ func refresh() -> void:
 	if hostile_label.visible:
 		hostile_label.text = hostile_text(game.sim.config.sanity.madness)
 		# Starts under the sanity bar, shifted left so it ends before the side panel.
-		var board_right := Game.BOARD_ORIGIN.x + s.map.width * Board.CELL
+		var board_right := board_rect().end.x
 		var w := hostile_label.get_combined_minimum_size().x
 		var x := minf(sanity_bar.get_global_rect().position.x - get_global_rect().position.x,
 			board_right - w - 4.0)
-		hostile_label.position = Vector2(x, Game.BOARD_ORIGIN.y + 2)
+		hostile_label.position = Vector2(x, board_rect().position.y + 2)
 	if flare_button != null:
 		_refresh_flare()
 	sanity_bar.queue_redraw()
@@ -285,10 +286,9 @@ static func relics_tooltip(sim: Simulation) -> String:
 	return "\n".join(lines)
 
 
-## The board in this layer's base pixels.
+## The board in this layer's base pixels (BoardView.world_rect).
 func board_rect() -> Rect2:
-	var m := game.sim.state.map
-	return Rect2(Game.BOARD_ORIGIN, Vector2(m.width, m.height) * Board.CELL)
+	return game.board.view.world_rect()
 
 
 ## LT-28: where relic tokens land, in the slot left of the relic counter, so a landing

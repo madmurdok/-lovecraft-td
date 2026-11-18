@@ -61,8 +61,9 @@ static func make_button(node_name: String, on_pressed: Callable, text := "") -> 
 static func panel_rect(map: MapDef) -> Rect2:
 	var base := Vector2(ProjectSettings.get_setting("display/window/size/viewport_width"),
 		ProjectSettings.get_setting("display/window/size/viewport_height"))
-	var left := Game.BOARD_ORIGIN.x + map.width * Board.CELL
-	return Rect2(left, Game.BOARD_ORIGIN.y, base.x - left, base.y - Game.BOARD_ORIGIN.y)
+	var board := BoardView.world_rect_for(map.grid)
+	var left := board.end.x
+	return Rect2(left, board.position.y, base.x - left, base.y - board.position.y)
 
 
 func _ready() -> void:

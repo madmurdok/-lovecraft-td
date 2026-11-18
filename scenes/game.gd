@@ -6,7 +6,6 @@ extends Node2D
 
 signal restart_requested
 
-const BOARD_ORIGIN := Vector2(0, 48)  ## below the HUD bar
 const REVEAL_FAKES_ARG := "--reveal-fakes"  ## `-- --reveal-fakes` (debug builds only)
 ## `-- --sanity=<v>` or `-- --sanity <v>` (debug builds only, LT-14, LT-21): sets sanity at
 ## the start of the run through the sim's own sanity path, so SANITY_CHANGED /
@@ -102,7 +101,6 @@ static func debug_sanity_arg(args: PackedStringArray) -> float:
 func _ready() -> void:
 	board = Board.new()
 	board.name = "Board"
-	board.position = BOARD_ORIGIN
 	board.game = self
 	add_child(board)
 	board.cell_clicked.connect(_on_cell_clicked)

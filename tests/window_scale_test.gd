@@ -131,7 +131,7 @@ func test_click_under_a_scaled_viewport_picks_the_cell_and_builds() -> void:
 	await _start_game()
 	var cell := _far_buildable_cell()
 	var gold := _game.sim.state.gold
-	await _click(_game.board.position + (Vector2(cell) + Vector2(0.5, 0.5)) * Board.CELL)
+	await _click(_game.board.view.cell_to_screen(_game.sim.state.map.grid.centre(cell)))
 	assert_bool(_game.picker.visible).is_true()
 	assert_vector(_game.picker.cell).is_equal(cell)
 	await _click(_game.picker.buttons[RIFLE].get_global_rect().get_center())

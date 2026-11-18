@@ -65,9 +65,55 @@ func test_g1_no_rule_copies_outside_the_sim() -> void:
 		+ ", ".join(hits)).is_empty()
 
 
-## G3 (LT-76, LT-77): one cell centre. Under sim/, tools/, scenes/ and ui/ a hand-written
-## centre (`.x + 0.5`, `0.5 + .y`, `Vector2(c) + Vector2(0.5, 0.5)`, continuation lines
-## joined) appears only in sim/rules/square_grid.gd (SquareGrid.centre).
+## G2 (LT-35, B4): pixels only in the view. The pixel scale and the board origin (`CELL`,
+## `BOARD_ORIGIN`, `ORIGIN`; `/ CELL` picking included) are named only in
+## scenes/board/board_view.gd (BoardView). sim/, tools/, scenes/ (the board layers too),
+## ui/ and tests/ (but tests/support/) ask the view: cell_at_screen, cell_to_world,
+## cells_to_px, world_rect.
+const G2_DIRS := ["res://sim", "res://tools", "res://scenes", "res://ui", "res://tests"]
+const G2_HOME := "res://scenes/board/board_view.gd"
+const G2_DENY := "\\b(CELL|BOARD_ORIGIN|ORIGIN)\\b"
+
+
+func test_g2_pixels_only_in_the_view() -> void:
+	var scan := SimBoundaryTest.new()
+	var hits: Array[String] = []
+	var scanned := 0
+	var home_hits := 0
+	for dir: String in G2_DIRS:
+		for f in scan._gd_files(dir):
+			if f.begins_with(SUPPORT_DIR):
+				continue
+			var found := _find_joined(scan, f, FileAccess.get_file_as_string(f), G2_DENY)
+			if f == G2_HOME:
+				home_hits = found.size()
+				continue
+			scanned += 1
+			hits.append_array(found)
+	var probes := ["p = cells * Board.CELL", "board.position = Game.BOARD_ORIGIN",
+		"r = CELL * 0.25", "c = Vector2i(floori(p.x / CELL), 0)", "o = BoardView.ORIGIN",
+		"x = Rect2(o, Vector2(\n\tBoard.CELL, 1))"]
+	var probe_hits := 0
+	for p: String in probes:
+		probe_hits += _find_joined(scan, "probe.gd", p, G2_DENY).size()
+	var clean := _find_joined(scan, "near.gd",
+		"r = view.cells_to_px(MARK_SLOW_CELLS)\np = view.cell_to_world(c)\nb = view.world_rect()",
+		G2_DENY)
+	scan.free()
+	assert_int(scanned).is_greater(100)  # sim/, tools/, scenes/, ui/ and tests/ were walked
+	assert_int(home_hits).is_greater(0)  # the view itself holds them
+	assert_int(probe_hits).is_equal(probes.size())  # each pixel form is caught
+	assert_array(clean).is_empty()  # the view calls are not
+	assert_array(hits).override_failure_message(
+		"pixel scale or board origin outside BoardView (ask the view): " + ", ".join(hits)) \
+		.is_empty()
+
+
+## G3 (LT-76, LT-77, LT-35): one cell centre. Under sim/, tools/, scenes/ and ui/ a
+## hand-written centre (`.x + 0.5`, `0.5 + .y`, `Vector2(c) + Vector2(0.5, 0.5)`,
+## continuation lines joined) appears only in sim/rules/square_grid.gd (SquareGrid.centre).
+## B4: the scan covers BoardView and the board layers (scenes/), which take centres from
+## GridTopology.centre and map them with BoardView.cell_to_world.
 const G3_DIRS := ["res://sim", "res://tools", "res://scenes", "res://ui"]
 const G3_HOME := "res://sim/rules/square_grid.gd"
 const G3_CENTRE := "\\.(x|y)\\s*\\+\\s*0\\.5\\b|\\b0\\.5\\s*\\+\\s*[\\w.]*\\.(x|y)\\b" \
@@ -78,21 +124,25 @@ func test_g3_one_cell_centre() -> void:
 	var scan := SimBoundaryTest.new()
 	var hits: Array[String] = []
 	var home_hits := 0
+	var view_scanned := false
 	for dir: String in G3_DIRS:
 		for f in scan._gd_files(dir):
+			view_scanned = view_scanned or f == G2_HOME
 			var found := _find_joined(scan, f, FileAccess.get_file_as_string(f), G3_CENTRE)
 			if f == G3_HOME:
 				home_hits = found.size()
 			else:
 				hits.append_array(found)
 	var probes := ["p = Vector2(cell) + Vector2(0.5, 0.5)", "p = Vector2(0.5 + c.x, 1)",
-		"p = Vector2(cell.x\n\t+ 0.5, cell.y)"]
+		"p = Vector2(cell.x\n\t+ 0.5, cell.y)",
+		"p = view.cell_to_world(Vector2(cell) + Vector2(0.5, 0.5))"]
 	var probe_hits := 0
 	for p: String in probes:
 		probe_hits += _find_joined(scan, "probe.gd", p, G3_CENTRE).size()
 	scan.free()
 	assert_int(probe_hits).is_equal(probes.size())  # each centre form is caught
 	assert_int(home_hits).is_equal(2)  # the rule itself: x and y
+	assert_bool(view_scanned).is_true()  # BoardView is in the scope
 	assert_array(hits).override_failure_message(
 		"cell centre written by hand (use GridTopology.centre): " + ", ".join(hits)).is_empty()
 

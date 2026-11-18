@@ -57,7 +57,7 @@ func _click_control(c: Control) -> void:
 
 
 func _click_cell(cell: Vector2i) -> void:
-	await _click(_game.board.position + (Vector2(cell) + Vector2(0.5, 0.5)) * Board.CELL)
+	await _click(_game.board.view.cell_to_screen(_game.sim.state.map.grid.centre(cell)))
 
 
 func _buildable_cell() -> Vector2i:
@@ -112,14 +112,14 @@ func test_panel_rect_is_right_of_the_board_below_the_hud() -> void:
 	await _start_game()
 	var map := _game.sim.state.map
 	var r := SidePanel.panel_rect(map)
-	var board := Rect2(Game.BOARD_ORIGIN, Vector2(map.width, map.height) * Board.CELL)
-	assert_float(r.position.x).is_equal(Game.BOARD_ORIGIN.x + map.width * Board.CELL)
-	assert_float(r.position.y).is_equal(Game.BOARD_ORIGIN.y)
+	var board := _game.board.view.world_rect()
+	assert_float(r.position.x).is_equal(board.end.x)
+	assert_float(r.position.y).is_equal(board.position.y)
 	assert_float(r.end.x).is_equal(1200.0)
 	assert_float(r.end.y).is_equal(675.0)
 	assert_bool(r.intersects(board)).is_false()
-	assert_float(r.size.x).is_equal(1200.0 - map.width * Board.CELL)
-	if map.width * Board.CELL == 960:
+	assert_float(r.size.x).is_equal(1200.0 - board.size.x)
+	if board.size.x == 960:
 		assert_that(r).is_equal(Rect2(960, 48, 240, 627))
 		assert_float(_game.side_panel.size.x).is_equal(240.0)
 	assert_that(_game.side_panel.get_global_rect()).is_equal(r)
@@ -592,7 +592,8 @@ func test_hud_bar_spans_the_full_width_above_the_board() -> void:
 	var hud := _game.hud
 	assert_float(hud.get_global_rect().size.x).is_equal(1200.0)
 	var bg: Control = hud.get_node("Background")
-	assert_that(bg.get_global_rect()).is_equal(Rect2(0, 0, 1200, Game.BOARD_ORIGIN.y))
+	assert_that(bg.get_global_rect()).is_equal(
+		Rect2(0, 0, 1200, _game.board.view.world_rect().position.y))
 
 
 func test_a_range_ring_crossing_the_top_edge_is_drawn_under_the_hud() -> void:
@@ -605,12 +606,14 @@ func test_a_range_ring_crossing_the_top_edge_is_drawn_under_the_hud() -> void:
 	assert_object(_game.board.get_canvas_layer_node()).is_null()
 	# A ring around a top-row tower reaches above the board: that strip is HUD background.
 	var t := await _open_tower(RIFLE)
-	var ring_top := _game.board.position.y + (t.cell.y + 0.5 - _game.board.selected_range) * Board.CELL
-	var cx := _game.board.position.x + (t.cell.x + 0.5) * Board.CELL
+	var v := _game.board.view
+	var top := v.world_rect().position.y
+	var ring_top := top + v.cells_to_px(t.cell.y + 0.5 - _game.board.selected_range)
+	var cx := v.world_rect().position.x + v.cells_to_px(t.cell.x + 0.5)
 	var bg: Control = hud.get_node("Background")
-	if ring_top < Game.BOARD_ORIGIN.y:
+	if ring_top < top:
 		assert_bool(bg.get_global_rect().has_point(Vector2(cx, maxf(ring_top, 0.0) + 1.0))).is_true()
-	assert_bool(bg.get_global_rect().has_point(Vector2(cx, Game.BOARD_ORIGIN.y - 1.0))).is_true()
+	assert_bool(bg.get_global_rect().has_point(Vector2(cx, top - 1.0))).is_true()
 
 
 # --- LT-28: opaque buttons, the footer strip -------------------------------------------------
@@ -654,7 +657,7 @@ func test_the_footer_covers_the_strip_below_the_board() -> void:
 	if footer == null or not footer.is_inside_tree():
 		return
 	var m := _game.sim.state.map
-	var bottom := Game.BOARD_ORIGIN.y + m.height * Board.CELL
+	var bottom := _game.board.view.world_rect().end.y
 	assert_float(bottom).is_less(675.0)
 	assert_that(footer.get_global_rect()).is_equal(Rect2(0, bottom, 1200, 675 - bottom))
 	assert_that(footer.color).is_equal(UiStyle.COLOR_BG)
@@ -686,7 +689,9 @@ func test_the_footer_covers_the_strip_below_the_board() -> void:
 	assert_int(_game.upgrade(t.id, best_branch)).is_equal(Simulation.CommandResult.OK)
 	await _click_cell(cell)
 	assert_bool(_game.tower_panel.visible).is_true()
-	var ring_bottom := _game.board.position.y + (cell.y + 0.5 + _game.board.selected_range) * Board.CELL
-	var cx := _game.board.position.x + (cell.x + 0.5) * Board.CELL
+	var v := _game.board.view
+	var ring_bottom := v.world_rect().position.y \
+		+ v.cells_to_px(cell.y + 0.5 + _game.board.selected_range)
+	var cx := v.world_rect().position.x + v.cells_to_px(cell.x + 0.5)
 	assert_float(ring_bottom).is_greater(bottom)
 	assert_bool(footer.get_global_rect().has_point(Vector2(cx, minf(ring_bottom, 647.0)))).is_true()
