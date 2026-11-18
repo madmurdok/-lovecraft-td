@@ -50,6 +50,7 @@ func _copy_map(m: MapDef) -> MapDef:
 	var c := MapDef.new()
 	c.width = m.width
 	c.height = m.height
+	c.grid = m.grid
 	c.spawn = m.spawn
 	c.lighthouse = m.lighthouse
 	c.path = m.path.duplicate()

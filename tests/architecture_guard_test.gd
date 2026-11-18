@@ -65,16 +65,16 @@ func test_g1_no_rule_copies_outside_the_sim() -> void:
 		+ ", ".join(hits)).is_empty()
 
 
-## G3 (LT-76, B2; sim and bot part, the view joins in B4): one cell centre. Under sim/ and
-## tools/ a hand-written centre (`.x + 0.5`, `0.5 + .y`, `Vector2(c) + Vector2(0.5, 0.5)`,
-## continuation lines joined) appears only in sim/rules/sim_grid.gd (SimGrid.centre).
-const G3_DIRS := ["res://sim", "res://tools"]
-const G3_HOME := "res://sim/rules/sim_grid.gd"
+## G3 (LT-76, LT-77): one cell centre. Under sim/, tools/, scenes/ and ui/ a hand-written
+## centre (`.x + 0.5`, `0.5 + .y`, `Vector2(c) + Vector2(0.5, 0.5)`, continuation lines
+## joined) appears only in sim/rules/square_grid.gd (SquareGrid.centre).
+const G3_DIRS := ["res://sim", "res://tools", "res://scenes", "res://ui"]
+const G3_HOME := "res://sim/rules/square_grid.gd"
 const G3_CENTRE := "\\.(x|y)\\s*\\+\\s*0\\.5\\b|\\b0\\.5\\s*\\+\\s*[\\w.]*\\.(x|y)\\b" \
 	+ "|\\+\\s*Vector2\\(\\s*0\\.5\\s*,\\s*0\\.5\\s*\\)"
 
 
-func test_g3_one_cell_centre_in_sim_and_bot() -> void:
+func test_g3_one_cell_centre() -> void:
 	var scan := SimBoundaryTest.new()
 	var hits: Array[String] = []
 	var home_hits := 0
@@ -94,7 +94,7 @@ func test_g3_one_cell_centre_in_sim_and_bot() -> void:
 	assert_int(probe_hits).is_equal(probes.size())  # each centre form is caught
 	assert_int(home_hits).is_equal(2)  # the rule itself: x and y
 	assert_array(hits).override_failure_message(
-		"cell centre written by hand (use SimGrid.centre): " + ", ".join(hits)).is_empty()
+		"cell centre written by hand (use GridTopology.centre): " + ", ".join(hits)).is_empty()
 
 
 ## `file:line: match` for `pattern` over the code lines of `text` (comments and strings

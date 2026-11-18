@@ -157,7 +157,7 @@ func test_a_click_below_the_board_closes_both_panels() -> void:
 	var m := _game.sim.state.map
 	var below := Vector2(_game.board.position.x + Board.CELL * 0.5,
 		_game.board.position.y + m.height * Board.CELL + 10.0)
-	assert_bool(m.in_bounds(_game.board.cell_at(below - _game.board.position))).is_false()
+	assert_bool(m.grid.contains(_game.board.cell_at(below - _game.board.position))).is_false()
 	assert_float(below.y).is_less(675.0)
 	var cell := _buildable_cell()
 	await _click_cell(cell)

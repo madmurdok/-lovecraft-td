@@ -30,6 +30,7 @@ func _start_game() -> void:
 
 func _tower(lit: bool, shadowed: bool) -> SimTower:
 	var t := SimTower.new()
+	t.pos = SquareGrid.new(1, 1).centre(t.cell)
 	t.lit = lit
 	t.shadowed = shadowed
 	return t

@@ -15,5 +15,5 @@ static func in_cast_radius(c: Vector2, range_cells: float, p: Vector2) -> bool:
 ## Whether a caster (aura, light or shadow tower) standing on `cell` with radius
 ## `range_cells` covers the point p (cell units): in_cast_radius of the cell centre. Works
 ## for a tower not built yet (the board's BUILD preview, the bot's placement score).
-static func covers(cell: Vector2i, range_cells: float, p: Vector2) -> bool:
-	return in_cast_radius(SimGrid.centre(cell), range_cells, p)
+static func covers(grid: GridTopology, cell: Vector2i, range_cells: float, p: Vector2) -> bool:
+	return in_cast_radius(grid.centre(cell), range_cells, p)

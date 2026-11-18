@@ -82,7 +82,7 @@ static func ambient(p_night: float) -> Color:
 
 func _ready() -> void:
 	var m := game.sim.state.map
-	var lh_center := (Vector2(m.lighthouse) + Vector2(0.5, 0.5)) * Board.CELL
+	var lh_center := m.grid.centre(m.lighthouse) * Board.CELL
 
 	fog = SeaFog.new()
 	fog.name = "SeaFog"
@@ -138,7 +138,7 @@ func _apply_night() -> void:
 ## widens it: LT-69 lights the whole board instead, _sync_flare).
 func _sync_beams() -> void:
 	var sim := game.sim
-	var lh_center := (Vector2(sim.state.map.lighthouse) + Vector2(0.5, 0.5)) * Board.CELL
+	var lh_center := sim.state.map.grid.centre(sim.state.map.lighthouse) * Board.CELL
 	var cfg := sim.config.economy
 	var tex := _beam_texture(atan(cfg.beam.half_width_ratio))
 	var tex_scale := cfg.beam.reach_cells * 2.0 * Board.CELL / BEAM_TEX_SIZE
@@ -173,10 +173,11 @@ func _sync_flare() -> void:
 ## LT-69: the flare disc's radius in cells: the farthest board corner from the lighthouse
 ## cell centre, divided by FLARE_CORE so the whole board lies in the bright core.
 static func flare_cover_cells(m: MapDef) -> float:
-	var c := Vector2(m.lighthouse) + Vector2(0.5, 0.5)
+	var c := m.grid.centre(m.lighthouse)
 	var far := 0.0
-	for corner: Vector2 in [Vector2.ZERO, Vector2(m.width, 0), Vector2(0, m.height),
-			Vector2(m.width, m.height)]:
+	var b := m.grid.bounds()
+	for corner: Vector2 in [b.position, Vector2(b.end.x, b.position.y),
+			Vector2(b.position.x, b.end.y), b.end]:
 		far = maxf(far, c.distance_to(corner))
 	return far / FLARE_CORE
 
@@ -206,7 +207,7 @@ func _sync_tower_lights() -> void:
 			var l := _light("TowerLight%d" % t.id, _glow_texture(), TOWER_LIGHT_COLOR,
 				TOWER_LIGHT_ENERGY * night, TOWER_LIGHT_CELLS * 2.0 * Board.CELL / 256.0)
 			l.visible = night > 0.0
-			l.position = (Vector2(t.cell) + Vector2(0.5, 0.5)) * Board.CELL
+			l.position = game.sim.state.map.grid.centre(t.cell) * Board.CELL
 			_tower_lights[t.id] = l
 	for id in _tower_lights.keys():
 		if not seen.has(id):
@@ -293,9 +294,7 @@ class SeaFog extends Node2D:
 	var map: MapDef
 
 	func _draw() -> void:
-		for y in map.height:
-			for x in map.width:
-				var c := Vector2i(x, y)
-				if map.kind_at(c) == MapDef.Kind.WATER:
-					draw_rect(Rect2(Vector2(c) * Board.CELL, Vector2(Board.CELL, Board.CELL)),
-						Color.WHITE)
+		for c in map.grid.cells():
+			if map.kind_at(c) == MapDef.Kind.WATER:
+				draw_rect(Rect2(Vector2(c) * Board.CELL, Vector2(Board.CELL, Board.CELL)),
+					Color.WHITE)

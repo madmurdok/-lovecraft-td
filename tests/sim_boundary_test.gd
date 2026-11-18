@@ -21,8 +21,8 @@ const SIMULATION := "res://sim/core/simulation.gd"
 ## Engine types sim/ may name today (computed from the code once and pinned, LT-34/S2).
 const ENGINE_ALLOWLIST := [
 	"Array", "Dictionary", "FileAccess", "JSON", "PackedByteArray", "PackedInt64Array",
-	"PackedStringArray", "RandomNumberGenerator", "RefCounted", "RegEx", "String", "Variant",
-	"Vector2", "Vector2i",
+	"PackedStringArray", "PackedVector2Array", "RandomNumberGenerator", "Rect2",
+	"RefCounted", "RegEx", "String", "Variant", "Vector2", "Vector2i",
 ]
 ## Matched on the code of a sim file with comments and string literals blanked.
 const SIM_FORBIDDEN_CODE := [

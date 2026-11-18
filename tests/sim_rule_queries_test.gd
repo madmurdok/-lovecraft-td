@@ -385,7 +385,7 @@ func test_bot_light_checks_equal_the_sims_light_at() -> void:
 	build(s2, SIGN, _at(7))
 	for x in [4, 5, 6, 8, 9, 10]:
 		var cell := _at(x)
-		var want: bool = int(s2.light_at(SimGrid.centre(cell))["shadow_casters"]) > 0
+		var want: bool = int(s2.light_at(s2.state.map.grid.centre(cell))["shadow_casters"]) > 0
 		assert_bool(bot.call("_in_shadow_radius", s2, cell)).override_failure_message(
 			"cell %d" % x).is_equal(want)
 	assert_bool(bot.call("_in_shadow_radius", s2, _at(6))).is_true()

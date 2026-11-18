@@ -6,17 +6,17 @@ extends RefCounted
 
 enum Kind {BUILDABLE, PATH, WATER}
 
-const FIELDS := ["width", "height", "rows"]
+const FIELDS := ["width", "height", "rows", "grid"]
 const KIND_OF := {".": Kind.BUILDABLE, "#": Kind.PATH, "~": Kind.WATER, "S": Kind.PATH,
 	"L": Kind.PATH}
-const NEIGHBOURS: Array[Vector2i] = [Vector2i.RIGHT, Vector2i.DOWN, Vector2i.LEFT, Vector2i.UP]
 
 var width: int  ## >= 1
 var height: int  ## >= 1
 var spawn: Vector2i  ## the S cell (path start, docks)
 var lighthouse: Vector2i  ## the L cell (path end)
 var path: Array[Vector2i] = []  ## S ... L inclusive, in walking order
-var _kinds: PackedByteArray = []  ## Kind per cell, row-major
+var grid: GridTopology  ## cell geometry (LT-77); the only topology today is "square"
+var _kinds: PackedByteArray = []  ## Kind per cell, indexed by grid.index
 
 
 static func parse(r: ConfigReader, root: Dictionary) -> MapDef:
@@ -25,12 +25,16 @@ static func parse(r: ConfigReader, root: Dictionary) -> MapDef:
 	var start_errors := r.errors.size()
 	m.width = r.req_int(root, "width", "", 1)
 	m.height = r.req_int(root, "height", "", 1)
+	var grid_kind := r.opt_string(root, "grid", "", "square")
+	if grid_kind != "square":
+		r.error("grid", "unknown grid \"%s\" (expected \"square\")" % grid_kind)
+	m.grid = SquareGrid.new(m.width, m.height)
 	var rows: Variant = r.req_array(root, "rows", "")
 	if rows == null or r.errors.size() > start_errors:
 		return m
 	if rows.size() != m.height:
 		r.error("rows", "expected %d rows (height), got %d" % [m.height, rows.size()])
-	m._kinds.resize(m.width * m.height)
+	m._kinds.resize(m.grid.cell_count())
 	var starts: Array[Vector2i] = []
 	var ends: Array[Vector2i] = []
 	for y in rows.size():
@@ -48,7 +52,7 @@ static func parse(r: ConfigReader, root: Dictionary) -> MapDef:
 				r.error(rp, "unknown character \"%s\" at column %d" % [ch, x])
 				continue
 			if y < m.height:
-				m._kinds[y * m.width + x] = KIND_OF[ch]
+				m._kinds[m.grid.index(Vector2i(x, y))] = KIND_OF[ch]
 			if ch == "S":
 				starts.append(Vector2i(x, y))
 			elif ch == "L":
@@ -79,11 +83,9 @@ func _derive_path(r: ConfigReader) -> void:
 				% [end[0], cell.x, count])
 	if r.errors.size() > n:
 		return
-	for y in height:
-		for x in width:
-			var cell := Vector2i(x, y)
-			if kind_at(cell) == Kind.PATH and _path_neighbours(cell).size() > 2:
-				r.error(ConfigReader.index("rows", y), "path forks at column %d" % x)
+	for cell in grid.cells():
+		if kind_at(cell) == Kind.PATH and _path_neighbours(cell).size() > 2:
+			r.error(ConfigReader.index("rows", cell.y), "path forks at column %d" % cell.x)
 	if r.errors.size() > n:
 		return
 	var visited := {spawn: true}
@@ -104,33 +106,27 @@ func _derive_path(r: ConfigReader) -> void:
 		cur = next[0]
 		visited[cur] = true
 		walk.append(cur)
-	for y in height:
-		for x in width:
-			var cell := Vector2i(x, y)
-			if kind_at(cell) == Kind.PATH and not visited.has(cell):
-				r.error(ConfigReader.index("rows", y),
-					"path cell at column %d is not on the walk from S to L" % x)
+	for cell in grid.cells():
+		if kind_at(cell) == Kind.PATH and not visited.has(cell):
+			r.error(ConfigReader.index("rows", cell.y),
+				"path cell at column %d is not on the walk from S to L" % cell.x)
 	if r.errors.size() == n:
 		path = walk
 
 
 func _path_neighbours(cell: Vector2i) -> Array[Vector2i]:
 	var out: Array[Vector2i] = []
-	for d in NEIGHBOURS:
-		if kind_at(cell + d) == Kind.PATH:
-			out.append(cell + d)
+	for nb in grid.neighbours(cell):
+		if kind_at(nb) == Kind.PATH:
+			out.append(nb)
 	return out
-
-
-func in_bounds(cell: Vector2i) -> bool:
-	return cell.x >= 0 and cell.y >= 0 and cell.x < width and cell.y < height
 
 
 ## Out-of-bounds cells read as water.
 func kind_at(cell: Vector2i) -> Kind:
-	if not in_bounds(cell):
+	if not grid.contains(cell):
 		return Kind.WATER
-	return _kinds[cell.y * width + cell.x] as Kind
+	return _kinds[grid.index(cell)] as Kind
 
 
 ## The lighthouse cell is a path cell, so it is never buildable.

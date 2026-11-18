@@ -108,6 +108,7 @@ func test_flare_cover_reaches_every_board_corner() -> void:
 		var alt := MapDef.new()
 		alt.width = m.width
 		alt.height = m.height
+		alt.grid = m.grid
 		alt.lighthouse = cell
 		maps.append(alt)
 	for map in maps:
