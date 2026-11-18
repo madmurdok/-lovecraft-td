@@ -15,9 +15,7 @@ func before_test() -> void:
 	var r := GameConfig.load_from_dir("res://data")
 	assert_bool(r.ok).override_failure_message("\n".join(r.errors)).is_true()
 	_config = r.config
-	_vp = SubViewport.new()
-	_vp.size = Vector2i(1200, 675)
-	add_child(_vp)
+	_vp = GameFixture.make_viewport(self)
 
 
 func after_test() -> void:
@@ -28,8 +26,7 @@ func after_test() -> void:
 
 
 func _start(sandbox: bool) -> void:
-	_game = Game.new()
-	_game.setup(_config, 7)
+	_game = GameFixture.make_game(null, _config, 7)
 	assert_bool(_game.sandbox).is_false()  # the test process has no --sandbox
 	_game.sandbox = sandbox
 	_vp.add_child(_game)

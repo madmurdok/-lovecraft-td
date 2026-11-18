@@ -14,13 +14,8 @@ var _game: Game
 func before_test() -> void:
 	var r := GameConfig.load_from_dir("res://data")
 	assert_bool(r.ok).override_failure_message("\n".join(r.errors)).is_true()
-	_vp = SubViewport.new()
-	_vp.size = Vector2i(1200, 675)
-	add_child(_vp)
-	_game = Game.new()
-	_game.setup(r.config, 7)
-	_vp.add_child(_game)
-	_game.set_process(false)
+	_vp = GameFixture.make_viewport(self)
+	_game = GameFixture.make_game(_vp, r.config, 7)
 	await get_tree().process_frame
 	assert_int(_game.sim.state.phase).is_equal(SimState.Phase.BUILD)
 
@@ -162,7 +157,7 @@ func test_panel_upgrade_button_states() -> void:
 	_game.call_wave()
 	p.refresh()
 	assert_bool(p.upgrade_button.disabled).is_true()
-	assert_str(p.upgrade_button.text).contains("By day only")
+	assert_str(p.upgrade_button.text).contains("Only by day")
 
 
 func test_panel_oil_button_states() -> void:
@@ -187,7 +182,7 @@ func test_panel_oil_button_states() -> void:
 	_game.call_wave()
 	p.refresh()
 	assert_bool(p.oil_button.disabled).is_true()
-	assert_str(p.oil_button.text).contains("By day only")
+	assert_str(p.oil_button.text).contains("Only by day")
 
 
 func test_coverage_percent() -> void:

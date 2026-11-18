@@ -16,8 +16,6 @@ extends VBoxContainer
 
 signal hovered_changed(def_id: String)  ## "" when no row is hovered
 
-## Kept for callers of the LT-7 name; the texts live in TowerInfo.REASONS.
-const REASONS := TowerInfo.REASONS
 const GROUP_TITLES := {"mundane": "MUNDANE", "occult": "OCCULT"}
 const STATUS_COLOR := Color(0.95, 0.55, 0.45)  ## refusal reason, unaffordable cost, "!"
 const DIM := Color(1, 1, 1, 0.5)  ## a refused row's cells (an unaffordable cost excepted)
