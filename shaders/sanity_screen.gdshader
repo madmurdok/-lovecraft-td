@@ -1,9 +1,12 @@
 shader_type canvas_item;
-render_mode unshaded;
-// LT-14 sanity screen effect: a full-screen rect on a CanvasLayer between the world and
-// the HUD. Wavy distortion, chromatic aberration and a vignette, all scaled by
-// SanityFx from the sanity level, plus a desaturated red "madness" grade. The HUD is
-// drawn above this layer, so it is never distorted. Compatibility / WebGL2 safe.
+render_mode unshaded, blend_disabled;
+// LT-14 sanity screen effect: a rect over the board on a CanvasLayer between the world and
+// the HUD (LT-62: only the board; the rest of the screen is under the opaque HUD). Wavy
+// distortion, chromatic aberration and a vignette, all scaled by SanityFx from the sanity
+// level, plus a desaturated red "madness" grade. The HUD is drawn above this layer, so it
+// is never distorted. Compatibility / WebGL2 safe.
+// LT-62 P3: COLOR alpha is always 1, so blending is off (no framebuffer read per pixel), and
+// the madness grade is skipped while `madness` is 0 (a uniform branch, same result).
 
 uniform sampler2D screen_tex : hint_screen_texture, filter_linear;
 uniform float distortion = 0.0;  // peak UV offset in pixels
@@ -35,11 +38,13 @@ void fragment() {
 	float vig = smoothstep(0.35, 1.15, edge) * clamp(vignette + 0.3 * pulse, 0.0, 1.0);
 	col = mix(col, vignette_color.rgb, vig);
 
-	float lum = dot(col, vec3(0.299, 0.587, 0.114));
-	vec3 graded = vec3(lum) * madness_tint.rgb * 1.5;
-	col = mix(col, graded, madness * 0.6);
-	float throb = 0.65 + 0.35 * sin(t * 2.6);
-	col += vec3(0.30, 0.0, 0.03) * smoothstep(0.55, 1.2, edge) * madness * throb;
+	if (madness > 0.0) {
+		float lum = dot(col, vec3(0.299, 0.587, 0.114));
+		vec3 graded = vec3(lum) * madness_tint.rgb * 1.5;
+		col = mix(col, graded, madness * 0.6);
+		float throb = 0.65 + 0.35 * sin(t * 2.6);
+		col += vec3(0.30, 0.0, 0.03) * smoothstep(0.55, 1.2, edge) * madness * throb;
+	}
 
 	COLOR = vec4(col, 1.0);
 }
