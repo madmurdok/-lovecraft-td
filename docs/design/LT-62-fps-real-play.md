@@ -741,3 +741,31 @@ func _occult(g: Game) -> int:
 			n += 1
 	return n
 ```
+
+## After the fixes (LT-62/S17)
+
+Same-seed A/B of the LT-62 fixes. BEFORE = d9d744f, AFTER = a81e9f4. Occult bot, seed 4242,
+boot-fit window (2390x1344 px), `--frame-stats --mute --audio-driver Dummy`, 180 s per run
+(waves 1-4), 2 repeats per arm, interleaved. The probe is the appendix B script trimmed of the
+appendix A dependencies (no section timers or event counts), so it runs unpatched on both
+commits. `max ms` is the worst frame of the run; `max first 20 s` is the worst frame before t = 21 s.
+The first-shot stall is the single frame over 200 ms: t = 15.7 s at sanity 0, 25.4 s at sanity 100.
+
+| run | arm | sanity | fps med | p10 | max ms | max first 20 s | >100 ms | focused | load before / after | real / user / sys (s) |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | before | 100 | 45.9 | 34.2 | 290.4 | 33.8 | 1 | 0.94 | 6.71 / 5.60 | 193.8 / 66.3 / 32.4 |
+| 2 | after | 100 | 44.9 | 37.9 | 350.1 | 36.2 | 1 | 1.00 | 5.60 / 4.59 | 194.7 / 64.6 / 32.7 |
+| 3 | before | 0 | 42.0 | 36.5 | 250.2 | 250.2 | 1 | 1.00 | 4.59 / 4.79 | 194.9 / 66.3 / 33.5 |
+| 4 | after | 0 | 43.8 | 35.6 | 208.6 | 208.6 | 1 | 1.00 | 4.79 / 7.88 | 195.6 / 67.7 / 33.9 |
+| 5 | before | 100 | 43.5 | 36.8 | 298.4 | 37.7 | 1 | 1.00 | 7.88 / 5.37 | 194.6 / 66.7 / 33.6 |
+| 6 | after | 100 | 46.3 | 36.9 | 249.2 | 33.8 | 1 | 1.00 | 5.37 / 5.05 | 194.5 / 65.0 / 32.8 |
+| 7 | before | 0 | 41.9 | 36.8 | 245.6 | 245.6 | 1 | 1.00 | 5.05 / 5.31 | 194.1 / 63.8 / 32.3 |
+| 8 | after | 0 | 41.3 | 36.0 | 245.2 | 245.2 | 1 | 1.00 | 5.31 / 6.43 | 194.9 / 68.0 / 34.0 |
+
+Medians per arm (mean of 2): before s100 44.7, after s100 45.6, before s0 42.0, after s0 42.6 fps.
+Load stayed at 4.6-7.9; focus kept in every run (share 0.94-1.00). Exactly one frame over
+100 ms per run.
+
+1. Steady fps did not change (differences of 1-2 fps are inside the run-to-run noise); the sanity-0 gap stays ~2-3 fps in both arms.
+2. The first-shot stall is NOT removed by P1: AFTER still has one 209-350 ms frame at the same times (15.7 s / 25.4 s) as BEFORE (246-298 ms).
+3. The P1 warm-up (alpha 0.01 draws during the first 0.5 s) does not cover the first-use cost of the first tracer; it needs a second look.
