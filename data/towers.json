@@ -129,16 +129,16 @@
       "glyph": "S",
       "cost": 80,
       "levels": [
-        { "range": 3, "effects": { "reveal_fakes": 1, "slow": 0.3, "casts_light": 1 } },
-        { "upgrade_cost": 60, "range": 3.5, "effects": { "reveal_fakes": 1, "slow": 0.35, "casts_light": 1 } }
+        { "range": 3, "effects": { "reveal_fakes": 1, "slow": 0.15, "casts_light": 1 } },
+        { "upgrade_cost": 60, "range": 3.5, "effects": { "reveal_fakes": 1, "slow": 0.175, "casts_light": 1 } }
       ],
       "branches": {
         "a": { "name": "Signal lamp", "role": "Wide light, reveal",
                "upgrade_cost": 100, "range": 5,
-               "effects": { "reveal_fakes": 1, "slow": 0.35, "casts_light": 1 } },
+               "effects": { "reveal_fakes": 1, "slow": 0.175, "casts_light": 1 } },
         "b": { "name": "Blinding beam", "role": "Slows hard",
                "upgrade_cost": 100, "range": 3.5,
-               "effects": { "reveal_fakes": 1, "slow": 0.5, "casts_light": 1 } }
+               "effects": { "reveal_fakes": 1, "slow": 0.25, "casts_light": 1 } }
       }
     },
     "resonator": {

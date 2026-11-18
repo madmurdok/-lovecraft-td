@@ -53,11 +53,11 @@ func test_buy_flare_oil_buys_one_flare_up_to_the_tank_one_logged_unit_each() -> 
 	var eco := _game.sim.config.economy
 	var cost := eco.flare.cost_oil
 	var price := eco.oil.price
-	assert_array([cost, price, eco.oil.cap, eco.oil.start]).is_equal([8, 10, 16, 0])
+	assert_array([cost, price, eco.oil.cap, eco.oil.start]).is_equal([12, 10, 16, 0])
 	assert_int(_game.sim.state.oil).is_equal(0)  # oil.start
 	var rich := 100000
 	assert_array(_click(0, rich)).is_equal([R.OK, cost, cost * price, _buys(cost)])
-	assert_int(cost * price).is_equal(80)  # Q1: a flare's oil is $80
+	assert_int(cost * price).is_equal(120)  # LT-71: a flare's oil is $120
 	# min(cost, cap - oil): held oil does not shrink the click below a flare's worth.
 	assert_array(_click(3, rich)).is_equal([R.OK, cost, cost * price, _buys(cost)])
 	assert_array(_click(12, rich)).is_equal([R.OK, 4, 4 * price, _buys(4)])
@@ -75,7 +75,7 @@ func test_flare_oil_to_buy_is_min_of_cost_and_room_in_the_tank() -> void:
 	for oil: int in [0, 3, 8, 12, 15, 16]:
 		s.oil = oil
 		got.append(_game.flare_oil_to_buy())
-	assert_array(got).is_equal([8, 8, 8, 4, 1, 0])
+	assert_array(got).is_equal([12, 12, 8, 4, 1, 0])
 
 
 ## The panel and HUD texts follow the config, not hard-coded numbers.
@@ -87,8 +87,8 @@ func test_panel_and_hud_flare_texts_come_from_the_config() -> void:
 	s.gold = 100000
 	p.open()
 	p.refresh()
-	assert_str(p.oil_button.text).starts_with("Buy oil for a flare (%s)" % TowerInfo.money(80))
-	assert_str(p.oil_label.text).contains("Flare: 8 oil, whole map, 5 s")
+	assert_str(p.oil_button.text).starts_with("Buy oil for a flare (%s)" % TowerInfo.money(120))
+	assert_str(p.oil_label.text).contains("Flare: 12 oil, whole map, 5 s")
 	assert_str(p.upgrade_button.text).contains("flare 6 s")
 	s.oil = 12
 	p.refresh()

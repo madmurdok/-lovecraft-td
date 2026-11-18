@@ -137,9 +137,9 @@ func test_oil_values() -> void:
 	])
 	# cap may equal cost_oil and start may equal cap; without a flare cap >= 1 suffices.
 	var c := _accepts(func(l: Dictionary) -> void:
-		l["oil"]["cap"] = 8
-		l["oil"]["start"] = 8)
-	assert_int(c.economy.oil.cap).is_equal(8)
+		l["oil"]["cap"] = 12
+		l["oil"]["start"] = 12)
+	assert_int(c.economy.oil.cap).is_equal(12)
 	var lone := _accepts(func(l: Dictionary) -> void:
 		l.erase("flare")
 		l["oil"]["cap"] = 1
@@ -239,5 +239,5 @@ func test_shipped_values_are_the_addendum_numbers() -> void:
 	# whole-map flare burns 5 / 6 / 7 s by lighthouse level.
 	assert_array([e.oil.price, e.oil.start, e.oil.cap]).is_equal([10, 0, 16])
 	assert_array([e.flare.cost_oil, e.flare.cooldown_seconds,
-		e.flare.enemy_speed_mult]).is_equal([8, 30.0, 0.5])
+		e.flare.enemy_speed_mult]).is_equal([12, 30.0, 0.5])
 	assert_array(e.flare.seconds).is_equal([5.0, 6.0, 7.0])
