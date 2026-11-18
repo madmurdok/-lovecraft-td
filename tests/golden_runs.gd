@@ -197,13 +197,9 @@ static func no_tree_run(config: GameConfig) -> Dictionary:
 ## The LT-34 frame-driven run under `parent` (a node in the tree), then the bare replay of its
 ## command log with the events recorded. Frees what it adds.
 static func frame_run(parent: Node, config: GameConfig) -> Dictionary:
-	var vp := SubViewport.new()
-	vp.size = Vector2i(1200, 675)
-	parent.add_child(vp)
-	var game := Game.new()
-	game.setup(config, SIM_SEED)
-	vp.add_child(game)
-	game.set_process(false)  # advance() below is the body of Game._process
+	var vp := GameFixture.make_viewport(parent, Vector2i(1200, 675))
+	# make_game adds the Game to vp with _process off: advance() below is its body.
+	var game := GameFixture.make_game(vp, config, SIM_SEED)
 	await parent.get_tree().process_frame
 	var cells: Array[Vector2i] = []
 	for y in game.sim.state.map.height:
