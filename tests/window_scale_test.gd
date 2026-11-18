@@ -20,11 +20,7 @@ func before_test() -> void:
 	var r := GameConfig.load_from_dir("res://data")
 	assert_bool(r.ok).override_failure_message("\n".join(r.errors)).is_true()
 	_config = r.config
-	_vp = SubViewport.new()
-	_vp.size = Vector2i(Vector2(BASE) * SCALE)
-	_vp.size_2d_override = BASE
-	_vp.size_2d_override_stretch = true
-	add_child(_vp)
+	_vp = GameFixture.make_viewport(self, Vector2i(Vector2(BASE) * SCALE), BASE)
 
 
 func after_test() -> void:
@@ -35,10 +31,7 @@ func after_test() -> void:
 
 
 func _start_game() -> void:
-	_game = Game.new()
-	_game.setup(_config, 7)
-	_vp.add_child(_game)
-	_game.set_process(false)
+	_game = GameFixture.make_game(_vp, _config, 7)
 	await get_tree().process_frame
 
 
