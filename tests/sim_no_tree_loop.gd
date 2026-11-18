@@ -15,8 +15,14 @@ static func run(run_seed := 5) -> String:
 	var r := GameConfig.load_from_dir("res://data")
 	if not r.ok:
 		return "CONFIG ERROR: %s" % "\n".join(r.errors)
-	var sim := Simulation.new(r.config, run_seed)
-	sim.set_spawner(WaveDirector.new(r.config.waves))
+	return digest(play(r.config, run_seed))
+
+
+## The game run() plays, on `config`. `sink` (LT-73 golden replay), when valid, gets
+## (sim, events) for every drain, the last one after the final step included.
+static func play(config: GameConfig, run_seed: int, sink := Callable()) -> Simulation:
+	var sim := Simulation.new(config, run_seed)
+	sim.set_spawner(WaveDirector.new(config.waves))
 	var cells: Array[Vector2i] = []
 	for y in sim.state.map.height:
 		for x in sim.state.map.width:
@@ -29,9 +35,14 @@ static func run(run_seed := 5) -> String:
 			if sim.build_tower(BUILDS[next_build], cells[next_build * 7 % cells.size()]) \
 					== Simulation.CommandResult.OK:
 				next_build += 1
-		sim.drain_events()
+		var events := sim.drain_events()
+		if sink.is_valid():
+			sink.call(sim, events)
 		sim.step()
-	return digest(sim)
+	var last := sim.drain_events()
+	if sink.is_valid():
+		sink.call(sim, last)
+	return sim
 
 
 static func digest(sim: Simulation) -> String:

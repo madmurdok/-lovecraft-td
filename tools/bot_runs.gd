@@ -112,6 +112,9 @@ var _flare := true  ## false with --flare=0
 var _branch_override := {}  ## tower def id -> branch from --branch=, wins over BRANCH_PICK
 var _shadowed_builds := 0  ## LT-70: mundane towers placed inside a shadow radius, this run
 var _strategies: Array = STRATEGIES  ## strategies to play, narrowed by --strategies=
+## LT-73 golden replay (tests/golden_runs.gd): when valid, _play calls it with (sim, events)
+## after every drain; it only reads them, so the runs and RUN lines do not change.
+var _event_sink := Callable()
 
 
 func _init() -> void:
@@ -233,7 +236,10 @@ func _play(strat: String, run_seed: int) -> Dictionary:
 			if sim.debug_is_fake(e) and e.id > last_fake_id:
 				last_fake_id = e.id
 				fakes += 1
-		for ev in sim.drain_events():
+		var evs := sim.drain_events()
+		if _event_sink.is_valid():
+			_event_sink.call(sim, evs)
+		for ev in evs:
 			if ev.type == SimEvent.Type.WAVE_CLEARED:
 				wave_end_sanity.append(snappedf(st.sanity, 0.1))
 				cap_per_wave.append(snappedf(st.sanity_cap, 0.1))
