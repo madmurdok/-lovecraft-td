@@ -33,17 +33,3 @@ static func make_game(vp: SubViewport, config: GameConfig, seed: int = DEFAULT_S
 		game.set_process(false)
 	return game
 
-
-## Config load + viewport + Game in one call, for suites with no inline config handling.
-## Returns the Game; its viewport is `game.get_parent()`. Null when the config does not load.
-static func make(
-	parent: Node,
-	seed: int = DEFAULT_SEED,
-	data: String = "res://data",
-	size: Vector2i = DEFAULT_SIZE
-) -> Game:
-	var r := GameConfig.load_from_dir(data)
-	if not r.ok:
-		push_error("GameFixture: config load failed: " + "\n".join(r.errors))
-		return null
-	return make_game(make_viewport(parent, size), r.config, seed)
