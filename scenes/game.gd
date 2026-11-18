@@ -263,14 +263,9 @@ func buy_flare_oil() -> Simulation.CommandResult:
 	return Simulation.CommandResult.OK if bought > 0 else r
 
 
-## LT-57: units buy_flare_oil() tries: min(flare.cost_oil, cap - oil) (1 per click without
-## a flare block); 0 without an oil block.
+## LT-57: units buy_flare_oil() tries (the rule is Simulation.oil_for_flare, LT-76).
 func flare_oil_to_buy() -> int:
-	var eco := sim.config.economy
-	if eco.oil == null:
-		return 0
-	var want := eco.flare.cost_oil if eco.flare != null else 1
-	return clampi(eco.oil.cap - sim.state.oil, 0, want)
+	return sim.oil_for_flare()
 
 
 ## LT-30: the night flare, paid with oil.

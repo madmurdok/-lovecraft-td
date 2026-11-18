@@ -48,4 +48,4 @@ func stats() -> TowerDef.Level:
 
 ## Cell centre in cell units (same frame as SimRoute.position_at).
 func centre() -> Vector2:
-	return Vector2(cell.x + 0.5, cell.y + 0.5)
+	return SimGrid.centre(cell)

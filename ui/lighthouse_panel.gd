@@ -45,9 +45,18 @@ func close() -> void:
 	game.board.queue_redraw()
 
 
-## Share of the full circle the beams cover, in percent (render-side trig).
+## Share (0..1) of the full circle that `beams` beams of half-width ratio
+## `half_width_ratio` cover: each beam is the cone cross² <= k² dot² of Simulation._lit_by,
+## 2 atan(k) wide; overlaps are not counted twice, so it caps at 1. Display only: it lives
+## here, not in sim/rules, because the sim never needs it and sim/ is trig-free
+## (beam_test.test_the_sim_has_no_trig, LT-76 verify).
+static func beam_coverage(beams: int, half_width_ratio: float) -> float:
+	return minf(1.0, beams * atan(half_width_ratio) / PI)
+
+
+## Share of the full circle the beams cover (beam_coverage), in percent.
 static func coverage_percent(beams: int, half_width_ratio: float) -> int:
-	return roundi(100.0 * minf(1.0, beams * atan(half_width_ratio) / PI))
+	return roundi(100.0 * beam_coverage(beams, half_width_ratio))
 
 
 func refresh() -> void:
@@ -79,15 +88,15 @@ func refresh() -> void:
 	oil_button.visible = has_oil
 	if not has_oil:
 		return
-	oil_label.text = "Lamp oil: %d / %d" % [sim.state.oil, eco.oil.cap]
+	oil_label.text = "Lamp oil: %d / %d" % [sim.state.oil, sim.oil_cap()]
 	if eco.flare != null:
 		oil_label.text += "\nFlare: %d oil, whole map, %s s; fired at night." % [
-			eco.flare.cost_oil, ConfigReader.fmt(sim.flare_seconds())]
+			sim.flare_cost_oil(), ConfigReader.fmt(sim.flare_seconds())]
 	var buy := sim.can_buy_oil()
 	if eco.flare != null:
 		var units := game.flare_oil_to_buy()
 		if units == 0:
-			units = eco.flare.cost_oil
+			units = sim.flare_cost_oil()
 		oil_button.text = "Buy oil for a flare (%s)" % TowerInfo.money(units * eco.oil.price)
 	else:
 		oil_button.text = "Buy oil (%s)" % TowerInfo.money(eco.oil.price)
