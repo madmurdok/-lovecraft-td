@@ -16,7 +16,7 @@ Pixel diffs (before vs after; `bug` is the control that must differ):
 | 1200x675 (scale 1) | after only (before timed out) | 0 | 0 | 0 | 0 (scale 1: no bug) |
 | 1600x900 | 0 | 0 | 0 | 0 | 14.8 % px changed, max 57 |
 | 1600x1000 (letterboxed) | 0 | 0 | 0 | 0 | 15.3 % px changed, max 58 |
-| 1400x900 (pillarboxed) | 0 | - | - | 0 | 8.1 % px changed |
+| 1400x900 (letterboxed) | 0 | - | - | 0 | 8.1 % px changed |
 | 1200x675 -> 1600x900 resize | - | 0 | - | 0 | 9.3 % px changed |
 
 Identical before/after files are expected (diff 0). The `bug` diff is small here only because
