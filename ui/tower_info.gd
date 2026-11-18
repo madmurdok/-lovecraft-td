@@ -339,7 +339,7 @@ static func state_mults(cfg: GameConfig, shadow := false) -> Array:
 
 ## LT-30 beam effect as a percent: mundane fire rate "+25%" (1 / fire_interval_mult - 1),
 ## occult power "−30%" (power_mult - 1); CELL_DASH for a mundane support tower (it never
-## fires) or a neutral multiplier. LT-70: `shadow` reads the shadow block ("−20%", "+30%").
+## fires) or a neutral multiplier. LT-70: `shadow` reads the shadow block ("−20%", "+15%").
 static func beam_text(def: TowerDef, s: TowerDef.Level, cfg: GameConfig, shadow := false) -> String:
 	var pct := beam_percent(def, s, cfg, shadow)
 	if pct == 0.0:
@@ -414,7 +414,7 @@ static func lit_effects(def: TowerDef, s: TowerDef.Level, cfg: GameConfig,
 
 ## LT-43 §5: the status line under the role of a lit tower; "" when the beam changes nothing.
 ## LT-70 §5: with `shadow`, a shadowed tower's line: NOW_SHADOW + "fire −20%, +10% misses"
-## (mundane shooter) or "+30% power" (occult).
+## (mundane shooter) or "+15% power" (occult).
 static func lit_line(def: TowerDef, s: TowerDef.Level, cfg: GameConfig, shadow := false) -> String:
 	var pct := beam_percent(def, s, cfg, shadow)
 	if pct == 0.0:

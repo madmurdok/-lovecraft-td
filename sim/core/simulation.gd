@@ -1502,7 +1502,7 @@ func _apply_auras() -> void:
 			var t_strip: float = s.effects.get("strip_armor", 0.0)
 			var pm := _power_mult(t)
 			if pm != 1.0:
-				# LT-30 §2 / LT-70 §2.3: a lit (x0.7) or shadowed (x1.3) occult aura works at
+				# LT-30 §2 / LT-70 §2.3: a lit (x0.7) or shadowed (x1.15) occult aura works at
 				# that strength (LT-29 §2: the armor strip too).
 				t_slow *= pm
 				t_mult = 1.0 + (t_mult - 1.0) * pm
@@ -1601,7 +1601,7 @@ func _fire_towers() -> void:
 		# LT-50 (§7 Q2): a sanity_scaling level x 1 + k x (1 - sanity / max) on the full bar,
 		# before the lit x0.7 and the madness x2.
 		var factor := s.sanity_factor(state.sanity, config.sanity.max_sanity)
-		# LT-30 §2 / LT-70 §2.3: lit x0.7 / shadowed x1.3 (occult), before the madness x2.
+		# LT-30 §2 / LT-70 §2.3: lit x0.7 / shadowed x1.15 (occult), before the madness x2.
 		var damage := s.damage * factor * _power_mult(t)
 		var beam := config.economy.beam
 		var lit_mundane := t.lit and t.def.kind == "mundane"
@@ -1689,7 +1689,7 @@ func _fire_towers() -> void:
 ## LT-51 (§2.2, Q4): a Silver Key cast. Picks (by target_priority) up to banish_targets of
 ## the tower's candidates that may be banished (_banishable), moves each back banish_cells
 ## along its own route (P5 _push_back, the Chain pull's rewind; x _power_mult: lit x0.7,
-## LT-70 shadowed x1.3) and gives it banish_immune_seconds of banish immunity (its own status key:
+## LT-70 shadowed x1.15) and gives it banish_immune_seconds of banish immunity (its own status key:
 ## pull immunity does not block a banish, nor the reverse). A level with damage (Corrupted)
 ## then hits each one (armor applies; x _power_mult, x the madness multiplier).
 ## No candidate: no cast and no cooldown, the gate stays ready. In MADNESS a

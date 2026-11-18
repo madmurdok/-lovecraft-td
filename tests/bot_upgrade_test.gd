@@ -541,7 +541,7 @@ func test_bots_never_set_target_priority() -> void:
 ## BUILD_FIRST-th tower, before any upgrade.
 func test_day_tops_the_oil_up_after_the_first_towers() -> void:
 	var target: int = real_config().economy.flare.cost_oil  # LT-57: one flare's oil
-	assert_int(target).is_equal(8)
+	assert_int(target).is_equal(12)  # LT-71: 8 -> 12
 	var first := _bot().get_script().get_script_constant_map()["BUILD_FIRST"] as int
 	var sim := _sim(1000)
 	var start := sim.state.oil
@@ -821,7 +821,7 @@ func test_the_lighthouse_is_tried_again_the_next_day() -> void:
 	assert_int(sim.state.phase).is_equal(SimState.Phase.BUILD)
 	assert_int(sim.state.outcome).is_equal(SimState.Outcome.NONE)
 	sim.state.gold = lh_cost  # day 2: the same bot affords the level
-	sim.state.oil = 4
+	sim.state.oil = real_config().economy.flare.cost_oil - 4  # LT-71: the same 4-oil top-up as before
 	sim.drain_events()
 	b.call("_act", sim, "mundane", 5, {})
 	assert_int(sim.state.lighthouse_level).is_equal(1)
