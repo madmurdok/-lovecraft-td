@@ -29,7 +29,7 @@ func test_the_shipped_shadow_block_loads_with_the_design_numbers() -> void:
 	var s := r.config.economy.shadow
 	assert_float(s.mundane_fire_interval_mult).is_equal(1.25)
 	assert_float(s.mundane_miss_chance_add).is_equal(0.1)
-	assert_float(s.occult_power_mult).is_equal(1.3)
+	assert_float(s.occult_power_mult).is_equal(1.15)
 
 
 func test_an_absent_shadow_block_loads_as_null() -> void:

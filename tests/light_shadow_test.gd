@@ -212,7 +212,7 @@ func test_a_shadowed_shot_draws_combat_once_and_an_unshadowed_one_never_at_lucid
 
 # --- 6: shadowed occult -----------------------------------------------------------------
 
-func test_a_shadowed_necronomicon_deals_1_3_times_its_damage() -> void:
+func test_a_shadowed_necronomicon_deals_1_15_times_its_damage() -> void:
 	for shadowed in [false, true]:
 		var sim := _sim()
 		build(sim, NECRO)
@@ -222,13 +222,13 @@ func test_a_shadowed_necronomicon_deals_1_3_times_its_damage() -> void:
 		var e := put(sim, "cultist", 9.0)
 		sim.step()
 		var pm := sim.config.economy.shadow.occult_power_mult if shadowed else 1.0
-		assert_float(pm).is_equal(1.3 if shadowed else 1.0)
+		assert_float(pm).is_equal(1.15 if shadowed else 1.0)
 		assert_array(_mods(e)).is_equal([1.0, 1.0])
 		assert_float(e.hp).override_failure_message("shadowed=%s" % shadowed) \
 			.is_equal_approx(HUGE_HP - dmg * pm, 0.0001)
 
 
-func test_a_shadowed_resonator_scales_its_sanity_scaled_damage_by_1_3() -> void:
+func test_a_shadowed_resonator_scales_its_sanity_scaled_damage_by_1_15() -> void:
 	var out := []
 	for shadowed in [false, true]:
 		var sim := _sim()
@@ -243,11 +243,11 @@ func test_a_shadowed_resonator_scales_its_sanity_scaled_damage_by_1_3() -> void:
 		out.append(HUGE_HP - e.hp)
 		if shadowed:
 			var sf: float = shots[0].data["sanity_factor"]
-			assert_float(HUGE_HP - e.hp).is_equal_approx(3.0 * sf * 1.3, 1e-6)
-	assert_float(out[1]).is_equal_approx(out[0] * 1.3, 1e-6)
+			assert_float(HUGE_HP - e.hp).is_equal_approx(3.0 * sf * 1.15, 1e-6)
+	assert_float(out[1]).is_equal_approx(out[0] * 1.15, 1e-6)
 
 
-func test_a_shadowed_silver_key_banishes_1_3_times_the_cells() -> void:
+func test_a_shadowed_silver_key_banishes_1_15_times_the_cells() -> void:
 	var moved := []
 	for shadowed in [false, true]:
 		var sim := _sim()
@@ -260,10 +260,10 @@ func test_a_shadowed_silver_key_banishes_1_3_times_the_cells() -> void:
 		moved.append(d0 - e.distance)
 	var u := SimTime.UNITS_PER_CELL
 	assert_int(moved[0]).is_equal(roundi(4.0 * u))
-	assert_int(moved[1]).is_equal(roundi(4.0 * 1.3 * u))
+	assert_int(moved[1]).is_equal(roundi(4.0 * 1.15 * u))
 
 
-func test_a_circle_unit_summoned_in_shadow_keeps_its_1_3_dps_after_the_sign_is_sold() -> void:
+func test_a_circle_unit_summoned_in_shadow_keeps_its_1_15_dps_after_the_sign_is_sold() -> void:
 	var dps := []
 	for shadowed in [false, true]:
 		var sim := _sim()
@@ -288,12 +288,12 @@ func test_a_circle_unit_summoned_in_shadow_keeps_its_1_3_dps_after_the_sign_is_s
 		run(sim, 30)
 		dps.append(hp - e.hp)
 	assert_float(dps[0]).is_equal_approx(15.0, EPS)
-	assert_float(dps[1]).is_equal_approx(15.0 * 1.3, EPS)
+	assert_float(dps[1]).is_equal_approx(15.0 * 1.15, EPS)
 
 
 # --- 7-8: the sign's own aura, the Searchlight in shadow --------------------------------
 
-func test_a_shadowed_elder_sign_aura_is_slow_0_26_and_taken_1_65() -> void:
+func test_a_shadowed_elder_sign_aura_is_slow_0_23_and_taken_1_575() -> void:
 	var sim := _sim()
 	var a := build(sim, SIGN, _at(7))
 	var b := build(sim, SIGN, _at(9))
@@ -301,7 +301,7 @@ func test_a_shadowed_elder_sign_aura_is_slow_0_26_and_taken_1_65() -> void:
 	run(sim, 1)
 	assert_array(_flags(a)).is_equal([false, true])
 	assert_array(_flags(b)).is_equal([false, true])
-	assert_array(_mods(e)).is_equal(_want(0.74, 1.65))  # the max of the two, not the sum
+	assert_array(_mods(e)).is_equal(_want(0.77, 1.575))  # the max of the two, not the sum
 	# A lone sign is unshadowed: slow 0.2, taken 1.5 (the arms differ).
 	var lone := _sim()
 	build(lone, SIGN, _at(7))
@@ -318,7 +318,7 @@ func test_a_searchlight_in_shadow_keeps_its_slow_and_reveal() -> void:
 	var fake := put(sim, "cultist", 1.0, HUGE_HP, true)
 	run(sim, 1)
 	assert_bool(sl.shadowed).is_true()
-	assert_array(_mods(e)).is_equal(_want(0.7, 1.0))
+	assert_array(_mods(e)).is_equal(_want(0.85, 1.0))
 	assert_bool(fake.revealed).is_true()
 
 
@@ -337,7 +337,7 @@ func test_a_searchlight_lights_enemies_and_they_skip_the_madness_buff() -> void:
 	for e: SimEnemy in [real, fake]:
 		assert_bool(e.lit).is_true()
 		# No madness buff and no flare x0.5: only the Searchlight's slow.
-		assert_array(_mods(e)).is_equal(_want(0.7, 1.0))
+		assert_array(_mods(e)).is_equal(_want(0.85, 1.0))
 	assert_bool(outside.lit).is_false()
 	assert_array(_mods(outside)).is_equal([snappedf(mad.enemy_speed_multiplier, 0.0001),
 		snappedf(mad.enemy_damage_taken_multiplier, 0.0001)])

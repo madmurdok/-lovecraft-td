@@ -6,7 +6,7 @@ extends TowerTestBase
 ## before towers fire; a real enemy is never revealed. A revealed fake leaves every tower's
 ## target candidates (single, burst, pierce, aoe, fuse): a tower with only a revealed fake in
 ## range holds fire with its cooldown at 0. It is still hit as collateral and still in the
-## madness "fake" astray pool. Slows 0.3 (L1) / 0.5 (b; LT-70: no x1.2 taken), not stacked
+## madness "fake" astray pool. Slows 0.15 (L1) / 0.25 (b; LT-70: no x1.2 taken), not stacked
 ## with Elder Sign (max), not scaled when lit (mundane). No damage, no shots, no regen;
 ## debug_is_fake is unchanged by a reveal.
 ## Searchlight at SL, centre (3.5, 1.5); an enemy `put` at c cells is at (c + 0.5, 0.5), so
@@ -238,13 +238,13 @@ func test_l1_slows_by_its_slow_and_branch_b_slows_harder_without_marking() -> vo
 	sim.drain_events()
 	run(sim, 1)
 	var l1: TowerDef.Level = sim.config.towers[SLT].levels[0]
-	assert_float(float(l1.effects["slow"])).is_equal(0.3)
-	assert_float(e.speed_mult).is_equal_approx(0.7, 1e-9)
+	assert_float(float(l1.effects["slow"])).is_equal(0.15)
+	assert_float(e.speed_mult).is_equal_approx(0.85, 1e-9)
 	assert_float(e.damage_taken_mult).is_equal(1.0)
 	sl.level = TowerDef.LEVEL_COUNT
 	sl.branch = "b"
 	run(sim, 1)
-	assert_float(e.speed_mult).is_equal_approx(0.5, 1e-9)
+	assert_float(e.speed_mult).is_equal_approx(0.75, 1e-9)
 	assert_float(e.damage_taken_mult).is_equal(1.0)  # LT-70: marking is the sign's job
 
 
@@ -257,7 +257,7 @@ func test_a_lit_searchlight_is_not_scaled_by_the_occult_power_mult() -> void:
 	sim.drain_events()
 	run(sim, 1)
 	assert_bool(sl.lit).is_true()
-	assert_float(e.speed_mult).is_equal_approx(0.5, 1e-9)
+	assert_float(e.speed_mult).is_equal_approx(0.75, 1e-9)
 	assert_float(e.damage_taken_mult).is_equal(1.0)
 
 
