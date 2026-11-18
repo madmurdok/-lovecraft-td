@@ -202,10 +202,9 @@ static func frame_run(parent: Node, config: GameConfig) -> Dictionary:
 	var game := GameFixture.make_game(vp, config, SIM_SEED)
 	await parent.get_tree().process_frame
 	var cells: Array[Vector2i] = []
-	for y in game.sim.state.map.height:
-		for x in game.sim.state.map.width:
-			if game.sim.state.map.is_buildable(Vector2i(x, y)):
-				cells.append(Vector2i(x, y))
+	for c in game.sim.state.map.grid.cells():
+		if game.sim.state.map.is_buildable(c):
+			cells.append(c)
 	game.sim.debug_set_sanity(70.0)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = FRAME_SEED

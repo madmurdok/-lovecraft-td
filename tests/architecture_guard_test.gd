@@ -65,16 +65,16 @@ func test_g1_no_rule_copies_outside_the_sim() -> void:
 		+ ", ".join(hits)).is_empty()
 
 
-## G3 (LT-76, B2; sim and bot part, the view joins in B4): one cell centre. Under sim/ and
-## tools/ a hand-written centre (`.x + 0.5`, `0.5 + .y`, `Vector2(c) + Vector2(0.5, 0.5)`,
-## continuation lines joined) appears only in sim/rules/sim_grid.gd (SimGrid.centre).
-const G3_DIRS := ["res://sim", "res://tools"]
-const G3_HOME := "res://sim/rules/sim_grid.gd"
+## G3 (LT-76, LT-77): one cell centre. Under sim/, tools/, scenes/ and ui/ a hand-written
+## centre (`.x + 0.5`, `0.5 + .y`, `Vector2(c) + Vector2(0.5, 0.5)`, continuation lines
+## joined) appears only in sim/rules/square_grid.gd (SquareGrid.centre).
+const G3_DIRS := ["res://sim", "res://tools", "res://scenes", "res://ui"]
+const G3_HOME := "res://sim/rules/square_grid.gd"
 const G3_CENTRE := "\\.(x|y)\\s*\\+\\s*0\\.5\\b|\\b0\\.5\\s*\\+\\s*[\\w.]*\\.(x|y)\\b" \
 	+ "|\\+\\s*Vector2\\(\\s*0\\.5\\s*,\\s*0\\.5\\s*\\)"
 
 
-func test_g3_one_cell_centre_in_sim_and_bot() -> void:
+func test_g3_one_cell_centre() -> void:
 	var scan := SimBoundaryTest.new()
 	var hits: Array[String] = []
 	var home_hits := 0
@@ -94,7 +94,81 @@ func test_g3_one_cell_centre_in_sim_and_bot() -> void:
 	assert_int(probe_hits).is_equal(probes.size())  # each centre form is caught
 	assert_int(home_hits).is_equal(2)  # the rule itself: x and y
 	assert_array(hits).override_failure_message(
-		"cell centre written by hand (use SimGrid.centre): " + ", ".join(hits)).is_empty()
+		"cell centre written by hand (use GridTopology.centre): " + ", ".join(hits)).is_empty()
+
+
+## G10 (LT-77): one topology. Outside the topology files (sim/rules/*grid*.gd) no
+## neighbour arithmetic, board-size loops, bounds test, NEIGHBOURS table or hand-written
+## centre-to-centre length: those are GridTopology.neighbours / cells / contains / distance.
+const G10_DIRS := ["res://sim", "res://tools", "res://scenes", "res://ui"]
+const G10_HOME_DIR := "res://sim/rules/"
+const G10_DENY := "Vector2i\\.(LEFT|RIGHT|UP|DOWN)\\b" \
+	+ "|\\bfor\\s+\\w+\\s+in\\s+[\\w.]*\\.(width|height)\\b" \
+	+ "|\\.in_bounds\\(|\\bNEIGHBOURS\\b" \
+	+ "|Vector2\\(\\s*\\w+\\s*-\\s*\\w+\\s*\\)\\.length\\(\\)"
+
+
+func _is_g10_home(f: String) -> bool:
+	return f.begins_with(G10_HOME_DIR) and f.get_file().contains("grid")
+
+
+func test_g10_one_topology() -> void:
+	var scan := SimBoundaryTest.new()
+	var hits: Array[String] = []
+	var scanned := 0
+	var home_scanned := 0
+	for dir: String in G10_DIRS:
+		for f in scan._gd_files(dir):
+			if _is_g10_home(f):
+				home_scanned += 1
+				continue
+			scanned += 1
+			hits.append_array(_find_joined(scan, f, FileAccess.get_file_as_string(f), G10_DENY))
+	var probes := ["n = c + Vector2i.LEFT", "for x in map.width:", "for y in m.height:",
+		"if map.in_bounds(c):", "for d in NEIGHBOURS:", "d = Vector2(a - b).length()",
+		"n = c + Vector2i(\n\tVector2i.UP)"]
+	var probe_hits := 0
+	for p: String in probes:
+		probe_hits += _find_joined(scan, "probe.gd", p, G10_DENY).size()
+	var clean := _find_joined(scan, "near.gd",
+		"for c in grid.cells():\nx = grid.neighbours(c)\nd = grid.distance(a, b)", G10_DENY)
+	scan.free()
+	assert_int(scanned).is_greater(40)  # sim/, tools/, scenes/ and ui/ really were walked
+	assert_int(home_scanned).is_equal(2)  # grid_topology.gd and square_grid.gd are the exempt ones
+	assert_int(probe_hits).is_equal(probes.size())  # each form is caught
+	assert_array(clean).is_empty()  # the topology calls are not
+	assert_array(hits).override_failure_message(
+		"grid geometry outside the topology files (use GridTopology): " + ", ".join(hits)) \
+		.is_empty()
+
+
+## G11 (LT-77): the sim is trig-free (determinism: no libm sin/cos in replayed code). Code
+## lines only (comments and strings blanked), a superset of beam_test's raw-text TRIG check
+## (adds deg_to_rad and a bare angle(); that test stays as the LT-26 beam proof).
+const G11_DENY := "\\b(sin|cos|tan|atan2?|asin|acos|deg_to_rad|rotated|angle)\\("
+
+
+func test_g11_the_sim_is_trig_free() -> void:
+	var scan := SimBoundaryTest.new()
+	var hits: Array[String] = []
+	var files: Array[String] = scan._gd_files("res://sim")
+	for f in files:
+		hits.append_array(scan._find(f, scan._code_lines(FileAccess.get_file_as_string(f)),
+			G11_DENY))
+	var probes := ["a = sin(t)", "a = cos(t)", "a = atan2(y, x)", "a = atan(x)",
+		"a = deg_to_rad(d)", "v = v.rotated(1.0)", "a = v.angle()", "a = tan(x)",
+		"a = asin(x)", "a = acos(x)"]
+	var probe_hits := 0
+	for p: String in probes:
+		probe_hits += scan._find("probe.gd", scan._code_lines(p), G11_DENY).size()
+	var clean := scan._find("near.gd", scan._code_lines("x = half_angle(y)\nz = sqrt(w)"),
+		G11_DENY)
+	scan.free()
+	assert_int(files.size()).is_greater(20)
+	assert_int(probe_hits).is_equal(probes.size())
+	assert_array(clean).is_empty()
+	assert_array(hits).override_failure_message(
+		"trig in sim/ (cross-platform determinism): " + ", ".join(hits)).is_empty()
 
 
 ## `file:line: match` for `pattern` over the code lines of `text` (comments and strings

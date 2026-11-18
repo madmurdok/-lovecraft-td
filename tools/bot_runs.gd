@@ -476,18 +476,16 @@ func _best_cell(sim: Simulation, id: String) -> Vector2i:
 		var min_cells: float = _cfg.towers[id].levels[0].min_range
 		var m := _cfg.map
 		var list: Array = []
-		for y in m.height:
-			for x in m.width:
-				var c := Vector2i(x, y)
-				if not m.is_buildable(c):
-					continue
-				var score := 0
-				for p in m.path:
-					var d := Vector2(c - p).length()
-					if d <= rng_cells and d >= min_cells:
-						score += 1
-				if score > 0:
-					list.append([score, c])
+		for c in m.grid.cells():
+			if not m.is_buildable(c):
+				continue
+			var score := 0
+			for p in m.path:
+				var d := m.grid.distance(c, p)
+				if d <= rng_cells and d >= min_cells:
+					score += 1
+			if score > 0:
+				list.append([score, c])
 		list.sort_custom(func(a, b): return a[0] > b[0])  # stable enough: row-major kept
 		_score_cache[id] = list
 	var best := Vector2i(-1, -1)
@@ -514,14 +512,15 @@ func _cast_term(sim: Simulation, id: String, cell: Vector2i) -> int:
 	if s.casts_light() or s.casts_shadow():
 		for o in sim.state.towers:
 			var o_mundane: bool = o.def.kind == "mundane"
-			if o.stats().acts() and LightRules.covers(cell, s.range_cells, o.centre()):
+			if o.stats().acts() \
+					and LightRules.covers(sim.config.map.grid, cell, s.range_cells, o.centre()):
 				if s.casts_light():
 					term += 1 if o_mundane else -1
 				if s.casts_shadow():
 					term += -1 if o_mundane else 1
 	if s.acts():
 		# Casters on the board covering the cell (LT-76: Simulation.light_at counts them).
-		var light := sim.light_at(SimGrid.centre(cell))
+		var light := sim.light_at(sim.config.map.grid.centre(cell))
 		var sign_ := 1 if def.kind == "mundane" else -1
 		term += sign_ * int(light["light_casters"])
 		term -= sign_ * int(light["shadow_casters"])
@@ -530,7 +529,7 @@ func _cast_term(sim: Simulation, id: String, cell: Vector2i) -> int:
 
 ## LT-70: true when a shadow caster on the board covers the centre of `cell`.
 func _in_shadow_radius(sim: Simulation, cell: Vector2i) -> bool:
-	return int(sim.light_at(SimGrid.centre(cell))["shadow_casters"]) > 0
+	return int(sim.light_at(sim.config.map.grid.centre(cell))["shadow_casters"]) > 0
 
 
 ## LT-70 §6: `lit_shots` keeps its meaning (lighthouse beam / flare value): a lit shooter that

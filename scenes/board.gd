@@ -224,7 +224,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if mb == null or not mb.pressed or mb.button_index != MOUSE_BUTTON_LEFT:
 		return
 	var cell := cell_at((make_input_local(mb) as InputEventMouseButton).position)
-	if game.sim.state.map.in_bounds(cell):
+	if game.sim.state.map.grid.contains(cell):
 		get_viewport().set_input_as_handled()
 		cell_clicked.emit(cell)
 	else:
@@ -233,7 +233,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 ## Local pixel position -> grid cell (may be out of bounds).
 func cell_at(local: Vector2) -> Vector2i:
-	return Vector2i(floori(local.x / CELL), floori(local.y / CELL))
+	return game.sim.state.map.grid.cell_at(local / CELL)
 
 
 ## Grid cell -> top-left in this node's local pixels.
@@ -278,7 +278,7 @@ func on_event(ev: SimEvent) -> void:
 					"ttl": FLASH_SECONDS})
 		SimEvent.Type.LEAKED:
 			var lh := game.sim.state.map.lighthouse
-			effects.append({"kind": "leak", "from": Vector2(lh) + Vector2(0.5, 0.5),
+			effects.append({"kind": "leak", "from": game.sim.state.map.grid.centre(lh),
 				"ttl": FLASH_SECONDS})
 
 
@@ -509,29 +509,33 @@ func _new_phantom() -> Array[Vector2i]:
 	var s := game.sim.state
 	var m := s.map
 	var path_cells: Array[Vector2i] = []
-	for y in m.height:
-		for x in m.width:
-			if m.kind_at(Vector2i(x, y)) == MapDef.Kind.PATH:
-				path_cells.append(Vector2i(x, y))
+	for c in m.grid.cells():
+		if m.kind_at(c) == MapDef.Kind.PATH:
+			path_cells.append(c)
 	if path_cells.is_empty():
 		return out
-	var dirs: Array[Vector2i] = [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]
 	var cur: Vector2i = path_cells[_fx_rng.randi_range(0, path_cells.size() - 1)]
-	var dir: Vector2i = dirs[_fx_rng.randi_range(0, 3)]
+	var dir := _random_step(m.grid, cur)
 	var length := _fx_rng.randi_range(phantom_cells.x, phantom_cells.y)
 	for step in length * 3:
 		if out.size() >= length:
 			break
 		if _fx_rng.randf() < 0.3:
-			dir = dirs[_fx_rng.randi_range(0, 3)]
+			dir = _random_step(m.grid, cur)
 		var nxt := cur + dir
-		if not m.in_bounds(nxt) or m.kind_at(nxt) == MapDef.Kind.PATH \
+		if not m.grid.contains(nxt) or m.kind_at(nxt) == MapDef.Kind.PATH \
 				or s.tower_at.has(nxt) or out.has(nxt):
-			dir = dirs[_fx_rng.randi_range(0, 3)]
+			dir = _random_step(m.grid, cur)
 			continue
 		out.append(nxt)
 		cur = nxt
 	return out
+
+
+## A random neighbour offset of `cell` (FX rng only).
+func _random_step(grid: GridTopology, cell: Vector2i) -> Vector2i:
+	var nbs := grid.neighbours(cell)
+	return nbs[_fx_rng.randi_range(0, nbs.size() - 1)] - cell
 
 
 ## 0..1 dip for one flicker step; seeded by step and `key`, so each enemy twitches on
@@ -557,14 +561,14 @@ func _draw() -> void:
 	_draw_enemies(s)
 	_draw_allies(s)
 	_draw_effects()
-	if game.sim.state.map.in_bounds(selected_cell):
+	if game.sim.state.map.grid.contains(selected_cell):
 		draw_rect(Rect2(cell_origin(selected_cell), Vector2(CELL, CELL)), COLOR_SELECT, false, 2.0)
 		if not selected_glyph.is_empty():  # LT-61 §7: placed like _draw_tower's letter
 			var g := Rect2(cell_origin(selected_cell), Vector2(CELL, CELL)).grow(-6)
 			draw_string(ThemeDB.fallback_font, g.position + Vector2(8, 20), selected_glyph,
 				HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(COLOR_SELECT, GHOST_GLYPH_ALPHA))
 		if selected_range > 0.0:
-			var sc := (Vector2(selected_cell) + Vector2(0.5, 0.5)) * CELL
+			var sc := game.sim.state.map.grid.centre(selected_cell) * CELL
 			draw_arc(sc, selected_range * CELL, 0, TAU, 48, COLOR_SELECT, 1.0)
 			var dz := selected_dead_zone()
 			if dz > 0.0:  # LT-48: the dead zone, a dashed ring over a faint fill
@@ -686,10 +690,11 @@ func preview_cast(t: SimTower) -> String:
 	if selected_cast.is_empty() or selected_range <= 0.0 or game == null or game.sim == null:
 		return ""
 	var s := game.sim.state
-	if s.phase != SimState.Phase.BUILD or not s.map.in_bounds(selected_cell) \
+	if s.phase != SimState.Phase.BUILD or not s.map.grid.contains(selected_cell) \
 			or t.cell == selected_cell:
 		return ""
-	return selected_cast if LightRules.covers(selected_cell, selected_range, t.centre()) else ""
+	var covered := LightRules.covers(s.map.grid, selected_cell, selected_range, t.centre())
+	return selected_cast if covered else ""
 
 
 func _draw_tower(t: SimTower) -> void:
@@ -1224,18 +1229,16 @@ class MapLayer extends Node2D:
 		if map == null:
 			return
 		var m := map
-		for y in m.height:
-			for x in m.width:
-				var c := Vector2i(x, y)
-				var color := Board.COLOR_WATER
-				match m.kind_at(c):
-					MapDef.Kind.BUILDABLE:
-						color = Board.COLOR_BUILDABLE
-					MapDef.Kind.PATH:
-						color = Board.COLOR_PATH
-				var r := Rect2(Board.origin_of(c), Vector2(CELL, CELL))
-				draw_rect(r, color)
-				draw_rect(r, Board.COLOR_GRID, false, 1.0)
+		for c in m.grid.cells():
+			var color := Board.COLOR_WATER
+			match m.kind_at(c):
+				MapDef.Kind.BUILDABLE:
+					color = Board.COLOR_BUILDABLE
+				MapDef.Kind.PATH:
+					color = Board.COLOR_PATH
+			var r := Rect2(Board.origin_of(c), Vector2(CELL, CELL))
+			draw_rect(r, color)
+			draw_rect(r, Board.COLOR_GRID, false, 1.0)
 		draw_rect(Rect2(Board.origin_of(m.spawn), Vector2(CELL, CELL)).grow(-4),
 			Board.COLOR_START)
 		var lh := Rect2(Board.origin_of(m.lighthouse), Vector2(CELL, CELL)).grow(-4)

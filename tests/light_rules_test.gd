@@ -1,15 +1,11 @@
 class_name LightRulesTest
 extends GdUnitTestSuite
-## LT-76 (LT-65 §3.2): LightRules and SimGrid on hand-checked cases, and the lighthouse
+## LT-76 (LT-65 §3.2): LightRules and SquareGrid on hand-checked cases, and the lighthouse
 ## panel's coverage reading the same rule as LightRules (one source for sim, UI and bot).
 
 const EPS := 1e-9
 
-
-func test_cell_centre_is_the_cell_plus_a_half() -> void:
-	assert_object(SimGrid.centre(Vector2i(0, 0))).is_equal(Vector2(0.5, 0.5))
-	assert_object(SimGrid.centre(Vector2i(7, 1))).is_equal(Vector2(7.5, 1.5))
-	assert_object(SimGrid.centre(Vector2i(-1, 3))).is_equal(Vector2(-0.5, 3.5))
+var _grid := SquareGrid.new(10, 10)
 
 
 func test_cast_radius_boundary_is_inclusive() -> void:
@@ -24,11 +20,11 @@ func test_cast_radius_boundary_is_inclusive() -> void:
 
 func test_covers_measures_from_the_cell_centre_not_its_corner() -> void:
 	var cell := Vector2i(3, 1)  # centre (3.5, 1.5)
-	assert_bool(LightRules.covers(cell, 3.0, Vector2(6.5, 1.5))).is_true()
-	assert_bool(LightRules.covers(cell, 3.0, Vector2(6.51, 1.5))).is_false()
+	assert_bool(LightRules.covers(_grid, cell, 3.0, Vector2(6.5, 1.5))).is_true()
+	assert_bool(LightRules.covers(_grid, cell, 3.0, Vector2(6.51, 1.5))).is_false()
 	# Corner (3, 1) would flip both of these: 6.4 is 3.4 from it, 0.4 is 2.6 from it.
-	assert_bool(LightRules.covers(cell, 3.0, Vector2(6.4, 1.5))).is_true()  # 2.9 from centre
-	assert_bool(LightRules.covers(cell, 3.0, Vector2(0.4, 1.5))).is_false()  # 3.1 from centre
+	assert_bool(LightRules.covers(_grid, cell, 3.0, Vector2(6.4, 1.5))).is_true()  # 2.9 from centre
+	assert_bool(LightRules.covers(_grid, cell, 3.0, Vector2(0.4, 1.5))).is_false()  # 3.1 from centre
 
 
 func test_beam_coverage_is_the_cone_share_capped_at_one() -> void:

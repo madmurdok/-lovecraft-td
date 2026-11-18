@@ -81,7 +81,7 @@ func _init(p_config: GameConfig, run_seed: int) -> void:
 	if config.economy.oil != null:
 		state.oil = config.economy.oil.start
 	_start_beam()
-	_ground_route = SimRoute.from_cells(config.map.path)
+	_ground_route = SimRoute.from_cells(config.map.grid, config.map.path)
 
 
 ## Without a spawner the run never wins (nothing can be "exhausted"). A WaveDirector
@@ -219,8 +219,9 @@ func _enter(def: EnemyDef, is_fake: bool, pack_of: int) -> int:
 	e.spawn_tick = state.tick
 	e.base_units_per_tick = SimTime.units_per_tick(def.speed)
 	# Flyers start at S too (owner decision, §7 Q3) and fly straight to L.
-	e.route = SimRoute.straight(state.map.spawn, state.map.lighthouse) if def.flying \
-		else _ground_route
+	e.route = _ground_route
+	if def.flying:
+		e.route = SimRoute.straight(state.map.grid, state.map.spawn, state.map.lighthouse)
 	state.enemies.append(e)
 	_emit(SimEvent.Type.SPAWNED, e.id, {"def": def.id})
 	return e.id
@@ -281,6 +282,7 @@ func build_tower(def_id: String, cell: Vector2i) -> CommandResult:
 	state.next_id += 1
 	t.def = def
 	t.cell = cell
+	t.pos = state.map.grid.centre(cell)
 	t.spent = def.cost
 	t.build_tick = state.tick
 	state.towers.append(t)
@@ -958,7 +960,7 @@ func tower_by_id(id: int) -> SimTower:
 ## Live enemies (fakes included) whose position is within `range_cells` of the centre of
 ## `cell`, boundary included; id order (§6 target query).
 func enemies_in_range(cell: Vector2i, range_cells: float) -> Array[SimEnemy]:
-	return enemies_near(SimGrid.centre(cell), range_cells)
+	return enemies_near(state.map.grid.centre(cell), range_cells)
 
 
 ## Live enemies (fakes included) whose position is within `radius` cells of `centre`
@@ -1408,7 +1410,8 @@ func _in_cast(p: Vector2, key: String, skip_id: int, casters: Array[SimTower]) -
 		if o.id == skip_id:
 			continue
 		var s := o.stats()
-		if s.effects.get(key, 0.0) > 0.0 and LightRules.covers(o.cell, s.range_cells, p):
+		if s.effects.get(key, 0.0) > 0.0 \
+				and LightRules.covers(config.map.grid, o.cell, s.range_cells, p):
 			return true
 	return false
 
@@ -1421,7 +1424,8 @@ func _cast_count(p: Vector2, key: String, skip_id: int, casters: Array[SimTower]
 		if o.id == skip_id:
 			continue
 		var s := o.stats()
-		if s.effects.get(key, 0.0) > 0.0 and LightRules.covers(o.cell, s.range_cells, p):
+		if s.effects.get(key, 0.0) > 0.0 \
+				and LightRules.covers(config.map.grid, o.cell, s.range_cells, p):
 			n += 1
 	return n
 
@@ -1515,7 +1519,7 @@ func _is_lit(px: float, py: float) -> bool:
 ## LT-26 §1.1 lit test against the lighthouse cell centre L, v = p - L: |v|² <= reach²,
 ## v·d > 0 and cross(v, d)² <= k² (v·d)² for some beam d. Overlaps do not stack.
 func _lit_by(dirs: Array, k: float, px: float, py: float) -> bool:
-	var lh := SimGrid.centre(config.map.lighthouse)
+	var lh := config.map.grid.centre(config.map.lighthouse)
 	var vx := px - lh.x
 	var vy := py - lh.y
 	var reach := config.economy.beam.reach_cells
@@ -1585,7 +1589,7 @@ func _apply_auras() -> void:
 		var reveal := false
 		for t in auras:
 			var s := t.stats()
-			if not LightRules.covers(t.cell, s.range_cells, p):
+			if not LightRules.covers(config.map.grid, t.cell, s.range_cells, p):
 				continue
 			inside = true
 			var t_slow: float = s.effects.get("slow", 0.0)
