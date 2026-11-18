@@ -237,14 +237,9 @@ static func damage_cell(s: TowerDef.Level) -> String:
 
 
 ## Damage per second at full sanity, base stats (no beam, no madness, no crits or bleed):
-## damage / fire_interval x the foes one shot hits (banish_targets); a circle's
-## summon_dps x summon_max; 0 for a level that deals none.
+## TowerRules.effective's dps, neutral light, no sanity scaling.
 static func dps_value(s: TowerDef.Level) -> float:
-	if s.is_summon():
-		return s.effects.get("summon_dps", 0.0) * s.summon_max()
-	if s.damage <= 0.0 or s.fire_interval <= 0.0:
-		return 0.0
-	return s.damage / s.fire_interval * (s.banish_targets() if s.is_banish() else 1)
+	return TowerRules.effective(null, s, null)["dps"]
 
 
 ## A table number with one decimal at most: 12.5, 11.3, 18.
@@ -260,10 +255,10 @@ static func dps_text(s: TowerDef.Level, cfg: GameConfig, sanity_now := -1.0) -> 
 		return CELL_DASH
 	if not s.is_beam() or cfg == null:
 		return one_decimal(v)
-	var top := cfg.sanity.max_sanity
 	if sanity_now < 0.0:
-		return "%s–%s" % [one_decimal(v), one_decimal(v * s.sanity_factor(0.0, top))]
-	return one_decimal(v * s.sanity_factor(sanity_now, top))
+		return "%s–%s" % [one_decimal(v),
+			one_decimal(TowerRules.effective(null, s, cfg, false, false, 0.0)["dps"])]
+	return one_decimal(TowerRules.effective(null, s, cfg, false, false, sanity_now)["dps"])
 
 
 ## Range in cells; "2–7" with a dead zone (LT-48 min_range).
@@ -308,16 +303,14 @@ static func kill_text(def: TowerDef, s: TowerDef.Level, cfg: GameConfig) -> Stri
 	return "+" + num(cfg.sanity.regen_mundane_kill)
 
 
-## LT-70 §5: the multipliers of the light (beam.*) or, with `shadow`, of the shadow
-## (shadow.*): [mundane fire_interval_mult, occult power_mult]; [] when that block is absent.
-static func state_mults(cfg: GameConfig, shadow := false) -> Array:
+## LT-70 §5: TowerRules.light_effect of a `def` tower lit or, with `shadow`, shadowed;
+## {} when that block (beam / shadow) is absent.
+static func state_effect(def: TowerDef, cfg: GameConfig, shadow := false) -> Dictionary:
 	if cfg == null or cfg.economy == null:
-		return []
-	if shadow:
-		var sh := cfg.economy.shadow
-		return [] if sh == null else [sh.mundane_fire_interval_mult, sh.occult_power_mult]
-	var b := cfg.economy.beam
-	return [] if b == null else [b.mundane_fire_interval_mult, b.occult_power_mult]
+		return {}
+	if (cfg.economy.shadow if shadow else cfg.economy.beam) == null:
+		return {}
+	return TowerRules.light_effect(def, cfg, not shadow, shadow)
 
 
 ## LT-30 beam effect as a percent: mundane fire rate "+25%" (1 / fire_interval_mult - 1),
@@ -333,14 +326,15 @@ static func beam_text(def: TowerDef, s: TowerDef.Level, cfg: GameConfig, shadow 
 ## The light (or, with `shadow`, the shadow) percent beam_text shows (0 when none applies).
 static func beam_percent(def: TowerDef, s: TowerDef.Level, cfg: GameConfig,
 		shadow := false) -> float:
-	var m := state_mults(cfg, shadow)
-	if m.is_empty():
+	var fx := state_effect(def, cfg, shadow)
+	if fx.is_empty():
 		return 0.0
 	if def.kind == "mundane":
-		if s.damage <= 0.0 or m[0] <= 0.0:
+		var m: float = fx["interval_mult"]
+		if s.damage <= 0.0 or m <= 0.0:
 			return 0.0
-		return (1.0 / m[0] - 1.0) * 100.0
-	return (m[1] - 1.0) * 100.0
+		return (1.0 / m - 1.0) * 100.0
+	return (fx["power_mult"] - 1.0) * 100.0
 
 
 ## LT-43 §5 (Q4): the cells the beam changes on a lit tower, value + LIT_MARK, keyed like
@@ -351,26 +345,25 @@ static func beam_percent(def: TowerDef, s: TowerDef.Level, cfg: GameConfig,
 static func lit_values(def: TowerDef, s: TowerDef.Level, cfg: GameConfig,
 		sanity_now := -1.0, shadow := false) -> Dictionary:
 	var out := {}
-	var mults := state_mults(cfg, shadow)
-	if mults.is_empty():
+	var fx := state_effect(def, cfg, shadow)
+	if fx.is_empty():
 		return out
-	var dps := dps_value(s)
-	if s.is_beam() and sanity_now >= 0.0:
-		dps *= s.sanity_factor(sanity_now, cfg.sanity.max_sanity)
+	# TowerRules.effective in the sim's own order (damage x factor x power, / interval).
+	var sanity := sanity_now if s.is_beam() else -1.0
+	var now := TowerRules.effective(def, s, cfg, not shadow, shadow, sanity)
 	if def.kind == "mundane":
-		var m: float = mults[0]
+		var m: float = fx["interval_mult"]
 		if s.damage > 0.0 and m > 0.0 and m != 1.0:
-			out["every"] = num(s.fire_interval * m) + LIT_MARK
-			out["dps"] = one_decimal(dps / m) + LIT_MARK
-	elif mults[1] != 1.0 and (s.damage > 0.0 or s.is_summon() and dps > 0.0):
-		var pm: float = mults[1]
+			out["every"] = num(now["interval"]) + LIT_MARK
+			out["dps"] = one_decimal(now["dps"]) + LIT_MARK
+	elif fx["power_mult"] != 1.0 and (s.damage > 0.0 or s.is_summon() and dps_value(s) > 0.0):
+		var pm: float = fx["power_mult"]
 		if s.is_summon():
 			# "12.6*", no "/s": "12.6/s*" is cut in a 3-column panel
-			var unit: float = s.effects.get("summon_dps", 0.0) * pm
-			out["damage"] = one_decimal(unit) + LIT_MARK
+			out["damage"] = one_decimal(now["unit_dps"]) + LIT_MARK
 		else:
-			out["damage"] = num(s.damage * pm) + LIT_MARK
-		out["dps"] = one_decimal(dps * pm) + LIT_MARK
+			out["damage"] = num(TowerRules.shot_damage(s, 1.0, pm)) + LIT_MARK
+		out["dps"] = one_decimal(now["dps"]) + LIT_MARK
 	return out
 
 
@@ -380,10 +373,10 @@ static func lit_values(def: TowerDef, s: TowerDef.Level, cfg: GameConfig,
 ## shadow.occult_power_mult (a shadowed tower).
 static func lit_effects(def: TowerDef, s: TowerDef.Level, cfg: GameConfig,
 		shadow := false) -> Dictionary:
-	var mults := state_mults(cfg, shadow)
-	if def.kind != "occult" or mults.is_empty():
+	var fx := state_effect(def, cfg, shadow)
+	if def.kind != "occult" or fx.is_empty():
 		return {}
-	var pm: float = mults[1]
+	var pm: float = fx["power_mult"]
 	if pm == 1.0 or (s.acts() and not s.is_banish() and not s.is_summon()):
 		return {}  # an aura, a gate or a circle only
 	var e := s.effects.duplicate()
@@ -391,7 +384,8 @@ static func lit_effects(def: TowerDef, s: TowerDef.Level, cfg: GameConfig,
 		if e.has(key):
 			e[key] = e[key] * pm
 	if e.has("damage_taken_multiplier"):
-		e["damage_taken_multiplier"] = 1.0 + (e["damage_taken_multiplier"] - 1.0) * pm
+		e["damage_taken_multiplier"] = TowerRules.powered_taken_mult(
+			e["damage_taken_multiplier"], pm)
 	return e if e != s.effects else {}
 
 
@@ -406,10 +400,11 @@ static func lit_line(def: TowerDef, s: TowerDef.Level, cfg: GameConfig, shadow :
 	var signed := "%s%s%%" % [MINUS if pct < 0.0 else "+", num(roundf(absf(pct)))]
 	if def.kind == "mundane":
 		var t := head + "fire " + signed
+		var fx := TowerRules.light_effect(def, cfg, not shadow, shadow)
 		if shadow:
-			var add := cfg.economy.shadow.mundane_miss_chance_add
+			var add: float = fx["miss_add"]
 			return t + (", +%s%% misses" % num(add * 100.0) if add > 0.0 else "")
-		return t + (", no misses" if cfg.economy.beam.mundane_ignore_miss else "")
+		return t + (", no misses" if fx["ignore_miss"] else "")
 	return head + signed + " power"
 
 

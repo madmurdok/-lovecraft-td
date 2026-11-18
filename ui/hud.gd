@@ -197,10 +197,9 @@ func refresh() -> void:
 func _refresh_flare() -> void:
 	var sim := game.sim
 	var s := sim.state
-	var flare := sim.config.economy.flare
 	var night := s.phase == SimState.Phase.WAVE
 	flare_button.visible = night
-	oil_label.text = "Oil %d / %d" % [s.oil, sim.config.economy.oil.cap]
+	oil_label.text = "Oil %d / %d" % [s.oil, sim.oil_cap()]
 	var can := sim.can_fire_flare()
 	flare_button.disabled = can != Simulation.CommandResult.OK
 	# LT-69: the flare lights the whole map, for the current level's seconds.
@@ -211,7 +210,7 @@ func _refresh_flare() -> void:
 	elif s.flare_cooldown_ticks > 0:
 		flare_button.text = "Flare %d s" % ceili(float(s.flare_cooldown_ticks) / SimTime.TICK_RATE)
 	else:
-		flare_button.text = "Flare (%d oil)" % flare.cost_oil
+		flare_button.text = "Flare (%d oil)" % sim.flare_cost_oil()
 	var right := board_rect().end.x - MARGIN
 	var y := board_rect().end.y + 4.0
 	var w := flare_button.get_combined_minimum_size().x

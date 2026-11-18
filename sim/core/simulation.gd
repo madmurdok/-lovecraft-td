@@ -42,6 +42,9 @@ const MADNESS_EXIT_REASONS: PackedStringArray = ["buyout", "auto_restore"]
 const IMMUNITY_KEYS: PackedStringArray = ["pull_immune_ticks", "banish_immune_ticks"]
 ## LT-52 (LT-46 §2.2): an allied unit within this many cells of an enemy it chases holds it.
 const ALLY_CONTACT := 0.4
+## _light_flags bits (LT-76): the net lit / shadowed state of a point.
+const LIT_FLAG := 1
+const SHADOWED_FLAG := 2
 
 var state: SimState
 var config: GameConfig
@@ -675,7 +678,7 @@ func fire_flare() -> CommandResult:
 	if result != CommandResult.OK:
 		return result
 	var flare := config.economy.flare
-	state.flare_ticks_left = maxi(1, SimTime.ticks(flare_seconds()))
+	state.flare_ticks_left = _flare_ticks()
 	state.flare_cooldown_ticks = maxi(1, SimTime.ticks(flare.cooldown_seconds))
 	state.command_log.append([state.tick, "fire_flare"])
 	_emit(SimEvent.Type.FLARE_FIRED, 0, {"ticks": state.flare_ticks_left,
@@ -928,6 +931,13 @@ func sanity_state_for(s: float) -> SimState.SanityState:
 	return SimState.SanityState.FRAYING
 
 
+## LT-76 (LT-65 §3.2): the tower standing on `cell` (built or building), or null.
+func tower_at_cell(cell: Vector2i) -> SimTower:
+	if not state.tower_at.has(cell):
+		return null
+	return tower_by_id(state.tower_at[cell])
+
+
 ## The tower with this id, or null (also null once sold).
 func tower_by_id(id: int) -> SimTower:
 	for t in state.towers:
@@ -939,7 +949,7 @@ func tower_by_id(id: int) -> SimTower:
 ## Live enemies (fakes included) whose position is within `range_cells` of the centre of
 ## `cell`, boundary included; id order (§6 target query).
 func enemies_in_range(cell: Vector2i, range_cells: float) -> Array[SimEnemy]:
-	return enemies_near(Vector2(cell.x + 0.5, cell.y + 0.5), range_cells)
+	return enemies_near(SimGrid.centre(cell), range_cells)
 
 
 ## Live enemies (fakes included) whose position is within `radius` cells of `centre`
@@ -1256,6 +1266,44 @@ func flare_seconds() -> float:
 	return flare.seconds[mini(state.lighthouse_level, flare.seconds.size() - 1)]
 
 
+## LT-76: how many ticks a flare fired now burns: flare_seconds() in whole ticks, at least 1.
+func _flare_ticks() -> int:
+	return maxi(1, SimTime.ticks(flare_seconds()))
+
+
+## LT-76 (LT-65 §3.2) read-only: the flare burning now as {left_ticks, total_ticks}
+## (total: the burn of a flare fired at the current level, never below left); {0, 0} when
+## none burns.
+func flare_burn() -> Dictionary:
+	if not _flaring():
+		return {"left_ticks": 0, "total_ticks": 0}
+	var left := state.flare_ticks_left
+	return {"left_ticks": left, "total_ticks": maxi(left, _flare_ticks())}
+
+
+## LT-30 §1.2: the lamp oil cap (oil.cap); 0 without an oil block.
+func oil_cap() -> int:
+	var oil := config.economy.oil
+	return oil.cap if oil != null else 0
+
+
+## LT-30 §1.1: the oil one flare burns (flare.cost_oil); 0 without a flare block.
+func flare_cost_oil() -> int:
+	var flare := config.economy.flare
+	return flare.cost_oil if flare != null else 0
+
+
+## LT-57 (LT-76: moved from Game.flare_oil_to_buy): the oil units one "buy oil for a flare"
+## click tries, by day: min(flare.cost_oil, cap - oil), 1 per click without a flare block;
+## 0 without an oil block or with a full tank.
+func oil_for_flare() -> int:
+	var eco := config.economy
+	if eco.oil == null:
+		return 0
+	var want := eco.flare.cost_oil if eco.flare != null else 1
+	return clampi(eco.oil.cap - state.oil, 0, want)
+
+
 ## Lit now by a beam (dirs, half-width k) or, while a flare burns, anywhere (LT-69).
 func _lit_now(dirs: Array, k: float, px: float, py: float) -> bool:
 	return _flaring() or _lit_by(dirs, k, px, py)
@@ -1280,12 +1328,9 @@ func _update_beam() -> void:
 	if on:
 		casters = _casters()
 	for t in state.towers:
-		var c := t.centre()
-		var light_any := on and (_lit_now(dirs, k, c.x, c.y)
-			or _in_cast(c, "casts_light", t.id, casters))
-		var shadow_any := on and _in_cast(c, "casts_shadow", t.id, casters)
-		var lit := light_any and not shadow_any
-		var shadowed := shadow_any and not light_any
+		var flags := _light_flags(t.centre(), t.id, on, dirs, k, casters)
+		var lit := (flags & LIT_FLAG) != 0
+		var shadowed := (flags & SHADOWED_FLAG) != 0
 		if lit != t.lit or shadowed != t.shadowed:
 			t.lit = lit
 			t.shadowed = shadowed
@@ -1297,6 +1342,44 @@ func _update_beam() -> void:
 			continue
 		var p := e.route.position_at(e.distance)
 		e.lit = _lit_now(dirs, k, p.x, p.y) or _in_cast(p, "casts_light", -1, casters)
+
+
+## LT-70 §2.1: the net light of the point p (a tower centre; `skip_id` is that tower,
+## -1 for none) as LIT_FLAG / SHADOWED_FLAG bits: lit by a beam, the flare or another
+## casts_light radius, shadowed by another casts_shadow radius; both at once cancel to
+## neither; 0 when `on` is false (day). `dirs`, `k` and `casters` as _update_beam reads them.
+func _light_flags(p: Vector2, skip_id: int, on: bool, dirs: Array, k: float,
+		casters: Array[SimTower]) -> int:
+	var light_any := on and (_lit_now(dirs, k, p.x, p.y)
+		or _in_cast(p, "casts_light", skip_id, casters))
+	var shadow_any := on and _in_cast(p, "casts_shadow", skip_id, casters)
+	var flags := 0
+	if light_any and not shadow_any:
+		flags |= LIT_FLAG
+	if shadow_any and not light_any:
+		flags |= SHADOWED_FLAG
+	return flags
+
+
+## LT-76 (LT-65 §3.2) read-only query, changes nothing: the light at the point p (cell units)
+## now, for a tower centre (`skip_id` its id: a caster does not light or shadow itself) or
+## any point (-1): {beam (bool: a beam or the flare covers it, night only), light_casters /
+## shadow_casters (int: casts_light / casts_shadow towers other than skip_id whose radius
+## covers it, by day too), lit, shadowed (bool: the net state _update_beam would give a
+## tower there with the beam where it is now)}.
+func light_at(p: Vector2, skip_id := -1) -> Dictionary:
+	var on := _beam_on()
+	var dirs := _beam_dirs() if on else []
+	var k := config.economy.beam.half_width_ratio
+	var casters := _casters()
+	var flags := _light_flags(p, skip_id, on, dirs, k, casters)
+	return {
+		"beam": on and _lit_now(dirs, k, p.x, p.y),
+		"light_casters": _cast_count(p, "casts_light", skip_id, casters),
+		"shadow_casters": _cast_count(p, "casts_shadow", skip_id, casters),
+		"lit": (flags & LIT_FLAG) != 0,
+		"shadowed": (flags & SHADOWED_FLAG) != 0,
+	}
 
 
 ## LT-70 §2.2: the towers whose current level casts light or shadow, in id order.
@@ -1316,43 +1399,42 @@ func _in_cast(p: Vector2, key: String, skip_id: int, casters: Array[SimTower]) -
 		if o.id == skip_id:
 			continue
 		var s := o.stats()
-		if s.effects.get(key, 0.0) > 0.0 and in_cast_radius(o.centre(), s.range_cells, p):
+		if s.effects.get(key, 0.0) > 0.0 and LightRules.covers(o.cell, s.range_cells, p):
 			return true
 	return false
 
 
-## LT-70 §2.1: the aura / cast radius test, |p - c|² <= range² (boundary inclusive), in
-## 64-bit scalars; shared by _apply_auras, _in_cast and the board's BUILD preview.
+## How many casters other than `skip_id` with effects[key] > 0 cover the point p (_in_cast
+## counted).
+func _cast_count(p: Vector2, key: String, skip_id: int, casters: Array[SimTower]) -> int:
+	var n := 0
+	for o in casters:
+		if o.id == skip_id:
+			continue
+		var s := o.stats()
+		if s.effects.get(key, 0.0) > 0.0 and LightRules.covers(o.cell, s.range_cells, p):
+			n += 1
+	return n
+
+
+## LT-70 §2.1: the aura / cast radius test; the rule is LightRules.in_cast_radius (kept here
+## for existing callers).
 static func in_cast_radius(c: Vector2, range_cells: float, p: Vector2) -> bool:
-	var dx := float(p.x) - c.x
-	var dy := float(p.y) - c.y
-	return dx * dx + dy * dy <= range_cells * range_cells
+	return LightRules.in_cast_radius(c, range_cells, p)
 
 
 ## LT-30 §2, LT-70 §2.3: an occult tower's damage / aura / banish / summon multiplier from
 ## its net state: beam.occult_power_mult lit, shadow.occult_power_mult shadowed (1.0 without
 ## a shadow block), else 1.0. Mundane towers: 1.0.
 func _power_mult(t: SimTower) -> float:
-	if t.def.kind != "occult":
-		return 1.0
-	if t.lit:
-		return config.economy.beam.occult_power_mult
-	if t.shadowed and config.economy.shadow != null:
-		return config.economy.shadow.occult_power_mult
-	return 1.0
+	return TowerRules.power_mult(t.def.kind, config, t.lit, t.shadowed)
 
 
 ## LT-30 §2, LT-70 §2.3: a mundane tower's fire interval multiplier from its net state:
 ## beam.mundane_fire_interval_mult lit, shadow.mundane_fire_interval_mult shadowed (1.0
 ## without a shadow block), else 1.0. Occult towers: 1.0.
 func _interval_mult(t: SimTower) -> float:
-	if t.def.kind != "mundane":
-		return 1.0
-	if t.lit:
-		return config.economy.beam.mundane_fire_interval_mult
-	if t.shadowed and config.economy.shadow != null:
-		return config.economy.shadow.mundane_fire_interval_mult
-	return 1.0
+	return TowerRules.interval_mult(t.def.kind, config, t.lit, t.shadowed)
 
 
 ## Run start: "rotate" points the base direction left (SimState default); "sweep" starts at
@@ -1424,9 +1506,9 @@ func _is_lit(px: float, py: float) -> bool:
 ## LT-26 §1.1 lit test against the lighthouse cell centre L, v = p - L: |v|² <= reach²,
 ## v·d > 0 and cross(v, d)² <= k² (v·d)² for some beam d. Overlaps do not stack.
 func _lit_by(dirs: Array, k: float, px: float, py: float) -> bool:
-	var lh := config.map.lighthouse
-	var vx := px - (lh.x + 0.5)
-	var vy := py - (lh.y + 0.5)
+	var lh := SimGrid.centre(config.map.lighthouse)
+	var vx := px - lh.x
+	var vy := py - lh.y
 	var reach := config.economy.beam.reach_cells
 	if vx * vx + vy * vy > reach * reach:
 		return false
@@ -1494,7 +1576,7 @@ func _apply_auras() -> void:
 		var reveal := false
 		for t in auras:
 			var s := t.stats()
-			if not in_cast_radius(t.centre(), s.range_cells, p):
+			if not LightRules.covers(t.cell, s.range_cells, p):
 				continue
 			inside = true
 			var t_slow: float = s.effects.get("slow", 0.0)
@@ -1505,7 +1587,7 @@ func _apply_auras() -> void:
 				# LT-30 §2 / LT-70 §2.3: a lit (x0.7) or shadowed (x1.15) occult aura works at
 				# that strength (LT-29 §2: the armor strip too).
 				t_slow *= pm
-				t_mult = 1.0 + (t_mult - 1.0) * pm
+				t_mult = TowerRules.powered_taken_mult(t_mult, pm)
 				t_strip *= pm
 			slow = maxf(slow, t_slow)
 			mult = maxf(mult, t_mult)
@@ -1600,11 +1682,9 @@ func _fire_towers() -> void:
 		# on nothing. An empty shot keeps the usual target as its aim point.
 		# LT-50 (§7 Q2): a sanity_scaling level x 1 + k x (1 - sanity / max) on the full bar,
 		# before the lit x0.7 and the madness x2.
-		var factor := s.sanity_factor(state.sanity, config.sanity.max_sanity)
+		var factor := TowerRules.sanity_factor(s, config, state.sanity)
 		# LT-30 §2 / LT-70 §2.3: lit x0.7 / shadowed x1.15 (occult), before the madness x2.
-		var damage := s.damage * factor * _power_mult(t)
-		var beam := config.economy.beam
-		var lit_mundane := t.lit and t.def.kind == "mundane"
+		var damage := TowerRules.shot_damage(s, factor, _power_mult(t))
 		var astray := ""
 		if s.madness_affected and state.sanity_state == SimState.SanityState.MADNESS:
 			damage *= config.sanity.madness.damage_multiplier
@@ -1641,11 +1721,9 @@ func _fire_towers() -> void:
 		# LT-12 §4: a mundane shot may miss as a whole (Q3: occult towers never miss).
 		# LT-30: a lit mundane tower with ignore_miss never misses (no COMBAT draw).
 		# LT-70 §2.3: a shadowed one adds shadow.mundane.miss_chance_add to the chance.
-		var miss_add := 0.0
-		if t.shadowed and config.economy.shadow != null:
-			miss_add = config.economy.shadow.mundane_miss_chance_add
-		var miss := t.def.kind == "mundane" and not (lit_mundane and beam.mundane_ignore_miss) \
-			and _roll_miss(miss_add)
+		var miss_add := TowerRules.miss_add(t.def.kind, config, t.shadowed)
+		var miss := t.def.kind == "mundane" \
+			and not TowerRules.ignore_miss(t.def.kind, config, t.lit) and _roll_miss(miss_add)
 		var dud := miss or astray == "empty"
 		if dud:
 			hits = []
@@ -1682,8 +1760,8 @@ func _fire_towers() -> void:
 		if fuse_ticks == 0:
 			_on_hit_effects(t, s, target, hits, shot)
 		# LT-30 / LT-70 §2.3: lit x0.8 / shadowed x1.25 (mundane), decided at the shot.
-		var interval := s.fire_interval * _interval_mult(t)
-		t.cooldown_ticks = maxi(1, SimTime.ticks(interval))
+		var interval := TowerRules.fire_interval(s, _interval_mult(t))
+		t.cooldown_ticks = TowerRules.cooldown_ticks(interval)
 
 
 ## LT-51 (§2.2, Q4): a Silver Key cast. Picks (by target_priority) up to banish_targets of
@@ -1704,7 +1782,7 @@ func _cast_banish(t: SimTower, s: TowerDef.Level) -> void:
 	if picks.is_empty():
 		return
 	var power := _power_mult(t)
-	var damage := s.damage * power
+	var damage := TowerRules.shot_damage(s, 1.0, power)
 	var astray := ""
 	if s.madness_affected and state.sanity_state == SimState.SanityState.MADNESS:
 		damage *= config.sanity.madness.damage_multiplier
@@ -1736,7 +1814,7 @@ func _cast_banish(t: SimTower, s: TowerDef.Level) -> void:
 	if damage > 0.0:
 		for e in picks:
 			apply_damage(e.id, damage, t.def.id)
-	t.cooldown_ticks = maxi(1, SimTime.ticks(s.fire_interval))
+	t.cooldown_ticks = TowerRules.cooldown_ticks(s.fire_interval)
 
 
 ## LT-52 (§2.2): a Summoning Circle with fewer than summon_max live units summons one at
@@ -1749,12 +1827,12 @@ func _cast_banish(t: SimTower, s: TowerDef.Level) -> void:
 func _summon(t: SimTower, s: TowerDef.Level) -> void:
 	if allies_of(t.id).size() >= s.summon_max():
 		return
-	var dps: float = s.effects.get("summon_dps", 0.0) * _power_mult(t)
+	var dps := TowerRules.unit_dps(s, _power_mult(t))
 	var id := spawn_ally(t.id, t.def.id, t.centre(), s.effects.get("summon_hp", 0.0), dps,
 		s.effects.get("summon_speed", 0.0), s.summon_flying(),
 		SimTime.ticks(float(s.effects.get("summon_lifetime", 0.0))), s.range_cells + 1.0)
 	if id != 0:
-		t.cooldown_ticks = maxi(1, SimTime.ticks(s.fire_interval))
+		t.cooldown_ticks = TowerRules.cooldown_ticks(s.fire_interval)
 
 
 ## LT-51 (Q4 "HP cap per level"): those of `enemies` a gate with stats `s` may banish:
@@ -1801,13 +1879,9 @@ func _outside_dead_zone(t: SimTower, s: TowerDef.Level,
 	if s.min_range <= 0.0:
 		return enemies
 	var c := t.centre()
-	var r2 := s.min_range * s.min_range
 	var out: Array[SimEnemy] = []
 	for e in enemies:
-		var p := e.route.position_at(e.distance)
-		var dx := float(p.x) - float(c.x)
-		var dy := float(p.y) - float(c.y)
-		if dx * dx + dy * dy >= r2:
+		if not TowerRules.in_dead_zone(c, s.min_range, e.route.position_at(e.distance)):
 			out.append(e)
 	return out
 

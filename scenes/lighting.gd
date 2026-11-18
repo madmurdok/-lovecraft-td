@@ -186,11 +186,11 @@ static func flare_cover_cells(m: MapDef) -> float:
 ## burn time at the current lighthouse level; an upgrade mid-burn can only happen by day,
 ## when no flare burns).
 static func flare_strength(sim: Simulation) -> float:
-	var flare := sim.config.economy.flare
-	var left := sim.state.flare_ticks_left
-	if flare == null or left <= 0:
+	var burn := sim.flare_burn()  # LT-76: the sim's own burn length
+	var left: int = burn["left_ticks"]
+	if left <= 0:
 		return 0.0
-	var total := maxi(left, SimTime.ticks(sim.flare_seconds()))
+	var total: int = burn["total_ticks"]
 	var since := float(total - left + 1) * SimTime.DT
 	var until := float(left) * SimTime.DT
 	return clampf(since / FLARE_EASE_IN, 0.0, 1.0) * clampf(until / FLARE_EASE_OUT, 0.0, 1.0)

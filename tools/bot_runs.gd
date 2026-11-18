@@ -419,10 +419,11 @@ func _lighthouse_next(sim: Simulation, strat: String) -> bool:
 	return up.is_empty() or cost <= sim.upgrade_target(sim.tower_by_id(up[0]), up[1]).upgrade_cost
 
 
-## LT-57 §5: oil the bot keeps by day: one flare (flare.cost_oil), 0 without a flare block.
+## LT-57 §5: oil the bot keeps by day: one flare (Simulation.flare_cost_oil), 0 without a
+## flare block. Not Simulation.oil_for_flare: that is a click's batch (up to the cap), the
+## bot stops at one flare's worth.
 static func _bot_oil_target(sim: Simulation) -> int:
-	var flare := sim.config.economy.flare
-	return flare.cost_oil if flare != null else 0
+	return sim.flare_cost_oil()
 
 
 ## Night: fires the flare when at least FLARE_MIN_LIVE live enemies (reals and fakes, as a
@@ -509,45 +510,32 @@ func _best_cell(sim: Simulation, id: String) -> Vector2i:
 func _cast_term(sim: Simulation, id: String, cell: Vector2i) -> int:
 	var def: TowerDef = _cfg.towers[id]
 	var s: TowerDef.Level = def.levels[0]
-	var p := Vector2(cell.x + 0.5, cell.y + 0.5)
 	var term := 0
-	for o in sim.state.towers:
-		var os := o.stats()
-		var o_mundane: bool = o.def.kind == "mundane"
-		if s.casts_light() or s.casts_shadow():
-			if os.acts() and Simulation.in_cast_radius(p, s.range_cells, o.centre()):
+	if s.casts_light() or s.casts_shadow():
+		for o in sim.state.towers:
+			var o_mundane: bool = o.def.kind == "mundane"
+			if o.stats().acts() and LightRules.covers(cell, s.range_cells, o.centre()):
 				if s.casts_light():
 					term += 1 if o_mundane else -1
 				if s.casts_shadow():
 					term += -1 if o_mundane else 1
-		if s.acts() and (os.casts_light() or os.casts_shadow()) \
-				and Simulation.in_cast_radius(o.centre(), os.range_cells, p):
-			var sign_ := 1 if def.kind == "mundane" else -1
-			if os.casts_light():
-				term += sign_
-			if os.casts_shadow():
-				term -= sign_
+	if s.acts():
+		# Casters on the board covering the cell (LT-76: Simulation.light_at counts them).
+		var light := sim.light_at(SimGrid.centre(cell))
+		var sign_ := 1 if def.kind == "mundane" else -1
+		term += sign_ * int(light["light_casters"])
+		term -= sign_ * int(light["shadow_casters"])
 	return term
 
 
 ## LT-70: true when a shadow caster on the board covers the centre of `cell`.
 func _in_shadow_radius(sim: Simulation, cell: Vector2i) -> bool:
-	var p := Vector2(cell.x + 0.5, cell.y + 0.5)
-	for o in sim.state.towers:
-		var os := o.stats()
-		if os.casts_shadow() and Simulation.in_cast_radius(o.centre(), os.range_cells, p):
-			return true
-	return false
+	return int(sim.light_at(SimGrid.centre(cell))["shadow_casters"]) > 0
 
 
 ## LT-70 §6: `lit_shots` keeps its meaning (lighthouse beam / flare value): a lit shooter that
-## no casts_light tower covers. `sim.lit` is the net flag and has no public beam-only source,
-## so a tower under both the beam and a Searchlight is not counted (an undercount);
-## `lit_tower_ticks` counts every light source.
+## no other casts_light tower covers (Simulation.light_at's light_casters). A tower under both
+## the beam and a Searchlight is not counted (an undercount, kept so the RUN lines stay
+## identical; light_at's `beam` would count it); `lit_tower_ticks` counts every light source.
 func _beam_lit(sim: Simulation, t: SimTower) -> bool:
-	for o in sim.state.towers:
-		var os := o.stats()
-		if o.id != t.id and os.casts_light() \
-				and Simulation.in_cast_radius(o.centre(), os.range_cells, t.centre()):
-			return false
-	return true
+	return int(sim.light_at(t.centre(), t.id)["light_casters"]) == 0

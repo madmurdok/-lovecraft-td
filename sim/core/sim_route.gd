@@ -47,4 +47,4 @@ func position_at(distance: int) -> Vector2:
 
 
 static func _centre(cell: Vector2i) -> Vector2:
-	return Vector2(cell.x + 0.5, cell.y + 0.5)
+	return SimGrid.centre(cell)

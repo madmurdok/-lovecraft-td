@@ -572,10 +572,8 @@ func _draw() -> void:
 func selected_dead_zone() -> float:
 	if selected_range <= 0.0 or game == null or game.sim == null:
 		return 0.0
-	for t in game.sim.state.towers:
-		if t.cell == selected_cell:
-			return t.stats().min_range
-	return 0.0
+	var t := game.sim.tower_at_cell(selected_cell)  # LT-76
+	return TowerRules.dead_zone(t.stats()) if t != null else 0.0
 
 
 func _draw_dashed_circle(c: Vector2, r: float, color: Color) -> void:
@@ -667,7 +665,7 @@ static func state_border(t: SimTower, preview := "") -> Color:
 
 ## LT-70 §5: the BUILD preview for tower `t`: selected_cast when it is day (BUILD), a caster
 ## is selected (selected_cast, selected_range) and `t` is another tower whose centre is in
-## that radius (Simulation.in_cast_radius, the sim's own test); "" otherwise, and always at
+## that radius (LightRules.covers, the sim's own test); "" otherwise, and always at
 ## night, where the real tint shows.
 func preview_cast(t: SimTower) -> String:
 	if selected_cast.is_empty() or selected_range <= 0.0 or game == null or game.sim == null:
@@ -676,8 +674,7 @@ func preview_cast(t: SimTower) -> String:
 	if s.phase != SimState.Phase.BUILD or not s.map.in_bounds(selected_cell) \
 			or t.cell == selected_cell:
 		return ""
-	var c := Vector2(selected_cell) + Vector2(0.5, 0.5)
-	return selected_cast if Simulation.in_cast_radius(c, selected_range, t.centre()) else ""
+	return selected_cast if LightRules.covers(selected_cell, selected_range, t.centre()) else ""
 
 
 func _draw_tower(t: SimTower) -> void:
