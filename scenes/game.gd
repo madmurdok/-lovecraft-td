@@ -21,6 +21,10 @@ const FRAME_STATS_ARG := "--frame-stats"
 ## deterministic. SKIP_KEY skips ahead: by day it lights the lamp (sim call_wave), at night it
 ## ends the night (sim debug_end_night, logged). The HUD shows a "SANDBOX" marker.
 const SANDBOX_ARG := "--sandbox"
+## `-- --mute` (any build, LT-87): mutes the Master bus for the run, so game windows that
+## agents open for screenshots and frame-time measures stay silent. Without it the run
+## leaves the bus as it is (unmuted by default).
+const MUTE_ARG := "--mute"
 const SANDBOX_GOLD := 100000  ## enough to build and fully upgrade every tower and the lighthouse
 const SKIP_KEY := KEY_N
 const UI_LAYER := 2  ## above SanityFx.SCREEN_LAYER, so the HUD is never distorted
@@ -47,22 +51,34 @@ var lighthouse_panel: LighthousePanel  ## LT-30: lighthouse view of side_panel
 var end_screen: EndScreen
 
 
-func setup(config: GameConfig, p_seed: int) -> void:
+## `args` are the launch user args (after a bare `--`); tests pass their own.
+func setup(
+	config: GameConfig, p_seed: int, args: PackedStringArray = OS.get_cmdline_user_args()
+) -> void:
 	run_seed = p_seed
-	sandbox = OS.is_debug_build() and OS.get_cmdline_user_args().has(SANDBOX_ARG)
+	sandbox = OS.is_debug_build() and args.has(SANDBOX_ARG)
 	if sandbox:
 		config = config.sandboxed(SANDBOX_GOLD)
 	sim = Simulation.new(config, p_seed)
 	sim.set_spawner(WaveDirector.new(config.waves))
 	# LT-12 §1: debug builds only; the board then marks fakes via sim.debug_is_fake.
 	sim.debug_reveal_fakes = OS.is_debug_build() \
-		and OS.get_cmdline_user_args().has(REVEAL_FAKES_ARG)
+		and args.has(REVEAL_FAKES_ARG)
+	apply_mute_arg(args)
 	if OS.is_debug_build():
-		var forced := debug_sanity_arg(OS.get_cmdline_user_args())
+		var forced := debug_sanity_arg(args)
 		if forced >= 0.0:
 			sim.debug_set_sanity(forced)
-		if OS.get_cmdline_user_args().has(FRAME_STATS_ARG):
+		if args.has(FRAME_STATS_ARG):
 			frame_stats = FrameStats.new()
+
+
+## Mutes the Master bus when `args` has MUTE_ARG; returns whether it did. Never unmutes.
+static func apply_mute_arg(args: PackedStringArray) -> bool:
+	if not args.has(MUTE_ARG):
+		return false
+	AudioServer.set_bus_mute(AudioServer.get_bus_index("Master"), true)
+	return true
 
 
 ## The `--sanity=<v>` / `--sanity <v>` value clamped to >= 0, or -1 when absent or not a
