@@ -350,3 +350,20 @@ How the backlog fits:
      names for a while.
    - (b) Migrate all callers in one go. Benefit: clean at once. Risk: a large diff over 6 UI
      files and their tests.
+
+## 7. Owner decisions (2026-11-18)
+
+Quoted verbatim (option labels chosen in the form):
+
+- Q1 sim split: "0.6.0, до волн и экипажа (Recommended)". B5-B8 go to 0.6.0, before LT-72/LT-32.
+- Q2 golden data: "Замороженная копия data/ (Recommended)". B0 uses `tests/fixtures/golden_data/`.
+- Q3 UI update policy: "Полностью на событиях". Panels become fully event-driven, not throttled
+  polling: B11 needs a design slice for the missing events (timers, phase countdown, flare,
+  cooldowns) and a rule for missed events, before any code.
+- Q4 grid: "Полный интерфейс GridTopology" (centre, neighbours, distance, cell polygon), then
+  "Отдельный блок до B4, с дизайном (Recommended)": a new block between B2 and B4, design note
+  reviewed by the owner, square implementation first; BoardView (LT-35) builds on it.
+- Q5 rule formulas: "Статические модули sim/rules/ (Recommended)".
+- Q6 TowerInfo: "Перевести всех сразу". No forwarding facade; B10 migrates every caller in one go.
+- Note and 0.5.0 scope: "Утверждаю (Recommended)". 0.5.0 order:
+  B0 -> (B1 ∥ B3) -> B2 -> GridTopology -> B4 = LT-35 -> B11 -> B10 (if time); B5-B9 in 0.6.0.
