@@ -6,8 +6,8 @@ extends TowerTestBase
 ## before towers fire; a real enemy is never revealed. A revealed fake leaves every tower's
 ## target candidates (single, burst, pierce, aoe, fuse): a tower with only a revealed fake in
 ## range holds fire with its cooldown at 0. It is still hit as collateral and still in the
-## madness "fake" astray pool. Slows 0.2 (L1) / 0.4 + x1.2 taken (b), not stacked with Elder
-## Sign (max), not scaled when lit (mundane). No damage, no shots, no regen;
+## madness "fake" astray pool. Slows 0.15 (L1) / 0.25 (b; LT-70: no x1.2 taken), not stacked
+## with Elder Sign (max), not scaled when lit (mundane). No damage, no shots, no regen;
 ## debug_is_fake is unchanged by a reveal.
 ## Searchlight at SL, centre (3.5, 1.5); an enemy `put` at c cells is at (c + 0.5, 0.5), so
 ## it is inside the L1 radius 3 iff (c - 3)^2 + 1 <= 9, i.e. c in [0.18, 5.82]. The default
@@ -231,21 +231,21 @@ func test_a_madness_fake_astray_shot_may_still_land_on_a_revealed_fake() -> void
 
 # --- slow and multiplier ----------------------------------------------------------------------
 
-func test_l1_slows_by_its_slow_and_branch_b_slows_harder_and_marks() -> void:
+func test_l1_slows_by_its_slow_and_branch_b_slows_harder_without_marking() -> void:
 	var sim := _sim()
 	var sl := _sl(sim)
 	var e := put(sim, "cultist", 3.0)
 	sim.drain_events()
 	run(sim, 1)
 	var l1: TowerDef.Level = sim.config.towers[SLT].levels[0]
-	assert_float(float(l1.effects["slow"])).is_equal(0.2)
-	assert_float(e.speed_mult).is_equal_approx(0.8, 1e-9)
+	assert_float(float(l1.effects["slow"])).is_equal(0.15)
+	assert_float(e.speed_mult).is_equal_approx(0.85, 1e-9)
 	assert_float(e.damage_taken_mult).is_equal(1.0)
 	sl.level = TowerDef.LEVEL_COUNT
 	sl.branch = "b"
 	run(sim, 1)
-	assert_float(e.speed_mult).is_equal_approx(0.6, 1e-9)
-	assert_float(e.damage_taken_mult).is_equal_approx(1.2, 1e-9)
+	assert_float(e.speed_mult).is_equal_approx(0.75, 1e-9)
+	assert_float(e.damage_taken_mult).is_equal(1.0)  # LT-70: marking is the sign's job
 
 
 func test_a_lit_searchlight_is_not_scaled_by_the_occult_power_mult() -> void:
@@ -257,8 +257,8 @@ func test_a_lit_searchlight_is_not_scaled_by_the_occult_power_mult() -> void:
 	sim.drain_events()
 	run(sim, 1)
 	assert_bool(sl.lit).is_true()
-	assert_float(e.speed_mult).is_equal_approx(0.6, 1e-9)
-	assert_float(e.damage_taken_mult).is_equal_approx(1.2, 1e-9)
+	assert_float(e.speed_mult).is_equal_approx(0.75, 1e-9)
+	assert_float(e.damage_taken_mult).is_equal(1.0)
 
 
 func test_with_elder_sign_the_slow_is_the_max_and_reveal_comes_from_any_aura() -> void:
@@ -266,14 +266,20 @@ func test_with_elder_sign_the_slow_is_the_max_and_reveal_comes_from_any_aura() -
 	_sl(sim)  # built first: the sign comes later in the tower list
 	build(sim, SIGN, Vector2i(5, 1))  # centre (5.5, 1.5), radius 2.5
 	var es: TowerDef.Level = sim.config.towers[SIGN].levels[0]
+	var sl1: TowerDef.Level = sim.config.towers[SLT].levels[0]
 	var both := _fake(sim, 4.5)  # 1.80 off the light, 1.41 off the sign
 	var sign_only := _fake(sim, 7.5)  # 4.61 off the light, 2.24 off the sign
 	sim.drain_events()
 	run(sim, 1)
-	var slow := maxf(0.2, float(es.effects["slow"]))
+	# LT-70: the sign (2 cells off the Searchlight) is lit by it at night, so its aura
+	# works at beam.occult_power_mult; each modifier is still the max over the auras.
+	var sign_tower := sim.state.towers[1]
+	assert_bool(sign_tower.lit).is_true()
+	var pm := sim.config.economy.beam.occult_power_mult
+	var slow := maxf(float(sl1.effects["slow"]), float(es.effects["slow"]) * pm)
 	assert_float(both.speed_mult).is_equal_approx(1.0 - slow, 1e-9)
 	assert_float(both.damage_taken_mult) \
-		.is_equal_approx(float(es.effects["damage_taken_multiplier"]), 1e-9)
+		.is_equal_approx(1.0 + (float(es.effects["damage_taken_multiplier"]) - 1.0) * pm, 1e-9)
 	assert_bool(both.revealed).is_true()
 	assert_bool(sign_only.revealed).is_false()
 

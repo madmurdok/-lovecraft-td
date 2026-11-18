@@ -154,14 +154,14 @@ func test_fastest_shoots_the_highest_speed_also_behind_another() -> void:
 	assert_int(_shot_target(sim, t)).is_equal(behind.id)
 
 
-## a: 10 units/tick inside the Sign's aura (slow 0.3 -> roundi(7.0) = 7); b: 8, outside it.
+## a: 9 units/tick inside the Sign's aura (LT-70 slow 0.2 -> roundi(7.2) = 7); b: 8, outside it.
 func _fastest_with_sign(with_sign: bool) -> Array:
 	var sim := _rich(tsim())
 	if with_sign:
 		build(sim, SIGN, SIGN_CELL)
 	var t := build(sim, RIFLE)
 	var a := put(sim, "cultist", 4.4)
-	a.base_units_per_tick = 10
+	a.base_units_per_tick = 9
 	var b := put(sim, "cultist", 8.0)
 	b.base_units_per_tick = 8
 	_mode(sim, t, "fastest")

@@ -488,6 +488,7 @@ const BAD_ENTRIES := {
 	"upgrade_lighthouse": [[0, "upgrade_lighthouse", 1], [0, "upgrade_lighthouse", ""]],
 	"buy_oil": [[0, "buy_oil", 1], [0, "buy_oil", null]],
 	"fire_flare": [[0, "fire_flare", ""], [0, "fire_flare", 1, 2]],
+	"debug_end_night": [[0, "debug_end_night", 1], [0, "debug_end_night", null]],
 }
 
 
@@ -498,7 +499,7 @@ func _ready_sim() -> Array:
 	sim.state.gold = 100000
 	sim.state.relics["star_stone"] = 2
 	sim.config.sanity.madness.exit_rule = "buyout"
-	sim.state.oil = 9  # LT-30: room for buy_oil, enough for fire_flare (LT-57: cost 8, cap 16)
+	sim.state.oil = 13  # LT-30: room for buy_oil, enough for fire_flare (LT-57: cost 12, cap 16)
 	var t := build(sim, RIFLE, Vector2i(5, 1))
 	sim.drain_events()
 	# LT-30: a day sim, so upgrade_lighthouse and buy_oil would apply; fire_flare (night
@@ -541,7 +542,7 @@ func test_replay_command_known_name_with_bad_args_is_bad_args_and_changes_nothin
 			.is_push_error("Simulation.replay_command: bad args %s" % [entry])
 		assert_int(r["v"]).override_failure_message("%s" % [entry]).is_equal(R2.BAD_ARGS)
 	assert_str(_digest_all(night)).is_equal(at_night)
-	assert_int(night.state.oil).is_equal(9)
+	assert_int(night.state.oil).is_equal(13)
 
 
 func test_replay_command_non_string_or_unknown_name_stays_unknown_command() -> void:

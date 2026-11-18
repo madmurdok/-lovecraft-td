@@ -3,12 +3,12 @@ extends GdUnitTestSuite
 ## LT-22: the game scales with the window. Pins the stretch settings, the boot window
 ## fit (aspect kept, 85% of the usable screen), the screen shader's pixel tunables
 ## following the stretch, and board clicks under a 2x stretched viewport. The scaled
-## viewport is a 2304x1296 SubViewport stretching a 1152x648 base (size_2d_override),
+## viewport is a 2304x1296 SubViewport stretching a 1200x675 base (size_2d_override),
 ## the same final transform the window stretch gives the root viewport.
 
 const MAIN := preload("res://scenes/main.gd")
 const RIFLE := "rifleman"
-const BASE := Vector2i(1152, 648)
+const BASE := Vector2i(1200, 675)
 const SCALE := 2.0
 
 var _vp: SubViewport
@@ -67,11 +67,11 @@ func _far_buildable_cell() -> Vector2i:
 	return best
 
 
-func test_project_stretches_canvas_items_and_keeps_aspect_over_a_1152x648_base() -> void:
+func test_project_stretches_canvas_items_and_keeps_aspect_over_a_1200x675_base() -> void:
 	assert_str(ProjectSettings.get_setting("display/window/stretch/mode")).is_equal("canvas_items")
 	assert_str(ProjectSettings.get_setting("display/window/stretch/aspect")).is_equal("keep")
-	assert_int(ProjectSettings.get_setting("display/window/size/viewport_width")).is_equal(1152)
-	assert_int(ProjectSettings.get_setting("display/window/size/viewport_height")).is_equal(648)
+	assert_int(ProjectSettings.get_setting("display/window/size/viewport_width")).is_equal(1200)
+	assert_int(ProjectSettings.get_setting("display/window/size/viewport_height")).is_equal(675)
 	assert_int(ProjectSettings.get_setting("display/window/size/window_width_override")) \
 		.is_equal(1600)
 	assert_int(ProjectSettings.get_setting("display/window/size/window_height_override")) \
@@ -79,13 +79,13 @@ func test_project_stretches_canvas_items_and_keeps_aspect_over_a_1152x648_base()
 
 
 func test_fit_window_size_fills_the_height_of_a_wide_screen() -> void:
-	# room 2924x1224: the height limits, 1224 / 648 = 1.888...
+	# room 2924x1224: the height limits, 1224 / 675 = 1.813...
 	assert_vector(MAIN.fit_window_size(Vector2i(3440, 1440), BASE, 0.85)) \
 		.is_equal(Vector2i(2176, 1224))
 
 
 func test_fit_window_size_fills_the_width_of_a_tall_screen() -> void:
-	# room 1020x1632: the width limits, 648 * 1020 / 1152 = 573.75
+	# room 1020x1632: the width limits, 675 * 1020 / 1200 = 573.75
 	assert_vector(MAIN.fit_window_size(Vector2i(1200, 1920), BASE, 0.85)) \
 		.is_equal(Vector2i(1020, 574))
 

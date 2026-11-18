@@ -57,6 +57,10 @@ var _hallucinations := HallucinationSystem.new()
 ## LT-27 §1.3: token id -> true for tokens dropped by fakes. Sim-private: the render must
 ## never tell a ghost token from a real one before it vanishes.
 var _ghost_tokens: Dictionary[int, bool] = {}
+## LT-63: pack members not entered yet, queue order: [due_tick, EnemyDef, is_fake, pack_of].
+## Sim only (fakes are queued too, LT-12 §1); real members enter in slot 7, fake ones in
+## slot 8 after the dawn check (_release_pack_members).
+var _pack_queue: Array = []
 
 
 func _init(p_config: GameConfig, run_seed: int) -> void:
@@ -129,7 +133,9 @@ func step() -> void:
 	_horror_drain()
 	# 6b. Relic tokens (LT-27 §1.3): ghosts vanish, real tokens are credited on arrival.
 	_settle_tokens()
-	# 7. Spawning, then fakes (LT-12) from the spawner's candidates.
+	# 7. Spawning: queued real pack members due now (LT-63), then the spawner, then fakes
+	# (LT-12) from the spawner's candidates.
+	_release_pack_members(false)
 	if _spawner != null:
 		_spawner.tick(self)
 		_hallucinations.tick(self, _spawner)
@@ -139,15 +145,21 @@ func step() -> void:
 	_compact()
 	if _spawner != null:
 		_spawner.end_tick(self)
+	# 8b. Queued fake pack members due now enter after the dawn check (LT-63), so one due on
+	# the dawn tick is dropped with the rest instead of entering and dissolving at once.
+	_release_pack_members(true)
 	# 9. Outcome.
 	_check_outcome()
 
 
 ## Spawns `def_id` at the start of its route; a `pack` enemy spawns min..max of them
 ## (rolled on SPAWN, or on SANITY for a fake so hallucinations never change real pack
-## sizes, LT-12 §2) on the same tick at the same spot. Returns the first new id
-## (a pack's ids are consecutive), or 0 if `def_id` is unknown or the outcome is set
-## (then nothing changes and no event is emitted).
+## sizes, LT-12 §2). LT-63: only the first member enters now; member k (1..count-1) is
+## queued and enters at the start of the route on tick now + k x ticks(pack.spacing_s), so
+## members never stack on one spot: a real one in slot 7 before the spawner's spawns, a
+## fake one in slot 8 after the wave system's dawn check. Every member's pack_of is the first member's id. Returns the first new id,
+## or 0 if `def_id` is unknown or the outcome is set (then nothing changes and no event is
+## emitted).
 func spawn_enemy(def_id: String, is_fake := false) -> int:
 	if state.outcome != SimState.Outcome.NONE:
 		return 0
@@ -155,28 +167,60 @@ func spawn_enemy(def_id: String, is_fake := false) -> int:
 		push_error("Simulation.spawn_enemy: unknown enemy \"%s\"" % def_id)
 		return 0
 	var def: EnemyDef = config.enemies[def_id]
-	var count := 1
-	if def.traits.has("pack"):
-		var pack: Dictionary = def.traits["pack"]
-		var stream := SimRng.Stream.SANITY if is_fake else SimRng.Stream.SPAWN
-		count = rng(stream).randi_range(int(pack["min"]), int(pack["max"]))
-	var first_id := state.next_id
-	for i in count:
-		var e := SimEnemy.new()
-		e.id = state.next_id
-		state.next_id += 1
-		e.def = def
-		e.hp = def.hp
-		e.max_hp = def.hp
-		e.is_fake = is_fake
-		e.spawn_tick = state.tick
-		e.base_units_per_tick = SimTime.units_per_tick(def.speed)
-		# Flyers start at S too (owner decision, §7 Q3) and fly straight to L.
-		e.route = SimRoute.straight(state.map.spawn, state.map.lighthouse) if def.flying \
-			else _ground_route
-		state.enemies.append(e)
-		_emit(SimEvent.Type.SPAWNED, e.id, {"def": def_id})
+	if not def.traits.has("pack"):
+		return _enter(def, is_fake, 0)
+	var pack: Dictionary = def.traits["pack"]
+	var stream := SimRng.Stream.SANITY if is_fake else SimRng.Stream.SPAWN
+	var count := rng(stream).randi_range(int(pack["min"]), int(pack["max"]))
+	var spacing := SimTime.ticks(pack["spacing_s"])
+	var first_id := _enter(def, is_fake, state.next_id)
+	for k in range(1, count):
+		_pack_queue.append([state.tick + k * spacing, def, is_fake, first_id])
 	return first_id
+
+
+## LT-63: true while a real pack member is queued and not entered yet (a wave is not
+## cleared and the run is not won before it has entered).
+func has_queued_real_members() -> bool:
+	for q: Array in _pack_queue:
+		if not q[2]:
+			return true
+	return false
+
+
+## LT-63: every queued pack member with is_fake == `fakes` whose due tick has come enters,
+## queue order (slot 7 for real members, slot 8 for fake ones). Draws no RNG.
+func _release_pack_members(fakes: bool) -> void:
+	if _pack_queue.is_empty():
+		return
+	var left: Array = []
+	for q: Array in _pack_queue:
+		if bool(q[2]) != fakes or int(q[0]) > state.tick:
+			left.append(q)
+		else:
+			_enter(q[1], q[2], q[3])
+	_pack_queue = left
+
+
+## One enemy of `def` enters at the start of its route on this tick, with a new id and
+## SPAWNED {def}; returns that id.
+func _enter(def: EnemyDef, is_fake: bool, pack_of: int) -> int:
+	var e := SimEnemy.new()
+	e.id = state.next_id
+	state.next_id += 1
+	e.def = def
+	e.hp = def.hp
+	e.max_hp = def.hp
+	e.is_fake = is_fake
+	e.pack_of = pack_of
+	e.spawn_tick = state.tick
+	e.base_units_per_tick = SimTime.units_per_tick(def.speed)
+	# Flyers start at S too (owner decision, §7 Q3) and fly straight to L.
+	e.route = SimRoute.straight(state.map.spawn, state.map.lighthouse) if def.flying \
+		else _ground_route
+	state.enemies.append(e)
+	_emit(SimEvent.Type.SPAWNED, e.id, {"def": def.id})
+	return e.id
 
 
 ## The one armor rule for every damage source (§3.4). Returns the hp actually removed
@@ -501,6 +545,29 @@ func debug_set_sanity(value: float) -> CommandResult:
 	return CommandResult.OK
 
 
+## LT-67 (debug, `--sandbox`): ends the current night now. The WaveDirector marks every
+## spawn event of the wave fired (debug_fire_all), the pack queue is emptied, and every live
+## real enemy dies with DIED {source: "debug"} (no drop, no sanity regen, no kill reward);
+## fakes are left to the dawn. The wave is then cleared by the usual dawn check in slot 8
+## of the next tick (wage, sanity regen, BUILD_STARTED or DONE). Logged as
+## [tick, "debug_end_night"] so a replay reproduces it. OUTCOME_REACHED once the run is
+## over; NOT_NIGHT without a WaveDirector or outside a wave (phase BUILD / DONE); else OK.
+func debug_end_night() -> CommandResult:
+	if state.outcome != SimState.Outcome.NONE:
+		return CommandResult.OUTCOME_REACHED
+	if not (_spawner is WaveDirector) or state.phase != SimState.Phase.WAVE:
+		return CommandResult.NOT_NIGHT
+	state.command_log.append([state.tick, "debug_end_night"])
+	(_spawner as WaveDirector).debug_fire_all(self)
+	_pack_queue.clear()
+	for e in state.enemies:
+		if e.is_live() and not e.is_fake:
+			e.dead = true
+			_emit(SimEvent.Type.DIED, e.id, {"source": "debug"})
+	_compact()
+	return CommandResult.OK
+
+
 # --- LT-30: lighthouse levels, lamp oil and the flare (player commands) -----------------
 
 ## LT-30 (LT-26 §1.2): beams of the current lighthouse level (1, 2, 4 or 8).
@@ -599,8 +666,8 @@ func can_fire_flare() -> CommandResult:
 	return CommandResult.OK
 
 
-## Player command (LT-30 §1.1, LT-57 radial): for flare.seconds everything within
-## flare_radius() cells of the lighthouse is lit (beams keep turning and keep their width),
+## Player command (LT-30 §1.1, LT-69 whole map): for flare_seconds() every tower and enemy
+## on the map is lit (beams keep turning and keep their width),
 ## and every lit enemy moves at x enemy_speed_mult; the cooldown runs from now. Emits FLARE_FIRED {ticks, cooldown}
 ## (id 0), then OIL_CHANGED {delta: -cost_oil, oil, reason: "flare"}.
 func fire_flare() -> CommandResult:
@@ -608,7 +675,7 @@ func fire_flare() -> CommandResult:
 	if result != CommandResult.OK:
 		return result
 	var flare := config.economy.flare
-	state.flare_ticks_left = maxi(1, SimTime.ticks(flare.seconds))
+	state.flare_ticks_left = maxi(1, SimTime.ticks(flare_seconds()))
 	state.flare_cooldown_ticks = maxi(1, SimTime.ticks(flare.cooldown_seconds))
 	state.command_log.append([state.tick, "fire_flare"])
 	_emit(SimEvent.Type.FLARE_FIRED, 0, {"ticks": state.flare_ticks_left,
@@ -650,6 +717,7 @@ const REPLAY_ARGS: Dictionary[String, Array] = {
 	"upgrade_lighthouse": [],
 	"buy_oil": [],
 	"fire_flare": [],
+	"debug_end_night": [],
 }
 
 
@@ -678,6 +746,7 @@ func replay_command(entry: Array) -> CommandResult:
 		"upgrade_lighthouse": return upgrade_lighthouse()
 		"buy_oil": return buy_oil()
 		"fire_flare": return fire_flare()
+		"debug_end_night": return debug_end_night()
 	return CommandResult.UNKNOWN_COMMAND  # unreachable: every REPLAY_ARGS key has an arm
 
 
@@ -1178,35 +1247,27 @@ func _flaring() -> bool:
 	return state.flare_ticks_left > 0 and config.economy.flare != null
 
 
-## LT-57: the flare's lit radius in cells at the current lighthouse level
-## (flare.radius_cells[lighthouse_level]); 0 without a flare block.
-func flare_radius() -> float:
+## LT-69: how long a flare fired now burns, in seconds: flare.seconds[lighthouse_level];
+## 0 without a flare block.
+func flare_seconds() -> float:
 	var flare := config.economy.flare
-	if flare == null or state.lighthouse_level >= flare.radius_cells.size():
+	if flare == null or flare.seconds.is_empty():
 		return 0.0
-	return flare.radius_cells[state.lighthouse_level]
+	return flare.seconds[mini(state.lighthouse_level, flare.seconds.size() - 1)]
 
 
-## LT-57: whether the point p (cell units, the frame of SimTower.centre) lies within
-## flare_radius() of the lighthouse cell centre, boundary inclusive. Independent of whether
-## a flare burns (the bot asks before firing).
-func in_flare_radius(p: Vector2) -> bool:
-	var lh := config.map.lighthouse
-	var vx := p.x - (lh.x + 0.5)
-	var vy := p.y - (lh.y + 0.5)
-	var r := flare_radius()
-	return vx * vx + vy * vy <= r * r
-
-
-## Lit now by a beam (dirs, half-width k) or, while a flare burns, by its circle (LT-57).
+## Lit now by a beam (dirs, half-width k) or, while a flare burns, anywhere (LT-69).
 func _lit_now(dirs: Array, k: float, px: float, py: float) -> bool:
-	return _lit_by(dirs, k, px, py) or (_flaring() and in_flare_radius(Vector2(px, py)))
+	return _flaring() or _lit_by(dirs, k, px, py)
 
 
 ## Slot 2, first (LT-30 §3.1): saves prev_beam_*, turns the base direction (night only; a
-## flare no longer holds it, LT-57), then sets `lit` (in a beam or the flare circle)
-## of every tower (centre; TOWER_LIT {lit} on a flip, id order) and of every live enemy
-## (route position at the start of the tick, as auras). By day every flag is false.
+## flare no longer holds it, LT-57), then sets the net `lit` / `shadowed` of every tower
+## (centre; TOWER_LIT {lit, shadowed} when either flips, id order) and `lit` of every live
+## enemy (route position at the start of the tick, as auras). LT-70 §2.1: a tower is lit
+## by a beam, the flare (LT-69) or another casts_light tower's radius, shadowed by another
+## casts_shadow tower's radius; both at once cancel to neither. An enemy is lit by a beam,
+## the flare or a casts_light radius; enemies have no shadow. By day every flag is false.
 func _update_beam() -> void:
 	state.prev_beam_dx = state.beam_dx
 	state.prev_beam_dy = state.beam_dy
@@ -1215,19 +1276,83 @@ func _update_beam() -> void:
 		_turn_beam()
 	var dirs := _beam_dirs() if on else []
 	var k := config.economy.beam.half_width_ratio
+	var casters: Array[SimTower] = []
+	if on:
+		casters = _casters()
 	for t in state.towers:
 		var c := t.centre()
-		var lit := on and _lit_now(dirs, k, c.x, c.y)
-		if lit != t.lit:
+		var light_any := on and (_lit_now(dirs, k, c.x, c.y)
+			or _in_cast(c, "casts_light", t.id, casters))
+		var shadow_any := on and _in_cast(c, "casts_shadow", t.id, casters)
+		var lit := light_any and not shadow_any
+		var shadowed := shadow_any and not light_any
+		if lit != t.lit or shadowed != t.shadowed:
 			t.lit = lit
-			_emit(SimEvent.Type.TOWER_LIT, t.id, {"lit": lit})
+			t.shadowed = shadowed
+			_emit(SimEvent.Type.TOWER_LIT, t.id, {"lit": lit, "shadowed": shadowed})
 	if not on:
 		return
 	for e in state.enemies:
 		if not e.is_live():
 			continue
 		var p := e.route.position_at(e.distance)
-		e.lit = _lit_now(dirs, k, p.x, p.y)
+		e.lit = _lit_now(dirs, k, p.x, p.y) or _in_cast(p, "casts_light", -1, casters)
+
+
+## LT-70 §2.2: the towers whose current level casts light or shadow, in id order.
+func _casters() -> Array[SimTower]:
+	var out: Array[SimTower] = []
+	for t in state.towers:
+		var s := t.stats()
+		if s.casts_light() or s.casts_shadow():
+			out.append(t)
+	return out
+
+
+## LT-70 §2.1: true when some caster other than `skip_id` whose current level has
+## effects[key] > 0 covers the point p (in_cast_radius of its centre and range).
+func _in_cast(p: Vector2, key: String, skip_id: int, casters: Array[SimTower]) -> bool:
+	for o in casters:
+		if o.id == skip_id:
+			continue
+		var s := o.stats()
+		if s.effects.get(key, 0.0) > 0.0 and in_cast_radius(o.centre(), s.range_cells, p):
+			return true
+	return false
+
+
+## LT-70 §2.1: the aura / cast radius test, |p - c|² <= range² (boundary inclusive), in
+## 64-bit scalars; shared by _apply_auras, _in_cast and the board's BUILD preview.
+static func in_cast_radius(c: Vector2, range_cells: float, p: Vector2) -> bool:
+	var dx := float(p.x) - c.x
+	var dy := float(p.y) - c.y
+	return dx * dx + dy * dy <= range_cells * range_cells
+
+
+## LT-30 §2, LT-70 §2.3: an occult tower's damage / aura / banish / summon multiplier from
+## its net state: beam.occult_power_mult lit, shadow.occult_power_mult shadowed (1.0 without
+## a shadow block), else 1.0. Mundane towers: 1.0.
+func _power_mult(t: SimTower) -> float:
+	if t.def.kind != "occult":
+		return 1.0
+	if t.lit:
+		return config.economy.beam.occult_power_mult
+	if t.shadowed and config.economy.shadow != null:
+		return config.economy.shadow.occult_power_mult
+	return 1.0
+
+
+## LT-30 §2, LT-70 §2.3: a mundane tower's fire interval multiplier from its net state:
+## beam.mundane_fire_interval_mult lit, shadow.mundane_fire_interval_mult shadowed (1.0
+## without a shadow block), else 1.0. Occult towers: 1.0.
+func _interval_mult(t: SimTower) -> float:
+	if t.def.kind != "mundane":
+		return 1.0
+	if t.lit:
+		return config.economy.beam.mundane_fire_interval_mult
+	if t.shadowed and config.economy.shadow != null:
+		return config.economy.shadow.mundane_fire_interval_mult
+	return 1.0
 
 
 ## Run start: "rotate" points the base direction left (SimState default); "sweep" starts at
@@ -1291,7 +1416,7 @@ static func _dirs_of(x: float, y: float, count: int) -> Array:
 
 
 ## Whether the point (px, py) (cell units, the frame of SimTower.centre) is inside any beam
-## now (LT-26 §1.1) or within the flare circle while one burns (LT-57). False by day.
+## now (LT-26 §1.1) or anywhere while a flare burns (LT-69). False by day.
 func _is_lit(px: float, py: float) -> bool:
 	return _beam_on() and _lit_now(_beam_dirs(), config.economy.beam.half_width_ratio, px, py)
 
@@ -1316,7 +1441,7 @@ func _lit_by(dirs: Array, k: float, px: float, py: float) -> bool:
 
 
 ## Slot 2, after the madness buff (LT-30 §1.1): while a flare burns, every lit live enemy
-## (fakes alike; lit includes the flare circle, LT-57) gets speed_mult x
+## (fakes alike; while it burns every live enemy is lit, LT-69) gets speed_mult x
 ## flare.enemy_speed_mult this tick. The passive beam never
 ## slows.
 func _apply_flare_slow() -> void:
@@ -1346,8 +1471,9 @@ func _count_down_flare() -> void:
 ## The speed modifier scales this tick's movement (slot 3); the damage modifier applies to
 ## every hit this tick (slot 5), after armor (apply_damage).
 ## LT-49 (LT-46 P8): a `reveal_fakes` aura (Searchlight) also sets `revealed` on every live
-## fake inside, for good; _candidates then drops it, so no tower targets it again. A lit
-## mundane aura is unchanged (LT-30 modifiers apply to firing and to occult auras only).
+## fake inside, for good; _candidates then drops it, so no tower targets it again. A lit or
+## shadowed mundane aura is unchanged (LT-30 / LT-70 modifiers apply to firing and to
+## occult auras only); a lit or shadowed occult aura works at _power_mult strength.
 func _apply_auras() -> void:
 	var auras: Array[SimTower] = []
 	for t in state.towers:
@@ -1368,19 +1494,16 @@ func _apply_auras() -> void:
 		var reveal := false
 		for t in auras:
 			var s := t.stats()
-			var c := t.centre()
-			var dx := float(p.x) - c.x
-			var dy := float(p.y) - c.y
-			if dx * dx + dy * dy > s.range_cells * s.range_cells:
+			if not in_cast_radius(t.centre(), s.range_cells, p):
 				continue
 			inside = true
 			var t_slow: float = s.effects.get("slow", 0.0)
 			var t_mult: float = s.effects.get("damage_taken_multiplier", 1.0)
 			var t_strip: float = s.effects.get("strip_armor", 0.0)
-			if t.lit and t.def.kind == "occult":
-				# LT-30 §2: a lit occult aura works at beam.occult.power_mult strength
-				# (LT-29 §2: the armor strip too).
-				var pm := config.economy.beam.occult_power_mult
+			var pm := _power_mult(t)
+			if pm != 1.0:
+				# LT-30 §2 / LT-70 §2.3: a lit (x0.7) or shadowed (x1.15) occult aura works at
+				# that strength (LT-29 §2: the armor strip too).
 				t_slow *= pm
 				t_mult = 1.0 + (t_mult - 1.0) * pm
 				t_strip *= pm
@@ -1414,8 +1537,9 @@ func _apply_madness_buff() -> void:
 		e.damage_taken_mult *= m.enemy_damage_taken_multiplier
 
 
-## LT-30 (LT-26 D4): true when `e` must not get the madness buff: lit by the lighthouse beam
-## this tick (real and fake alike) and beam.enemy.cancel_madness_buff is on.
+## LT-30 (LT-26 D4): true when `e` must not get the madness buff: lit this tick (the
+## lighthouse beam, the flare or, LT-70 Q1, a Searchlight's casts_light radius; real and
+## fake alike) and beam.enemy.cancel_madness_buff is on.
 func _madness_buff_blocked(e: SimEnemy) -> bool:
 	return config.economy.beam.cancel_madness_buff and e.lit
 
@@ -1477,11 +1601,10 @@ func _fire_towers() -> void:
 		# LT-50 (§7 Q2): a sanity_scaling level x 1 + k x (1 - sanity / max) on the full bar,
 		# before the lit x0.7 and the madness x2.
 		var factor := s.sanity_factor(state.sanity, config.sanity.max_sanity)
-		var damage := s.damage * factor
+		# LT-30 §2 / LT-70 §2.3: lit x0.7 / shadowed x1.15 (occult), before the madness x2.
+		var damage := s.damage * factor * _power_mult(t)
 		var beam := config.economy.beam
 		var lit_mundane := t.lit and t.def.kind == "mundane"
-		if t.lit and t.def.kind == "occult":
-			damage *= beam.occult_power_mult  # LT-30 §2, before the madness x2
 		var astray := ""
 		if s.madness_affected and state.sanity_state == SimState.SanityState.MADNESS:
 			damage *= config.sanity.madness.damage_multiplier
@@ -1517,8 +1640,12 @@ func _fire_towers() -> void:
 			hits = _ground_filter(t, enemies_near(to, aoe))
 		# LT-12 §4: a mundane shot may miss as a whole (Q3: occult towers never miss).
 		# LT-30: a lit mundane tower with ignore_miss never misses (no COMBAT draw).
+		# LT-70 §2.3: a shadowed one adds shadow.mundane.miss_chance_add to the chance.
+		var miss_add := 0.0
+		if t.shadowed and config.economy.shadow != null:
+			miss_add = config.economy.shadow.mundane_miss_chance_add
 		var miss := t.def.kind == "mundane" and not (lit_mundane and beam.mundane_ignore_miss) \
-			and _roll_miss()
+			and _roll_miss(miss_add)
 		var dud := miss or astray == "empty"
 		if dud:
 			hits = []
@@ -1554,18 +1681,17 @@ func _fire_towers() -> void:
 			apply_damage(e.id, damage, t.def.id, no_armor)
 		if fuse_ticks == 0:
 			_on_hit_effects(t, s, target, hits, shot)
-		var interval := s.fire_interval
-		if lit_mundane:
-			interval *= beam.mundane_fire_interval_mult  # LT-30: decided at the shot
+		# LT-30 / LT-70 §2.3: lit x0.8 / shadowed x1.25 (mundane), decided at the shot.
+		var interval := s.fire_interval * _interval_mult(t)
 		t.cooldown_ticks = maxi(1, SimTime.ticks(interval))
 
 
 ## LT-51 (§2.2, Q4): a Silver Key cast. Picks (by target_priority) up to banish_targets of
 ## the tower's candidates that may be banished (_banishable), moves each back banish_cells
-## along its own route (P5 _push_back, the Chain pull's rewind; x occult_power_mult when the
-## tower is lit) and gives it banish_immune_seconds of banish immunity (its own status key:
+## along its own route (P5 _push_back, the Chain pull's rewind; x _power_mult: lit x0.7,
+## LT-70 shadowed x1.15) and gives it banish_immune_seconds of banish immunity (its own status key:
 ## pull immunity does not block a banish, nor the reverse). A level with damage (Corrupted)
-## then hits each one (armor applies; x occult_power_mult lit, x the madness multiplier).
+## then hits each one (armor applies; x _power_mult, x the madness multiplier).
 ## No candidate: no cast and no cooldown, the gate stays ready. In MADNESS a
 ## madness_affected gate goes astray (LT-13, one roll per cast): its picks are drawn at
 ## random from the banishable reals in range, or from the banishable fakes in range
@@ -1577,8 +1703,7 @@ func _cast_banish(t: SimTower, s: TowerDef.Level) -> void:
 	var picks := _ranked_targets(t, _banishable(s, _candidates(t, s)), n)
 	if picks.is_empty():
 		return
-	var beam := config.economy.beam
-	var power := beam.occult_power_mult if t.lit and t.def.kind == "occult" else 1.0
+	var power := _power_mult(t)
 	var damage := s.damage * power
 	var astray := ""
 	if s.madness_affected and state.sanity_state == SimState.SanityState.MADNESS:
@@ -1617,15 +1742,14 @@ func _cast_banish(t: SimTower, s: TowerDef.Level) -> void:
 ## LT-52 (§2.2): a Summoning Circle with fewer than summon_max live units summons one at
 ## its centre (spawn_ally: leash = range + 1, lifetime summon_lifetime) and spends the
 ## cooldown. At its maximum it does not summon and stays ready, so a unit gone frees a
-## slot at once. A circle lit at summon time gives the unit summon_dps x occult_power_mult
-## for its whole life (§3 "lit at summon time"); madness is applied live by _ally_combat.
+## slot at once. A circle lit (or, LT-70, shadowed) at summon time gives the unit
+## summon_dps x _power_mult for its whole life (§3 "lit at summon time"); madness is
+## applied live by _ally_combat.
 ## No miss, crit or astray (a unit bites what it holds).
 func _summon(t: SimTower, s: TowerDef.Level) -> void:
 	if allies_of(t.id).size() >= s.summon_max():
 		return
-	var dps: float = s.effects.get("summon_dps", 0.0)
-	if t.lit and t.def.kind == "occult":
-		dps *= config.economy.beam.occult_power_mult
+	var dps: float = s.effects.get("summon_dps", 0.0) * _power_mult(t)
 	var id := spawn_ally(t.id, t.def.id, t.centre(), s.effects.get("summon_hp", 0.0), dps,
 		s.effects.get("summon_speed", 0.0), s.summon_flying(),
 		SimTime.ticks(float(s.effects.get("summon_lifetime", 0.0))), s.range_cells + 1.0)
@@ -2106,8 +2230,11 @@ func _leak() -> void:
 
 ## LT-12 §5 (called by the wave director when a wave is cleared): every live fake, in id
 ## order, is marked dissolved with FAKE_DISSOLVED {reason}; then state.enemies is
-## compacted again, so the build phase starts with no enemy in `state`.
+## compacted again, so the build phase starts with no enemy in `state`. Fake pack members
+## still queued (LT-63), due on this tick or later, are dropped without an event: they
+## never entered.
 func dissolve_fakes(reason: String) -> void:
+	_pack_queue = _pack_queue.filter(func(q: Array) -> bool: return not q[2])
 	for e in state.enemies:
 		if e.is_live() and e.is_fake:
 			e.dissolved = true
@@ -2135,10 +2262,11 @@ func threshold() -> SanityConfig.Threshold:
 	return config.sanity.thresholds[SanityConfig.STATES[state.sanity_state]]
 
 
-## LT-12 §4 miss hook: one roll on COMBAT against the state's miss_chance; no roll (and no
-## COMBAT draw) when the chance is 0, so Lucid/Whispers consume COMBAT as before.
-func _roll_miss() -> bool:
-	var chance := threshold().miss_chance
+## LT-12 §4 miss hook: one roll on COMBAT against the state's miss_chance plus `extra`
+## (LT-70: a shadowed mundane shot), capped at 1; no roll (and no COMBAT draw) when the
+## chance is 0, so Lucid/Whispers consume COMBAT as before for unshadowed shots.
+func _roll_miss(extra := 0.0) -> bool:
+	var chance := minf(1.0, threshold().miss_chance + extra)
 	if chance <= 0.0:
 		return false
 	return rng(SimRng.Stream.COMBAT).randf() < chance
@@ -2183,7 +2311,7 @@ func _check_outcome() -> void:
 		state.outcome = SimState.Outcome.LOST
 		_emit(SimEvent.Type.OUTCOME, 0, {"result": "lost"})
 		return
-	if _spawner == null or not _spawner.is_exhausted():
+	if _spawner == null or not _spawner.is_exhausted() or has_queued_real_members():
 		return
 	for e in state.enemies:
 		if not e.is_fake:

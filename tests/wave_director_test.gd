@@ -96,20 +96,23 @@ func test_pack_group_rolls_sizes_on_the_spawn_stream() -> void:
 	var sim := wsim(waves, 1)
 	var pack: Dictionary = sim.config.enemies["deep_one"].traits["pack"]
 	sim.drain_events()
-	var ev := run(sim, SimTime.ticks(1))
+	var span := pack_span_ticks(sim.config, "deep_one")  # LT-63: members enter one by one
+	var ev := run(sim, SimTime.ticks(1) + span)
 	var n := of_type(ev, SimEvent.Type.SPAWNED).size()
 	assert_int(n).is_between(4 * int(pack["min"]), 4 * int(pack["max"]))
 	# Same total as four direct spawns on a fresh sim with the same seed (SPAWN stream).
 	var ref := Simulation.new(sim.config, SEED)
 	for k in 4:
 		ref.spawn_enemy("deep_one")
+	run(ref, span)
 	assert_int(n).is_equal(ref.state.next_id - 1)
 	# Rolls on other streams do not change the wave's pack sizes.
 	var other := wsim(waves, 1)
 	for k in 30:
 		other.rng(SimRng.Stream.COMBAT).randi()
 	other.drain_events()
-	assert_int(of_type(run(other, SimTime.ticks(1)), SimEvent.Type.SPAWNED).size()).is_equal(n)
+	assert_int(of_type(run(other, SimTime.ticks(1) + span), SimEvent.Type.SPAWNED).size()) \
+		.is_equal(n)
 
 
 func test_same_seed_same_events_different_seed_can_differ() -> void:

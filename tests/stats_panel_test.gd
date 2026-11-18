@@ -21,7 +21,7 @@ func before_test() -> void:
 	assert_bool(r.ok).override_failure_message("\n".join(r.errors)).is_true()
 	_config = r.config
 	_vp = SubViewport.new()
-	_vp.size = Vector2i(1152, 648)
+	_vp.size = Vector2i(1200, 675)
 	add_child(_vp)
 
 
@@ -170,30 +170,42 @@ func test_table_spans_equal_rows_golds_changed_cells_and_marks_lit_now() -> void
 	st.queue_free()
 
 
+## LT-61 §1: the build card is one column with no head; the table drops its head row only
+## when every head is "" (a tower's panel keeps it), and the rows stay.
+func test_head_row_is_hidden_only_when_every_head_is_empty() -> void:
+	var st := StatsTable.new()
+	_vp.add_child(st)
+	var one: Array[Dictionary] = [_dict({})]
+	st.set_columns(PackedStringArray([""]), one)
+	var head_row: Control = st.get_node("Head")
+	assert_bool(head_row.visible).is_false()
+	assert_bool(st.get_node("Row_" + st.row_keys[0]).visible).is_true()
+	st.set_columns(PackedStringArray(["L1"]), one)
+	assert_bool(st.get_node("Head").visible).is_true()
+	st.set_columns(PackedStringArray([""]), one)
+	assert_bool(st.get_node("Head").visible).is_false()
+	var two: Array[Dictionary] = [_dict({}), _dict({})]
+	st.set_columns(PackedStringArray(["", "B"]), two)
+	assert_bool(st.get_node("Head").visible).is_true()
+	st.queue_free()
+
+
 # --- the panel: same rows as the picker, heads per level ------------------------------------
 
-## §1 "every tower shows the same 10 rows": the picker column and the panel table (Special
-## under it as lines) list the ROWS in order, for every tower at L1, L2 and each branch.
+## §1 "every tower shows the same 10 rows": the panel table (Special under it as lines)
+## lists the ROWS in order, for every tower at L1, L2 and each branch. LT-61 §2: a build
+## list row is Name, Cost, DPS and Trait for every tower.
 func test_picker_and_panel_show_the_same_rows_in_the_same_order() -> void:
 	await _start_game()
 	var labels := []
 	for row: Array in TowerInfo.ROWS:
 		labels.append(row[1])
-	# Picker: the label column, then each tower's cells.
 	_game.picker.open_for(_buildable_cell())
-	var picker_labels := []
-	for c in _game.picker.find_child("Labels", true, false).get_children():
-		if c is Label:
-			picker_labels.append(c.text)
-	assert_array(picker_labels).is_equal(["Tower", "Cost"] + labels)
 	for id: String in _config.towers:
 		var names := []
 		for c in _game.picker.buttons[id].find_child("Cells", true, false).get_children():
 			names.append(String(c.name))
-		var want := ["Name", "Cost"]
-		for k: String in _rows():
-			want.append("Row_" + k)
-		assert_array(names).override_failure_message(id).is_equal(want)
+		assert_array(names).override_failure_message(id).is_equal(["Name", "Cost", "Gap", "Dps", "Trait"])
 	_game.picker.close()
 	# Panel: every tower, L1, L2 and both branches.
 	var panel_names := ["Head"]
@@ -421,19 +433,16 @@ func _assert_marks_only_changed(lines: Array) -> void:
 	assert_int(marked).is_greater(0)
 
 
-## LT-57: the flare circle lights a tower like the beam (SimTower.lit), so the panel shows
+## LT-57, LT-69: the flare lights a tower like the beam (SimTower.lit), so the panel shows
 ## the lit values; without the flare it does not.
-func test_the_flare_circle_lights_a_tower_and_the_panel_marks_it() -> void:
+func test_the_flare_lights_a_tower_and_the_panel_marks_it() -> void:
 	_config.economy.beam.reach_cells = 0.0001  # the beam lights nothing; only the flare can
 	await _start_game()
-	var lh := _config.map.lighthouse
 	var cell := Vector2i(-1, -1)
-	var r: float = _config.economy.flare.radius_cells[0]
 	for y in _game.sim.state.map.height:
 		for x in _game.sim.state.map.width:
 			var c := Vector2i(x, y)
-			var d := Vector2(c) + Vector2(0.5, 0.5) - (Vector2(lh) + Vector2(0.5, 0.5))
-			if cell.x < 0 and _game.sim.state.map.is_buildable(c) and d.length() < r - 1.0:
+			if cell.x < 0 and _game.sim.state.map.is_buildable(c):
 				cell = c
 	assert_int(cell.x).is_greater_equal(0)
 	var t := await _tower(RIFLE, [], cell)
@@ -456,13 +465,13 @@ func test_the_flare_circle_lights_a_tower_and_the_panel_marks_it() -> void:
 
 # --- §4: nothing cut at 1280x720 ------------------------------------------------------------
 
-## LT-53/S8 probe as a test: at 1280x720 (base 1152x648 stretched, as canvas_items does) no
+## LT-53/S8 probe as a test: at 1280x720 (base 1200x675 stretched, as canvas_items does) no
 ## label of the panel table is narrower than its text, and the table stays inside the side
 ## panel, for every tower at L1, L2 and branch B, lit and unlit (the Resonator also at low
 ## sanity, where its DPS is widest).
 func test_no_table_value_is_cut_at_1280x720() -> void:
 	_vp.size = Vector2i(1280, 720)
-	_vp.size_2d_override = Vector2i(1152, 648)
+	_vp.size_2d_override = Vector2i(1200, 675)
 	_vp.size_2d_override_stretch = true
 	await _start_game()
 	var cuts := []
@@ -490,3 +499,110 @@ func test_no_table_value_is_cut_at_1280x720() -> void:
 					_game.close_panels()
 					assert_int(_game.sell(t.id)).is_equal(Simulation.CommandResult.OK)
 	assert_array(cuts).is_empty()
+
+
+# --- LT-59: value-column gap -----------------------------------------------------------------
+
+## The widest text of value column `col` over its head and unspanned cells, as _fit_columns
+## measures it (ceil of the font width).
+func _col_text_w(table: StatsTable, col: int) -> float:
+	var w := 0.0
+	var col_labels: Array[Label] = [table.heads[col]]
+	for key: String in table.cells:
+		if table.cells[key].size() == table.heads.size():
+			col_labels.append(table.cells[key][col])
+	for l in col_labels:
+		w = maxf(w, l.get_theme_font("font").get_string_size(l.text,
+			HORIZONTAL_ALIGNMENT_LEFT, -1, l.get_theme_font_size("font_size")).x)
+	return ceilf(w)
+
+
+## The free px after value column `col` (its head's minimum width less its widest text).
+func _gap_after(table: StatsTable, col: int) -> float:
+	return table.heads[col].custom_minimum_size.x - _col_text_w(table, col)
+
+
+## The widest row of the table, minimum width (label + value columns + separations).
+func _widest_row(table: StatsTable) -> float:
+	var w := 0.0
+	for row: Control in table.get_children():
+		if row.visible:
+			w = maxf(w, row.get_combined_minimum_size().x)
+	return w
+
+
+## A free-standing 3-column table (Now | A | B) of the Summoning Circle at L2.
+func _circle_table(max_width: int) -> StatsTable:
+	var def: TowerDef = _config.towers["summoning_circle"]
+	var cols: Array[Dictionary] = []
+	for s: TowerDef.Level in [def.levels[1], def.branches["a"], def.branches["b"]]:
+		cols.append(TowerInfo.row_values(def, s, _config, 80.0))
+	var table := StatsTable.new()
+	table.max_width = max_width
+	_vp.add_child(table)
+	table.set_columns(PackedStringArray(["Now", "A", "B"]), cols)
+	return table
+
+
+func test_every_value_column_but_the_last_ends_in_the_full_column_gap() -> void:
+	var table := _circle_table(0)
+	assert_int(table.heads.size()).is_equal(3)
+	for col in 2:
+		assert_float(_gap_after(table, col)).override_failure_message("col %d" % col) \
+			.is_equal(float(StatsTable.COLUMN_GAP))
+	assert_float(_gap_after(table, 2)).is_equal(0.0)
+	# The gap is the same in every row, so the columns stay aligned.
+	for key: String in table.cells:
+		if table.cells[key].size() == 3:
+			for col in 3:
+				assert_float(table.cells[key][col].custom_minimum_size.x) \
+					.override_failure_message("%s col %d" % [key, col]) \
+					.is_equal(table.heads[col].custom_minimum_size.x)
+
+
+func test_the_gap_shrinks_only_when_the_row_would_pass_max_width() -> void:
+	var full := _widest_row(_circle_table(0))
+	# Room for the full gap: nothing shrinks.
+	var roomy := _circle_table(int(full))
+	for col in 2:
+		assert_float(_gap_after(roomy, col)).is_equal(float(StatsTable.COLUMN_GAP))
+	# 4 px short over 2 gaps: each loses 2 px and the row ends exactly at max_width.
+	var tight := _circle_table(int(full) - 4)
+	for col in 2:
+		assert_float(_gap_after(tight, col)).override_failure_message("col %d" % col) \
+			.is_equal(float(StatsTable.COLUMN_GAP - 2))
+	assert_float(_widest_row(tight)).is_less_equal(full - 4.0)
+	# Far too narrow: the gap bottoms out at 0, never negative.
+	var squeezed := _circle_table(1)
+	for col in 2:
+		assert_float(_gap_after(squeezed, col)).is_equal(0.0)
+
+
+func test_three_column_cards_keep_the_full_gap_and_fit_the_usable_width() -> void:
+	await _start_game()
+	var widest := {"id": "", "w": 0.0}
+	var three := 0
+	for id: String in _config.towers:
+		_game.close_panels()
+		var t := await _tower(id, [""])
+		await get_tree().process_frame
+		await get_tree().process_frame
+		var table := _table()
+		if table.heads.size() != 3:
+			continue
+		three += 1
+		var scroll := _game.side_panel.scroll
+		var usable := scroll.size.x - scroll.get_v_scroll_bar().get_combined_minimum_size().x
+		assert_int(table.max_width).override_failure_message(id).is_equal(int(usable))
+		for col in 2:
+			assert_float(_gap_after(table, col)).override_failure_message("%s col %d" % [id, col]) \
+				.is_equal(float(StatsTable.COLUMN_GAP))
+		var w := _widest_row(table)
+		assert_float(w).override_failure_message("%s row %.1f > %.1f" % [id, w, usable]) \
+			.is_less_equal(usable)
+		if w > widest["w"]:
+			widest = {"id": id, "w": w}
+		_game.close_panels()
+		assert_int(_game.sell(t.id)).is_equal(Simulation.CommandResult.OK)
+	assert_int(three).is_greater(0)
+	assert_str(widest["id"]).is_equal("summoning_circle")

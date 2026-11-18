@@ -282,6 +282,36 @@ class ReportTest(unittest.TestCase):
         md = self.make({"v1": {"a": runs(1, 1)}, "v2": {"a": runs(0, 2)}}, seeds=2)
         self.assertEqual([r.split("|")[1].strip() for r in table_rows(md)], ["v1", "v2"])
 
+    def test_no_wave_table_without_waves_survived(self):
+        self.assertNotIn("Where runs end", self.make({"v": {"a": runs(1, 1)}}, seeds=2))
+
+    def test_wave_table_counts_losses_by_wave_and_early_share(self):
+        # 5 waves: a won run survived 5; lost runs end in waves 1, 3, 3 and 4.
+        def r(outcome, ws):
+            return {"outcome": outcome, "waves_survived": ws}
+        md = self.make({"v": {"a": [r("won", 5), r("lost", 0), r("lost", 2)],
+                              "b": [r("lost", 2), r("lost", 3)]}}, seeds=3)
+        wave_rows = [l for l in md.split("Where runs end")[1].splitlines()
+                     if l.startswith("| v |")]
+        self.assertEqual(len(wave_rows), 1)
+        row = wave_rows[0]
+        self.assertIn("| 1.0.1.0.0 (2.3) |", row)  # a: (5 + 0 + 2) / 3 survived
+        self.assertIn("| 0.0.1.1.0 (2.5) |", row)
+        self.assertIn("| 1.0.2.1.0 |", row)  # all strategies
+        self.assertIn("| 2/5 (40%) |", row)  # survived waves 1..3: ws 5 and 3
+
+    def test_target_needs_both_parts_with_flare_on_only(self):
+        # 5 waves, early = 3, seeds 4 -> loses >= 2 and survives waves 1..3 in >= 3.
+        def r(outcome, ws):
+            return {"outcome": outcome, "waves_survived": ws}
+        good = [r("lost", 3), r("lost", 4), r("won", 5), r("won", 5)]  # 4 survive early, 2 losses
+        weak = [r("lost", 0), r("lost", 2), r("won", 5), r("won", 5)]  # 2 survive early
+        md = self.make({"v": {"a": good, "b": weak}}, seeds=4)
+        row = [l for l in md.splitlines() if l.startswith("| v |")][0]
+        self.assertIn("2/2 e4 **yes**", row)
+        self.assertIn("2/2 e2 no", row)
+        self.assertIn("| 1/2 |", row)
+
 
 # --- 13: run_job ---------------------------------------------------------------------------
 

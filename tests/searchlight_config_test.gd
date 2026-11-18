@@ -38,14 +38,16 @@ func test_shipped_searchlight_matches_the_design_table() -> void:
 	assert_array(_row(a)).is_equal([5.0, 0.0, 100])
 	assert_array(_row(b)).is_equal([3.5, 0.0, 100])
 	assert_str(a.name).is_equal("Signal lamp")
-	assert_str(a.role).is_equal("Wide reveal")
+	assert_str(a.role).is_equal("Wide light, reveal")
 	assert_str(b.name).is_equal("Blinding beam")
-	assert_str(b.role).is_equal("Slows hard, marks foes")
-	assert_dict(sl.levels[0].effects).is_equal({"reveal_fakes": 1.0, "slow": 0.2})
-	assert_dict(sl.levels[1].effects).is_equal({"reveal_fakes": 1.0, "slow": 0.25})
-	assert_dict(a.effects).is_equal({"reveal_fakes": 1.0, "slow": 0.25})
-	assert_dict(b.effects).is_equal(
-		{"reveal_fakes": 1.0, "slow": 0.4, "damage_taken_multiplier": 1.2})
+	assert_str(b.role).is_equal("Slows hard")
+	# LT-70 §3: the main slow, casts light; Blinding no longer marks.
+	assert_dict(sl.levels[0].effects).is_equal(
+		{"reveal_fakes": 1.0, "slow": 0.15, "casts_light": 1.0})
+	assert_dict(sl.levels[1].effects).is_equal(
+		{"reveal_fakes": 1.0, "slow": 0.175, "casts_light": 1.0})
+	assert_dict(a.effects).is_equal({"reveal_fakes": 1.0, "slow": 0.175, "casts_light": 1.0})
+	assert_dict(b.effects).is_equal({"reveal_fakes": 1.0, "slow": 0.25, "casts_light": 1.0})
 
 
 func test_reveal_fakes_is_a_zero_or_one_flag() -> void:

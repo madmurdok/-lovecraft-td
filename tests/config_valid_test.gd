@@ -31,7 +31,7 @@ func test_default_dir_is_res_data() -> void:
 
 func test_economy_fields() -> void:
 	var e := _real().economy
-	assert_int(e.starting_gold).is_equal(200)
+	assert_int(e.starting_gold).is_equal(300)
 	assert_int(e.wave_bonus_base).is_equal(50)
 	assert_int(e.wave_bonus_per_wave).is_equal(10)
 	assert_float(e.sell_refund_ratio).is_equal(0.7)
@@ -101,6 +101,26 @@ func test_tower_structure() -> void:
 		assert_int(td.levels[1].upgrade_cost).is_greater(0)
 		for b in ["a", "b"]:
 			assert_int(td.branches[b].upgrade_cost).is_greater(0)
+
+
+## LT-61 §4: `short` is the build list's name; a tower without it shows its full name, and
+## the value is stripped.
+func test_short_name_comes_from_json_short_and_defaults_to_the_name() -> void:
+	var raw: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://data/towers.json"))["towers"]
+	var t := _real().towers
+	var with_short := 0
+	for id: String in raw:
+		var obj: Dictionary = raw[id]
+		var want: String = obj["short"] if obj.has("short") else obj["name"]
+		assert_str(t[id].short_name).override_failure_message(id).is_equal(want)
+		with_short += 1 if obj.has("short") else 0
+	assert_int(with_short).is_greater(0)
+	assert_int(with_short).is_less(raw.size())  # both the explicit and the default arm are hit
+	var r := load_json_edit("towers.json", func(d: Dictionary) -> void:
+		d["towers"]["rifleman"]["short"] = "  Rifle  ")
+	assert_bool(r.ok).override_failure_message("\n".join(r.errors)).is_true()
+	assert_str(r.config.towers["rifleman"].short_name).is_equal("Rifle")
+	assert_str(r.config.towers["rifleman"].name).is_equal(t["rifleman"].name)
 
 
 ## LT-23 §2: the total reserve per level/branch; mundane towers reserve nothing.
@@ -197,7 +217,7 @@ func test_tower_effects_maps() -> void:
 	assert_float(chain["pull_max_hp"]).is_equal(500.0)
 	assert_float(chain["pull_immune_seconds"]).is_equal(3.0)
 	assert_dict(t["rifleman"].levels[0].effects).is_empty()
-	assert_float(t["elder_sign"].levels[0].effects["slow"]).is_equal(0.35)
+	assert_float(t["elder_sign"].levels[0].effects["slow"]).is_equal(0.2)  # LT-70
 
 
 func test_madness_affected_defaults_to_occult_kind() -> void:
@@ -281,4 +301,4 @@ func test_custom_dir_is_read_via_user_and_absolute_paths() -> void:
 	assert_array(abs_r.errors).is_empty()
 	assert_int(abs_r.config.economy.starting_gold).is_equal(999)
 	# the real data is untouched
-	assert_int(_real().economy.starting_gold).is_equal(200)
+	assert_int(_real().economy.starting_gold).is_equal(300)

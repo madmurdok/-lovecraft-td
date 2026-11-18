@@ -131,17 +131,17 @@ func _defs(enemies: Array[SimEnemy]) -> Dictionary:
 	return out
 
 
-## [spawn_tick, def, pack size] per spawn call (consecutive ids on one tick = one call).
+## [spawn_tick, def, pack size] per spawn call (a pack's members share pack_of, LT-63).
 func _spawn_calls(enemies: Array[SimEnemy]) -> Array:
 	var out: Array = []
-	var prev: SimEnemy = null
+	var at := {}  # pack_of -> index in out
 	for e in enemies:
-		if prev != null and prev.spawn_tick == e.spawn_tick and prev.id + 1 == e.id \
-				and prev.def == e.def and e.def.traits.has("pack"):
-			out[-1][2] += 1
-		else:
-			out.append([e.spawn_tick, e.def.id, 1])
-		prev = e
+		if e.pack_of != 0 and at.has(e.pack_of):
+			out[at[e.pack_of]][2] += 1
+			continue
+		if e.pack_of != 0:
+			at[e.pack_of] = out.size()
+		out.append([e.spawn_tick, e.def.id, 1])
 	return out
 
 

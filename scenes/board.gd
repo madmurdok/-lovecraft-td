@@ -15,6 +15,9 @@ extends Node2D
 ## SHOT / BLAST fields and aura state. LT-49: the Searchlight's aura is a lit disc with a
 ## sweeping beam; a fake its aura revealed (`SimEnemy.revealed`, sim state)
 ## is drawn as a ghost-grey body with an amber ring and slash.
+## LT-70 §5: a lit tower's plate is tinted warm, a shadowed one cold violet (plate_color),
+## each with its corner dot; by day (BUILD) the selected caster previews its radius with a
+## faint tint on the towers it would light or shadow (preview_cast).
 ## LT-41 (LT-38 P2): the static map (cells, grid, start, lighthouse) lives in a child
 ## MapLayer drawn behind the board's own draw and redrawn only when the map changes, not
 ## every frame. Same parent, so the same CanvasModulate and light mask apply to it.
@@ -23,6 +26,21 @@ signal cell_clicked(cell: Vector2i)
 signal outside_clicked  ## LT-28: a left click no control took that misses the grid
 
 const LIT_MARK_COLOR := Color(1.0, 0.95, 0.6)  ## LT-30: tower inside a beam
+## LT-70 §5: the plate fill of a lit (amber) and a shadowed (violet) tower, and the weight
+## the BUILD preview mixes them into COLOR_TOWER with (fainter than the night state, still
+## clearly tinted). The night CanvasModulate (Lighting.AMBIENT_NIGHT ~0.3) greys a pale
+## tint out, so the fills are saturated and each state also gets a border (STATE_BORDER px)
+## over 1 that stays bright under the darkness, as COLOR_ASTRAY does.
+const LIT_TINT := Color(1.0, 0.6, 0.15)
+const SHADOW_TINT := Color(0.5, 0.28, 0.95)
+const LIT_BORDER := Color(2.8, 1.7, 0.35)
+const SHADOW_BORDER := Color(1.5, 0.7, 3.2)
+const PREVIEW_TINT_WEIGHT := 0.55
+const STATE_BORDER := 3.0
+const PREVIEW_BORDER := 2.0
+const SHADOW_MARK_COLOR := Color(0.22, 0.12, 0.4)  ## LT-70 §5: the shadowed corner dot
+const SHADOW_MARK_RIM := Color(0.85, 0.8, 1.0)  ## its pale rim (reads on a dark plate)
+const WARD_SHADOW_FILL := Color(0.05, 0.02, 0.1, 0.22)  ## LT-70 §5: a sign's shadow area
 const CELL := 40.0  ## pixels per cell
 const FLASH_SECONDS := 0.25
 
@@ -43,6 +61,7 @@ const COLOR_LEAK := Color(1, 0.1, 0.1)
 const COLOR_DISSOLVE := Color(0.6, 0.6, 0.75)
 const COLOR_DEBUG_FAKE := Color(1, 0, 1)  ## debug outline (--reveal-fakes), LT-12 §1
 const COLOR_SELECT := Color(1, 1, 1, 0.8)
+const GHOST_GLYPH_ALPHA := 0.55  ## LT-61 §7: the selected_glyph ghost letter
 const COLOR_LETTER_PLATE := Color(0.06, 0.05, 0.08)  ## LT-28: contrast plate under the letter
 const LETTER_PLATE := Rect2(4, 4, 15, 19)  ## in the tower tile, under the 16 px letter
 const COLOR_ASTRAY := Color(2.0, 1.5, 2.6)  ## over 1: stays bright under the darkness
@@ -165,6 +184,11 @@ var game: Game
 var alpha := 0.0  ## render interpolation between the last two ticks
 var selected_cell := Vector2i(-1, -1)  ## outlined while the build or tower view is open
 var selected_range := 0.0  ## range ring (cells) for a selected tower; 0 = none
+## LT-61 §7: the hovered build-list tower's board letter, a ghost in selected_cell; "" = none.
+var selected_glyph := ""
+## LT-70 §5: what the tower on (or hovered for) selected_cell casts over selected_range:
+## "light", "shadow" or "" (cast_of); set and cleared with selected_range.
+var selected_cast := ""
 ## Short-lived effects: {kind, from, to, ttl, ...} in cell units. Attack effects (LT-25)
 ## also carry tower, end, hits, hit_pos, miss, astray, dur (initial ttl), seed.
 var effects: Array[Dictionary] = []
@@ -530,6 +554,10 @@ func _draw() -> void:
 	_draw_effects()
 	if game.sim.state.map.in_bounds(selected_cell):
 		draw_rect(Rect2(cell_origin(selected_cell), Vector2(CELL, CELL)), COLOR_SELECT, false, 2.0)
+		if not selected_glyph.is_empty():  # LT-61 §7: placed like _draw_tower's letter
+			var g := Rect2(cell_origin(selected_cell), Vector2(CELL, CELL)).grow(-6)
+			draw_string(ThemeDB.fallback_font, g.position + Vector2(8, 20), selected_glyph,
+				HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(COLOR_SELECT, GHOST_GLYPH_ALPHA))
 		if selected_range > 0.0:
 			var sc := (Vector2(selected_cell) + Vector2(0.5, 0.5)) * CELL
 			draw_arc(sc, selected_range * CELL, 0, TAU, 48, COLOR_SELECT, 1.0)
@@ -595,10 +623,72 @@ static func attack_color(kind: String) -> Color:
 	return Color.BLACK
 
 
+## LT-70 §5: what a level casts at night: "light", "shadow" or "" (selected_cast).
+static func cast_of(s: TowerDef.Level) -> String:
+	if s == null:
+		return ""
+	if s.casts_light():
+		return "light"
+	if s.casts_shadow():
+		return "shadow"
+	return ""
+
+
+## LT-70 §5: the tower plate colour from the net sim flags: amber when lit, violet when
+## shadowed (never both: cancelled is neither), else COLOR_TOWER; with neither flag, a
+## `preview` "light" / "shadow" (preview_cast) mixes the same tint in at PREVIEW_TINT_WEIGHT.
+static func plate_color(t: SimTower, preview := "") -> Color:
+	if t.lit:
+		return LIT_TINT
+	if t.shadowed:
+		return SHADOW_TINT
+	match preview:
+		"light":
+			return COLOR_TOWER.lerp(LIT_TINT, PREVIEW_TINT_WEIGHT)
+		"shadow":
+			return COLOR_TOWER.lerp(SHADOW_TINT, PREVIEW_TINT_WEIGHT)
+	return COLOR_TOWER
+
+
+## LT-70 §5: the state border around the tile: LIT_BORDER / SHADOW_BORDER (over 1) for the
+## net flags, the plain tint for a preview, transparent for none.
+static func state_border(t: SimTower, preview := "") -> Color:
+	if t.lit:
+		return LIT_BORDER
+	if t.shadowed:
+		return SHADOW_BORDER
+	match preview:
+		"light":
+			return LIT_TINT
+		"shadow":
+			return SHADOW_TINT
+	return Color.TRANSPARENT
+
+
+## LT-70 §5: the BUILD preview for tower `t`: selected_cast when it is day (BUILD), a caster
+## is selected (selected_cast, selected_range) and `t` is another tower whose centre is in
+## that radius (Simulation.in_cast_radius, the sim's own test); "" otherwise, and always at
+## night, where the real tint shows.
+func preview_cast(t: SimTower) -> String:
+	if selected_cast.is_empty() or selected_range <= 0.0 or game == null or game.sim == null:
+		return ""
+	var s := game.sim.state
+	if s.phase != SimState.Phase.BUILD or not s.map.in_bounds(selected_cell) \
+			or t.cell == selected_cell:
+		return ""
+	var c := Vector2(selected_cell) + Vector2(0.5, 0.5)
+	return selected_cast if Simulation.in_cast_radius(c, selected_range, t.centre()) else ""
+
+
 func _draw_tower(t: SimTower) -> void:
 	var r := Rect2(cell_origin(t.cell), Vector2(CELL, CELL)).grow(-6)
 	var c := attack_color(shot_kind(t))
-	draw_rect(r, COLOR_TOWER)
+	var preview := preview_cast(t)
+	draw_rect(r, plate_color(t, preview))
+	var border := state_border(t, preview)
+	if border.a > 0.0:  # LT-70 §5: outside the attack-colour frame, inside the cell
+		var w := STATE_BORDER if preview.is_empty() else PREVIEW_BORDER
+		draw_rect(r.grow(w * 0.5 + 1.0), border, false, w)
 	draw_rect(r, c, false, 2.0)
 	# LT-28: a dark plate under the letter keeps it readable where the beam washes the
 	# light tile out (the plate stays dark under the light; the letter's colour is over 1).
@@ -608,6 +698,10 @@ func _draw_tower(t: SimTower) -> void:
 	# LT-30: a lit tower (a beam sweeps its centre) gets a small bright corner mark.
 	if t.lit:
 		draw_circle(r.position + Vector2(r.size.x - 6, 6), 3.5, LIT_MARK_COLOR)
+	elif t.shadowed:  # LT-70 §5: the same corner, a dark violet dot with a pale rim
+		var m := r.position + Vector2(r.size.x - 6, 6)
+		draw_circle(m, 3.5, SHADOW_MARK_COLOR)
+		draw_arc(m, 3.5, 0, TAU, 12, SHADOW_MARK_RIM, 1.0)
 	# LT-24 level mark: one pip per level along the bottom, the branch letter at L3.
 	for i in t.level + 1:
 		draw_rect(Rect2(r.position + Vector2(3 + i * 6, r.size.y - 6), Vector2(4, 4)), Color.BLACK)
@@ -617,7 +711,8 @@ func _draw_tower(t: SimTower) -> void:
 
 
 ## Elder Sign wards (LT-25 §1.3): a faint ring at the aura radius with 5 slowly turning
-## dashes; brighter and pulsing while a drawn enemy is inside.
+## dashes; brighter and pulsing while a drawn enemy is inside. LT-70 §5: a sign that casts
+## shadow gets a faint dark fill, the opposite of the Searchlight's lit disc.
 func _draw_auras(s: SimState) -> void:
 	for t in s.towers:
 		var kind := shot_kind(t)
@@ -630,6 +725,8 @@ func _draw_auras(s: SimState) -> void:
 		var r := t.stats().range_cells * CELL
 		var a := ward_alpha(t)
 		var bright := a > WARD_IDLE_ALPHA
+		if t.stats().casts_shadow():
+			draw_circle(c, r, WARD_SHADOW_FILL)
 		draw_arc(c, r, 0, TAU, 64, Color(WARD_COLOR, a), 4.0 if bright else 2.0)
 		var rot := _time * TAU / WARD_TURN_SECONDS
 		for i in 5:

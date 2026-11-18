@@ -1,0 +1,22 @@
+{
+  "description": "starting_gold 300 and wave 3 lighter (deep_one 4, hybrid 8) (LT-68)",
+  "patch": {
+    "economy.json": {
+      "starting_gold": 300
+    },
+    "waves.json": {
+      "waves": {
+        "2": {
+          "groups": {
+            "0": {
+              "count": 4
+            },
+            "1": {
+              "count": 8
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -25,13 +25,14 @@ var flare_button: Button  ## LT-30: the night flare, in the footer strip at the 
 var oil_label: Label  ## LT-30: "Oil 4 / 6", beside the flare button
 var frame_label: Label  ## LT-38 P1: only with `--frame-stats` (debug builds)
 var _frame_label_msec := 0
+var sandbox_label: Label  ## LT-67: "SANDBOX", only in a `--sandbox` run, top-right of the board
 var fps_label: Label  ## LT-44: always-visible FPS readout, bottom-left in the footer strip
 var _fps_label_msec := -FPS_INTERVAL_MSEC
 var _fps_shown := -1
 var footer: ColorRect  ## LT-28: covers the strip below the board (range rings end there)
 
 const COLOR_LUCK := Color(0.75, 0.9, 1.0)
-const FONT_SIZE := 14  ## LT-27: the bar fits the 1152 px base width, buyout included
+const FONT_SIZE := 14  ## LT-27: the bar fits the 1200 px base width, buyout included
 const SEPARATION := 10
 const MARGIN := 8  ## bar inset from the right edge
 const FPS_INTERVAL_MSEC := 250  ## LT-44: the FPS label refreshes a few times per second
@@ -69,7 +70,7 @@ func _ready() -> void:
 	var bar := HBoxContainer.new()
 	bar.name = "Bar"
 	# LT-27: two-line columns (money over relics, phase over lighthouse HP) keep the bar
-	# inside the 1152 px base width with every button shown; children centre vertically.
+	# inside the 1200 px base width with every button shown; children centre vertically.
 	# LT-28: the bar spans the width in three groups (purse | day and night | speed, pause
 	# and sanity) split by expanding gaps, so spare width goes between groups.
 	bar.position = Vector2(RELIC_SLOT, 2)
@@ -131,6 +132,17 @@ func _ready() -> void:
 		frame_label.add_theme_color_override("font_color", Color(0.6, 1.0, 0.6))
 		frame_label.position = Vector2(RELIC_SLOT, Game.BOARD_ORIGIN.y + 2)
 		add_child(frame_label)
+	if game.sandbox:
+		sandbox_label = Label.new()
+		sandbox_label.name = "SandboxLabel"
+		sandbox_label.text = "SANDBOX"
+		sandbox_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		sandbox_label.add_theme_font_size_override("font_size", 16)
+		sandbox_label.add_theme_color_override("font_color", Color(1.0, 0.75, 0.2))
+		add_child(sandbox_label)  # first, so the minimum size sees the HUD theme
+		sandbox_label.size = sandbox_label.get_minimum_size()
+		sandbox_label.position = Vector2(board_rect().end.x - sandbox_label.size.x - 6,
+			Game.BOARD_ORIGIN.y + 2)
 	# LT-14 Whispers jitter: the shader moves only the drawing, so click areas stay put.
 	if game.sanity_fx != null:
 		for c: CanvasItem in [gold_label, relics_label, hp_label, phase_label,
@@ -191,9 +203,9 @@ func _refresh_flare() -> void:
 	oil_label.text = "Oil %d / %d" % [s.oil, sim.config.economy.oil.cap]
 	var can := sim.can_fire_flare()
 	flare_button.disabled = can != Simulation.CommandResult.OK
-	# LT-57: the flare lights a circle around the lighthouse.
-	flare_button.tooltip_text = "Lights everything within %s cells for %s s" % [
-		ConfigReader.fmt(sim.flare_radius()), ConfigReader.fmt(flare.seconds)]
+	# LT-69: the flare lights the whole map, for the current level's seconds.
+	flare_button.tooltip_text = "Lights the whole map for %s s" % ConfigReader.fmt(
+		sim.flare_seconds())
 	if s.flare_ticks_left > 0:
 		flare_button.text = "Flare burning"
 	elif s.flare_cooldown_ticks > 0:

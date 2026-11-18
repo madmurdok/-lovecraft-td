@@ -15,7 +15,7 @@ func before_test() -> void:
 	var r := GameConfig.load_from_dir("res://data")
 	assert_bool(r.ok).override_failure_message("\n".join(r.errors)).is_true()
 	_vp = SubViewport.new()
-	_vp.size = Vector2i(1152, 648)
+	_vp.size = Vector2i(1200, 675)
 	add_child(_vp)
 	_game = Game.new()
 	_game.setup(r.config, 7)
@@ -77,8 +77,9 @@ func test_beams_follow_the_sim_directions_and_have_no_timer() -> void:
 	assert_bool(held[0] != day[0]).is_true()  # the night ticks did turn it
 
 
-## LT-57: the flare no longer widens the cone; a radial light of flare_radius() burns instead.
-func test_flare_keeps_the_cone_and_burns_a_radial_light() -> void:
+## LT-57: the flare no longer widens the cone; LT-69: a light covering the whole board burns
+## instead.
+func test_flare_keeps_the_cone_and_burns_a_whole_board_light() -> void:
 	var l := _game.lighting
 	var eco := _game.sim.config.economy
 	var normal := Lighting._beam_texture(atan(eco.beam.half_width_ratio))
@@ -93,13 +94,34 @@ func test_flare_keeps_the_cone_and_burns_a_radial_light() -> void:
 	l._sync_flare()
 	assert_bool(l.flare_light.visible).is_true()
 	assert_float(l.flare_light.texture_scale).is_equal_approx(
-		_game.sim.flare_radius() * 2.0 * Board.CELL / Lighting.FLARE_TEX_SIZE, 1e-6)
-	_steps(SimTime.ticks(eco.flare.seconds))
+		Lighting.flare_cover_cells(_game.sim.state.map) * 2.0 * Board.CELL
+		/ Lighting.FLARE_TEX_SIZE, 1e-6)
+	_steps(SimTime.ticks(_game.sim.flare_seconds()))
 	await get_tree().process_frame
 	assert_int(_game.sim.state.flare_ticks_left).is_equal(0)
 	l._sync_flare()
 	assert_bool(l.flare_light.visible).is_false()
 	assert_object(l.beam.texture).is_same(normal)
+
+
+## LT-69/S2: the flare light's bright core (FLARE_CORE of its radius) reaches every board
+## corner, wherever the lighthouse stands.
+func test_flare_cover_reaches_every_board_corner() -> void:
+	var m := _game.sim.state.map
+	var maps: Array[MapDef] = [m]
+	for cell: Vector2i in [Vector2i(0, 0), Vector2i(m.width - 1, m.height - 1), Vector2i(3, 2)]:
+		var alt := MapDef.new()
+		alt.width = m.width
+		alt.height = m.height
+		alt.lighthouse = cell
+		maps.append(alt)
+	for map in maps:
+		var core := Lighting.flare_cover_cells(map) * Lighting.FLARE_CORE
+		var c := Vector2(map.lighthouse) + Vector2(0.5, 0.5)
+		for corner: Vector2 in [Vector2.ZERO, Vector2(map.width, 0), Vector2(0, map.height),
+				Vector2(map.width, map.height)]:
+			assert_float(c.distance_to(corner)).override_failure_message(
+				"lighthouse %s corner %s" % [map.lighthouse, corner]).is_less_equal(core + 1e-6)
 
 
 # --- lighthouse panel --------------------------------------------------------------------------
@@ -195,9 +217,9 @@ func test_flare_button_shows_at_night_with_its_states() -> void:
 	h.refresh()
 	assert_str(h.flare_button.text).is_equal("Flare burning")
 	assert_bool(h.flare_button.disabled).is_true()
-	_steps(SimTime.ticks(f.seconds))
+	_steps(SimTime.ticks(_game.sim.flare_seconds()))
 	h.refresh()
-	var left := SimTime.ticks(f.cooldown_seconds) - SimTime.ticks(f.seconds)
+	var left := SimTime.ticks(f.cooldown_seconds) - SimTime.ticks(_game.sim.flare_seconds())
 	assert_str(h.flare_button.text).is_equal("Flare %d s" % ceili(float(left) / SimTime.TICK_RATE))
 	assert_bool(h.flare_button.disabled).is_true()
 	s.flare_cooldown_ticks = 0

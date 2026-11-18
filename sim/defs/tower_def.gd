@@ -2,7 +2,8 @@ class_name TowerDef
 extends RefCounted
 ## One tower from towers.json (GDD §6): L1 and L2 in `levels`, L3 as branch "a" or "b".
 
-const FIELDS := ["name", "role", "kind", "glyph", "targets", "cost", "levels", "branches"]
+const FIELDS := ["name", "short", "role", "kind", "glyph", "targets", "cost", "levels",
+	"branches"]
 const KINDS: PackedStringArray = ["mundane", "occult"]
 ## LT-47 (LT-46 §2.3): "all" (default) or "ground": flyers are never candidates of a
 ## ground tower and never hit by its shots or blasts.
@@ -14,6 +15,8 @@ const ROLE_MAX_CHARS := 24
 
 var id: String
 var name: String
+## LT-61 §4: the name in the side-panel build list; defaults to `name`.
+var short_name: String
 ## One-line player-facing role (no numbers); "" when absent (LT-24 §1).
 var role: String
 var kind: String  ## "mundane" | "occult"
@@ -31,6 +34,7 @@ static func parse(r: ConfigReader, id: String, obj: Dictionary, path: String) ->
 	var t := TowerDef.new()
 	t.id = id
 	t.name = r.req_string(obj, "name", path)
+	t.short_name = parse_short(r, obj, path, t.name)
 	t.role = parse_role(r, obj, path)
 	t.kind = r.req_string(obj, "kind", path, KINDS)
 	t.glyph = t.name.left(1)
@@ -72,6 +76,23 @@ static func parse(r: ConfigReader, id: String, obj: Dictionary, path: String) ->
 ## LT-47: flyers are not candidates of this tower and not hit by its shots or blasts.
 func ground_only() -> bool:
 	return targets == "ground"
+
+
+## LT-61 §4: optional `short` of `obj`, a non-blank string (stripped); `name` when absent
+## or rejected.
+static func parse_short(r: ConfigReader, obj: Dictionary, path: String,
+		fallback: String) -> String:
+	if not obj.has("short"):
+		return fallback
+	var sp := ConfigReader.join(path, "short")
+	if typeof(obj["short"]) != TYPE_STRING:
+		r.error(sp, "expected string, got %s" % ConfigReader.type_name(obj["short"]))
+		return fallback
+	var s: String = (obj["short"] as String).strip_edges()
+	if s.is_empty():
+		r.error(sp, "must not be empty")
+		return fallback
+	return s
 
 
 ## Optional `role` of `obj`: a non-blank string of at most ROLE_MAX_CHARS characters
@@ -126,14 +147,19 @@ class Level:
 		"banish_immune_seconds": INF,
 		"summon_max": INF, "summon_hp": INF, "summon_dps": INF, "summon_lifetime": INF,
 		"summon_speed": INF, "summon_flying": 1.0,
+		"casts_light": 1.0, "casts_shadow": 1.0,
 	}
+	## LT-70 §3: the caster flags. At night a level with casts_light lights the other
+	## towers and the enemies within its range; one with casts_shadow shadows the other
+	## towers within its range. Support levels only, at most one per level.
+	const CAST_EFFECTS: PackedStringArray = ["casts_light", "casts_shadow"]
 	## LT-51: the keys that only mean something on a banishing level (banish_cells > 0).
 	const BANISH_KEYS: PackedStringArray = ["banish_targets", "banish_max_hp",
 		"banish_immune_seconds"]
 	## LT-51: shot shapes a banish cast does not have (it moves its picks, nothing else).
 	const NOT_WITH_BANISH: PackedStringArray = ["pierce", "aoe_radius", "fuse_seconds",
 		"burst_targets", "pull_cells", "sanity_scaling", "slow", "damage_taken_multiplier",
-		"strip_armor", "reveal_fakes"]
+		"strip_armor", "reveal_fakes", "casts_light", "casts_shadow"]
 	## LT-52: the keys that only mean something on a summoning level (summon_max > 0).
 	const SUMMON_KEYS: PackedStringArray = ["summon_hp", "summon_dps", "summon_lifetime",
 		"summon_speed", "summon_flying"]
@@ -144,9 +170,11 @@ class Level:
 	const NOT_WITH_SUMMON: PackedStringArray = ["pierce", "aoe_radius", "fuse_seconds",
 		"burst_targets", "pull_cells", "sanity_scaling", "slow", "damage_taken_multiplier",
 		"strip_armor", "reveal_fakes", "crit_chance", "bleed_dps", "ignore_armor",
-		"banish_cells"]
-	## LT-48/LT-49: flag effects, 0 or 1 (not amounts). LT-52: summon_flying.
-	const FLAG_EFFECTS: PackedStringArray = ["ignore_armor", "reveal_fakes", "summon_flying"]
+		"banish_cells", "casts_light", "casts_shadow"]
+	## LT-48/LT-49: flag effects, 0 or 1 (not amounts). LT-52: summon_flying. LT-70:
+	## casts_light, casts_shadow.
+	const FLAG_EFFECTS: PackedStringArray = ["ignore_armor", "reveal_fakes", "summon_flying",
+		"casts_light", "casts_shadow"]
 
 	## Config keys (EFFECTS or stats) that parse but the sim does not apply yet (LT-24
 	## Decision 1). The UI marks them "(coming soon)" and bots skip branches using them;
@@ -170,6 +198,14 @@ class Level:
 	## LT-52: a Summoning Circle level, keeping up to summon_max allied units on the board.
 	func is_summon() -> bool:
 		return effects.get("summon_max", 0.0) > 0.0
+
+	## LT-70: true when this level lights the towers and enemies in its range at night.
+	func casts_light() -> bool:
+		return effects.get("casts_light", 0.0) > 0.0
+
+	## LT-70: true when this level shadows the towers in its range at night.
+	func casts_shadow() -> bool:
+		return effects.get("casts_shadow", 0.0) > 0.0
 
 	## LT-52: how many of its units a circle keeps live at once (summon_max, whole).
 	func summon_max() -> int:
@@ -281,6 +317,7 @@ class Level:
 			if l.effects.get("sanity_scaling", 0.0) > 0.0 and l.damage <= 0.0:
 				r.error(ConfigReader.join(ep, "sanity_scaling"), "needs damage > 0")
 				l.effects["sanity_scaling"] = 0.0
+			_check_cast(r, l, ep)
 			_check_banish(r, l, ep)
 			_check_summon(r, l, ep, path)
 		if l.is_banish() and l.fire_interval <= 0.0:
@@ -290,6 +327,18 @@ class Level:
 			# LT-52: a circle summons every fire_interval.
 			r.error(ConfigReader.join(path, "fire_interval"), "required > 0 with summon_max")
 		return l
+
+	## LT-70 §3: a caster is a support level (damage 0; banish and summon levels are
+	## rejected by NOT_WITH_BANISH / NOT_WITH_SUMMON) and casts light or shadow, not both.
+	static func _check_cast(r: ConfigReader, l: Level, ep: String) -> void:
+		if l.casts_light() and l.casts_shadow():
+			r.error(ConfigReader.join(ep, "casts_shadow"), "cannot combine with casts_light")
+			l.effects["casts_shadow"] = 0.0
+		if l.damage > 0.0:
+			for key in CAST_EFFECTS:
+				if l.effects.get(key, 0.0) > 0.0:
+					r.error(ConfigReader.join(ep, key), "%s needs a support level (damage 0)" % key)
+					l.effects[key] = 0.0
 
 	## LT-52 (§2.2): a summoning level needs a whole summon_max >= 1, summon_hp,
 	## summon_lifetime and summon_speed > 0, no damage of its own and no other attack

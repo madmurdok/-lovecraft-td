@@ -6,7 +6,7 @@ extends Node2D
 ## with `-- --seed=<int>` (random otherwise). A loaded config starts a Game (LT-7);
 ## its restart button replaces it with a fresh run.
 ## LT-22: the game scales with the window (stretch mode canvas_items, aspect keep, base
-## 1152x648 in project.godot). At boot a desktop window is sized to fill WINDOW_FILL of
+## 1200x675 in project.godot). At boot a desktop window is sized to fill WINDOW_FILL of
 ## the screen's usable area: window sizes are in physical pixels, so a fixed size is
 ## half as large on a 2x (Retina) screen.
 

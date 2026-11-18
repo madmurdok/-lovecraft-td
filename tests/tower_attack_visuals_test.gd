@@ -18,7 +18,7 @@ func before_test() -> void:
 	_config = r.config
 	_next_cell = 0
 	_vp = SubViewport.new()
-	_vp.size = Vector2i(1152, 648)
+	_vp.size = Vector2i(1200, 675)
 	add_child(_vp)
 
 

@@ -210,8 +210,13 @@ func test_overlapping_signs_do_not_stack() -> void:
 	var e := put(sim, "cultist", 7.0)
 	sim.step()
 	var l := _l1(sim, SIGN)
-	assert_float(e.speed_mult).is_equal_approx(1.0 - l.effects["slow"], 0.0001)
-	assert_float(e.damage_taken_mult).is_equal_approx(l.effects["damage_taken_multiplier"], 0.0001)
+	# LT-70 Q4: adjacent signs shadow each other (x shadow power), still no stacking.
+	for t in sim.state.towers:
+		assert_bool(t.shadowed).is_true()
+	var pm := sim.config.economy.shadow.occult_power_mult
+	assert_float(e.speed_mult).is_equal_approx(1.0 - l.effects["slow"] * pm, 0.0001)
+	assert_float(e.damage_taken_mult) \
+		.is_equal_approx(1.0 + (l.effects["damage_taken_multiplier"] - 1.0) * pm, 0.0001)
 
 
 func test_strongest_overlapping_sign_wins_per_modifier() -> void:
@@ -225,8 +230,13 @@ func test_strongest_overlapping_sign_wins_per_modifier() -> void:
 	var e := put(sim, "cultist", 7.0)
 	assert_int(sim.enemies_in_range(weak.cell, _l1(sim, SIGN).range_cells).size()).is_equal(1)
 	sim.step()
-	assert_float(e.speed_mult).is_equal_approx(0.5, 0.0001)
-	assert_float(e.damage_taken_mult).is_equal_approx(1.6, 0.0001)
+	# LT-70 Q4: the weak sign (L1, casts_shadow) shadows the strong one, so the strongest is
+	# x shadow power. The test's L2 effects have no casts_shadow: the weak one stays plain.
+	assert_bool(weak.shadowed).is_false()
+	assert_bool(strong.shadowed).is_true()
+	var pm := sim.config.economy.shadow.occult_power_mult
+	assert_float(e.speed_mult).is_equal_approx(1.0 - 0.5 * pm, 0.0001)
+	assert_float(e.damage_taken_mult).is_equal_approx(1.0 + 0.6 * pm, 0.0001)
 
 
 func test_aura_affects_fakes() -> void:
@@ -429,12 +439,14 @@ func test_sign_boosts_blast_damage_after_armor() -> void:
 	var sim := tsim()
 	sim.state.gold = 1000
 	build(sim, SIGN, Vector2i(6, 1))
-	build(sim, NECRO)
+	var necro := build(sim, NECRO)
 	var mult: float = _l1(sim, SIGN).effects["damage_taken_multiplier"]
-	var dmg := _l1(sim, NECRO).damage
+	# LT-70: the sign next to the reader shadows it (x shadow power on its damage).
+	var dmg := _l1(sim, NECRO).damage * sim.config.economy.shadow.occult_power_mult
 	var armor: float = sim.config.enemies["hybrid"].armor
 	var e := put(sim, "hybrid", 7.0)
 	sim.step()
+	assert_bool(necro.shadowed).is_true()
 	assert_float(e.hp).is_equal_approx(HUGE_HP - (dmg - armor) * mult, 0.0001)
 
 

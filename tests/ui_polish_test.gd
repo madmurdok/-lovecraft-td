@@ -1,12 +1,12 @@
 class_name UiPolishTest
 extends GdUnitTestSuite
-## LT-28: the HUD bar groups fit a 1280x720 window (the 1152x648 base stretched, as
+## LT-28: the HUD bar groups fit a 1280x720 window (the 1200x675 base stretched, as
 ## canvas_items does) with no two bar items overlapping and none squashed; the sanity threshold ticks stay out
 ## of the label's band; the tower letter sits on a dark plate inside its tile. Draw calls are
 ## not observable headless, so the last two pin the geometry the drawing uses (text metrics
 ## from the fallback font) and, for the plate, that _draw_tower draws it under the letter.
 
-const BASE := Vector2i(1152, 648)
+const BASE := Vector2i(1200, 675)
 const WINDOW := Vector2i(1280, 720)
 const BAR_NAMES := ["GoldLabel", "RelicsLabel", "SellRelicsButton", "PhaseLabel", "HpLabel",
 	"CallWaveButton", "SpeedButton", "PauseButton", "SanityBar"]
@@ -204,7 +204,7 @@ func test_the_tower_letter_sits_on_a_dark_plate_inside_its_tile() -> void:
 	var start := src.find("func _draw_tower(")
 	assert_int(start).is_greater(-1)
 	var body := src.substr(start, src.find("\nfunc ", start + 1) - start)
-	var tile_at := body.find("draw_rect(r, COLOR_TOWER)")
+	var tile_at := body.find("draw_rect(r, plate_color(")  # LT-70 §5: the tinted plate
 	var plate_at := RegEx.create_from_string(
 		"(?m)^\\s*draw_rect\\([^\\n]*LETTER_PLATE[^\\n]*COLOR_LETTER_PLATE\\)").search(body)
 	var letter_at := body.find("draw_string(")

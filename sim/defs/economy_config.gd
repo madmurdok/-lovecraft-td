@@ -1,10 +1,11 @@
 class_name EconomyConfig
 extends RefCounted
 ## economy.json (GDD §5.1, §5.2): money ("gold" internally) rules, relics (LT-27 §1.1),
-## lighthouse HP, its beam (LT-26 §1.3), lamp oil and the flare (LT-30 §1.3).
+## lighthouse HP, its beam (LT-26 §1.3), lamp oil and the flare (LT-30 §1.3), and the
+## Elder Sign shadow (LT-70 §3).
 
 const FIELDS := ["starting_gold", "wave_bonus", "sell_refund_ratio", "relics",
-	"token_fly_seconds", "ghost_vanish_seconds", "early_night_luck_per_second", "lighthouse"]
+	"token_fly_seconds", "ghost_vanish_seconds", "early_night_luck_per_second", "lighthouse", "shadow"]
 const RELIC_FIELDS := ["name", "price"]
 const LIGHTHOUSE_FIELDS := ["hp", "beam", "oil", "flare"]
 const BEAM_FIELDS := ["pattern", "turn_t", "reach_cells", "half_width_ratio", "sweep_edges",
@@ -13,8 +14,8 @@ const BEAM_PATTERNS: PackedStringArray = ["rotate", "sweep"]
 ## Beam counts the trig-free direction set supports (LT-26 §1.1).
 const BEAM_COUNTS: Array[int] = [1, 2, 4, 8]
 const OIL_FIELDS := ["price", "start", "cap"]
-const FLARE_FIELDS := ["cost_oil", "cooldown_seconds", "seconds", "radius_cells",
-	"enemy_speed_mult"]
+const FLARE_FIELDS := ["cost_oil", "cooldown_seconds", "seconds", "enemy_speed_mult"]
+const SHADOW_FIELDS := ["mundane", "occult"]
 
 var starting_gold: int  ## money at the start, >= 0
 var wave_bonus_base: int  ## dawn wage = base + per_wave * wave number
@@ -29,6 +30,9 @@ var lighthouse_hp: int  ## >= 1
 var beam: BeamConfig  ## lighthouse.beam (LT-26 §1.3), required
 var oil: OilConfig  ## lighthouse.oil (LT-30 §1.2), null when absent
 var flare: FlareConfig  ## lighthouse.flare (LT-30 §1.1), null when absent (needs `oil`)
+## LT-70 §3: the shadow cast by `casts_shadow` towers; null when absent (shadowed towers then
+## get x1.0 / +0, the flag is still computed).
+var shadow: ShadowConfig
 
 
 ## One relic kind (LT-27 §1.1): sold by day for a fixed `price` in money.
@@ -75,17 +79,26 @@ class OilConfig:
 	var cap: int  ## >= flare.cost_oil (>= 1)
 
 
-## The flare (LT-30 §1.1, LT-57): a night-only command paid with oil; while it burns,
-## everything within radius_cells of the lighthouse is lit, in every direction.
+## Shadow (LT-70 §2.3, §3), the mirror of the beam's light: what a shadowed tower suffers
+## (mundane) or gains (occult).
+class ShadowConfig:
+	extends RefCounted
+
+	var mundane_fire_interval_mult: float  ## > 0, shadowed mundane cooldown multiplier
+	var mundane_miss_chance_add: float  ## 0..1, added to a shadowed mundane shot's miss chance
+	var occult_power_mult: float  ## > 0, shadowed occult damage / aura strength multiplier
+
+
+## The flare (LT-30 §1.1, LT-69): a night-only command paid with oil; while it burns,
+## every tower and enemy on the map is lit.
 class FlareConfig:
 	extends RefCounted
 
 	var cost_oil: int  ## >= 1
-	var cooldown_seconds: float  ## > seconds, from the activation
-	var seconds: float  ## > 0
-	## LT-57: the lit circle's radius in cells by lighthouse level (L1 first), one entry per
-	## beam.levels, each in [0, beam.reach_cells] (0: the flare lights nothing).
-	var radius_cells: Array[float] = []
+	var cooldown_seconds: float  ## > every seconds entry, from the activation
+	## LT-69: how long the flare burns by lighthouse level (L1 first), one entry per
+	## beam.levels, each > 0.
+	var seconds: Array[float] = []
 	var enemy_speed_mult: float  ## (0, 1], lit enemies while the flare burns
 
 
@@ -140,7 +153,30 @@ static func parse(r: ConfigReader, root: Dictionary) -> EconomyConfig:
 				c.oil = _parse_oil(r, oo, "lighthouse.oil", c.flare)
 		elif lighthouse.has("flare"):
 			r.error("lighthouse.flare", "requires lighthouse.oil")
+	if root.has("shadow"):
+		var so: Variant = r.as_object(root["shadow"], "shadow")
+		if so != null:
+			c.shadow = _parse_shadow(r, so, "shadow")
 	return c
+
+
+## LT-70 §3: shadow.mundane {fire_interval_mult > 0, miss_chance_add 0..1} and
+## shadow.occult {power_mult > 0}, both required inside the optional block.
+static func _parse_shadow(r: ConfigReader, o: Dictionary, path: String) -> ShadowConfig:
+	r.check_keys(o, SHADOW_FIELDS, path)
+	var s := ShadowConfig.new()
+	var mp := ConfigReader.join(path, "mundane")
+	var mo: Variant = r.req_object(o, "mundane", path)
+	if mo != null:
+		r.check_keys(mo, ["fire_interval_mult", "miss_chance_add"], mp)
+		s.mundane_fire_interval_mult = r.req_number(mo, "fire_interval_mult", mp, 0.0, INF, true)
+		s.mundane_miss_chance_add = r.req_number(mo, "miss_chance_add", mp, 0.0, 1.0)
+	var op := ConfigReader.join(path, "occult")
+	var oo: Variant = r.req_object(o, "occult", path)
+	if oo != null:
+		r.check_keys(oo, ["power_mult"], op)
+		s.occult_power_mult = r.req_number(oo, "power_mult", op, 0.0, INF, true)
+	return s
 
 
 static func _parse_beam(r: ConfigReader, o: Dictionary, path: String) -> BeamConfig:
@@ -233,33 +269,37 @@ static func _parse_flare(r: ConfigReader, o: Dictionary, path: String,
 	r.check_keys(o, FLARE_FIELDS, path)
 	var f := FlareConfig.new()
 	f.cost_oil = r.req_int(o, "cost_oil", path, 1)
-	f.seconds = r.req_number(o, "seconds", path, 0.0, INF, true)
 	var n := r.errors.size()
+	f.seconds = _parse_flare_seconds(r, o, path, beam)
+	var ok := r.errors.size() == n and not f.seconds.is_empty()
+	n = r.errors.size()
 	f.cooldown_seconds = r.req_number(o, "cooldown_seconds", path, 0.0, INF, true)
-	if r.errors.size() == n and f.cooldown_seconds <= f.seconds:
-		r.error(ConfigReader.join(path, "cooldown_seconds"), "must be > seconds (%s), got %s"
-			% [ConfigReader.fmt(f.seconds), ConfigReader.fmt(f.cooldown_seconds)])
-	f.radius_cells = _parse_radius_cells(r, o, path, beam)
+	if ok and r.errors.size() == n and f.cooldown_seconds <= f.seconds.max():
+		r.error(ConfigReader.join(path, "cooldown_seconds"),
+			"must be > every seconds entry (%s), got %s"
+			% [ConfigReader.fmt(f.seconds.max()), ConfigReader.fmt(f.cooldown_seconds)])
 	f.enemy_speed_mult = r.req_number(o, "enemy_speed_mult", path, 0.0, 1.0, true)
 	return f
 
 
-## LT-57: flare.radius_cells, one number per beam level in [0, reach_cells]. Without a
-## parsed beam only the range check against 0 runs (the beam's own errors are reported).
-static func _parse_radius_cells(r: ConfigReader, o: Dictionary, path: String,
+## LT-69: flare.seconds, one number > 0 per beam level (the burn time at that lighthouse
+## level). Without a parsed beam only the range check runs (the beam's own errors are reported).
+static func _parse_flare_seconds(r: ConfigReader, o: Dictionary, path: String,
 		beam: BeamConfig) -> Array[float]:
 	var out: Array[float] = []
-	var rp := ConfigReader.join(path, "radius_cells")
-	var arr: Variant = r.req_array(o, "radius_cells", path)
+	var sp := ConfigReader.join(path, "seconds")
+	var arr: Variant = r.req_array(o, "seconds", path)
 	if arr == null:
 		return out
-	var reach := beam.reach_cells if beam != null and beam.reach_cells > 0.0 else INF
 	if beam != null and beam.levels.size() > 0 and arr.size() != beam.levels.size():
-		r.error(rp, "must have one entry per beam level (%d), got %d"
+		r.error(sp, "must have one entry per beam level (%d), got %d"
 			% [beam.levels.size(), arr.size()])
 		return out
+	if arr.is_empty():
+		r.error(sp, "must not be empty")
+		return out
 	for i in arr.size():
-		out.append(r.as_number(arr[i], ConfigReader.index(rp, i), 0.0, reach))
+		out.append(r.as_number(arr[i], ConfigReader.index(sp, i), 0.0, INF, true))
 	return out
 
 

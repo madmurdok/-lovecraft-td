@@ -11,8 +11,8 @@ extends RefCounted
 ## So the first fake of a wave comes on wave tick `interval`, then every `interval`.
 ##
 ## The fake mimics one of the spawner's candidates (the current wave's unfired spawn
-## events), picked on rng(SANITY); a pack enemy expands into a full pack, also on SANITY
-## (Simulation.spawn_enemy). Enemies with a `boss` trait are never mimicked (owner
+## events), picked on rng(SANITY); a pack enemy expands into a full pack, also on SANITY,
+## whose members enter one by one like a real pack's (Simulation.spawn_enemy, LT-63). Enemies with a `boss` trait are never mimicked (owner
 ## decision Q6; no such trait exists yet, the check is the hook for the boss content task).
 
 const BOSS_TRAIT := "boss"

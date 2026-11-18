@@ -13,7 +13,7 @@ func before_test() -> void:
 	assert_bool(r.ok).override_failure_message("\n".join(r.errors)).is_true()
 	_config = r.config
 	_vp = SubViewport.new()
-	_vp.size = Vector2i(1152, 648)
+	_vp.size = Vector2i(1200, 675)
 	add_child(_vp)
 
 

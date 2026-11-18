@@ -4,7 +4,7 @@ extends GdUnitTestSuite
 ## lines, button texts and disabled reasons, the madness warning, upgrading from the panel,
 ## and closing. Also the HUD bar fix (22a9d9c): the bar spans the full width above the
 ## board, so a range ring near the top edge is drawn under it. Real mouse events go into a
-## 1152x648 SubViewport like scene_game_test; text formats come from the design note,
+## 1200x675 SubViewport like scene_game_test; text formats come from the design note,
 ## numbers from config.
 
 const RIFLE := "rifleman"
@@ -20,7 +20,7 @@ func before_test() -> void:
 	assert_bool(r.ok).override_failure_message("\n".join(r.errors)).is_true()
 	_config = r.config
 	_vp = SubViewport.new()
-	_vp.size = Vector2i(1152, 648)
+	_vp.size = Vector2i(1200, 675)
 	add_child(_vp)
 
 
@@ -52,7 +52,7 @@ func _click(pos: Vector2) -> void:
 
 func _click_control(c: Control) -> void:
 	assert_bool(c.is_visible_in_tree()).override_failure_message("%s hidden" % c.name).is_true()
-	if _game != null and _game.side_panel.is_ancestor_of(c):
+	if _game != null and _game.side_panel.scroll.is_ancestor_of(c):
 		# Long views scroll: bring the control into the panel before clicking it.
 		_game.side_panel.scroll.ensure_control_visible(c)
 		await get_tree().process_frame
@@ -120,11 +120,13 @@ func test_panel_rect_is_right_of_the_board_below_the_hud() -> void:
 	var board := Rect2(Game.BOARD_ORIGIN, Vector2(map.width, map.height) * Board.CELL)
 	assert_float(r.position.x).is_equal(Game.BOARD_ORIGIN.x + map.width * Board.CELL)
 	assert_float(r.position.y).is_equal(Game.BOARD_ORIGIN.y)
-	assert_float(r.end.x).is_equal(1152.0)
-	assert_float(r.end.y).is_equal(648.0)
+	assert_float(r.end.x).is_equal(1200.0)
+	assert_float(r.end.y).is_equal(675.0)
 	assert_bool(r.intersects(board)).is_false()
+	assert_float(r.size.x).is_equal(1200.0 - map.width * Board.CELL)
 	if map.width * Board.CELL == 960:
-		assert_that(r).is_equal(Rect2(960, 48, 192, 600))
+		assert_that(r).is_equal(Rect2(960, 48, 240, 627))
+		assert_float(_game.side_panel.size.x).is_equal(240.0)
 	assert_that(_game.side_panel.get_global_rect()).is_equal(r)
 
 
@@ -143,6 +145,11 @@ func test_long_content_scrolls_vertically_and_never_grows_the_panel() -> void:
 	await get_tree().process_frame
 	assert_that(_game.side_panel.get_global_rect()).is_equal(r)
 	assert_bool(r.encloses(scroll.get_global_rect())).is_true()
+	# LT-59: the wider panel fits an L2 card; a long special text still scrolls, never grows it.
+	_game.tower_panel.special_label.text = "a line" + "\n".repeat(60)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	assert_that(_game.side_panel.get_global_rect()).is_equal(r)
 	assert_float(_game.tower_panel.size.y).is_greater(scroll.size.y)  # it scrolls
 
 
@@ -158,7 +165,7 @@ func test_idle_text_shows_iff_no_view_is_open() -> void:
 	assert_str(_game.side_panel.idle_label.text).is_equal("Click a cell to build, a tower to upgrade.")
 	_assert_view(true, false, false)
 	await _click_cell(_buildable_cell())
-	# LT-43 §3: the picker is over the board; the panel asks for a pick until a hover.
+	# LT-61 §1: the list is above the panel's scroll; it asks for a pick until a hover.
 	_assert_view(true, true, false)
 	assert_str(_game.side_panel.idle_label.text).is_equal(SidePanel.PICK_TEXT)
 	await _click_control(_game.picker.cancel_button)
@@ -213,23 +220,25 @@ func test_build_columns_show_name_cost_and_the_reserve_cell() -> void:
 	await _click_cell(_buildable_cell())
 	for id: String in _config.towers:
 		var def: TowerDef = _config.towers[id]
-		assert_str(_game.picker.names[id].text).is_equal(def.name)
+		assert_str(_game.picker.names[id].text).is_equal(def.short_name)
 		assert_str(_game.picker.costs[id].text).is_equal(TowerInfo.cost_text(def.cost))
-	# LT-23 Q5: an occult build costs gold only; its Reserve cell names the reserve.
+	# LT-23 Q5: an occult build costs gold only; its Trait cell names the reserve (LT-61).
 	var sign: TowerDef = _config.towers[SIGN]
 	assert_float(sign.levels[0].sanity_reserve).is_greater(0.0)
 	assert_str(_game.picker.costs[SIGN].text).not_contains("sanity")
-	assert_str(_game.picker.cells[SIGN]["reserve"].text).is_equal(
-		TowerInfo.num(sign.levels[0].sanity_reserve))
+	assert_str(_game.picker.cells[SIGN]["trait"].text).is_equal(
+		"Res " + TowerInfo.num(sign.levels[0].sanity_reserve))
 
 
 ## LT-43 §3: unaffordable reddens the cost cell (the reason in the tooltip); a madness
-## warning marks the Reserve cell red with "!" (the tooltip ends with MADNESS_WARNING).
+## warning marks the Trait cell red with "!" (the tooltip's first line ends with
+## MADNESS_WARNING; LT-61 §3: a second line names the trait).
 func _assert_status(id: String, status: String) -> void:
 	var def: TowerDef = _config.towers[id]
 	var b: Button = _game.picker.buttons[id]
 	var cost: Label = _game.picker.costs[id]
-	var reserve: Label = _game.picker.cells[id]["reserve"]
+	var reserve: Label = _game.picker.cells[id]["trait"]
+	var tip_line := b.tooltip_text.get_slice("\n", 0)
 	var tip := "%s — %s" % [def.name, TowerInfo.cost_text(def.cost)]
 	assert_str(cost.text).is_equal(TowerInfo.cost_text(def.cost))
 	var mad := TowerInfo.MADNESS_WARNING.strip_edges()
@@ -237,15 +246,15 @@ func _assert_status(id: String, status: String) -> void:
 		assert_that(cost.get_theme_color("font_color")).is_equal(StatsTable.COLOR_VALUE)
 		assert_str(reserve.text).ends_with(TowerPicker.MAD_MARK)
 		assert_that(reserve.get_theme_color("font_color")).is_equal(TowerPicker.STATUS_COLOR)
-		assert_str(b.tooltip_text).is_equal(tip + TowerInfo.MADNESS_WARNING)
+		assert_str(tip_line).is_equal(tip + TowerInfo.MADNESS_WARNING)
 		return
 	assert_str(reserve.text).not_contains(TowerPicker.MAD_MARK)
 	if status.is_empty():
 		assert_that(cost.get_theme_color("font_color")).is_equal(StatsTable.COLOR_VALUE)
-		assert_str(b.tooltip_text).is_equal(tip)
+		assert_str(tip_line).is_equal(tip)
 	else:
 		assert_that(cost.get_theme_color("font_color")).is_equal(TowerPicker.STATUS_COLOR)
-		assert_str(b.tooltip_text).is_equal(tip + " " + status)
+		assert_str(tip_line).is_equal(tip + " " + status)
 
 
 func test_build_buttons_are_disabled_with_the_reason() -> void:
@@ -499,12 +508,37 @@ func test_targeting_towers_show_the_switch_between_stats_and_upgrade_first_marke
 		await _open_tower(def_id)
 		_assert_switch("first")
 	var p := _game.tower_panel
-	var order := ["Stats", "PriorityTitle", "Priority_first", "Priority_strongest",
-		"Priority_fastest", "UpgradeTitle"]
+	var order := ["Stats", "UpgradeTitle", "PriorityTitle", "Priority_first",
+		"Priority_strongest", "Priority_fastest"]
 	var idx := order.map(func(n: String) -> int: return p.get_node(n).get_index())
 	var sorted := idx.duplicate()
 	sorted.sort()
 	assert_array(idx).is_equal(sorted)
+
+
+## LT-59: Upgrade (or the branch buttons), then "Max level", then Target, then Sell.
+func test_target_section_follows_upgrade_and_max_level_and_precedes_sell() -> void:
+	await _start_game()
+	var p := _game.tower_panel
+	for path: Array in [[], [""], ["", "a"]]:
+		await _open_tower(RIFLE, path)
+		var chain: Array[Control] = [p.get_node("UpgradeTitle")]
+		for k: String in p.upgrade_buttons:
+			chain.append(p.upgrade_buttons[k])
+		chain.append_array([p.get_node("MaxLevel"), p.get_node("PriorityTitle"),
+			p.get_node("Priority_first"), p.get_node("Priority_strongest"),
+			p.get_node("Priority_fastest"), p.get_node("SellButton")])
+		var last := -1
+		for c in chain:
+			assert_object(c.get_parent()).override_failure_message(c.name).is_same(p)
+			assert_int(c.get_index()).override_failure_message("%s %s" % [path, c.name]) \
+				.is_greater(last)
+			last = c.get_index()
+		# What is shown keeps that order too: Max level only at L3, always above Target.
+		assert_bool(p.get_node("MaxLevel").visible).is_equal(path.size() == 2)
+		assert_bool(_prio_title().visible).is_true()
+		assert_bool(p.get_node("SellButton").visible).is_true()
+		_game.close_panels()
 
 
 func test_elder_sign_hides_the_switch_at_every_level() -> void:
@@ -561,9 +595,9 @@ func test_after_the_outcome_the_other_modes_read_run_over() -> void:
 func test_hud_bar_spans_the_full_width_above_the_board() -> void:
 	await _start_game()
 	var hud := _game.hud
-	assert_float(hud.get_global_rect().size.x).is_equal(1152.0)
+	assert_float(hud.get_global_rect().size.x).is_equal(1200.0)
 	var bg: Control = hud.get_node("Background")
-	assert_that(bg.get_global_rect()).is_equal(Rect2(0, 0, 1152, Game.BOARD_ORIGIN.y))
+	assert_that(bg.get_global_rect()).is_equal(Rect2(0, 0, 1200, Game.BOARD_ORIGIN.y))
 
 
 func test_a_range_ring_crossing_the_top_edge_is_drawn_under_the_hud() -> void:
@@ -608,9 +642,9 @@ func test_picker_and_hud_buttons_are_opaque_and_a_disabled_one_stays_legible() -
 	await _click_cell(_buildable_cell())
 	_game.sim.state.gold = 0
 	_game.picker.refresh()
-	var b: Button = _game.picker.buttons[RIFLE]
-	assert_bool(b.disabled).is_true()
-	_assert_opaque_button(b)
+	assert_bool(_game.picker.buttons[RIFLE].disabled).is_true()
+	# LT-61 §10: a list row is a flat button (its cells carry the state); Cancel stays framed.
+	_assert_opaque_button(_game.picker.cancel_button)
 	_assert_opaque_button(_game.hud.call_wave_button)
 	_assert_opaque_button(_game.hud.pause_button)
 
@@ -626,8 +660,8 @@ func test_the_footer_covers_the_strip_below_the_board() -> void:
 		return
 	var m := _game.sim.state.map
 	var bottom := Game.BOARD_ORIGIN.y + m.height * Board.CELL
-	assert_float(bottom).is_less(648.0)
-	assert_that(footer.get_global_rect()).is_equal(Rect2(0, bottom, 1152, 648 - bottom))
+	assert_float(bottom).is_less(675.0)
+	assert_that(footer.get_global_rect()).is_equal(Rect2(0, bottom, 1200, 675 - bottom))
 	assert_that(footer.color).is_equal(UiStyle.COLOR_BG)
 	assert_float(footer.color.a).is_equal(1.0)
 	assert_int(footer.mouse_filter).is_equal(Control.MOUSE_FILTER_IGNORE)

@@ -39,26 +39,27 @@
     },
     "elder_sign": {
       "name": "Elder Sign",
-      "role": "Aura: slows and exposes",
+      "role": "Shadow aura, exposes",
       "kind": "occult",
       "cost": 100,
       "levels": [
         { "range": 2.5, "sanity_reserve": 5,
-          "effects": { "slow": 0.35, "damage_taken_multiplier": 1.5 } },
+          "effects": { "slow": 0.2, "damage_taken_multiplier": 1.5, "casts_shadow": 1 } },
         { "upgrade_cost": 80, "range": 3, "sanity_reserve": 8,
-          "effects": { "slow": 0.35, "damage_taken_multiplier": 1.5 } }
+          "effects": { "slow": 0.2, "damage_taken_multiplier": 1.5, "casts_shadow": 1 } }
       ],
       "branches": {
         "a": { "name": "Pure Ward", "role": "Larger aura",
                "upgrade_cost": 140, "range": 4, "sanity_reserve": 14,
-               "effects": { "slow": 0.35, "damage_taken_multiplier": 1.5 } },
+               "effects": { "slow": 0.2, "damage_taken_multiplier": 1.5, "casts_shadow": 1 } },
         "b": { "name": "Corrupted Seal", "role": "Strips armor; +reserve",
                "upgrade_cost": 140, "range": 3, "sanity_reserve": 30,
-               "effects": { "slow": 0.35, "damage_taken_multiplier": 1.5, "strip_armor": 1 } }
+               "effects": { "slow": 0.2, "damage_taken_multiplier": 1.5, "casts_shadow": 1, "strip_armor": 1 } }
       }
     },
     "necronomicon_reader": {
       "name": "Necronomicon Reader",
+      "short": "Reader",
       "role": "Area blast, uses sanity",
       "kind": "occult",
       "cost": 150,
@@ -79,6 +80,7 @@
     },
     "dynamite_crew": {
       "name": "Dynamite crew",
+      "short": "Dynamite",
       "role": "Lobbed charges, ground",
       "kind": "mundane",
       "glyph": "D",
@@ -102,6 +104,7 @@
     },
     "coast_battery": {
       "name": "Coast battery",
+      "short": "Battery",
       "role": "Long gun, blind up close",
       "kind": "mundane",
       "glyph": "B",
@@ -121,25 +124,26 @@
     },
     "searchlight": {
       "name": "Searchlight",
-      "role": "Reveals fakes, slows",
+      "role": "Lights towers, slows",
       "kind": "mundane",
       "glyph": "S",
       "cost": 80,
       "levels": [
-        { "range": 3, "effects": { "reveal_fakes": 1, "slow": 0.2 } },
-        { "upgrade_cost": 60, "range": 3.5, "effects": { "reveal_fakes": 1, "slow": 0.25 } }
+        { "range": 3, "effects": { "reveal_fakes": 1, "slow": 0.15, "casts_light": 1 } },
+        { "upgrade_cost": 60, "range": 3.5, "effects": { "reveal_fakes": 1, "slow": 0.175, "casts_light": 1 } }
       ],
       "branches": {
-        "a": { "name": "Signal lamp", "role": "Wide reveal",
+        "a": { "name": "Signal lamp", "role": "Wide light, reveal",
                "upgrade_cost": 100, "range": 5,
-               "effects": { "reveal_fakes": 1, "slow": 0.25 } },
-        "b": { "name": "Blinding beam", "role": "Slows hard, marks foes",
+               "effects": { "reveal_fakes": 1, "slow": 0.175, "casts_light": 1 } },
+        "b": { "name": "Blinding beam", "role": "Slows hard",
                "upgrade_cost": 100, "range": 3.5,
-               "effects": { "reveal_fakes": 1, "slow": 0.4, "damage_taken_multiplier": 1.2 } }
+               "effects": { "reveal_fakes": 1, "slow": 0.25, "casts_light": 1 } }
       }
     },
     "resonator": {
       "name": "Tillinghast Resonator",
+      "short": "Resonator",
       "role": "Beam, strong when mad",
       "kind": "occult",
       "glyph": "T",
@@ -163,6 +167,7 @@
     },
     "silver_key": {
       "name": "Silver Key Gate",
+      "short": "Silver Key",
       "role": "Sends foes back the path",
       "kind": "occult",
       "glyph": "K",
@@ -187,6 +192,7 @@
     },
     "summoning_circle": {
       "name": "Summoning Circle",
+      "short": "Circle",
       "role": "Ghouls hold foes back",
       "kind": "occult",
       "glyph": "C",

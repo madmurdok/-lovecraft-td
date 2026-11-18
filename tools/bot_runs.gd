@@ -58,26 +58,36 @@ extends SceneTree
 ## purchase loop buys the next lighthouse level when its cost is at most the cheapest tower
 ## upgrade's (or no tower upgrade is left); a refused level is not retried that day and the
 ## loop falls through to tower upgrades and builds (LT-30 S10); at night it fires the flare when at least
-## FLARE_MIN_IN_CIRCLE live enemies are within the flare radius. [--lighthouse=0] never upgrades the lighthouse,
+## FLARE_MIN_LIVE live enemies are on the map (LT-69: the flare lights the whole map).
+## [--lighthouse=0] never upgrades the lighthouse,
 ## [--flare=0] never buys oil and never fires. A beam-off arm is a --data=<dir> variant.
 ## RUN lines add "lighthouse_level", "flares", "oil_bought", "oil_gold" and "lit_shots"
-## (shots by a tower inside a beam).
+## (shots by a tower lit by the lighthouse beam or the flare; LT-70: a tower inside a
+## Searchlight's radius does not count, `lit_tower_ticks` covers every light source),
+## "lit_tower_ticks" / "shadow_tower_ticks" (tower-ticks with the net `lit` / `shadowed` flag)
+## and "shadowed_mundane_builds" (mundane towers the bot placed inside a shadow caster's radius).
+## LT-70 §6: placement is light/shadow-aware for every strategy (`_cast_term`, CAST_WEIGHT);
+## the `light` strategy builds the Searchlight.
 ## Loot is random (seeded LOOT stream): compare strategies over the default 10 seeds.
 ## RUN lines add "relics_sold" ($ from sales), "drops" (real relics credited per kind, config
 ## order), "star_stones" and "wage" ($ of dawn wages).
 ## A run is capped at 30 simulated minutes (outcome "timeout").
 
 const STRATEGIES := ["mundane", "occult", "mixed", "madness", "demolition", "battery",
-	"resonator", "gate", "circle"]
-## LT-57 §5: live enemies (reals and fakes) within the flare radius that make the bot fire
-## the flare (tunable).
-const FLARE_MIN_IN_CIRCLE := 4
+	"resonator", "gate", "circle", "light"]
+## LT-57 §5, LT-69: live enemies (reals and fakes) anywhere on the map that make the bot
+## fire the flare (tunable).
+const FLARE_MIN_LIVE := 4
 const MAX_TICKS := 30 * 60 * 30
 ## Strategy -> lowest sanity_cap an occult build/upgrade may leave (LT-23 §4, tunable).
 const CAP_FLOOR := {"occult": 30.0, "mixed": 60.0}
 const OCCULT_MAX_RIFLEMEN := 3  ## riflemen the occult bot builds per run, the first included
 const MIXED_ORDER := ["rifleman", "rifleman", "elder_sign", "rifleman", "harpooner",
 	"necronomicon_reader"]
+## LT-70 §6: the `light` strategy's build order, repeated.
+const LIGHT_ORDER := ["rifleman", "rifleman", "searchlight", "harpooner", "rifleman"]
+## LT-70 §6: path cells one lit/shadowed tower is worth in `_best_cell` (tunable).
+const CAST_WEIGHT := 3
 const BUILD_FIRST := 5  ## towers on the board before the bot starts upgrading (tunable)
 ## Strategy -> tower def id -> L3 branch the bot buys (tunable); a tower not listed stays
 ## at L2. Pure branches for the careful bot, corrupted for the mad one.
@@ -91,6 +101,7 @@ const BRANCH_PICK := {
 	"resonator": {"rifleman": "a", "resonator": "a"},
 	"gate": {"rifleman": "a", "silver_key": "a"},
 	"circle": {"rifleman": "a", "summoning_circle": "a"},
+	"light": {"rifleman": "a", "harpooner": "a", "searchlight": "b"},
 }
 
 var _cfg: GameConfig
@@ -99,6 +110,7 @@ var _upgrades := true  ## false with --upgrades=0
 var _lighthouse := true  ## false with --lighthouse=0
 var _flare := true  ## false with --flare=0
 var _branch_override := {}  ## tower def id -> branch from --branch=, wins over BRANCH_PICK
+var _shadowed_builds := 0  ## LT-70: mundane towers placed inside a shadow radius, this run
 var _strategies: Array = STRATEGIES  ## strategies to play, narrowed by --strategies=
 
 
@@ -195,12 +207,20 @@ func _play(strat: String, run_seed: int) -> Dictionary:
 	var oil_bought := 0
 	var oil_gold := 0
 	var lit_shots := 0
+	var lit_tower_ticks := 0
+	var shadow_tower_ticks := 0
+	_shadowed_builds = 0
 	for kind in _cfg.economy.relic_ids():
 		drops[kind] = 0
 	while st.outcome == SimState.Outcome.NONE and st.tick < MAX_TICKS:
 		if st.tick % 30 == 0:
 			idx = _act(sim, strat, idx, built)
 		sim.step()
+		for t in st.towers:
+			if t.lit:
+				lit_tower_ticks += 1
+			if t.shadowed:
+				shadow_tower_ticks += 1
 		ticks_in_state[st.sanity_state] += 1
 		min_sanity = minf(min_sanity, st.sanity)
 		if madness_tick < 0 and st.sanity_state == SimState.SanityState.MADNESS:
@@ -227,7 +247,7 @@ func _play(strat: String, run_seed: int) -> Dictionary:
 			elif ev.type == SimEvent.Type.SHOT:
 				shots += 1
 				var shooter := sim.tower_by_id(ev.id)
-				if shooter != null and shooter.lit:
+				if shooter != null and shooter.lit and _beam_lit(sim, shooter):
 					lit_shots += 1
 				if ev.data.get("miss", false):
 					missed += 1
@@ -280,6 +300,8 @@ func _play(strat: String, run_seed: int) -> Dictionary:
 		"relics_sold": relics_sold, "drops": drops, "star_stones": drops.get("star_stone", 0),
 		"wage": wage, "lighthouse_level": st.lighthouse_level, "flares": flares,
 		"oil_bought": oil_bought, "oil_gold": oil_gold, "lit_shots": lit_shots,
+		"lit_tower_ticks": lit_tower_ticks, "shadow_tower_ticks": shadow_tower_ticks,
+		"shadowed_mundane_builds": _shadowed_builds,
 	}
 	if _upgrades:
 		run["upgrades"] = upgrades
@@ -313,6 +335,8 @@ func _order(strat: String, i: int, sim: Simulation, built: Dictionary) -> String
 			return d
 		"mixed":
 			return MIXED_ORDER[i % MIXED_ORDER.size()]
+		"light":
+			return LIGHT_ORDER[i % LIGHT_ORDER.size()]
 		_:
 			return "necronomicon_reader" if i % 2 == 0 else "elder_sign"
 
@@ -367,8 +391,11 @@ func _act(sim: Simulation, strat: String, idx: int, built: Dictionary) -> int:
 				break
 			continue
 		var cell := _best_cell(sim, id)
+		var in_sign := _cfg.towers[id].kind == "mundane" and _in_shadow_radius(sim, cell)
 		if cell.x < 0 or sim.build_tower(id, cell) != Simulation.CommandResult.OK:
 			break
+		if in_sign:
+			_shadowed_builds += 1
 		built[id] = built.get(id, 0) + 1
 		idx += 1
 	if sim.state.phase == SimState.Phase.BUILD:
@@ -392,17 +419,17 @@ static func _bot_oil_target(sim: Simulation) -> int:
 	return flare.cost_oil if flare != null else 0
 
 
-## Night: fires the flare when at least FLARE_MIN_IN_CIRCLE live enemies (reals and fakes, as
-## a player sees them) are within the flare radius (LT-57 §5: before firing they are not lit
-## by the circle yet, so e.lit is not the count). Refused on cooldown or without oil.
+## Night: fires the flare when at least FLARE_MIN_LIVE live enemies (reals and fakes, as a
+## player sees them) are on the map (LT-69: the flare lights the whole map; e.lit is not the
+## count, it is set by the beams before firing). Refused on cooldown or without oil.
 func _night_flare(sim: Simulation) -> void:
 	if not _flare:
 		return
-	var near := 0
+	var live := 0
 	for e in sim.state.enemies:
-		if e.is_live() and sim.in_flare_radius(e.route.position_at(e.distance)):
-			near += 1
-	if near >= FLARE_MIN_IN_CIRCLE:
+		if e.is_live():
+			live += 1
+	if live >= FLARE_MIN_LIVE:
 		sim.fire_flare()
 
 
@@ -456,7 +483,65 @@ func _best_cell(sim: Simulation, id: String) -> Vector2i:
 					list.append([score, c])
 		list.sort_custom(func(a, b): return a[0] > b[0])  # stable enough: row-major kept
 		_score_cache[id] = list
+	var best := Vector2i(-1, -1)
+	var best_score := -1000000
 	for e in _score_cache[id]:
-		if not sim.state.tower_at.has(e[1]):
-			return e[1]
-	return Vector2i(-1, -1)
+		if sim.state.tower_at.has(e[1]):
+			continue
+		var sc: int = e[0] + CAST_WEIGHT * _cast_term(sim, id, e[1])
+		if sc > best_score:  # strict: ties keep the cached order (path score, row-major)
+			best_score = sc
+			best = e[1]
+	return best
+
+
+## LT-70 §6: how many towers on the board a build of `id` at `cell` would put on the right
+## side of the light/shadow. A caster (level 0 flags): +1 per firing tower in its radius that
+## it helps (light: mundane, shadow: occult), -1 per one it hurts. A firing tower: +1 per
+## caster in range that helps it, -1 per one that hurts it. Read from the config flags, so a
+## variant without casts_* gives 0 and today's placement.
+func _cast_term(sim: Simulation, id: String, cell: Vector2i) -> int:
+	var def: TowerDef = _cfg.towers[id]
+	var s: TowerDef.Level = def.levels[0]
+	var p := Vector2(cell.x + 0.5, cell.y + 0.5)
+	var term := 0
+	for o in sim.state.towers:
+		var os := o.stats()
+		var o_mundane: bool = o.def.kind == "mundane"
+		if s.casts_light() or s.casts_shadow():
+			if os.acts() and Simulation.in_cast_radius(p, s.range_cells, o.centre()):
+				if s.casts_light():
+					term += 1 if o_mundane else -1
+				if s.casts_shadow():
+					term += -1 if o_mundane else 1
+		if s.acts() and (os.casts_light() or os.casts_shadow()) \
+				and Simulation.in_cast_radius(o.centre(), os.range_cells, p):
+			var sign_ := 1 if def.kind == "mundane" else -1
+			if os.casts_light():
+				term += sign_
+			if os.casts_shadow():
+				term -= sign_
+	return term
+
+
+## LT-70: true when a shadow caster on the board covers the centre of `cell`.
+func _in_shadow_radius(sim: Simulation, cell: Vector2i) -> bool:
+	var p := Vector2(cell.x + 0.5, cell.y + 0.5)
+	for o in sim.state.towers:
+		var os := o.stats()
+		if os.casts_shadow() and Simulation.in_cast_radius(o.centre(), os.range_cells, p):
+			return true
+	return false
+
+
+## LT-70 §6: `lit_shots` keeps its meaning (lighthouse beam / flare value): a lit shooter that
+## no casts_light tower covers. `sim.lit` is the net flag and has no public beam-only source,
+## so a tower under both the beam and a Searchlight is not counted (an undercount);
+## `lit_tower_ticks` counts every light source.
+func _beam_lit(sim: Simulation, t: SimTower) -> bool:
+	for o in sim.state.towers:
+		var os := o.stats()
+		if o.id != t.id and os.casts_light() \
+				and Simulation.in_cast_radius(o.centre(), os.range_cells, t.centre()):
+			return false
+	return true

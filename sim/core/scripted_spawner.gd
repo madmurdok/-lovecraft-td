@@ -2,7 +2,8 @@ class_name ScriptedSpawner
 extends SimSpawner
 ## Spawns a fixed list of [tick, enemy_id] entries (tests; replaced by waves in LT-5).
 ## An entry fires on the first step whose tick is >= its tick; entries of one tick fire
-## in list order. A pack enemy expands into a pack (Simulation.spawn_enemy).
+## in list order. A pack enemy expands into a pack (Simulation.spawn_enemy). Exhausted once
+## the list is empty; the win also waits for queued pack members (LT-63).
 
 var _pending: Array = []
 

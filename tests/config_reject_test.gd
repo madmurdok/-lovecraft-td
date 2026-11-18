@@ -121,11 +121,11 @@ func test_non_integer_where_integer_expected() -> void:
 func test_integer_beyond_2_pow_53_is_rejected_not_wrapped() -> void:
 	# F2: 1e20 and 9.3e18 exceed int64 / 2^53; a plain int() cast would wrap or clamp.
 	for literal in ["1e20", "9.3e18", "9007199254740993000"]:
-		var r := load_text_edit(EC, "\"starting_gold\": 200", "\"starting_gold\": " + literal)
+		var r := load_text_edit(EC, "\"starting_gold\": 300", "\"starting_gold\": " + literal)
 		assert_rejected(r, EC, "starting_gold", "must be <=")
 	var r2 := load_text_edit(E, "\"bone\": 999,", "\"bone\": 1e20,")
 	assert_rejected(r2, E, "enemies.cultist.drops.bone")
-	var r3 := load_text_edit(W, "\"count\": 8", "\"count\": 1e20")
+	var r3 := load_text_edit(W, "\"count\": 8, \"interval\": 1.2", "\"count\": 1e20, \"interval\": 1.2")
 	assert_rejected(r3, W, "waves[0].groups[0].count")
 
 
@@ -200,6 +200,24 @@ func test_enum_values() -> void:
 	assert_rejected(r, T, "towers.rifleman.kind", "magic")
 	var r2 := load_json_edit(S, func(d: Dictionary) -> void: d["madness"]["exit_rule"] = "magic")
 	assert_rejected(r2, S, "madness.exit_rule", "magic")
+
+
+## LT-61 §4: `short` (the build list's name) must be a non-blank string; a rejected one is
+## reported at its path and the tower keeps its full name.
+func test_short_name_must_be_a_non_blank_string() -> void:
+	assert_rejected(load_json_edit(T, func(d: Dictionary) -> void:
+		d["towers"]["rifleman"]["short"] = 5), T, "towers.rifleman.short", "expected string")
+	assert_rejected(load_json_edit(T, func(d: Dictionary) -> void:
+		d["towers"]["rifleman"]["short"] = ""), T, "towers.rifleman.short", "must not be empty")
+	assert_rejected(load_json_edit(T, func(d: Dictionary) -> void:
+		d["towers"]["rifleman"]["short"] = "   "), T, "towers.rifleman.short", "must not be empty")
+	for bad: Variant in [5, " "]:
+		var reader := ConfigReader.new(T)
+		assert_str(TowerDef.parse_short(reader, {"short": bad}, "towers.x", "Full Name")) \
+			.is_equal("Full Name")
+		assert_int(reader.errors.size()).is_equal(1)
+	assert_str(TowerDef.parse_short(ConfigReader.new(T), {}, "towers.x", "Full Name")) \
+		.is_equal("Full Name")
 
 
 func test_empty_values() -> void:
@@ -353,6 +371,27 @@ func test_pack_trait_bounds() -> void:
 	var r3 := load_json_edit(E, func(d: Dictionary) -> void:
 		d["enemies"]["deep_one"]["traits"]["pack"]["max"] = 5.5)
 	assert_rejected(r3, E, "enemies.deep_one.traits.pack.max", "expected integer")
+
+
+## LT-63: pack.spacing_s is required, > 0 and at least one tick (checked on the raw value,
+## not on the rounded tick count).
+func test_pack_spacing_must_be_present_positive_and_at_least_one_tick() -> void:
+	var path := "enemies.deep_one.traits.pack.spacing_s"
+	var r := load_json_edit(E, func(d: Dictionary) -> void:
+		d["enemies"]["deep_one"]["traits"]["pack"].erase("spacing_s"))
+	assert_rejected(r, E, path)
+	for bad: float in [0.0, -0.5]:
+		var rb := load_json_edit(E, func(d: Dictionary) -> void:
+			d["enemies"]["deep_one"]["traits"]["pack"]["spacing_s"] = bad)
+		assert_rejected(rb, E, path)
+	# 0.4 tick rounds to 0 ticks, 0.03 (0.9 tick) rounds to 1: both are below one tick.
+	for sub: float in [SimTime.DT * 0.4, 0.03]:
+		var rs := load_json_edit(E, func(d: Dictionary) -> void:
+			d["enemies"]["deep_one"]["traits"]["pack"]["spacing_s"] = sub)
+		assert_rejected(rs, E, path, "at least one tick")
+	# Exactly one tick as JSON writes it (1/30 s is serialized as 0.03333333333333).
+	var ok := load_text_edit(E, '"spacing_s": 0.5', '"spacing_s": 0.03333333333333')
+	assert_bool(ok.ok).override_failure_message("\n".join(ok.errors)).is_true()
 
 
 func test_unknown_effect_key() -> void:
@@ -537,8 +576,8 @@ func test_duplicate_key_inside_array_element() -> void:
 
 
 func test_duplicate_key_in_flat_files() -> void:
-	assert_rejected(load_text_edit(EC, "\"starting_gold\": 200,",
-		"\"starting_gold\": 200, \"starting_gold\": 300,"), EC, "starting_gold", "duplicate key")
+	assert_rejected(load_text_edit(EC, "\"starting_gold\": 300,",
+		"\"starting_gold\": 300, \"starting_gold\": 300,"), EC, "starting_gold", "duplicate key")
 	assert_rejected(load_text_edit(S, "\"start\": 100,", "\"start\": 100, \"start\": 50,"),
 		S, "start", "duplicate key")
 

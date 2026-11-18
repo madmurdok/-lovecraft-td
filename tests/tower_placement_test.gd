@@ -23,7 +23,7 @@ func _assert_rejected(sim: Simulation, def_id: String, cell: Vector2i, want: int
 
 func test_starting_gold_is_the_gdd_value_and_comes_from_config() -> void:
 	var sim := tsim()
-	assert_int(sim.config.economy.starting_gold).is_equal(200)  # GDD §6
+	assert_int(sim.config.economy.starting_gold).is_equal(300)  # GDD §6
 	assert_int(sim.state.gold).is_equal(sim.config.economy.starting_gold)
 
 

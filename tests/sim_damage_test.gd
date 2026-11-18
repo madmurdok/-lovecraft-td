@@ -104,6 +104,9 @@ func test_ids_are_unique_increasing_and_never_reused() -> void:
 	assert_int(first).is_greater(0)
 	var pack_first := sim.spawn_enemy("deep_one")
 	assert_int(pack_first).is_equal(first + 1)
+	# LT-63: the members enter one by one; let the whole pack in before the next spawn.
+	for i in pack_span_ticks(sim.config, "deep_one"):
+		sim.step()
 	var after_pack := sim.spawn_enemy("hybrid")
 	var spawned := of_type(sim.drain_events(), SimEvent.Type.SPAWNED)
 	var pack_size := spawned.size() - 2

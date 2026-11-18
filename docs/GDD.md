@@ -160,8 +160,8 @@ Mundane towers' L3 branches are "specialisations"; occult towers' L3 branches ar
 |---|---|---|---|---|---|
 | Rifleman | mundane | 50 | single target, steady DPS | Marksman: long range, crits | Militia: two shooters, faster fire |
 | Harpooner | mundane | 70 | piercing line shot, good vs packs | Barbed: bleed DoT | Chain harpoon: pulls target back along the path |
-| Searchlight | mundane | 80 | beam that slows 40%, no damage | Blinding: stuns 1 s every 6 s | Revealing: fake enemies in the beam are shown as fake |
-| Elder Sign | occult | 100, reserves 5 | aura: −35% speed, +50% damage taken | Pure Ward: larger aura | Corrupted Seal: enemies inside lose armor, reserves 30 |
+| Searchlight | mundane | 80 | LIGHT (LT-70): aura −15% / −17.5% speed, reveals fakes; at night lights the other towers and the enemies inside, like the beam | Signal lamp: wide light and reveal (r5) | Blinding beam: −25% speed |
+| Elder Sign | occult | 100, reserves 5 | SHADOW (LT-70): aura −20% speed, +50% damage taken; at night shadows the other towers inside (occult ×1.15 power; mundane ×1.25 fire interval, +10% miss) | Pure Ward: larger aura | Corrupted Seal: enemies inside lose armor, reserves 30 |
 | Necronomicon Reader | occult | 150, reserves 10 | AoE blast every 3 s | Pure Rite: slower, unaffected by madness (no ×2, no astray shots) | Corrupted Rite: stronger blasts (damage 150, no longer ×1.5 of L2, owner decision LT-23 S17), reserves 45 |
 
 Note: the Revealing branch is the only counter to hallucinations in the MVP, and it is gated behind L3.
@@ -181,7 +181,7 @@ Recorded at LT-46 (owner: "Остальные решения запиши в д�
 Not planned; candidates for later towers or branches.
 
 - **Tommy-gun gangsters**: short-range bursts sprayed over a sector or several targets; anti-pack. Candidate for LT-49 or a Rifleman branch (LT-46 Q1).
-- **Coast Guard searchlight**: a beam that reveals fake enemies and marks targets (more damage taken). The Searchlight row above was never added to `data/towers.json`; candidate for LT-49 (LT-46 Q1).
+- **Coast Guard searchlight**: a beam that reveals fake enemies and marks targets (more damage taken). Shipped as the Searchlight (LT-49); LT-70 moved the marking to the Elder Sign and made the Searchlight a light source.
 - **Dagon idol**: occult; converts an enemy for a while so it fights for the player ("Идол тоже запишем на будущее").
 - **Flamethrower**: mundane; short cone that sets enemies burning (DoT), strong vs packs, weak vs armor.
 - **Shotgun**: mundane; very short range, spread of pellets, high burst up close.
@@ -353,8 +353,14 @@ All findings from the 2026-10-29 pass were resolved in the body of the document.
   lighthouse is upgradeable and its levels add beams 1 → 2 → 4. Lit mundane towers fire 25 %
   faster and never miss; lit occult towers lose 30 % power but drain half (LT-23); lit enemies
   lose the Madness buff (LT-23). Lamp oil stays a later beam resource.
-  Flare (LT-30, radial since LT-57, `docs/design/LT-57-radial-flare.md`): a night command
-  paid with lamp oil bought by day ($10/unit, tank 16, start 0). For 5 s everything within
-  6 / 8 / 10 cells of the lighthouse (by lighthouse level) is lit in every direction, with
+  Flare (LT-30, whole map since LT-69; radial in LT-57, `docs/design/LT-57-radial-flare.md`):
+  a night command paid with lamp oil bought by day ($10/unit, tank 16, start 0). For 5 / 6 / 7 s
+  (by lighthouse level) every tower and enemy on the map is lit, with
   the same lit rules as the beams (towers and enemies; lit enemies move at x0.5); it costs
-  8 oil ($80), cooldown 30 s, and does not reveal hallucinations.
+  12 oil ($120), cooldown 30 s, and does not reveal hallucinations.
+  Light and shadow (LT-70, `docs/design/LT-70-light-shadow.md`), at night only like the
+  beam: a Searchlight lights every other tower and every enemy within its range by the
+  beam's rules (`casts_light`); an Elder Sign shadows every other tower within its range,
+  other signs included (`casts_shadow`, `economy.json` `shadow`): occult towers ×1.15 power,
+  mundane towers ×1.25 fire interval and +10 % miss chance. A tower both lit (beam, flare
+  or Searchlight) and shadowed is neither. Enemies have no shadow.

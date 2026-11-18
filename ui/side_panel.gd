@@ -4,9 +4,9 @@ extends PanelContainer
 ## the board's right edge to the base viewport's right edge, from below the HUD bar to the
 ## bottom. Laid out in base viewport units, so canvas_items stretch scales it with the
 ## window and it never covers the board. One view at a time inside a vertical scroll:
-## idle text, the tower view (TowerPanel), the lighthouse view, or (LT-43 §3) while the
-## build table (TowerPicker, an overlay on the board) is open the hovered tower's L1 card,
-## or "Pick a tower to build" with no hover.
+## idle text, the tower view (TowerPanel), the lighthouse view, or (LT-61 §1) while the
+## build list (TowerPicker, above the scroll) is open the hovered tower's L1 card, or
+## "Pick a tower to build" with no hover.
 
 const FONT_SIZE := 14  ## panel text (tunable; LT-28 owns the polish)
 const MARGIN := 8
@@ -19,7 +19,7 @@ const PICK_TEXT := "Pick a tower to build"  ## LT-43 §3: the picker is open, no
 var game: Game
 var scroll: ScrollContainer
 var idle_label: Label
-var picker: TowerPicker  ## LT-43: an overlay on the board, set by attach_picker
+var picker: TowerPicker  ## LT-61 §1: the build list, above `scroll` while open
 var tower_panel: TowerPanel
 ## LT-43 §3: the hovered picker column's L1 card (title, role, table, special, kind, path).
 var card: VBoxContainer
@@ -77,10 +77,19 @@ func _ready() -> void:
 	add_theme_stylebox_override("panel", bg)
 	theme = UiStyle.theme(FONT_SIZE)  # LT-28: opaque framed buttons, legible when disabled
 
+	var layout := VBoxContainer.new()
+	layout.name = "Layout"
+	layout.add_theme_constant_override("separation", 0)
+	add_child(layout)
+	picker = TowerPicker.new()
+	picker.name = "TowerPicker"
+	picker.game = game
+	layout.add_child(picker)
 	scroll = ScrollContainer.new()
 	scroll.name = "Scroll"
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	add_child(scroll)
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	layout.add_child(scroll)
 	var views := VBoxContainer.new()
 	views.name = "Views"
 	views.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -99,13 +108,6 @@ func _ready() -> void:
 	views.add_child(lighthouse_panel)
 	lighthouse_panel.visibility_changed.connect(_update_idle)
 	tower_panel.visibility_changed.connect(_update_idle)
-	_update_idle()
-
-
-## LT-43: the build table lives over the board (Game adds it); the panel follows its
-## visibility (idle text) and its hover (the card).
-func attach_picker(p: TowerPicker) -> void:
-	picker = p
 	picker.visibility_changed.connect(_update_idle)
 	picker.hovered_changed.connect(show_card)
 	_update_idle()
@@ -117,12 +119,12 @@ func show_card(def_id: String) -> void:
 	card_id = def_id if def != null else ""
 	if def != null:
 		var s: TowerDef.Level = def.levels[0]
-		card_title.text = def.name + TowerInfo.DASH + TowerInfo.cost_text(def.cost)
+		card_title.text = def.name  # LT-61 §1: the row shows the cost
 		card_title.add_theme_color_override("font_color", StatsTable.kind_color(def.kind))
 		card_role.text = def.role
 		card_role.visible = not def.role.is_empty()
 		var cols: Array[Dictionary] = [TowerInfo.row_values(def, s, game.sim.config)]
-		card_table.set_columns(PackedStringArray(["L1"]), cols, {},
+		card_table.set_columns(PackedStringArray([""]), cols, {},  # no head row (LT-61 §1)
 			StatsTable.kind_color(def.kind))
 		card_special.text = "\n".join(TowerInfo.special_lines(s))
 		card_special.visible = not card_special.text.is_empty()

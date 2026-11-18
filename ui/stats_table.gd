@@ -12,6 +12,7 @@ const FONT_SIZE_NARROW := 11  ## values at 3 columns, so "Single" / "Summon" kee
 const LABEL_W := 62  ## the row-label column (LT-43 §4)
 const LABEL_W_NARROW := 55  ## at 3 columns, labels at FONT_SIZE_NARROW ("Sanity/kill" 53 px)
 const SEPARATION := 2
+const COLUMN_GAP := 6  ## min free px after the widest cell of a value column (LT-59)
 const COLOR_LABEL := Color(0.6, 0.6, 0.64)
 const COLOR_DASH := Color(0.45, 0.45, 0.5)
 const COLOR_VALUE := Color(0.93, 0.93, 0.95)
@@ -20,6 +21,7 @@ const COLOR_LOSS := Color(0.95, 0.45, 0.4)
 const COLOR_RESERVE := Color(0.72, 0.6, 0.95)  ## the occult violet
 const COLOR_CHANGED := Color(0.95, 0.75, 0.3)  ## gold: an upgrade changes this cell
 const COLOR_LIT := Color(1.0, 0.95, 0.6)  ## pale yellow: the beam changes this cell now
+const COLOR_SHADOW := Color(0.66, 0.56, 1.0)  ## LT-70 §5: cold violet, the shadow changes it now
 const COLOR_MUNDANE := Color(0.85, 0.8, 0.6)  ## = SidePanel.COLOR_ROLE
 const COLOR_OCCULT := COLOR_RESERVE
 
@@ -28,6 +30,9 @@ var row_keys: PackedStringArray = []
 ## Row key -> its value labels, left to right (one label when the row spans every column).
 var cells: Dictionary[String, Array] = {}
 var heads: Array[Label] = []
+## Width the table may use (0 = unbounded): the card width minus its vertical scrollbar. COLUMN_GAP
+## shrinks so the label column and the value columns never exceed it (LT-59).
+var max_width := 0
 var _value_font := FONT_SIZE
 var _label_font := FONT_SIZE
 var _shown := []  ## the last set_columns arguments: refresh() calls it every frame
@@ -51,7 +56,7 @@ static func color_for(key: String, value: String) -> Color:
 			return COLOR_GAIN
 		"reserve":
 			return COLOR_RESERVE
-		"beam":
+		"beam", "shadow":
 			return COLOR_GAIN if value.begins_with("+") else COLOR_LOSS
 	return COLOR_VALUE
 
@@ -62,10 +67,12 @@ static func kind_color(kind: String) -> Color:
 
 
 ## Rebuilds the table: `heads[i]` over `cols[i]` (TowerInfo.row_values dictionaries);
-## `lit` (row key -> text with LIT_MARK) overrides column 0. `head_color` colours the heads.
+## `lit` (row key -> text with LIT_MARK) overrides column 0, coloured COLOR_LIT, or
+## COLOR_SHADOW when `shadow` (LT-70 §5: a shadowed tower's cells). `head_color` colours the
+## heads; the head row is hidden when every head is "" (LT-61 §1).
 func set_columns(p_heads: PackedStringArray, cols: Array[Dictionary], lit: Dictionary = {},
-		head_color := COLOR_MUNDANE) -> void:
-	var args := [p_heads, cols, lit, head_color]
+		head_color := COLOR_MUNDANE, shadow := false) -> void:
+	var args := [p_heads, cols, lit, head_color, max_width, shadow]
 	if args == _shown:
 		return
 	_shown = args.duplicate(true)
@@ -84,6 +91,8 @@ func set_columns(p_heads: PackedStringArray, cols: Array[Dictionary], lit: Dicti
 		var h := _label(p_heads[i] if i < p_heads.size() else "", head_color)
 		heads.append(h)
 		head_row.add_child(h)
+	# LT-61 §1: no head row when every head is "" (the build card's single column).
+	head_row.visible = Array(p_heads).any(func(t: String) -> bool: return not t.is_empty())
 	for key: String in row_keys:
 		var row := _row("Row_" + key)
 		row.add_child(_label(_row_label(key), COLOR_LABEL, label_w))
@@ -100,19 +109,20 @@ func set_columns(p_heads: PackedStringArray, cols: Array[Dictionary], lit: Dicti
 			for i in n:
 				var color := color_for(key, shown[i])
 				if i == 0 and lit.has(key):
-					color = COLOR_LIT
+					color = COLOR_SHADOW if shadow else COLOR_LIT
 				elif i > 0 and shown[i] != String(cols[0][key]):
 					color = COLOR_CHANGED
 				var l := _label(shown[i], color)
 				labels.append(l)
 				row.add_child(l)
 		cells[key] = labels
-	_fit_columns(n)
+	_fit_columns(n, label_w)
 
 
 ## Each value column at least as wide as its widest unspanned cell, the same in every row
 ## (so the columns stay aligned), so no value is cut (LT-53/S8: "Ground | Ground | All").
-func _fit_columns(n: int) -> void:
+func _fit_columns(n: int, label_w: int) -> void:
+	var widths: Array[float] = []
 	for i in n:
 		var col: Array[Label] = [heads[i]]
 		for key: String in cells:
@@ -123,8 +133,22 @@ func _fit_columns(n: int) -> void:
 			var f := l.get_theme_font("font")
 			w = maxf(w, f.get_string_size(l.text, HORIZONTAL_ALIGNMENT_LEFT, -1,
 				l.get_theme_font_size("font_size")).x)
+		widths.append(ceilf(w))
+	# The gap between value columns: COLUMN_GAP, less when label + values + separators would
+	# pass max_width (LT-59: "45/s" ran under the scrollbar at 3 columns).
+	var gap := COLUMN_GAP
+	if max_width > 0 and n > 1:
+		var used := label_w + SEPARATION * n
+		for w in widths:
+			used += int(w)
+		gap = clampi((max_width - used) / (n - 1), 0, COLUMN_GAP)
+	for i in n:
+		var col: Array[Label] = [heads[i]]
+		for key: String in cells:
+			if cells[key].size() == n:
+				col.append(cells[key][i])
 		for l in col:
-			l.custom_minimum_size.x = ceilf(w)
+			l.custom_minimum_size.x = widths[i] + (gap if i < n - 1 else 0)
 
 
 ## The text a reader sees in row `key`, column `col` (a spanning cell answers every column).

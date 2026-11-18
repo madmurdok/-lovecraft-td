@@ -55,17 +55,11 @@ func _apply_edits(dir: String, rows: Array, hp: int, enemy_edits: Dictionary) ->
 				root["enemies"][id][k] = fields[k])
 
 
-## LT-30: shrinks the beam's reach to ~0 in the copied economy.json: nothing is ever lit.
-## LT-57: the flare circle too (radius_cells must stay within reach_cells): radius 0.
+## LT-30: shrinks the beam's reach to ~0 in the copied economy.json: the beam lights
+## nothing. LT-69: a fired flare still lights the whole map while it burns.
 func dark_beam(dir: String) -> void:
 	edit(dir, ECON, func(root: Dictionary) -> void:
-		var lh: Dictionary = root["lighthouse"]
-		lh["beam"]["reach_cells"] = 0.0001
-		if lh.has("flare"):
-			var zeros := []
-			for i in lh["beam"]["levels"].size():
-				zeros.append(0)
-			lh["flare"]["radius_cells"] = zeros)
+		root["lighthouse"]["beam"]["reach_cells"] = 0.0001)
 
 
 ## Route length in units of a ground path of `path_cells` cells (each step one cell).
@@ -76,6 +70,12 @@ func ground_length(path_cells: int) -> int:
 ## First tick on which an enemy spawned on `spawn_tick` reaches distance `length`.
 func expected_leak_tick(spawn_tick: int, length: int, units_per_tick: int) -> int:
 	return spawn_tick + (length + units_per_tick - 1) / units_per_tick
+
+
+## LT-63: ticks from a pack's first member entering to its last one at the max pack size.
+func pack_span_ticks(cfg: GameConfig, def_id: String) -> int:
+	var pack: Dictionary = cfg.enemies[def_id].traits["pack"]
+	return (int(pack["max"]) - 1) * SimTime.ticks(pack["spacing_s"])
 
 
 ## Steps `n` times (or until the outcome freezes the sim) and returns the drained events.

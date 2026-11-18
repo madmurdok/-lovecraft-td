@@ -89,7 +89,7 @@ func test_dynamite_shows_ground_only_the_blast_and_the_fuse() -> void:
 	var l1 := d.levels[0]
 	var e: Dictionary = l1.effects
 	_assert_cells(_row("dynamite_crew", l1), {"attack": "Blast", "hits": "Ground"})
-	assert_array(_special(l1)).is_equal(["Blast radius %s cells" % _n(e["aoe_radius"]),
+	assert_array(_special(l1)).is_equal(["Blast radius " + TowerInfo.cells_text(_n(e["aoe_radius"])),
 		"Fuse %s s, thrown ahead" % _n(e["fuse_seconds"])])
 	# Spec example at today's config.
 	if e["fuse_seconds"] == 1.0:
@@ -107,6 +107,7 @@ func test_elder_sign_is_support_with_aura_and_effects_and_no_kind_line() -> void
 	assert_array(_special(l1)).is_equal([
 		"Slows enemies %s%%" % _n(l1.effects["slow"] * 100.0),
 		"Foes take +%s%% damage" % _n((l1.effects["damage_taken_multiplier"] - 1.0) * 100.0),
+		"Shadows nearby towers",  # LT-70 §5
 	])
 	assert_array(Array(TowerInfo.kind_lines(_def("elder_sign"), l1, _cfg.sanity))).is_empty()
 
@@ -128,7 +129,7 @@ func test_necronomicon_lines_and_the_madness_kind_line() -> void:
 	_assert_cells(_row("necronomicon_reader", l1), _attack(l1))
 	_assert_cells(_row("necronomicon_reader", l1), {"attack": "Blast",
 		"reserve": _n(l1.sanity_reserve), "kill": TowerInfo.CELL_DASH})
-	assert_array(_special(l1)).is_equal(["Blast radius %s cells" % _n(l1.effects["aoe_radius"])])
+	assert_array(_special(l1)).is_equal(["Blast radius " + TowerInfo.cells_text(_n(l1.effects["aoe_radius"]))])
 	assert_array(Array(TowerInfo.kind_lines(n, l1, _cfg.sanity))).is_equal([
 		"Madness: x%s, astray" % _n(_cfg.sanity.madness.damage_multiplier)])
 	var got := Array(TowerInfo.kind_lines(n, n.branches["a"], _cfg.sanity))
@@ -465,7 +466,7 @@ func test_battery_shows_its_dead_zone_after_the_range_and_its_shell_effects() ->
 	if l1.range_cells == 7.0 and l1.min_range == 2.0:
 		assert_str(_row("coast_battery", l1)["range"]).is_equal("2–7")
 	assert_array(_special(d.branches["a"])).contains(["Ignores armor"])
-	assert_array(_special(d.branches["b"])).contains(["Blast radius 1 cells"])
+	assert_array(_special(d.branches["b"])).contains(["Blast radius 1 cell"])
 	assert_array(_special(d.branches["b"])).not_contains(["Ignores armor"])
 	for id: String in ["rifleman", "harpooner", "dynamite_crew"]:
 		assert_str(_row(id, _def(id).levels[0])["range"]).not_contains("–")
@@ -496,10 +497,13 @@ func test_searchlight_is_support_that_reveals_and_slows_with_no_mundane_kind_lin
 	assert_array(_special(l1)).is_equal([
 		"Reveals fakes",
 		"Slows enemies %s%%" % _n(l1.effects["slow"] * 100.0),
+		"Lights towers and foes",  # LT-70 §5
 	])
 	var b := d.branches["b"]
+	# LT-70: Blinding slows hard and no longer marks foes.
 	assert_array(_special(b)).contains(["Reveals fakes",
-		"Foes take +%s%% damage" % _n((b.effects["damage_taken_multiplier"] - 1.0) * 100.0)])
+		"Slows enemies %s%%" % _n(b.effects["slow"] * 100.0)])
+	assert_bool(b.effects.has("damage_taken_multiplier")).is_false()
 	# It never shoots: no Fraying miss line and no kill regen on any level.
 	assert_float(_cfg.sanity.thresholds["fraying"].miss_chance).is_greater(0.0)
 	for l: TowerDef.Level in [d.levels[0], d.levels[1], d.branches["a"], b]:
@@ -530,3 +534,80 @@ func test_resonator_reads_its_scaling_and_the_factor_at_current_sanity() -> void
 	var rifle := _def("rifleman")
 	assert_str(TowerInfo.row_values(rifle, rifle.levels[0], _cfg, 40.0)["dps"]) \
 		.is_equal(_row("rifleman", rifle.levels[0])["dps"])
+
+
+# --- LT-61 §2: the build list's Trait cell ---------------------------------------------------
+
+## trait_text for each shipped tower's L1, the numbers read from config: an occult reserve
+## "Res N" first, then Ground, Blind N (min_range), Line (pierce), Reveal, else the dash.
+func test_trait_text_of_every_shipped_tower() -> void:
+	var want := {
+		"rifleman": TowerInfo.CELL_DASH,
+		"harpooner": "Line",
+		"elder_sign": "Res " + _n(_def("elder_sign").levels[0].sanity_reserve),
+		"necronomicon_reader": "Res " + _n(_def("necronomicon_reader").levels[0].sanity_reserve),
+		"dynamite_crew": "Ground",
+		"coast_battery": "Blind " + _n(_def("coast_battery").levels[0].min_range),
+		"searchlight": "Reveal",
+		"resonator": "Res " + _n(_def("resonator").levels[0].sanity_reserve),
+		"silver_key": "Res " + _n(_def("silver_key").levels[0].sanity_reserve),
+		"summoning_circle": "Res " + _n(_def("summoning_circle").levels[0].sanity_reserve),
+	}
+	assert_array(_cfg.towers.keys()).contains_exactly_in_any_order(want.keys())
+	for id: String in want:
+		assert_str(TowerInfo.trait_text(_def(id), _def(id).levels[0])).override_failure_message(id) \
+			.is_equal(want[id])
+
+
+## The rule order on synthetic levels: a reserve beats Ground beats Blind beats Line beats
+## Reveal beats Blast; a mundane reserve is no "Res"; a level with none of them is the dash.
+func test_trait_text_rule_order_blast_and_dash_fallbacks() -> void:
+	var occult := TowerDef.new()
+	occult.kind = "occult"
+	var mundane := TowerDef.new()
+	mundane.kind = "mundane"
+	var ground := TowerDef.new()
+	ground.kind = "mundane"
+	ground.targets = "ground"
+	var l := TowerDef.Level.new()
+	l.effects = {"aoe_radius": 1.5}
+	assert_str(TowerInfo.trait_text(mundane, l)).is_equal("Blast")
+	l.effects = {"aoe_radius": 1.5, "reveal_fakes": 1}
+	assert_str(TowerInfo.trait_text(mundane, l)).is_equal("Reveal")
+	l.effects = {"aoe_radius": 1.5, "reveal_fakes": 1, "pierce": 1}
+	assert_str(TowerInfo.trait_text(mundane, l)).is_equal("Line")
+	l.min_range = 2.5
+	assert_str(TowerInfo.trait_text(mundane, l)).is_equal("Blind 2.5")
+	assert_str(TowerInfo.trait_text(ground, l)).is_equal("Ground")
+	l.sanity_reserve = 7.0
+	assert_str(TowerInfo.trait_text(ground, l)).is_equal("Ground")  # mundane: no "Res"
+	assert_str(TowerInfo.trait_text(occult, l)).is_equal("Res 7")
+	var plain := TowerDef.Level.new()
+	assert_str(TowerInfo.trait_text(mundane, plain)).is_equal(TowerInfo.CELL_DASH)
+	assert_str(TowerInfo.trait_text(occult, plain)).is_equal(TowerInfo.CELL_DASH)  # reserve 0
+
+
+# --- LT-59: "1 cell" / "N cells" ---------------------------------------------------------------
+
+func test_cells_text_is_singular_only_for_exactly_one() -> void:
+	assert_str(TowerInfo.cells_text("1")).is_equal("1 cell")
+	for n: String in ["0", "0.5", "1.5", "2", "10"]:
+		assert_str(TowerInfo.cells_text(n)).override_failure_message(n).is_equal(n + " cells")
+
+
+func test_blast_banish_and_back_lines_count_cells_in_the_singular_at_one() -> void:
+	assert_array(Array(TowerInfo.effect_lines({"aoe_radius": 1.0}))) \
+		.is_equal(["Blast radius 1 cell"])
+	assert_array(Array(TowerInfo.effect_lines({"aoe_radius": 1.5}))) \
+		.is_equal(["Blast radius 1.5 cells"])
+	assert_array(Array(TowerInfo.effect_lines({"banish_cells": 1.0}))) \
+		.is_equal(["Banish 1 cell back"])
+	assert_array(Array(TowerInfo.effect_lines({"banish_cells": 6.0}))) \
+		.is_equal(["Banish 6 cells back"])
+	assert_array(Array(TowerInfo.effect_lines({"banish_cells": 1.0, "banish_targets": 3.0}))) \
+		.is_equal(["Banish 3 foes 1 cell"])
+	assert_array(Array(TowerInfo.effect_lines({"banish_cells": 2.0, "banish_targets": 3.0}))) \
+		.is_equal(["Banish 3 foes 2 cells"])
+	assert_str(TowerInfo.special_short(_level({"banish_cells": 1.0}))).contains("ack 1 cell")
+	assert_str(TowerInfo.special_short(_level({"banish_cells": 1.0}))).not_contains("cells")
+	assert_str(TowerInfo.special_short(_level({"banish_cells": 4.0}))).contains("ack 4 cells")

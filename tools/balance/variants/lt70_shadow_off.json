@@ -1,0 +1,11 @@
+{
+  "description": "LT-70 arm B: the shadow does nothing (neutral shadow block); light, casts_* flags and the new slows stay, so only the shadow's share is removed",
+  "patch": {
+    "economy.json": {
+      "shadow": {
+        "mundane": { "fire_interval_mult": 1.0, "miss_chance_add": 0.0 },
+        "occult": { "power_mult": 1.0 }
+      }
+    }
+  }
+}

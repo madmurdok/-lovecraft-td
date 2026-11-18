@@ -1,20 +1,18 @@
 class_name FlareRadialTest
 extends WaveTestBase
-## LT-57 §7 (radial flare): the circle of flare_radius() cells around the lighthouse cell
-## centre lights towers and enemies in every direction (boundary inclusive), only while the
-## flare burns; the radius follows the lighthouse level (6/8/10); lit-in-circle effects are the
-## beam's (Q2): enemies x enemy_speed_mult and no Madness buff, mundane x fire_interval_mult,
-## occult x power_mult; fakes are slowed and shot but never revealed (Q3).
+## LT-57 §7 (radial flare), LT-69 (whole map): while the flare burns every tower and enemy
+## is lit, in every direction and at any distance, only while it burns; lit-by-flare
+## effects are the beam's (Q2): enemies x enemy_speed_mult and no Madness buff, mundane x
+## fire_interval_mult, occult x power_mult; fakes are slowed and shot but never revealed (Q3).
 ## Map: TowerTestBase ROWS, lighthouse cell (14, 0), centre (14.5, 0.5).
 
 const RIFLE := "rifleman"
 const NECRO := "necronomicon_reader"
-const EPS := 1.0e-3  ## relative step across the circle's edge
-const IN_CELL := Vector2i(11, 1)  ## centre (11.5, 1.5): v = (-3, 1), inside every radius
+const IN_CELL := Vector2i(11, 1)  ## centre (11.5, 1.5): v = (-3, 1)
 
 
 func before() -> void:
-	lit_beam = true  # the default fixture darkens the beam and zeroes the radius
+	lit_beam = true  # the default fixture darkens the beam
 
 
 # --- helpers ---------------------------------------------------------------------------------
@@ -53,12 +51,6 @@ func _lit(sim: Simulation, v: Vector2) -> bool:
 	return sim._is_lit(lh.x + 0.5 + v.x, lh.y + 0.5 + v.y)
 
 
-## Lighthouse centre + v, in the frame of in_flare_radius.
-func _at(sim: Simulation, v: Vector2) -> Vector2:
-	var lh := sim.config.map.lighthouse
-	return Vector2(lh.x + 0.5 + v.x, lh.y + 0.5 + v.y)
-
-
 func _mods(e: SimEnemy) -> Array:
 	return [snappedf(e.speed_mult, 0.0001), snappedf(e.damage_taken_mult, 0.0001)]
 
@@ -72,73 +64,40 @@ func _madness(sim: Simulation) -> void:
 
 # --- geometry --------------------------------------------------------------------------------
 
-## b1/b2: all eight directions (behind the lighthouse, off the map too), the edge at r on the
-## axes inclusive, r(1 + EPS) out; nothing lit before the flare; in_flare_radius is the same
-## geometry whether or not a flare burns.
-func test_the_circle_lights_every_direction_up_to_the_radius_inclusive() -> void:
+## b1/b2 (LT-69): all eight directions (behind the lighthouse, off the map too), near and
+## far, are lit while the flare burns and not before; dark again once it runs out.
+func test_the_flare_lights_every_direction_at_any_distance() -> void:
 	var sim := _dark()
-	var r := sim.flare_radius()
-	assert_float(r).is_equal(6.0)
 	var d := sqrt(0.5)
 	var dirs: Array[Vector2] = [Vector2(-1, 0), Vector2(1, 0), Vector2(0, -1), Vector2(0, 1),
 		Vector2(-d, -d), Vector2(d, -d), Vector2(-d, d), Vector2(d, d)]
-	var axes := 4
 	for flaring: bool in [false, true]:
 		if flaring:
 			_fire(sim)
-		for i in dirs.size():
-			var u := dirs[i]
-			# Exact edge on the axes; just inside on the diagonals (sqrt(0.5) is not exact).
-			var edge := u * (r if i < axes else r * (1.0 - EPS))
-			var out := u * r * (1.0 + EPS)
+		for u in dirs:
 			var msg := "flaring=%s dir=%s" % [flaring, u]
-			assert_bool(_lit(sim, edge)).override_failure_message(msg + " edge").is_equal(flaring)
 			assert_bool(_lit(sim, u * 0.5)).override_failure_message(msg + " near").is_equal(flaring)
-			assert_bool(_lit(sim, out)).override_failure_message(msg + " out").is_false()
-			assert_bool(sim.in_flare_radius(_at(sim, edge))).override_failure_message(msg).is_true()
-			assert_bool(sim.in_flare_radius(_at(sim, out))).override_failure_message(msg).is_false()
-	# The flare runs out: the circle is dark again.
-	run(sim, SimTime.ticks(sim.config.economy.flare.seconds))
+			assert_bool(_lit(sim, u * 30.0)).override_failure_message(msg + " far").is_equal(flaring)
+	# The flare runs out: everything is dark again.
+	run(sim, SimTime.ticks(sim.flare_seconds()))
 	assert_int(sim.state.flare_ticks_left).is_equal(0)
 	assert_bool(_lit(sim, Vector2(-1, 0))).is_false()
 
 
-## b2: a point the beam lights beyond the circle stays lit with or without a flare.
-func test_beam_lit_points_outside_the_circle_stay_lit_either_way() -> void:
+## b2: a point the beam lights stays lit with or without a flare.
+func test_beam_lit_points_stay_lit_either_way() -> void:
 	var sim := tsim()  # the starting beam points along the path (-x), reach 16
 	sim.config.economy.beam.turn_t = 0.0
-	var far := Vector2(-(sim.flare_radius() + 3.0), 0.0)
-	assert_bool(sim.in_flare_radius(_at(sim, far))).is_false()
+	var far := Vector2(-9.0, 0.0)
 	assert_bool(_lit(sim, far)).is_true()
 	_fire(sim)
 	assert_bool(_lit(sim, far)).is_true()
 
 
-## b3 (Q4): radius_cells[lighthouse_level] = 6 / 8 / 10; a point at 7 is lit only from L2.
-func test_the_radius_follows_the_lighthouse_level() -> void:
-	var sim := _dark()
-	var radii: Array = sim.config.economy.flare.radius_cells
-	assert_array(radii).is_equal([6.0, 8.0, 10.0])
-	var seven_lit := []
-	for level in radii.size():
-		if level > 0:
-			assert_int(sim.upgrade_lighthouse()).is_equal(R.OK)
-		assert_int(sim.state.lighthouse_level).is_equal(level)
-		var r: float = radii[level]
-		assert_float(sim.flare_radius()).is_equal(r)
-		_fire(sim)
-		assert_bool(_lit(sim, Vector2(-r, 0))).override_failure_message("L%d edge" % (level + 1)) \
-			.is_true()
-		assert_bool(_lit(sim, Vector2(0, r * (1.0 + EPS)))) \
-			.override_failure_message("L%d out" % (level + 1)).is_false()
-		seven_lit.append(_lit(sim, Vector2(-7, 0)))
-	assert_array(seven_lit).is_equal([false, true, true])
+# --- lit-by-flare effects (Q2, Q3) ----------------------------------------------------------
 
-
-# --- lit-in-circle effects (Q2, Q3) ----------------------------------------------------------
-
-## b5: an enemy behind the beam, inside the circle, is lit while the flare burns: x0.5 and no
-## Madness buff; one outside keeps the buff and its speed; both are back after the flare.
+## b5: enemies behind the beam, near and far, are lit while the flare burns: x0.5 and no
+## Madness buff; both are back to the buff after the flare.
 func test_an_enemy_behind_the_beam_is_lit_slowed_and_loses_the_madness_buff() -> void:
 	var sim := _away()
 	var f := sim.config.economy.flare
@@ -148,36 +107,37 @@ func test_an_enemy_behind_the_beam_is_lit_slowed_and_loses_the_madness_buff() ->
 		snappedf(mad.enemy_damage_taken_multiplier, 0.0001)]
 	assert_array(buffed).is_not_equal([1.0, 1.0])
 	var inside := put(sim, "cultist", 11.0)  # (11.5, 0.5): 3 cells behind the lighthouse
-	var outside := put(sim, "cultist", 3.0)  # 11 cells away
+	var outside := put(sim, "cultist", 3.0)  # 11 cells away, lit too (LT-69)
 	sim.step()
 	assert_bool(inside.lit).is_false()
 	assert_array(_mods(inside)).is_equal(buffed)
 	_fire(sim)
-	var n := SimTime.ticks(f.seconds)
+	var n := SimTime.ticks(sim.flare_seconds())
 	for i in n:
 		_madness(sim)  # hold MADNESS: sanity may drift tick to tick
 		sim.step()
 		assert_bool(inside.lit).override_failure_message("tick %d" % i).is_true()
 		assert_array(_mods(inside)).override_failure_message("tick %d" % i) \
 			.is_equal([snappedf(f.enemy_speed_mult, 0.0001), 1.0])
-		assert_bool(outside.lit).is_false()
-		assert_array(_mods(outside)).is_equal(buffed)
+		assert_bool(outside.lit).override_failure_message("tick %d" % i).is_true()
+		assert_array(_mods(outside)).override_failure_message("tick %d" % i) \
+			.is_equal([snappedf(f.enemy_speed_mult, 0.0001), 1.0])
 	_madness(sim)
 	sim.step()
 	assert_bool(inside.lit).is_false()
 	assert_array(_mods(inside)).is_equal(buffed)
 
 
-## b5 (Q3): a fake in the circle is lit and slowed like a real one, still shot at, and never
+## b5 (Q3): a fake is lit and slowed like a real one, still shot at, and never
 ## revealed.
-func test_a_fake_in_the_circle_is_slowed_shot_and_not_revealed() -> void:
+func test_a_fake_is_slowed_shot_and_not_revealed() -> void:
 	var sim := _away()
 	var f := sim.config.economy.flare
 	var rifle := build(sim, RIFLE, IN_CELL)
 	var fake := put(sim, "cultist", 11.0, HUGE_HP, true)
 	_fire(sim)
 	var shots := 0
-	for i in SimTime.ticks(f.seconds):
+	for i in SimTime.ticks(sim.flare_seconds()):
 		sim.step()
 		for ev in of_type(sim.drain_events(), SimEvent.Type.SHOT):
 			if ev.id == rifle.id and ev.data["target"] == fake.id:
@@ -189,9 +149,9 @@ func test_a_fake_in_the_circle_is_slowed_shot_and_not_revealed() -> void:
 	assert_bool(fake.is_live()).is_true()
 
 
-## b5: an occult tower in the circle works at power_mult while the flare burns (and at full
+## b5: an occult tower works at power_mult while the flare burns (and at full
 ## power without it); the beam lights neither.
-func test_an_occult_tower_in_the_circle_is_lit_at_power_mult() -> void:
+func test_an_occult_tower_is_lit_at_power_mult() -> void:
 	var pm := tconfig().economy.beam.occult_power_mult
 	assert_float(pm).is_equal(0.7)
 	for flaring: bool in [false, true]:
@@ -207,9 +167,9 @@ func test_an_occult_tower_in_the_circle_is_lit_at_power_mult() -> void:
 			HUGE_HP - dmg * (pm if flaring else 1.0), 0.0001)
 
 
-## b5: a mundane tower in the circle fires at fire_interval x fire_interval_mult while the
+## b5: a mundane tower fires at fire_interval x fire_interval_mult while the
 ## flare burns.
-func test_a_mundane_tower_in_the_circle_fires_faster_while_the_flare_burns() -> void:
+func test_a_mundane_tower_fires_faster_while_the_flare_burns() -> void:
 	var fi: float = tconfig().towers[RIFLE].levels[0].fire_interval
 	var m := tconfig().economy.beam.mundane_fire_interval_mult
 	var gaps := []
@@ -224,3 +184,61 @@ func test_a_mundane_tower_in_the_circle_fires_faster_while_the_flare_burns() -> 
 		assert_int(ticks.size()).is_greater_equal(2)
 		gaps.append(ticks[1] - ticks[0])
 	assert_array(gaps).is_equal([maxi(1, SimTime.ticks(fi)), maxi(1, SimTime.ticks(fi * m))])
+
+
+# --- LT-69/S2: duration by level, far corners, no flare block ---------------------------------
+
+## b4: the burn time follows the lighthouse level (5 / 6 / 7 s), in flare_ticks_left and in
+## the FLARE_FIRED ticks, and the light goes out after exactly that many ticks.
+func test_duration_follows_the_lighthouse_level() -> void:
+	var expected := [5.0, 6.0, 7.0]
+	for level in 3:
+		var sim := _away()
+		sim.state.lighthouse_level = level
+		assert_float(sim.flare_seconds()).is_equal(expected[level])
+		var n := SimTime.ticks(expected[level])
+		sim.state.flare_cooldown_ticks = 0
+		sim.state.oil = sim.config.economy.flare.cost_oil
+		sim.drain_events()
+		assert_int(sim.fire_flare()).is_equal(R.OK)
+		assert_int(sim.state.flare_ticks_left).override_failure_message("L%d" % (level + 1)).is_equal(n)
+		var fired := of_type(sim.drain_events(), SimEvent.Type.FLARE_FIRED)
+		assert_int(fired.size()).is_equal(1)
+		assert_int(fired[0].data["ticks"]).override_failure_message("L%d" % (level + 1)).is_equal(n)
+		run(sim, n - 1)
+		assert_bool(_lit(sim, Vector2(-30, 0))).is_true()
+		run(sim, 1)
+		assert_int(sim.state.flare_ticks_left).is_equal(0)
+		assert_bool(_lit(sim, Vector2(-30, 0))).is_false()
+
+
+## b5: no lighthouse.flare block, no seconds.
+func test_flare_seconds_is_zero_without_a_flare_block() -> void:
+	var sim := _dark()
+	assert_float(sim.flare_seconds()).is_greater(0.0)
+	sim.config.economy.flare = null
+	assert_float(sim.flare_seconds()).is_equal(0.0)
+
+
+## b1/b2: a tower and enemies at the far end of the map (the lighthouse is 14 cells away)
+## are lit and slowed only while the flare burns; real and fake alike, fakes unrevealed.
+func test_far_tower_and_enemies_are_lit_and_slowed_by_the_flare() -> void:
+	var sim := _away()
+	var f := sim.config.economy.flare
+	var tower := build(sim, RIFLE, Vector2i(0, 1))
+	var real := put(sim, "cultist", 0.0)
+	var fake := put(sim, "cultist", 0.0, HUGE_HP, true)
+	sim.step()
+	for lit_thing: Variant in [tower, real, fake]:
+		assert_bool(lit_thing.lit).is_false()
+	_fire(sim)
+	sim.step()
+	for lit_thing: Variant in [tower, real, fake]:
+		assert_bool(lit_thing.lit).is_true()
+	assert_float(real.speed_mult).is_equal_approx(f.enemy_speed_mult, 1e-9)
+	assert_float(fake.speed_mult).is_equal_approx(f.enemy_speed_mult, 1e-9)
+	assert_bool(fake.revealed).is_false()
+	run(sim, SimTime.ticks(sim.flare_seconds()))
+	for lit_thing: Variant in [tower, real, fake]:
+		assert_bool(lit_thing.lit).is_false()
+	assert_float(real.speed_mult).is_equal(1.0)

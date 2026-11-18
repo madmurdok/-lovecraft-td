@@ -1,0 +1,8 @@
+{
+  "description": "starting_gold 200 -> 300: one more tower before wave 1 (LT-68)",
+  "patch": {
+    "economy.json": {
+      "starting_gold": 300
+    }
+  }
+}

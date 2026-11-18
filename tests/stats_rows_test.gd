@@ -64,7 +64,7 @@ func test_rows_are_the_ten_rows_of_the_note_in_order() -> void:
 		keys.append(row[0])
 		labels.append(row[1])
 	assert_array(labels).is_equal(["Attack", "Damage", "Every, s", "DPS", "Range", "Hits",
-		"Sanity/kill", "Reserve", "In beam", "Special"])
+		"Sanity/kill", "Reserve", "In light", "In shadow", "Special"])
 	for id: String in _cfg.towers:
 		for st: Array in _states(_def(id)):
 			var v := TowerInfo.row_values(_def(id), st[1], _cfg)
@@ -345,7 +345,7 @@ func test_special_cell_says_what_no_row_says() -> void:
 	_eq(TowerInfo.row_values(_def("dynamite_crew"), dyn, _cfg)["special"],
 		"r %s, fuse %s s" % [_n(_e(dyn, "aoe_radius")), _n(_e(dyn, "fuse_seconds"))], "dynamite")
 	var sign := _def("elder_sign").levels[0]
-	_eq(TowerInfo.special_short(sign), "Slow %s%%, +%s%% taken" % [_n(_e(sign, "slow") * 100.0),
+	_eq(TowerInfo.special_short(sign), "Slow %s%%, +%s%% taken, shadows" % [_n(_e(sign, "slow") * 100.0),
 		_n((_e(sign, "damage_taken_multiplier") - 1.0) * 100.0)], "elder sign")
 	var res := _def("resonator").levels[0]
 	_eq(TowerInfo.special_short(res), "No armor, ×%s at 0 sanity" % _n(1.0
@@ -367,3 +367,86 @@ func test_upgrade_path_names_the_l2_price_and_both_branches() -> void:
 		var def := _def(id)
 		_eq(TowerInfo.upgrade_path_text(def), "L2 $%d · then A %s or B %s" % [
 			def.levels[1].upgrade_cost, def.branches["a"].name, def.branches["b"].name], id)
+
+
+# --- LT-70 §5: the "In shadow" row and the shadowed state ----------------------------------
+
+func test_the_shadow_row_reads_the_shadow_block() -> void:
+	var sh := _cfg.economy.shadow
+	var rifle := _def("rifleman")
+	var fire := "%s%s%%" % [MINUS, _n(roundf((1.0 - 1.0 / sh.mundane_fire_interval_mult) * 100.0))]
+	var power := "+%s%%" % _n(roundf((sh.occult_power_mult - 1.0) * 100.0))
+	assert_str(TowerInfo.row_values(rifle, rifle.levels[0], _cfg)["shadow"]).is_equal(fire)
+	var necro := _def("necronomicon_reader")
+	assert_str(TowerInfo.row_values(necro, necro.levels[0], _cfg)["shadow"]).is_equal(power)
+	var sl := _def("searchlight")
+	assert_str(TowerInfo.row_values(sl, sl.levels[0], _cfg)["shadow"]).is_equal(DASH)
+	# Follows a config edit; the row is a dash with no shadow block.
+	sh.occult_power_mult = 2.0
+	assert_str(TowerInfo.row_values(necro, necro.levels[0], _cfg)["shadow"]).is_equal("+100%")
+	_cfg.economy.shadow = null
+	assert_str(TowerInfo.row_values(necro, necro.levels[0], _cfg)["shadow"]).is_equal(DASH)
+	assert_str(TowerInfo.row_values(rifle, rifle.levels[0], _cfg)["shadow"]).is_equal(DASH)
+
+
+func test_shadowed_values_use_the_shadow_multipliers_with_the_mark() -> void:
+	var sh := _cfg.economy.shadow
+	var rifle := _def("rifleman")
+	var s := rifle.levels[0]
+	var v := TowerInfo.lit_values(rifle, s, _cfg, -1.0, true)
+	_eq(v["every"], _n(s.fire_interval * sh.mundane_fire_interval_mult) + STAR, "every")
+	_eq(v["dps"], _d1(_dps(s) / sh.mundane_fire_interval_mult) + STAR, "dps")
+	var necro := _def("necronomicon_reader")
+	var n := necro.levels[0]
+	var nv := TowerInfo.lit_values(necro, n, _cfg, _cfg.sanity.max_sanity, true)
+	_eq(nv["damage"], _n(n.damage * sh.occult_power_mult) + STAR, "damage")
+	_eq(nv["dps"], _d1(_dps(n) * sh.occult_power_mult) + STAR, "dps")
+	var circle := _def("summoning_circle")
+	var c := circle.levels[1]
+	_eq(TowerInfo.lit_values(circle, c, _cfg, -1.0, true)["damage"],
+		_d1(_e(c, "summon_dps") * sh.occult_power_mult) + STAR, "unit dps")
+	assert_dict(TowerInfo.lit_values(_def("searchlight"), _def("searchlight").levels[0], _cfg,
+		-1.0, true)).is_empty()
+
+
+func test_shadowed_effects_and_status_line_per_kind() -> void:
+	var sh := _cfg.economy.shadow
+	var sign := _def("elder_sign")
+	var s := sign.levels[0]
+	var fx := TowerInfo.lit_effects(sign, s, _cfg, true)
+	assert_float(fx["slow"]).is_equal_approx(_e(s, "slow") * sh.occult_power_mult, 1e-6)
+	assert_float(fx["damage_taken_multiplier"]).is_equal_approx(
+		1.0 + (_e(s, "damage_taken_multiplier") - 1.0) * sh.occult_power_mult, 1e-6)
+	var rifle := _def("rifleman")
+	assert_dict(TowerInfo.lit_effects(rifle, rifle.levels[0], _cfg, true)).is_empty()
+	var fire := "* In shadow now: fire %s%s%%, +%s%% misses" % [MINUS,
+		_n(roundf((1.0 - 1.0 / sh.mundane_fire_interval_mult) * 100.0)),
+		_n(sh.mundane_miss_chance_add * 100.0)]
+	_eq(TowerInfo.lit_line(rifle, rifle.levels[0], _cfg, true), fire, "rifle")
+	_eq(TowerInfo.lit_line(sign, s, _cfg, true), "* In shadow now: +%s%% power"
+		% _n(roundf((sh.occult_power_mult - 1.0) * 100.0)), "sign")
+	_eq(TowerInfo.lit_line(_def("searchlight"), _def("searchlight").levels[0], _cfg, true), "",
+		"searchlight")
+
+
+func test_kind_lines_add_the_shadow_miss_line_for_a_shooter_only() -> void:
+	var rifle := _def("rifleman")
+	var lines := Array(TowerInfo.kind_lines(rifle, rifle.levels[0], _cfg.sanity, false, 0.1))
+	assert_array(lines).contains(["+10% misses in shadow"])
+	assert_array(Array(TowerInfo.kind_lines(rifle, rifle.levels[0], _cfg.sanity, false, 0.0))) \
+		.not_contains(["+10% misses in shadow"])
+	for id: String in ["necronomicon_reader", "searchlight"]:
+		var d := _def(id)
+		assert_array(Array(TowerInfo.kind_lines(d, d.levels[0], _cfg.sanity, false, 0.1))) \
+			.not_contains(["+10% misses in shadow"])
+
+
+func test_effect_lines_and_special_short_name_the_casters() -> void:
+	var sl := _def("searchlight")
+	var sign := _def("elder_sign")
+	assert_array(Array(TowerInfo.effect_lines(sl.levels[0].effects))) \
+		.contains(["Lights towers and foes"])
+	assert_array(Array(TowerInfo.effect_lines(sign.levels[0].effects))) \
+		.contains(["Shadows nearby towers"])
+	assert_str(TowerInfo.special_short(sl.levels[0])).contains("lights")
+	assert_str(TowerInfo.special_short(sign.levels[0])).contains("shadows")

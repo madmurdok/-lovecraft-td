@@ -1,0 +1,11 @@
+{
+  "description": "starting_gold 200 -> 300: one more tower before wave 1 (LT-68) ; flare off",
+  "patch": {
+    "economy.json": {
+      "starting_gold": 300
+    }
+  },
+  "flags": [
+    "--flare=0"
+  ]
+}
