@@ -159,6 +159,10 @@ Owner, verbatim: "сложно тестить маяк и другие штук�
 
 Decision: "Песочница + задача на баланс (Recommended)" -> LT-67 (`--sandbox` launch flag), LT-68 (ease the early game after LT-63). Lighthouse, flare and Summoning Circle verdicts wait for a replay with these.
 
+Run 2, 2026-11-18, release-0.4.0 at 23eb4d8 (after LT-69 whole-map flare, LT-70 light vs shadow,
+LT-71 balance pass). Owner, verbatim: "В целом баланс норм, правда волн стоит делать побольше, но
+это потом будем делать". More waves filed as a backlog task.
+
 ## LT-71 sensitivity sweep (x2/div2)
 
 Measurement slice LT-71/S4, branch `balance/LT-71-light-shadow-tuning` at 058de50, seeds 1000..1019, flare on, 10 strategies. Variants `tools/balance/variants/lt71x_*.json` (untracked). Cells: losses of 20; `eN` = runs surviving waves 1-3 (target >= 15); `(m)` = mean waves survived (non-saturating metric). Strategies not listed are stated as equal to baseline or move little. `data/` is unchanged; the owner picks the numbers.
