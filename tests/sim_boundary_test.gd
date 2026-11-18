@@ -906,13 +906,8 @@ func _dispatch(game: Game, c: Array) -> int:
 
 
 func _frame_run(config: GameConfig, frame_seed: int) -> Game:
-	_vp = SubViewport.new()
-	_vp.size = Vector2i(1200, 675)
-	add_child(_vp)
-	var game := Game.new()
-	game.setup(config, 7)
-	_vp.add_child(game)
-	game.set_process(false)  # advance() below is the body of Game._process
+	_vp = GameFixture.make_viewport(self)
+	var game := GameFixture.make_game(_vp, config, 7)  # advance() below is the body of Game._process
 	await get_tree().process_frame
 	_load_cells(config)
 	game.sim.debug_set_sanity(70.0)

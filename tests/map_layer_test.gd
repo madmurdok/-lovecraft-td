@@ -16,9 +16,7 @@ func before_test() -> void:
 	var r := GameConfig.load_from_dir("res://data")
 	assert_bool(r.ok).override_failure_message("\n".join(r.errors)).is_true()
 	_config = r.config
-	_vp = SubViewport.new()
-	_vp.size = Vector2i(1200, 675)
-	add_child(_vp)
+	_vp = GameFixture.make_viewport(self)
 
 
 func after_test() -> void:
@@ -30,10 +28,7 @@ func after_test() -> void:
 
 ## A Game that only advances through advance(): its own _process is switched off.
 func _start_game() -> void:
-	_game = Game.new()
-	_game.setup(_config, 7)
-	_vp.add_child(_game)
-	_game.set_process(false)
+	_game = GameFixture.make_game(_vp, _config, 7)
 	await _frames(2)
 
 

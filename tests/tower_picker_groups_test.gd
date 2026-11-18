@@ -38,9 +38,7 @@ var _ten_occult: Array = []
 
 
 func before_test() -> void:
-	_vp = SubViewport.new()
-	_vp.size = Vector2i(1200, 675)
-	add_child(_vp)
+	_vp = GameFixture.make_viewport(self)
 
 
 func after_test() -> void:
@@ -107,10 +105,7 @@ func _ten_config() -> GameConfig:
 
 func _start_game(config: GameConfig) -> void:
 	_config = config
-	_game = Game.new()
-	_game.setup(_config, 7)
-	_vp.add_child(_game)
-	_game.set_process(false)
+	_game = GameFixture.make_game(_vp, _config, 7)
 	await get_tree().process_frame
 
 
