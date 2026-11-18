@@ -32,6 +32,9 @@ var paused := false
 var run_seed := 0
 var frame_stats: FrameStats  ## LT-38 P1: null unless `--frame-stats` in a debug build
 var _last_frame_usec := 0
+## LT-62 P2: SimEvent type name -> count of the events consumed in the latest advance (only
+## with frame_stats); a spike line reports the frame before it, whose draw took the time.
+var _frame_events := {}
 var sandbox := false  ## LT-67: `--sandbox` in a debug build
 
 var board: Board
@@ -148,13 +151,35 @@ func skip_ahead() -> Simulation.CommandResult:
 	return call_wave()
 
 
+## LT-62 P2: the context of a spike line at wall clock `now_usec`: run time, sim tick, sanity
+## state, live enemies, towers, board effects, window focus and the events consumed in the
+## previous frame (the one whose process + draw the spike interval covers). Read-only.
+func spike_context(now_usec: int) -> Dictionary:
+	var st := sim.state
+	var win: Window = get_window() if is_inside_tree() else null
+	return {
+		"t": "%.2fs" % (now_usec / 1000000.0),
+		"tick": st.tick,
+		"sanity": SimState.SanityState.keys()[st.sanity_state],
+		"enemies": st.enemies.size(),
+		"towers": st.towers.size(),
+		"effects": board.effects.size() if board != null else 0,
+		"focus": win.has_focus() if win != null else false,
+		"events": _frame_events.duplicate(),
+	}
+
+
 ## One frame: runs the steps SimClock grants, consumes the events, redraws.
 func advance(delta: float) -> void:
 	if frame_stats != null:
 		var now := Time.get_ticks_usec()
 		if _last_frame_usec > 0:
-			frame_stats.push((now - _last_frame_usec) / 1000.0)
+			var ms := (now - _last_frame_usec) / 1000.0
+			frame_stats.push(ms)
+			if FrameStats.is_spike(ms):
+				print(FrameStats.spike_line(ms, spike_context(now)))
 		_last_frame_usec = now
+		_frame_events.clear()
 	var steps := clock.advance(delta)
 	for i in steps:
 		sim.step()
@@ -290,6 +315,9 @@ func _after_command() -> void:
 
 func _consume_events() -> void:
 	for ev in sim.drain_events():
+		if frame_stats != null:
+			var type_name: String = SimEvent.Type.keys()[ev.type]
+			_frame_events[type_name] = _frame_events.get(type_name, 0) + 1
 		board.on_event(ev)
 		sanity_fx.on_event(ev)
 		relic_tokens.on_event(ev)
