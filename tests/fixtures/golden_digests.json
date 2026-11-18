@@ -22,24 +22,6 @@
       "final": "tick=9181 gold=55 sanity=37.2500000000016 hp=0 outcome=2 wave=5 next_id=193 towers=5 log=63",
       "final_sha": "4ea2eab02ff3a2c3d26ae1f58c8869e5d065560200ecccd103afe52fbe6537c2"
     },
-    "bot/battery/1001": {
-      "events": 69,
-      "events_sha": "5f74d86979e5368ac1f1eac46407b81ab43a4fda98d802e4d062c6503f8e8d1c",
-      "buckets": [
-        "5f74d86979e5368a"
-      ],
-      "final": "tick=900 gold=30 sanity=100.0 hp=20 outcome=0 wave=1 next_id=17 towers=4 log=5",
-      "final_sha": "b67bca96e01a804c49d46e0b660761350c78dbfd6f203aa2e3ae51b5191058d4"
-    },
-    "bot/battery/1002": {
-      "events": 69,
-      "events_sha": "5f74d86979e5368ac1f1eac46407b81ab43a4fda98d802e4d062c6503f8e8d1c",
-      "buckets": [
-        "5f74d86979e5368a"
-      ],
-      "final": "tick=900 gold=30 sanity=100.0 hp=20 outcome=0 wave=1 next_id=17 towers=4 log=5",
-      "final_sha": "b2e1ed879482f8c37e4afb690cd6e787bdf15ac019b7e2b7c0664d7deeeabc70"
-    },
     "bot/circle/1000": {
       "events": 1169,
       "events_sha": "273593cbb56b913c66103b583858aad240db5744d63d38591e9fcee062e8ae17",
@@ -55,24 +37,6 @@
       ],
       "final": "tick=6519 gold=15 sanity=88.0 hp=0 outcome=2 wave=4 next_id=109 towers=5 log=43",
       "final_sha": "f3d9a4067361e38820d3339a50d7ea80801e371be42ace8fe5da8bbeba5a512f"
-    },
-    "bot/circle/1001": {
-      "events": 54,
-      "events_sha": "cf26a4abf95e4e2a2aef7d847155fe7620f73bd580345f9dcc6da26e64733aec",
-      "buckets": [
-        "cf26a4abf95e4e2a"
-      ],
-      "final": "tick=900 gold=40 sanity=88.0 hp=20 outcome=0 wave=1 next_id=18 towers=3 log=4",
-      "final_sha": "495840d211bcdfbc3bb2bfc8cb24b60a0ade09392d71c16d214367255f79d8af"
-    },
-    "bot/circle/1002": {
-      "events": 54,
-      "events_sha": "cf26a4abf95e4e2a2aef7d847155fe7620f73bd580345f9dcc6da26e64733aec",
-      "buckets": [
-        "cf26a4abf95e4e2a"
-      ],
-      "final": "tick=900 gold=40 sanity=88.0 hp=20 outcome=0 wave=1 next_id=18 towers=3 log=4",
-      "final_sha": "f19b56361c23d46086af58ae254c95bf1b9835f58c24a2e34fd560b73c473cde"
     },
     "bot/demolition/1000": {
       "events": 1261,
@@ -90,24 +54,6 @@
       "final": "tick=6424 gold=55 sanity=100.0 hp=0 outcome=2 wave=4 next_id=96 towers=5 log=55",
       "final_sha": "200b61c98b327f05fc50893362a8a3860e4270b21a97a0b67853c841b49b7a67"
     },
-    "bot/demolition/1001": {
-      "events": 73,
-      "events_sha": "35cad82e09a2fd8aa864fd276e72cccc39bbf1d572e3f3d5c1b938bccab04b30",
-      "buckets": [
-        "35cad82e09a2fd8a"
-      ],
-      "final": "tick=900 gold=0 sanity=100.0 hp=20 outcome=0 wave=1 next_id=18 towers=5 log=7",
-      "final_sha": "18eb71384c121df205ac16ff1500e845e85d72a3f1f37a96059dcefaaea86592"
-    },
-    "bot/demolition/1002": {
-      "events": 73,
-      "events_sha": "35cad82e09a2fd8aa864fd276e72cccc39bbf1d572e3f3d5c1b938bccab04b30",
-      "buckets": [
-        "35cad82e09a2fd8a"
-      ],
-      "final": "tick=900 gold=0 sanity=100.0 hp=20 outcome=0 wave=1 next_id=18 towers=5 log=7",
-      "final_sha": "21ca799ca6825e420d9f3eb9cb40ffab4e6e4c34cccf4937ca4dae0eb37595f4"
-    },
     "bot/gate/1000": {
       "events": 1195,
       "events_sha": "c34ef810757d8d1acb965bc2aae50227bcac5ed7bc133277a6b56b495b0db864",
@@ -124,26 +70,6 @@
       "final": "tick=6619 gold=0 sanity=90.0 hp=0 outcome=2 wave=4 next_id=96 towers=5 log=43",
       "final_sha": "534ce029cce511569b3e0f0b9e53c7a3398b70d3ed85585ed7afb00e510ff36b"
     },
-    "bot/gate/1001": {
-      "events": 63,
-      "events_sha": "923d0af601c777fe3a7723a7c3e69a1ed156218ea99c38cf08ffbf83fc7f4d5b",
-      "buckets": [
-        "f0f06348bd993dba",
-        "4041267c09da5503"
-      ],
-      "final": "tick=900 gold=10 sanity=90.0 hp=20 outcome=0 wave=1 next_id=17 towers=4 log=5",
-      "final_sha": "6ae4d22831fb3029b6ff78119b3c69ce91307817af2290f243014b745d873639"
-    },
-    "bot/gate/1002": {
-      "events": 63,
-      "events_sha": "923d0af601c777fe3a7723a7c3e69a1ed156218ea99c38cf08ffbf83fc7f4d5b",
-      "buckets": [
-        "f0f06348bd993dba",
-        "4041267c09da5503"
-      ],
-      "final": "tick=900 gold=10 sanity=90.0 hp=20 outcome=0 wave=1 next_id=17 towers=4 log=5",
-      "final_sha": "1e193b82b9f8c9994641794595636c2abbb95fa1e6148fab8fdeb7fb3e8ac1ba"
-    },
     "bot/light/1000": {
       "events": 1188,
       "events_sha": "5af323c654a7fe5606557859fd2c4a23662ecf9ac4419974751fe56485878496",
@@ -159,24 +85,6 @@
       ],
       "final": "tick=6850 gold=30 sanity=100.0 hp=0 outcome=2 wave=4 next_id=96 towers=5 log=55",
       "final_sha": "5ed4a1b2c292b9240cf0b766625d4e2aae498cfab84f814049d56a334fdc448c"
-    },
-    "bot/light/1001": {
-      "events": 57,
-      "events_sha": "f2a024b015dc7c6d492e8043e5548c8e1ad53ebe3452e884ba16a51d511fbfce",
-      "buckets": [
-        "f2a024b015dc7c6d"
-      ],
-      "final": "tick=900 gold=0 sanity=100.0 hp=20 outcome=0 wave=1 next_id=18 towers=5 log=6",
-      "final_sha": "9d4432e60469e3cbae9587da2e638eb02e60eb2ba128d8ac3996c8ca7dd3d60c"
-    },
-    "bot/light/1002": {
-      "events": 57,
-      "events_sha": "f2a024b015dc7c6d492e8043e5548c8e1ad53ebe3452e884ba16a51d511fbfce",
-      "buckets": [
-        "f2a024b015dc7c6d"
-      ],
-      "final": "tick=900 gold=0 sanity=100.0 hp=20 outcome=0 wave=1 next_id=18 towers=5 log=6",
-      "final_sha": "c7d6f57a168a8b71cb8b624ce4d9281d99bf9d0a6a3641b6da786f7e25aecdb5"
     },
     "bot/madness/1000": {
       "events": 1896,
@@ -197,24 +105,6 @@
       "final": "tick=9641 gold=215 sanity=0.0 hp=4 outcome=1 wave=5 next_id=223 towers=5 log=45",
       "final_sha": "554a85ef051f7d522edca59a03fa98c480803ee12385f7a4532e676e9a86ecb0"
     },
-    "bot/madness/1001": {
-      "events": 47,
-      "events_sha": "8d9dfb0b447dbb766fdb59776af4f57eef7f092bb239b8f3619586f464e5d518",
-      "buckets": [
-        "8d9dfb0b447dbb76"
-      ],
-      "final": "tick=900 gold=50 sanity=85.0 hp=20 outcome=0 wave=1 next_id=15 towers=2 log=3",
-      "final_sha": "2404036ae2cdfd12cf9c91d4333e055cb47a230f1d5698b57948eab90494c863"
-    },
-    "bot/madness/1002": {
-      "events": 47,
-      "events_sha": "8d9dfb0b447dbb766fdb59776af4f57eef7f092bb239b8f3619586f464e5d518",
-      "buckets": [
-        "8d9dfb0b447dbb76"
-      ],
-      "final": "tick=900 gold=50 sanity=85.0 hp=20 outcome=0 wave=1 next_id=15 towers=2 log=3",
-      "final_sha": "5231bbc99f2c238dcd8013e40a3255c781238654e38fa9c8a3339099e9e14142"
-    },
     "bot/mixed/1000": {
       "events": 1078,
       "events_sha": "b52be4f150d209bf25e0cfc694697e421b02490dacf17b2a3844649603a60dd2",
@@ -231,24 +121,6 @@
       "final": "tick=6709 gold=75 sanity=95.0 hp=0 outcome=2 wave=4 next_id=96 towers=5 log=42",
       "final_sha": "099fb4a0155617b5628f2cdde88fed42a19f797bafb8e0524a26569733bd85e5"
     },
-    "bot/mixed/1001": {
-      "events": 50,
-      "events_sha": "bcbd5cb9c9e2522f1a1b14f06fe4edd0ada940f609059f74966bb8f62b8e9047",
-      "buckets": [
-        "bcbd5cb9c9e2522f"
-      ],
-      "final": "tick=900 gold=50 sanity=95.0 hp=20 outcome=0 wave=1 next_id=17 towers=4 log=5",
-      "final_sha": "cae445cebd021e3fe2fba0eeeda71c904a3d2e8d035ee9614c40c2e218ff07bf"
-    },
-    "bot/mixed/1002": {
-      "events": 50,
-      "events_sha": "bcbd5cb9c9e2522f1a1b14f06fe4edd0ada940f609059f74966bb8f62b8e9047",
-      "buckets": [
-        "bcbd5cb9c9e2522f"
-      ],
-      "final": "tick=900 gold=50 sanity=95.0 hp=20 outcome=0 wave=1 next_id=17 towers=4 log=5",
-      "final_sha": "b34a02c220f3f92ed6d396f20d913dec12e39ac2ad5768b6a338cedbee3bb1b2"
-    },
     "bot/mundane/1000": {
       "events": 1248,
       "events_sha": "4bca4d7ea82ce28eeff4e5a55a4a6b9a4ab7f3ee2b22bf64dd5214e12b0420bc",
@@ -264,26 +136,6 @@
       ],
       "final": "tick=6515 gold=40 sanity=100.0 hp=0 outcome=2 wave=4 next_id=96 towers=5 log=55",
       "final_sha": "da6ba0908f9b63dc0a6e4697a959dada3264ca4644b9666a20095d5f81f8ade5"
-    },
-    "bot/mundane/1001": {
-      "events": 77,
-      "events_sha": "2428e1eed2a93258474d4739846e52c424860a5dd0459730dd111dc340e16a55",
-      "buckets": [
-        "42c3d3d3b626170e",
-        "27b2df34a89bc3eb"
-      ],
-      "final": "tick=900 gold=0 sanity=100.0 hp=20 outcome=0 wave=1 next_id=18 towers=5 log=9",
-      "final_sha": "cdce62079fda49cbbac137fb7ba89e1215eacf3d33f19d6eed89c1e3c6e66eb7"
-    },
-    "bot/mundane/1002": {
-      "events": 77,
-      "events_sha": "2428e1eed2a93258474d4739846e52c424860a5dd0459730dd111dc340e16a55",
-      "buckets": [
-        "42c3d3d3b626170e",
-        "27b2df34a89bc3eb"
-      ],
-      "final": "tick=900 gold=0 sanity=100.0 hp=20 outcome=0 wave=1 next_id=18 towers=5 log=9",
-      "final_sha": "4cf1f885052a84cc8cf1061131dc21c6d092cf180c6c2c5a76c9ea277b9fe508"
     },
     "bot/occult/1000": {
       "events": 2116,
@@ -304,24 +156,6 @@
       "final": "tick=9416 gold=65 sanity=0.0 hp=0 outcome=2 wave=5 next_id=216 towers=5 log=47",
       "final_sha": "216d14b096abeedd6c29daae06e3f66cc57c5395bf2e5dd2c1cb07973a201b6d"
     },
-    "bot/occult/1001": {
-      "events": 58,
-      "events_sha": "935eecf4cab7f44c4794b7d70c3d2a25013408508eca666b3e5fc472b8fea252",
-      "buckets": [
-        "935eecf4cab7f44c"
-      ],
-      "final": "tick=900 gold=0 sanity=85.0 hp=20 outcome=0 wave=1 next_id=16 towers=3 log=4",
-      "final_sha": "9e245f51eb0feb654877bcfc04aff8c0f7089ca75c6890322dd7e4c483cd56e1"
-    },
-    "bot/occult/1002": {
-      "events": 58,
-      "events_sha": "51cb19d222f1b933bf18e174025ec8c5e73f03ef9ec44e7c96ebcfe4dc3b107c",
-      "buckets": [
-        "51cb19d222f1b933"
-      ],
-      "final": "tick=900 gold=0 sanity=85.0 hp=20 outcome=0 wave=1 next_id=16 towers=3 log=4",
-      "final_sha": "c93c549a6b016ba1692894670836e3ed3dcb4014b3e565a809f628e88e166410"
-    },
     "bot/resonator/1000": {
       "events": 1725,
       "events_sha": "885a66408dd65384cf18a4e57197e4076349ec4e6c4b8b8386e6c180b6ffd02e",
@@ -337,24 +171,6 @@
       ],
       "final": "tick=6447 gold=55 sanity=92.0 hp=0 outcome=2 wave=4 next_id=96 towers=5 log=43",
       "final_sha": "6409fda77aa4bb88968b4993fcfacaf2d86fff951e63cd1c4f8728e98e26af06"
-    },
-    "bot/resonator/1001": {
-      "events": 78,
-      "events_sha": "49ba4a23f060f20e70da1a3077eb1962f79e51bdd02e5c94dbd647d7688e62d8",
-      "buckets": [
-        "49ba4a23f060f20e"
-      ],
-      "final": "tick=900 gold=20 sanity=92.0 hp=20 outcome=0 wave=1 next_id=17 towers=4 log=5",
-      "final_sha": "4c216bc2095e9c381e22460ec19f682d2dc724b13d1d6f4956582c9c9105938f"
-    },
-    "bot/resonator/1002": {
-      "events": 78,
-      "events_sha": "49ba4a23f060f20e70da1a3077eb1962f79e51bdd02e5c94dbd647d7688e62d8",
-      "buckets": [
-        "49ba4a23f060f20e"
-      ],
-      "final": "tick=900 gold=20 sanity=92.0 hp=20 outcome=0 wave=1 next_id=17 towers=4 log=5",
-      "final_sha": "42454ae7281bbff5f27b3e99e432a502aee4b3ba536b5b876769312e23da21be"
     },
     "frame_path/1234": {
       "events": 100,

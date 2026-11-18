@@ -18,10 +18,10 @@ const BOT_PATH := "res://tools/bot_runs.gd"
 const BOT_MAX_TICKS := "const MAX_TICKS := 30 * 60 * 30"
 ## Bot seed -> tick cap of its runs (0: the bot's own 30-minute cap, i.e. the whole game).
 ## Seed 1000 plays every strategy's whole game (late waves, madness, lighthouse levels,
-## flares); 1001 and 1002 their first 900 ticks (other RNG draws in wave 1). The bot costs
-## ~0.7 ms per tick: whole games for all three seeds took ~150 s, 1800-tick cuts ~80 s
-## (LT-73, load 10-15 on 8 cores), past the test's ~60 s budget.
-const SEEDS := {1000: 0, 1001: 900, 1002: 900}
+## flares). LT-73 verify: 900-tick cuts of seeds 1001/1002 gave the same event stream as
+## seed 1000's first bucket for 9 of 10 strategies (wave 1 draws no seed-dependent RNG the
+## bots see), so they were dropped; a second whole-game seed would add ~50 s.
+const SEEDS := {1000: 0}
 const NO_TREE_SEED := 5
 const FRAME_SEED := 1234
 const SIM_SEED := 7  ## the Game / bare sim seed of the frame run (as in sim_boundary_test)
