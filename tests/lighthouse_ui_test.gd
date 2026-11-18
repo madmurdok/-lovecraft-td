@@ -162,7 +162,7 @@ func test_panel_upgrade_button_states() -> void:
 	_game.call_wave()
 	p.refresh()
 	assert_bool(p.upgrade_button.disabled).is_true()
-	assert_str(p.upgrade_button.text).contains("By day only")
+	assert_str(p.upgrade_button.text).contains("Only by day")
 
 
 func test_panel_oil_button_states() -> void:
@@ -187,7 +187,7 @@ func test_panel_oil_button_states() -> void:
 	_game.call_wave()
 	p.refresh()
 	assert_bool(p.oil_button.disabled).is_true()
-	assert_str(p.oil_button.text).contains("By day only")
+	assert_str(p.oil_button.text).contains("Only by day")
 
 
 func test_coverage_percent() -> void:

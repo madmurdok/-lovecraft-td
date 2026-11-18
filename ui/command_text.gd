@@ -31,17 +31,17 @@ const TEXT := {
 	Simulation.CommandResult.ON_COOLDOWN: GENERIC,
 	Simulation.CommandResult.NO_FLARE: GENERIC,
 	Simulation.CommandResult.NO_OIL: GENERIC,
-	Simulation.CommandResult.OIL_FULL: GENERIC,
+	Simulation.CommandResult.OIL_FULL: "tank full",
 }
 
-## Capitalised wording the lighthouse panel shows on its own button line; a result missing
-## here shows no reason line there. Where it differs from TEXT the panel keeps its own string.
-const PANEL_TEXT := {
-	Simulation.CommandResult.MAX_LEVEL: "Max level",
-	Simulation.CommandResult.NOT_BUILD_PHASE: "By day only",
-	Simulation.CommandResult.NOT_ENOUGH_GOLD: "Not enough money",
-	Simulation.CommandResult.OIL_FULL: "Tank full",
-}
+## Results the lighthouse panel names on its own button line (owner on LT-75: one table, the
+## panel capitalises). Any other result shows no reason line there.
+const PANEL_RESULTS: Array[Simulation.CommandResult] = [
+	Simulation.CommandResult.MAX_LEVEL,
+	Simulation.CommandResult.NOT_BUILD_PHASE,
+	Simulation.CommandResult.NOT_ENOUGH_GOLD,
+	Simulation.CommandResult.OIL_FULL,
+]
 
 
 ## The inline reason text for a refused command; GENERIC for an unmapped result.
@@ -51,4 +51,7 @@ static func reason(r: Simulation.CommandResult) -> String:
 
 ## The lighthouse panel's reason line, or "" when it shows none for this result.
 static func panel_reason(r: Simulation.CommandResult) -> String:
-	return PANEL_TEXT.get(r, "")
+	if not PANEL_RESULTS.has(r):
+		return ""
+	var text := reason(r)
+	return text.left(1).to_upper() + text.substr(1)
