@@ -6,13 +6,6 @@ extends VBoxContainer
 ## the sim refuses the command; refresh() re-reads everything each frame.
 ## `visible` is "the lighthouse view is shown"; SidePanel shows its idle text otherwise.
 
-const REASONS := {
-	Simulation.CommandResult.MAX_LEVEL: "Max level",
-	Simulation.CommandResult.NOT_BUILD_PHASE: "By day only",
-	Simulation.CommandResult.NOT_ENOUGH_GOLD: "Not enough money",
-	Simulation.CommandResult.OIL_FULL: "Tank full",
-}
-
 var game: Game
 var title_label: Label
 var stats_label: Label
@@ -78,8 +71,8 @@ func refresh() -> void:
 			next_flare = ", flare %s s" % ConfigReader.fmt(eco.flare.seconds[level + 1])
 		upgrade_button.text = "Upgrade: %d beams%s (%s)" % [next_beams, next_flare,
 			TowerInfo.money(cost)]
-		if REASONS.has(up):
-			upgrade_button.text += "\n" + REASONS[up]
+		if CommandText.panel_reason(up) != "":
+			upgrade_button.text += "\n" + CommandText.panel_reason(up)
 	upgrade_button.disabled = up != Simulation.CommandResult.OK
 	var has_oil := eco.oil != null
 	oil_label.visible = has_oil
@@ -98,6 +91,6 @@ func refresh() -> void:
 		oil_button.text = "Buy oil for a flare (%s)" % TowerInfo.money(units * eco.oil.price)
 	else:
 		oil_button.text = "Buy oil (%s)" % TowerInfo.money(eco.oil.price)
-	if buy != Simulation.CommandResult.OK and REASONS.has(buy):
-		oil_button.text += "\n" + REASONS[buy]
+	if buy != Simulation.CommandResult.OK and CommandText.panel_reason(buy) != "":
+		oil_button.text += "\n" + CommandText.panel_reason(buy)
 	oil_button.disabled = buy != Simulation.CommandResult.OK

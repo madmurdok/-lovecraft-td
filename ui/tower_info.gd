@@ -16,23 +16,6 @@ const NO_MISSES_LIT := "No misses while lit"  ## LT-43 §5: the Fraying line of 
 const NOW_LIT := "* In the beam now: "  ## LT-43 §5: the status line of a lit tower
 const NOW_SHADOW := "* In shadow now: "  ## LT-70 §5: the status line of a shadowed tower
 
-## Player-facing text for a refused build or upgrade (presentation only).
-const REASONS := {
-	Simulation.CommandResult.OUTCOME_REACHED: "run over",
-	Simulation.CommandResult.UNKNOWN_TOWER: "unknown tower",
-	Simulation.CommandResult.NOT_AVAILABLE: "not available yet",
-	Simulation.CommandResult.NOT_BUILDABLE: "cannot build here",
-	Simulation.CommandResult.OCCUPIED: "cell occupied",
-	Simulation.CommandResult.NOT_ENOUGH_GOLD: "not enough money",
-	Simulation.CommandResult.NO_SUCH_TOWER: "tower is gone",
-	Simulation.CommandResult.NOT_BUILD_PHASE: "only by day",
-	Simulation.CommandResult.MAX_LEVEL: "max level",
-	Simulation.CommandResult.NEED_BRANCH: "choose a branch",
-	Simulation.CommandResult.BAD_BRANCH: "unknown branch",
-	Simulation.CommandResult.NO_TARGETING: "no target to pick",
-	Simulation.CommandResult.BAD_PRIORITY: "unknown priority",
-}
-
 ## Player-facing names of SimTower.TARGET_PRIORITIES (LT-31).
 const PRIORITY_NAMES := {
 	"first": "Closest to the lighthouse",
@@ -74,9 +57,9 @@ static func money(amount: int) -> String:
 	return ("%s%s%d" % [MINUS if amount < 0 else "", CURRENCY, absi(amount)])
 
 
-## The reason text for a refused command; a generic word for an unmapped result.
+## The reason text for a refused command (the table lives in CommandText).
 static func reason(r: Simulation.CommandResult) -> String:
-	return REASONS.get(r, "unavailable")
+	return CommandText.reason(r)
 
 
 static func is_pending(key: String) -> bool:
