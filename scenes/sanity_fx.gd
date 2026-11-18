@@ -58,13 +58,12 @@ func _ready() -> void:
 	# panel (UI_LAYER), so the pass covers only the board. SCREEN_UV stays screen-wide,
 	# so the vignette and the wave look the same on the board as with a full-screen rect.
 	var board := board_rect()
-	var base := Vector2(ProjectSettings.get_setting("display/window/size/viewport_width"),
-		ProjectSettings.get_setting("display/window/size/viewport_height"))
 	screen_copy = BackBufferCopy.new()
 	screen_copy.name = "BoardCopy"
 	screen_copy.copy_mode = BackBufferCopy.COPY_MODE_RECT
-	screen_copy.rect = board.grow(COPY_MARGIN).intersection(Rect2(Vector2.ZERO, base))
 	screen_layer.add_child(screen_copy)
+	_update_copy_rect()
+	screen_layer.get_viewport().size_changed.connect(_update_copy_rect)
 	screen_rect = ColorRect.new()
 	screen_rect.name = "Distortion"
 	screen_rect.position = board.position
@@ -129,6 +128,20 @@ func target_level() -> float:
 func board_rect() -> Rect2:
 	var m := game.sim.state.map
 	return Rect2(Game.BOARD_ORIGIN, Vector2(m.width, m.height) * Board.CELL)
+
+
+## LT-62/S13: gl_compatibility applies a BackBufferCopy rect in render-target pixels, without
+## the canvas_items stretch, so the board (+ margin, base units) is scaled by the viewport's
+## stretch and clipped to the stretched viewport. Only the scale: the render target excludes
+## the letterbox bars, so the final transform's letterbox offset must not move the rect
+## (with it the board's top band went stale in a 1600x1000 window). Re-run on every resize.
+## (CanvasLayer.get_final_transform() leaves the stretch out, so not that one.)
+func _update_copy_rect() -> void:
+	var vp := screen_layer.get_viewport()
+	var xf := vp.get_final_transform()
+	xf.origin = Vector2.ZERO
+	var view := Rect2(Vector2.ZERO, vp.get_visible_rect().size)
+	screen_copy.rect = (xf * board_rect().grow(COPY_MARGIN)).intersection(xf * view)
 
 
 ## Screen pixels per base-viewport pixel: the window stretch factor (1 when unstretched).
