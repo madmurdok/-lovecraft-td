@@ -263,3 +263,16 @@ exempt (fixtures build maps by hand). G2 (`CELL` only in BoardView) remains B4's
      (one test today) must set it.
    - (b) `SimTower` keeps a grid reference. Benefit: no cached field. Risk: every tower holds
      the map's topology; tests building towers need a grid.
+
+## 8. Owner decisions (2026-11-18)
+
+1. Cell id: "Vector2i, топология = граф соседей + центры (Recommended)". The owner noted the
+   LT-18 direction is hex logic underneath with a Voronoi look on top, which keeps the axial
+   `Vector2i` id. The topology is a neighbour graph plus cell centres. An opaque int id is
+   not adopted.
+2. `steps`: "Да, с тестами (Recommended)".
+3. MapDef: "Необязательный ключ "grid", по умолчанию "square" (Recommended)".
+4. Tiles from `polygon()`: "В B4, LT-77 только логика (Recommended)".
+5. Tower centre: "Запоминать SimTower.pos при постройке (Recommended)".
+
+Note approved: "Утверждаю (Recommended)".
