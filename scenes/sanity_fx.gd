@@ -2,7 +2,7 @@ class_name SanityFx
 extends Node
 ## LT-14 sanity feedback (GDD §5.3 table, §9, §9a), presentation only: reads
 ## `game.sim.state.sanity` / `sanity_state` and the sanity.json thresholds, never changes
-## the sim. Owns the full-screen distortion layer (between the world and the HUD), the
+## the sim. Owns the board-wide distortion layer (between the world and the HUD), the
 ## shared UI jitter material and the whisper audio. Board and HUD read `state`, `level`,
 ## `flicker` and `ui_jitter_material` from here.
 ##
@@ -17,6 +17,10 @@ extends Node
 const SCREEN_SHADER := preload("res://shaders/sanity_screen.gdshader")
 const JITTER_SHADER := preload("res://shaders/ui_jitter.gdshader")
 const SCREEN_LAYER := 1  ## the HUD CanvasLayer sits above it (Game.UI_LAYER)
+## LT-62 P3: the screen copy reaches this far (base px) past the board, so the wave and the
+## aberration near the board edge still sample fresh pixels. Peak offset is ~21 px:
+## wave 0.5 * 1.6 * max_distortion_px * 3 (pulse) + aberration max_aberration_px * 1.55.
+const COPY_MARGIN := 32.0
 
 ## Effect level per threshold state (0..1); within Whispers / Fraying the level slides
 ## from its own value towards the next state's as sanity falls.
@@ -37,6 +41,7 @@ var madness := 0.0  ## smoothed 0..1 madness grade
 var flicker := 0.0  ## enemy flicker strength (0 below Fraying); same for every enemy
 var ui_jitter_material: ShaderMaterial
 var screen_layer: CanvasLayer
+var screen_copy: BackBufferCopy  ## LT-62 P3: copies only the board (+ margin), not the screen
 var screen_rect: ColorRect
 var screen_material: ShaderMaterial
 var audio: WhisperAudio
@@ -49,9 +54,20 @@ func _ready() -> void:
 	screen_layer.name = "SanityScreen"
 	screen_layer.layer = SCREEN_LAYER
 	add_child(screen_layer)
+	# LT-62 P3: everything outside the board is under the opaque HUD bar, footer and side
+	# panel (UI_LAYER), so the pass covers only the board. SCREEN_UV stays screen-wide,
+	# so the vignette and the wave look the same on the board as with a full-screen rect.
+	var board := board_rect()
+	screen_copy = BackBufferCopy.new()
+	screen_copy.name = "BoardCopy"
+	screen_copy.copy_mode = BackBufferCopy.COPY_MODE_RECT
+	screen_layer.add_child(screen_copy)
+	_update_copy_rect()
+	screen_layer.get_viewport().size_changed.connect(_update_copy_rect)
 	screen_rect = ColorRect.new()
 	screen_rect.name = "Distortion"
-	screen_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+	screen_rect.position = board.position
+	screen_rect.size = board.size
 	screen_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE  # never eats a board click
 	screen_material = ShaderMaterial.new()
 	screen_material.shader = SCREEN_SHADER
@@ -107,6 +123,27 @@ func target_level() -> float:
 	return lerpf(state_levels[i], state_levels[i + 1], p)
 
 
+## The board in base viewport units (same as Hud.board_rect): the only area the screen
+## pass draws on.
+func board_rect() -> Rect2:
+	var m := game.sim.state.map
+	return Rect2(Game.BOARD_ORIGIN, Vector2(m.width, m.height) * Board.CELL)
+
+
+## LT-62/S13: gl_compatibility applies a BackBufferCopy rect in render-target pixels, without
+## the canvas_items stretch, so the board (+ margin, base units) is scaled by the viewport's
+## stretch and clipped to the stretched viewport. Only the scale: the render target excludes
+## the letterbox bars, so the final transform's letterbox offset must not move the rect
+## (with it the board's top band went stale in a 1600x1000 window). Re-run on every resize.
+## (CanvasLayer.get_final_transform() leaves the stretch out, so not that one.)
+func _update_copy_rect() -> void:
+	var vp := screen_layer.get_viewport()
+	var xf := vp.get_final_transform()
+	xf.origin = Vector2.ZERO
+	var view := Rect2(Vector2.ZERO, vp.get_visible_rect().size)
+	screen_copy.rect = (xf * board_rect().grow(COPY_MARGIN)).intersection(xf * view)
+
+
 ## Screen pixels per base-viewport pixel: the window stretch factor (1 when unstretched).
 func screen_scale() -> float:
 	return screen_rect.get_viewport().get_final_transform().get_scale().x
@@ -131,4 +168,5 @@ func _apply() -> void:
 	screen_material.set_shader_parameter("pulse", pulse)
 	# Lucid costs nothing: the screen copy only runs while something is shown.
 	screen_rect.visible = level > 0.001 or pulse > 0.0 or madness > 0.0
+	screen_copy.visible = screen_rect.visible
 	audio.set_state(state)

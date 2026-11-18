@@ -76,6 +76,9 @@ const TRACER_COLOR := Color(2.2, 2.0, 1.2)
 const TRACER_TRAVEL := 0.08  ## seconds for the dash to reach its end
 const TRACER_MUZZLE := 0.05
 const TRACER_SECONDS := 0.18  ## travel + hit spark
+## LT-62 P1: the warm-up draws (_draw_warmup) run while _time < this, from the first frame.
+const WARMUP_SECONDS := 0.5
+const WARMUP_ALPHA := 0.01  ## invisible over the board, but still a real draw
 const TRACER_DASH_CELLS := 0.35
 const TRACER_MISS_SIDE_CELLS := 0.4  ## a miss ends this far to the side of the aim point
 const TRACER_MISS_PAST_CELLS := 0.5  ## and this far past it
@@ -543,6 +546,8 @@ func _flicker_dip(key: int) -> float:
 func _draw() -> void:
 	if game == null or game.sim == null:
 		return
+	if _time < WARMUP_SECONDS:
+		_draw_warmup()
 	var s := game.sim.state
 	sync_map()  # O(1) unless the map changed; the map itself is drawn by map_layer
 	_draw_phantom()
@@ -565,6 +570,16 @@ func _draw() -> void:
 			if dz > 0.0:  # LT-48: the dead zone, a dashed ring over a faint fill
 				draw_circle(sc, dz * CELL, Color(COLOR_LEAK, 0.08))
 				_draw_dashed_circle(sc, dz * CELL, Color(COLOR_LEAK, 0.7))
+
+
+## LT-62 P1: invisible (alpha WARMUP_ALPHA) draws in the board corner of each primitive the
+## effects use with a width or as a polygon, so the renderer's first-use cost (a 350-670 ms
+## stall at the first tower shot) is paid while the board is quiet. Presentation only.
+func _draw_warmup() -> void:
+	var c := Color(TRACER_COLOR, WARMUP_ALPHA)
+	draw_line(Vector2(2, 2), Vector2(6, 2), c, 2.0)
+	draw_polyline(PackedVector2Array([Vector2(2, 4), Vector2(4, 5), Vector2(6, 4)]), c, 3.0)
+	draw_colored_polygon(PackedVector2Array([Vector2(2, 6), Vector2(6, 6), Vector2(4, 8)]), c)
 
 
 ## LT-48: the min_range (cells) of the tower on selected_cell while its range ring shows;

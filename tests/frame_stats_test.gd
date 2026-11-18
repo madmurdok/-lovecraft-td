@@ -90,7 +90,7 @@ func test_p90_of_a_full_buffer_is_the_nearest_rank_value() -> void:
 
 
 func test_text_format() -> void:
-	assert_str(_stats([10.0, 20.0, 30.0]).text()).is_equal("frame 20.0 ms median / 30.0 p90")
+	assert_str(_stats([10.0, 20.0, 30.0]).text()).is_equal("frame 20.0 ms median / 30.0 p90 / worst 30.0")
 
 
 func test_wrap_around_evicts_the_oldest_samples() -> void:
