@@ -17,10 +17,3 @@ static func in_cast_radius(c: Vector2, range_cells: float, p: Vector2) -> bool:
 ## for a tower not built yet (the board's BUILD preview, the bot's placement score).
 static func covers(cell: Vector2i, range_cells: float, p: Vector2) -> bool:
 	return in_cast_radius(SimGrid.centre(cell), range_cells, p)
-
-
-## Share (0..1) of the full circle that `beams` beams of half-width ratio
-## `half_width_ratio` cover: each beam is the cone cross² <= k² dot² of Simulation._lit_by,
-## 2 atan(k) wide; overlaps are not counted twice, so it caps at 1.
-static func beam_coverage(beams: int, half_width_ratio: float) -> float:
-	return minf(1.0, beams * atan(half_width_ratio) / PI)

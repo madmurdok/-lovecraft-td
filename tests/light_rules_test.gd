@@ -33,23 +33,23 @@ func test_covers_measures_from_the_cell_centre_not_its_corner() -> void:
 
 func test_beam_coverage_is_the_cone_share_capped_at_one() -> void:
 	# k = 1: each beam is 2 atan(1) = 90 degrees wide, a quarter of the circle.
-	assert_float(LightRules.beam_coverage(1, 1.0)).is_equal_approx(0.25, EPS)
-	assert_float(LightRules.beam_coverage(2, 1.0)).is_equal_approx(0.5, EPS)
-	assert_float(LightRules.beam_coverage(4, 1.0)).is_equal_approx(1.0, EPS)
-	assert_float(LightRules.beam_coverage(8, 1.0)).is_equal(1.0)  # overlaps cap at 1
-	assert_float(LightRules.beam_coverage(0, 1.0)).is_equal(0.0)
-	assert_float(LightRules.beam_coverage(1, 0.0)).is_equal(0.0)  # a zero-width beam
+	assert_float(LighthousePanel.beam_coverage(1, 1.0)).is_equal_approx(0.25, EPS)
+	assert_float(LighthousePanel.beam_coverage(2, 1.0)).is_equal_approx(0.5, EPS)
+	assert_float(LighthousePanel.beam_coverage(4, 1.0)).is_equal_approx(1.0, EPS)
+	assert_float(LighthousePanel.beam_coverage(8, 1.0)).is_equal(1.0)  # overlaps cap at 1
+	assert_float(LighthousePanel.beam_coverage(0, 1.0)).is_equal(0.0)
+	assert_float(LighthousePanel.beam_coverage(1, 0.0)).is_equal(0.0)  # a zero-width beam
 	# Half-width ratio tan(PI/8): a beam PI/4 wide, an eighth of the circle; two make a quarter.
-	assert_float(LightRules.beam_coverage(2, tan(PI / 8.0))).is_equal_approx(0.25, EPS)
+	assert_float(LighthousePanel.beam_coverage(2, tan(PI / 8.0))).is_equal_approx(0.25, EPS)
 
 
-## UI one-source: the lighthouse panel's percent is round(100 x LightRules.beam_coverage),
+## UI one-source: the lighthouse panel's percent is round(100 x LighthousePanel.beam_coverage),
 ## for the helper and for the text the panel shows from the sim's own config.
 func test_lighthouse_coverage_percent_is_the_light_rules_share() -> void:
 	for beams: int in [1, 2, 3, 4, 8]:
 		for k: float in [0.245, 0.5, 1.0, 2.0]:
 			assert_int(LighthousePanel.coverage_percent(beams, k)).is_equal(
-				roundi(100.0 * LightRules.beam_coverage(beams, k)))
+				roundi(100.0 * LighthousePanel.beam_coverage(beams, k)))
 	# Hand check on the shipped width: one beam of ratio 0.245 covers atan(0.245) / PI.
 	assert_int(LighthousePanel.coverage_percent(1, 0.245)).is_equal(
 		roundi(100.0 * atan(0.245) / PI))
@@ -66,6 +66,6 @@ func test_lighthouse_panel_text_shows_the_light_rules_coverage() -> void:
 	game.lighthouse_panel.open()
 	game.lighthouse_panel.refresh()
 	var beams: int = eco.beam.levels[game.sim.state.lighthouse_level].beams
-	var want := roundi(100.0 * LightRules.beam_coverage(beams, 0.5))
+	var want := roundi(100.0 * LighthousePanel.beam_coverage(beams, 0.5))
 	assert_str(game.lighthouse_panel.stats_label.text).contains("Coverage: %d %%" % want)
 	vp.queue_free()
