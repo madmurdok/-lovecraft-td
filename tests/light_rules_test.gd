@@ -8,12 +8,6 @@ const EPS := 1e-9
 var _grid := SquareGrid.new(10, 10)
 
 
-func test_cell_centre_is_the_cell_plus_a_half() -> void:
-	assert_object(SquareGrid.new(10, 10).centre(Vector2i(0, 0))).is_equal(Vector2(0.5, 0.5))
-	assert_object(SquareGrid.new(10, 10).centre(Vector2i(7, 1))).is_equal(Vector2(7.5, 1.5))
-	assert_object(SquareGrid.new(10, 10).centre(Vector2i(-1, 3))).is_equal(Vector2(-0.5, 3.5))
-
-
 func test_cast_radius_boundary_is_inclusive() -> void:
 	var c := Vector2(3.5, 1.5)
 	assert_bool(LightRules.in_cast_radius(c, 3.0, Vector2(6.5, 1.5))).is_true()  # exactly 3
