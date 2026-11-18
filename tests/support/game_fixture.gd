@@ -25,9 +25,15 @@ static func make_viewport(
 ## Game.new().setup(config, seed). With a viewport the Game is added to it with its own
 ## _process switched off (tests drive it through advance()); with null it is returned
 ## unparented, for the caller to configure and add. The caller awaits a frame.
-static func make_game(vp: SubViewport, config: GameConfig, seed: int = DEFAULT_SEED) -> Game:
+## `args` are the launch user args Game.setup reads (LT-87); suites pass their own flags.
+static func make_game(
+	vp: SubViewport,
+	config: GameConfig,
+	seed: int = DEFAULT_SEED,
+	args: PackedStringArray = OS.get_cmdline_user_args()
+) -> Game:
 	var game := Game.new()
-	game.setup(config, seed)
+	game.setup(config, seed, args)
 	if vp != null:
 		vp.add_child(game)
 		game.set_process(false)
