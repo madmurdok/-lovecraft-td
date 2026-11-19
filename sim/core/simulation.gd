@@ -27,9 +27,6 @@ var _sanity: SanitySystem
 var _light: LightSystem
 var _ground_route: SimRoute
 var _hallucinations := HallucinationSystem.new()
-## LT-27 §1.3: token id -> true for tokens dropped by fakes. Sim-private: the render must
-## never tell a ghost token from a real one before it vanishes.
-var _ghost_tokens: Dictionary[int, bool] = {}
 ## LT-63: pack members not entered yet, queue order: [due_tick, EnemyDef, is_fake, pack_of].
 ## Sim only (fakes are queued too, LT-12 §1); real members enter in slot 7, fake ones in
 ## slot 8 after the dawn check (_release_pack_members).
@@ -42,8 +39,6 @@ func _init(p_config: GameConfig, run_seed: int) -> void:
 	state = _ctx.state
 	state.map = config.map
 	state.lighthouse_hp = config.economy.lighthouse_hp
-	for kind in config.economy.relic_ids():
-		state.relics[kind] = 0
 	# Construction writes start values (gold; sanity, cap, state; oil, beam) but emits and
 	# draws nothing, so this order changes no output (LT-80 §3).
 	_economy = EconomySystem.new(_ctx)
@@ -103,7 +98,7 @@ func step() -> void:
 	# between-waves regen in slot 8 (wave system), each through _add_sanity.
 	_sanity.horror_drain()
 	# 6b. Relic tokens (LT-27 §1.3): ghosts vanish, real tokens are credited on arrival.
-	_settle_tokens()
+	_economy.settle_tokens()
 	# 7. Spawning: queued real pack members due now (LT-63), then the spawner, then fakes
 	# (LT-12) from the spawner's candidates.
 	_release_pack_members(false)
@@ -593,60 +588,43 @@ func _replay_args_ok(entry: Array, types: Array) -> bool:
 			continue
 		return false
 	return true
-
-
-## LT-27 §1.4: the money one relic of `kind` sells for (economy.relics price); 0 for an
-## unknown kind. The only place a relic price is read.
+## LT-81 forwarders: the relic / economy names now live in EconomySystem.
 func relic_price(kind: String) -> int:
-	var k := config.economy.relic(kind)
-	return 0 if k == null else k.price
+	return _economy.relic_price(kind)
 
 
-## The stash at today's prices: sum of relic_price x count.
 func relics_value() -> int:
-	var total := 0
-	for kind: String in state.relics:
-		total += relic_price(kind) * state.relics[kind]
-	return total
+	return _economy.relics_value()
 
 
-## Whether sell_relics(kind) would be applied now; OK or the first failing reason in this
-## order: OUTCOME_REACHED, NOT_BUILD_PHASE (at night), NO_RELICS (unknown kind, or nothing
-## of `kind` / nothing at all for "" in the stash). Changes nothing.
 func can_sell_relics(kind := "") -> SimCommand.CommandResult:
-	if state.outcome != SimState.Outcome.NONE:
-		return SimCommand.CommandResult.OUTCOME_REACHED
-	var day := _ctx.day_only()
-	if day != SimCommand.CommandResult.OK:
-		return day
-	if kind != "":
-		return SimCommand.CommandResult.OK if state.relics.get(kind, 0) > 0 else SimCommand.CommandResult.NO_RELICS
-	for k: String in state.relics:
-		if state.relics[k] > 0:
-			return SimCommand.CommandResult.OK
-	return SimCommand.CommandResult.NO_RELICS
+	return _economy.can_sell_relics(kind)
 
 
-## Player command (LT-27 §1.4, day only): sells the whole stack of `kind`, or of every kind
-## for "", at the fixed relic_price. Logs [tick, "sell_relics", kind]; emits one
-## RELICS_CHANGED {kind, delta: -n, count: 0, reason: "sell"} per non-empty kind in config
-## order, then one GOLD_CHANGED {reason: "relic_sale"} for the sum (none when it is 0).
 func sell_relics(kind := "") -> SimCommand.CommandResult:
-	var result := can_sell_relics(kind)
-	if result != SimCommand.CommandResult.OK:
-		return result
-	_ctx.log_command([state.tick, "sell_relics", kind])
-	var total := 0
-	for k in config.economy.relic_ids():
-		if kind != "" and k != kind:
-			continue
-		var n: int = state.relics[k]
-		if n <= 0:
-			continue
-		total += relic_price(k) * n
-		_add_relics(k, -n, "sell", 0)
-	_economy.add_gold(total, "relic_sale", 0)
-	return SimCommand.CommandResult.OK
+	return _economy.sell_relics(kind)
+
+
+## 1.0 without a WaveDirector (the director is the facade's, so it is passed in).
+func early_night_luck() -> float:
+	return _economy.early_night_luck(_spawner is WaveDirector)
+
+
+func sell_refund(t: SimTower) -> int:
+	return _economy.sell_refund(t)
+
+
+func award_wave_bonus(wave_number: int) -> int:
+	return _economy.award_wave_bonus(wave_number)
+
+
+func settle_all_tokens() -> void:
+	_economy.settle_all_tokens()
+
+
+## Test-only forwarder (LT-81, like LT-80 Q1: relic_ui / ui_event_refresh tests stock relics).
+func _add_relics(kind: String, delta: int, reason: String, token: int) -> void:
+	_economy.add_relics(kind, delta, reason, token)
 
 
 func auto_restore_sanity() -> float:
@@ -663,40 +641,6 @@ func reserve_of(t: SimTower) -> float:
 
 func reserve_delta(def_id: String, from: TowerDef.Level, to: TowerDef.Level) -> float:
 	return _sanity.reserve_delta(def_id, from, to)
-
-
-## The night luck call_wave() would set now (LT-27 §1.2): 1 +
-## economy.early_night_luck_per_second x whole seconds left on the day timer (seconds
-## rounded down from ticks); 1.0 when call_wave() would be refused. Changes nothing.
-func early_night_luck() -> float:
-	if state.outcome != SimState.Outcome.NONE or state.phase != SimState.Phase.BUILD:
-		return 1.0
-	if not (_spawner is WaveDirector):
-		return 1.0
-	var seconds_left := SimTime.whole_seconds(state.build_ticks_left)
-	return 1.0 + config.economy.early_night_luck_per_second * seconds_left
-
-
-## Gold a sell of `t` would return now: sell_refund_ratio x t.spent (build + upgrades),
-## rounded once.
-func sell_refund(t: SimTower) -> int:
-	return roundi(t.spent * config.economy.sell_refund_ratio)
-
-
-## The dawn wage (LT-27 §2; the wave completion bonus) for 1-based `wave_number`: base +
-## per_wave * wave_number money (economy.json wave_bonus). Called by the wave system (LT-5);
-## not a player command, so not logged. Returns the money added; 0 (and nothing changes)
-## once the outcome is set.
-func award_wave_bonus(wave_number: int) -> int:
-	if state.outcome != SimState.Outcome.NONE:
-		return 0
-	if wave_number < 1:
-		push_error("Simulation.award_wave_bonus: wave_number %d < 1" % wave_number)
-		return 0
-	var econ := config.economy
-	var bonus := econ.wave_bonus_base + econ.wave_bonus_per_wave * wave_number
-	_economy.add_gold(bonus, "wave_bonus", 0)
-	return bonus
 
 
 func award_wave_sanity() -> float:
@@ -854,110 +798,13 @@ func _add_sanity(delta: float, reason: String, id: int) -> float:
 ## restores regen.mundane_kill sanity (only damage-dealing levels fire, so a tower kill is
 ## always by a damage level).
 func _on_enemy_killed(e: SimEnemy, source: String) -> void:
-	_drop_token(e)
+	_economy.drop_token(e)
 	if e.is_fake:
 		return
 	var tower_def: TowerDef = config.towers.get(source)
 	if tower_def != null and tower_def.kind == "mundane":
 		_sanity.add(config.sanity.regen_mundane_kill, "mundane_kill", e.id)
 
-
-## LT-27 §1.2: one draw on `stream` picks a relic kind from `def.drops` (config order).
-## Every kind's weight is multiplied by state.night_luck except the table's cheapest kind
-## (lowest price among the kinds with weight > 0; ties -> the first in config order).
-func _roll_drop(def: EnemyDef, stream: SimRng.Stream) -> String:
-	var cheapest := ""
-	for kind: String in def.drops:
-		if def.drops[kind] > 0 and (cheapest == "" or relic_price(kind) < relic_price(cheapest)):
-			cheapest = kind
-	var weights: Array[float] = []
-	var total := 0.0
-	for kind: String in def.drops:
-		var w := float(def.drops[kind])
-		if kind != cheapest:
-			w *= state.night_luck
-		weights.append(w)
-		total += w
-	var r := rng(stream).randf() * total
-	var i := 0
-	var last := cheapest
-	for kind: String in def.drops:
-		var w := weights[i]
-		i += 1
-		if w <= 0.0:
-			continue
-		last = kind
-		if r < w:
-			return kind
-		r -= w
-	return last  # float rounding at the very top of the range
-
-
-## LT-27 §1.3: the kill of `e` drops one token, rolled on LOOT (real) or GHOST_LOOT (fake)
-## with the same table and luck. Emits RELIC_DROPPED {token, kind, at, arrive_tick}, the
-## same shape and timing for both; only _ghost_tokens remembers a ghost.
-func _drop_token(e: SimEnemy) -> void:
-	var tok := RelicToken.new()
-	tok.id = state.next_token_id
-	state.next_token_id += 1
-	tok.kind = _roll_drop(e.def, SimRng.Stream.GHOST_LOOT if e.is_fake else SimRng.Stream.LOOT)
-	tok.at = e.route.position_at(e.distance)
-	tok.drop_tick = state.tick
-	tok.arrive_tick = state.tick + SimTime.ticks(config.economy.token_fly_seconds)
-	state.relic_tokens.append(tok)
-	if e.is_fake:
-		_ghost_tokens[tok.id] = true
-	_emit(SimEvent.Type.RELIC_DROPPED, tok.id, {"token": tok.id, "kind": tok.kind,
-		"at": tok.at, "arrive_tick": tok.arrive_tick})
-
-
-## Slot 6b (LT-27 §1.3), tokens in id order: a ghost vanishes at drop_tick +
-## ticks(ghost_vanish_seconds) (RELIC_VANISHED, credits nothing); a real token is credited at
-## its arrive_tick (RELICS_CHANGED {reason: "kill"}). Both leave state.relic_tokens.
-func _settle_tokens() -> void:
-	if state.relic_tokens.is_empty():
-		return
-	var vanish := SimTime.ticks(config.economy.ghost_vanish_seconds)
-	var kept: Array[RelicToken] = []
-	for tok in state.relic_tokens:
-		if _ghost_tokens.has(tok.id):
-			if state.tick >= tok.drop_tick + vanish:
-				_vanish_token(tok)
-				continue
-		elif state.tick >= tok.arrive_tick:
-			_add_relics(tok.kind, 1, "kill", tok.id)
-			continue
-		kept.append(tok)
-	state.relic_tokens = kept
-
-
-## Dawn (LT-27 §1.3, called by the wave director right after dissolve_fakes): every token in
-## flight settles now, in id order: ghosts vanish, real tokens are credited. A day starts with
-## no token in flight.
-func settle_all_tokens() -> void:
-	for tok in state.relic_tokens:
-		if _ghost_tokens.has(tok.id):
-			_vanish_token(tok)
-		else:
-			_add_relics(tok.kind, 1, "kill", tok.id)
-	state.relic_tokens = []
-
-
-func _vanish_token(tok: RelicToken) -> void:
-	_ghost_tokens.erase(tok.id)
-	_emit(SimEvent.Type.RELIC_VANISHED, tok.id, {"token": tok.id})
-
-
-## Every stash change goes through here: RELICS_CHANGED {kind, delta, count, reason} (+ token
-## for a kill); id = the token (kill) or 0 (sell).
-func _add_relics(kind: String, delta: int, reason: String, token: int) -> void:
-	if delta == 0:
-		return
-	state.relics[kind] = state.relics.get(kind, 0) + delta
-	var data := {"kind": kind, "delta": delta, "count": state.relics[kind], "reason": reason}
-	if token > 0:
-		data["token"] = token
-	_emit(SimEvent.Type.RELICS_CHANGED, token, data)
 
 
 # --- LT-30: the lighthouse beam in the sim (LT-26 §1.1; trig-free: + - * / sqrt only) ----

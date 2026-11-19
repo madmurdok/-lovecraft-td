@@ -536,9 +536,9 @@ const G4B_OWNERS := {
 	"map": ["core/simulation.gd"],
 	"enemies": ["core/simulation.gd"],
 	"next_id": ["core/simulation.gd"],
-	"relics": ["core/simulation.gd"],
-	"relic_tokens": ["core/simulation.gd"],
-	"next_token_id": ["core/simulation.gd"],
+	"relics": ["core/systems/economy_system.gd"],
+	"relic_tokens": ["core/systems/economy_system.gd"],
+	"next_token_id": ["core/systems/economy_system.gd"],
 	"blasts": ["core/simulation.gd"],
 	"next_blast_id": ["core/simulation.gd"],
 	"allies": ["core/simulation.gd"],
@@ -779,3 +779,37 @@ func test_g4b_resolves_the_wave_director_aliases() -> void:
 	assert_array(written.keys()).contains(["phase", "wave_index", "build_ticks_left",
 		"waves_total", "night_luck"])
 	assert_bool(text.contains("var s := sim.state")).is_true()  # the alias form is still in use
+
+
+## LT-81 (B6): the stash and the tokens belong to EconomySystem alone.
+const G4B_ECONOMY_WRITES := {
+	"relics": "_state.relics[kind] += 1",
+	"relic_tokens": "_state.relic_tokens.append(tok)",
+	"next_token_id": "_state.next_token_id += 1",
+}
+
+
+func test_g4b_economy_stash_and_token_fields_have_economy_system_as_the_only_writer() -> void:
+	var scan := SimBoundaryTest.new()
+	var writers := _g4b_writers(scan)
+	scan.free()
+	for field: String in G4B_ECONOMY_WRITES:
+		assert_array(writers.get(field, [])).override_failure_message(field) \
+			.is_equal(["core/systems/economy_system.gd"])
+		assert_array(G4B_OWNERS[field]).is_equal(["core/systems/economy_system.gd"])
+
+
+## A write from a file that is not the owner lands in the writer list, so the guard's
+## comparison with G4B_OWNERS fails for that field (and only for it).
+func test_g4b_a_planted_write_to_an_economy_field_makes_the_guard_fail() -> void:
+	var scan := SimBoundaryTest.new()
+	var writers := _g4b_writers(scan)
+	for field: String in G4B_ECONOMY_WRITES:
+		var planted := "func f() -> void:\n\t%s\n" % G4B_ECONOMY_WRITES[field]
+		var hit := _g4b_written(scan, planted)
+		assert_bool(hit.has(field)).override_failure_message("scan misses %s" % field).is_true()
+		var with_plant: Array = writers.get(field, []).duplicate()
+		with_plant.append("core/simulation.gd")
+		with_plant.sort()
+		assert_array(with_plant).override_failure_message(field).is_not_equal(G4B_OWNERS[field])
+	scan.free()
