@@ -1,6 +1,6 @@
 class_name SandboxGameTest
 extends GdUnitTestSuite
-## LT-67 scene side of `--sandbox`: Game.skip_ahead (key N), the SANDBOX HUD marker, and a
+## LT-67 scene side of `--sandbox`: GameCommands.skip_ahead (key N), the SANDBOX HUD marker, and a
 ## run without the flag. The flag itself comes from the command line, which a test cannot
 ## set: a sandbox run is a Game whose `sandbox` is switched on before it enters the tree.
 
@@ -69,11 +69,11 @@ func test_hud_has_no_sandbox_label_without_the_flag() -> void:
 func test_skip_ahead_by_day_starts_the_night_and_at_night_ends_it() -> void:
 	await _start(true)
 	var s := _game.sim.state
-	assert_int(_game.skip_ahead()).is_equal(R.OK)
+	assert_int(_game.commands.skip_ahead()).is_equal(R.OK)
 	assert_int(s.phase).is_equal(SimState.Phase.WAVE)
 	assert_array(_log_names()).is_equal(["call_wave"])
 	_game.sim.step()  # first spawns
-	assert_int(_game.skip_ahead()).is_equal(R.OK)
+	assert_int(_game.commands.skip_ahead()).is_equal(R.OK)
 	assert_array(_log_names()).is_equal(["call_wave", "debug_end_night"])
 	_game.sim.step()
 	assert_int(s.phase).is_equal(SimState.Phase.BUILD)
@@ -96,13 +96,13 @@ func test_without_the_flag_skip_ahead_and_key_n_do_nothing() -> void:
 	var s := _game.sim.state
 	assert_int(s.gold).is_equal(_config.economy.starting_gold)
 	assert_int(s.oil).is_equal(_config.economy.oil.start)
-	assert_int(_game.skip_ahead()).is_equal(R.NOT_BUILD_PHASE)
+	assert_int(_game.commands.skip_ahead()).is_equal(R.NOT_BUILD_PHASE)
 	await _press(KEY_N)
 	assert_int(s.phase).is_equal(SimState.Phase.BUILD)
 	assert_array(s.command_log).is_empty()
 	# And at night too: call the wave the normal way, N must not end it.
-	assert_int(_game.call_wave()).is_equal(R.OK)
-	assert_int(_game.skip_ahead()).is_equal(R.NOT_BUILD_PHASE)
+	assert_int(_game.commands.call_wave()).is_equal(R.OK)
+	assert_int(_game.commands.skip_ahead()).is_equal(R.NOT_BUILD_PHASE)
 	await _press(KEY_N)
 	assert_array(_log_names()).is_equal(["call_wave"])
 	assert_int(s.phase).is_equal(SimState.Phase.WAVE)

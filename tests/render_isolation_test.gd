@@ -89,6 +89,6 @@ func test_reveal_fakes_is_only_set_behind_a_debug_build_check() -> void:
 
 func test_a_game_started_without_the_flag_does_not_reveal_fakes() -> void:
 	var game := GameFixture.make_game(null, real_config(), 7)
-	assert_bool(OS.get_cmdline_user_args().has(Game.REVEAL_FAKES_ARG)).is_false()
+	assert_bool(OS.get_cmdline_user_args().has(DebugArgs.REVEAL_FAKES_ARG)).is_false()
 	assert_bool(game.sim.debug_reveal_fakes).is_false()
 	game.free()

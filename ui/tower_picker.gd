@@ -298,7 +298,7 @@ func _input(event: InputEvent) -> void:
 
 
 func _on_tower_pressed(def_id: String) -> void:
-	if game.build(def_id, cell) == Simulation.CommandResult.OK:
+	if game.commands.build(def_id, cell) == Simulation.CommandResult.OK:
 		close()
 
 

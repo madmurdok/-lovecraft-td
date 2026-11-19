@@ -15,12 +15,12 @@ func after_test() -> void:
 
 
 func test_mute_arg_mutes_the_master_bus() -> void:
-	assert_bool(Game.apply_mute_arg(PackedStringArray(["--seed=3", "--mute"]))).is_true()
+	assert_bool(DebugArgs.apply_mute(PackedStringArray(["--seed=3", "--mute"]))).is_true()
 	assert_bool(AudioServer.is_bus_mute(_master)).is_true()
 
 
 func test_no_mute_arg_leaves_the_bus_unmuted() -> void:
-	assert_bool(Game.apply_mute_arg(PackedStringArray(["--sandbox", "--sanity=0"]))).is_false()
+	assert_bool(DebugArgs.apply_mute(PackedStringArray(["--sandbox", "--sanity=0"]))).is_false()
 	assert_bool(AudioServer.is_bus_mute(_master)).is_false()
 
 

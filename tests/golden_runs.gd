@@ -248,11 +248,11 @@ static func frame_run(parent: Node, config: GameConfig) -> Dictionary:
 
 static func _dispatch(game: Game, c: Array, cells: Array[Vector2i]) -> int:
 	match c[1]:
-		"build": return game.build(c[2], cells[int(c[3])])
-		"upgrade": return game.upgrade(_tower_of(game, c[2], cells), c[3])
+		"build": return game.commands.build(c[2], cells[int(c[3])])
+		"upgrade": return game.commands.upgrade(_tower_of(game, c[2], cells), c[3])
 		"set_target_priority":
-			return game.set_target_priority(_tower_of(game, c[2], cells), c[3])
-		"call_wave": return game.call_wave()
+			return game.commands.set_target_priority(_tower_of(game, c[2], cells), c[3])
+		"call_wave": return game.commands.call_wave()
 	return -1
 
 

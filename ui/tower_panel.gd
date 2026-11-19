@@ -238,13 +238,13 @@ func _refresh_priority(t: SimTower) -> void:
 
 
 func _on_upgrade_pressed(branch: String) -> void:
-	game.upgrade(tower_id, branch)
+	game.commands.upgrade(tower_id, branch)
 
 
 func _on_priority_pressed(mode: String) -> void:
-	game.set_target_priority(tower_id, mode)
+	game.commands.set_target_priority(tower_id, mode)
 
 
 func _on_sell_pressed() -> void:
-	game.sell(tower_id)
+	game.commands.sell(tower_id)
 	close()

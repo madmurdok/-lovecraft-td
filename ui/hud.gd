@@ -82,7 +82,7 @@ func _ready() -> void:
 	gold_label = _label(purse, "GoldLabel")
 	relics_label = _label(purse, "RelicsLabel")
 	relics_label.mouse_filter = Control.MOUSE_FILTER_PASS  # for the per-kind tooltip
-	sell_relics_button = _button(bar, "SellRelicsButton", game.sell_relics)
+	sell_relics_button = _button(bar, "SellRelicsButton", game.commands.sell_relics)
 	_gap(bar, "GapLeft")
 	var status := _column(bar, "Status")
 	phase_label = _label(status, "PhaseLabel")
@@ -92,7 +92,7 @@ func _ready() -> void:
 	luck_label.add_theme_color_override("font_color", COLOR_LUCK)
 	luck_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	luck_label.visible = false
-	call_wave_button = _button(bar, "CallWaveButton", game.call_wave)
+	call_wave_button = _button(bar, "CallWaveButton", game.commands.call_wave)
 	_gap(bar, "GapRight")
 	speed_button = _button(bar, "SpeedButton", game.toggle_speed)
 	pause_button = _button(bar, "PauseButton", game.toggle_pause)
@@ -102,12 +102,12 @@ func _ready() -> void:
 	sanity_bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	bar.add_child(sanity_bar)
 	# LT-13 exit rule "buyout": shown by refresh() only in madness.
-	buyout_button = _button(bar, "BuyoutButton", game.buy_sanity)
+	buyout_button = _button(bar, "BuyoutButton", game.commands.buy_sanity)
 	buyout_button.visible = false
 	# LT-30: the flare and the oil stock in the footer strip, right-aligned to the board's
 	# edge; the FPS readout owns the left end of that strip.
 	if game.sim.config.economy.flare != null:
-		flare_button = _button(footer, "FlareButton", game.fire_flare)
+		flare_button = _button(footer, "FlareButton", game.commands.fire_flare)
 		oil_label = _label(footer, "OilLabel")
 		oil_label.add_theme_color_override("font_color", COLOR_LUCK)
 	# LT-23 Q10: just below the HUD strip, under the sanity bar (placed by refresh()).

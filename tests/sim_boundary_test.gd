@@ -898,10 +898,10 @@ func _tower_of(game: Game, def_id: String) -> int:
 
 func _dispatch(game: Game, c: Array) -> int:
 	match c[1]:
-		"build": return game.build(c[2], _cells[int(c[3])])
-		"upgrade": return game.upgrade(_tower_of(game, c[2]), c[3])
-		"set_target_priority": return game.set_target_priority(_tower_of(game, c[2]), c[3])
-		"call_wave": return game.call_wave()
+		"build": return game.commands.build(c[2], _cells[int(c[3])])
+		"upgrade": return game.commands.upgrade(_tower_of(game, c[2]), c[3])
+		"set_target_priority": return game.commands.set_target_priority(_tower_of(game, c[2]), c[3])
+		"call_wave": return game.commands.call_wave()
 	return -1
 
 

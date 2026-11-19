@@ -120,7 +120,7 @@ func test_percentile_does_not_mutate_its_input() -> void:
 
 func test_setup_creates_stats_only_with_the_flag_in_a_debug_build() -> void:
 	var g := GameFixture.make_game(null, _config, 7)
-	var expected := OS.is_debug_build() and OS.get_cmdline_user_args().has(Game.FRAME_STATS_ARG)
+	var expected := OS.is_debug_build() and OS.get_cmdline_user_args().has(DebugArgs.FRAME_STATS_ARG)
 	assert_bool(g.frame_stats != null).is_equal(expected)
 	g.free()
 

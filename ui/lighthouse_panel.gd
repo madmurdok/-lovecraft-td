@@ -20,11 +20,11 @@ func _ready() -> void:
 	add_child(title_label)
 	stats_label = SidePanel.make_label("Stats", SidePanel.COLOR_INFO)
 	add_child(stats_label)
-	upgrade_button = SidePanel.make_button("UpgradeButton", game.upgrade_lighthouse)
+	upgrade_button = SidePanel.make_button("UpgradeButton", game.commands.upgrade_lighthouse)
 	add_child(upgrade_button)
 	oil_label = SidePanel.make_label("OilLabel", SidePanel.COLOR_INFO)
 	add_child(oil_label)
-	oil_button = SidePanel.make_button("BuyOilButton", game.buy_flare_oil)
+	oil_button = SidePanel.make_button("BuyOilButton", game.commands.buy_flare_oil)
 	add_child(oil_button)
 	add_child(SidePanel.make_button("CancelButton", close, "Cancel"))
 
@@ -94,7 +94,7 @@ func refresh() -> void:
 			sim.flare_cost_oil(), ConfigReader.fmt(sim.flare_seconds())]
 	var buy := sim.can_buy_oil()
 	if eco.flare != null:
-		var units := game.flare_oil_to_buy()
+		var units := game.sim.oil_for_flare()
 		if units == 0:
 			units = sim.flare_cost_oil()
 		oil_button.text = "Buy oil for a flare (%s)" % TowerInfo.money(units * eco.oil.price)

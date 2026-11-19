@@ -129,14 +129,14 @@ func test_build_upgrade_and_sell_do_not_redraw_the_map_layer() -> void:
 	var board_draws := _count_draws(_game.board)
 	_game.sim.state.gold = 1_000_000
 	var cell := _buildable_cell()
-	assert_int(_game.build(RIFLE, cell)).is_equal(Simulation.CommandResult.OK)
+	assert_int(_game.commands.build(RIFLE, cell)).is_equal(Simulation.CommandResult.OK)
 	await _frames(2)
 	assert_int(_game.sim.state.towers.size()).is_equal(1)
 	var id: int = _game.sim.state.towers[0].id
-	assert_int(_game.upgrade(id)).is_equal(Simulation.CommandResult.OK)
+	assert_int(_game.commands.upgrade(id)).is_equal(Simulation.CommandResult.OK)
 	await _frames(2)
 	assert_int(_game.sim.state.towers[0].level).is_equal(1)
-	assert_int(_game.sell(id)).is_equal(Simulation.CommandResult.OK)
+	assert_int(_game.commands.sell(id)).is_equal(Simulation.CommandResult.OK)
 	await _frames(2)
 	assert_int(_game.sim.state.towers.size()).is_equal(0)
 	assert_int(board_draws[0]).is_greater_equal(3)

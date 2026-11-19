@@ -40,7 +40,7 @@ func test_beam_count_follows_the_lighthouse_level() -> void:
 	assert_object(l.beam).is_same(l.beams[0])
 	_game.sim.state.gold = 100000
 	for want: int in [2, 4]:
-		assert_int(_game.upgrade_lighthouse()).is_equal(R.OK)
+		assert_int(_game.commands.upgrade_lighthouse()).is_equal(R.OK)
 		await get_tree().process_frame
 		assert_int(l.beams.size()).is_equal(want)
 		assert_int(l.beams.size()).is_equal(_game.sim.beam_count())
@@ -52,13 +52,13 @@ func test_beam_count_follows_the_lighthouse_level() -> void:
 func test_beams_follow_the_sim_directions_and_have_no_timer() -> void:
 	var l := _game.lighting
 	_game.sim.state.gold = 100000
-	_game.upgrade_lighthouse()
+	_game.commands.upgrade_lighthouse()
 	await get_tree().process_frame
 	var day := [l.beams[0].rotation, l.beams[1].rotation]
 	_steps(5)  # by day the sim gives no directions: the rotation stays
 	await get_tree().process_frame
 	assert_array([l.beams[0].rotation, l.beams[1].rotation]).is_equal(day)
-	_game.call_wave()
+	_game.commands.call_wave()
 	_steps(5)
 	await get_tree().process_frame
 	var dirs := _game.sim.beam_directions(_game.clock.alpha())
@@ -80,9 +80,9 @@ func test_flare_keeps_the_cone_and_burns_a_whole_board_light() -> void:
 	var normal := Lighting._beam_texture(atan(eco.beam.half_width_ratio))
 	assert_object(l.beam.texture).is_same(normal)
 	assert_bool(l.flare_light.visible).is_false()
-	_game.call_wave()
+	_game.commands.call_wave()
 	_game.sim.state.oil = eco.flare.cost_oil
-	assert_int(_game.fire_flare()).is_equal(R.OK)
+	assert_int(_game.commands.fire_flare()).is_equal(R.OK)
 	await get_tree().process_frame
 	assert_object(l.beam.texture).is_same(normal)
 	l.night = 1.0
@@ -146,16 +146,16 @@ func test_panel_upgrade_button_states() -> void:
 	s.gold = 100000
 	p.refresh()
 	assert_bool(p.upgrade_button.disabled).is_false()
-	assert_int(_game.upgrade_lighthouse()).is_equal(R.OK)
+	assert_int(_game.commands.upgrade_lighthouse()).is_equal(R.OK)
 	p.refresh()
 	assert_str(p.title_label.text).is_equal("Lighthouse  L2")
 	assert_str(p.upgrade_button.text).contains("4 beams")
-	assert_int(_game.upgrade_lighthouse()).is_equal(R.OK)
+	assert_int(_game.commands.upgrade_lighthouse()).is_equal(R.OK)
 	p.refresh()
 	assert_str(p.upgrade_button.text).is_equal("Max level")
 	assert_bool(p.upgrade_button.disabled).is_true()
 	s.lighthouse_level = 0
-	_game.call_wave()
+	_game.commands.call_wave()
 	p.refresh()
 	assert_bool(p.upgrade_button.disabled).is_true()
 	assert_str(p.upgrade_button.text).contains("Only by day")
@@ -171,7 +171,7 @@ func test_panel_oil_button_states() -> void:
 	assert_str(p.oil_label.text).contains("Lamp oil: %d / %d" % [s.oil, oil.cap])
 	assert_bool(p.oil_button.disabled).is_false()
 	var before := s.oil
-	assert_int(_game.buy_oil()).is_equal(R.OK)  # Game forwards to the sim
+	assert_int(_game.commands.buy_oil()).is_equal(R.OK)  # Game forwards to the sim
 	assert_int(s.oil).is_equal(before + 1)
 	p.refresh()
 	assert_str(p.oil_button.text).contains("Buy oil for a flare")  # LT-57
@@ -180,7 +180,7 @@ func test_panel_oil_button_states() -> void:
 	assert_bool(p.oil_button.disabled).is_true()
 	assert_str(p.oil_button.text).contains("Tank full")
 	s.oil = 0
-	_game.call_wave()
+	_game.commands.call_wave()
 	p.refresh()
 	assert_bool(p.oil_button.disabled).is_true()
 	assert_str(p.oil_button.text).contains("Only by day")
@@ -204,12 +204,12 @@ func test_flare_button_shows_at_night_with_its_states() -> void:
 	assert_str(h.oil_label.text).is_equal("Oil %d / %d" % [s.oil, _game.sim.config.economy.oil.cap])
 	assert_bool(h.oil_label.visible).is_true()
 	s.oil = f.cost_oil  # LT-57: oil.start is 0
-	_game.call_wave()
+	_game.commands.call_wave()
 	h.refresh()
 	assert_bool(h.flare_button.visible).is_true()
 	assert_bool(h.flare_button.disabled).is_false()
 	assert_str(h.flare_button.text).is_equal("Flare (%d oil)" % f.cost_oil)
-	assert_int(_game.fire_flare()).is_equal(R.OK)
+	assert_int(_game.commands.fire_flare()).is_equal(R.OK)
 	h.refresh()
 	assert_str(h.flare_button.text).is_equal("Flare burning")
 	assert_bool(h.flare_button.disabled).is_true()

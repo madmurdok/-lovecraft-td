@@ -330,8 +330,8 @@ func test_hud_and_game_flare_oil_equal_the_sims_oil_rules() -> void:
 	var got := []
 	for oil: int in [0, 2, 5, 9]:
 		sim.state.oil = oil
-		assert_int(game.flare_oil_to_buy()).is_equal(sim.oil_for_flare())
-		got.append(game.flare_oil_to_buy())
+		assert_int(game.sim.oil_for_flare()).is_equal(sim.oil_for_flare())
+		got.append(game.sim.oil_for_flare())
 	assert_array(got).is_equal([6, 6, 4, 0])
 	sim.state.oil = 4
 	game.hud.refresh()

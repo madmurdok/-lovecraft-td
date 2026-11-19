@@ -43,7 +43,7 @@ func _buildable_cell() -> Vector2i:
 func _build_reserve(reserve: float) -> void:
 	_config.towers[NECRO].levels[0].sanity_reserve = reserve
 	_game.sim.state.gold = 100000
-	assert_int(_game.build(NECRO, _buildable_cell())).is_equal(Simulation.CommandResult.OK)
+	assert_int(_game.commands.build(NECRO, _buildable_cell())).is_equal(Simulation.CommandResult.OK)
 
 
 func _set_sanity(v: float) -> void:
