@@ -254,6 +254,24 @@ func test_release_pack_members_enters_the_due_members_of_one_kind_in_queue_order
 	assert_int(_ctx.rng(SimRng.Stream.SANITY).state).is_equal(sanity_state)
 
 
+func test_release_pack_members_enters_two_packs_in_the_order_they_were_queued() -> void:
+	var pack_a := _spawn.spawn_enemy("deep_one")
+	_ctx.state.tick = 1
+	var pack_b := _spawn.spawn_enemy("deep_one")
+	assert_int(pack_b).is_greater(pack_a)
+	_drain()
+	_ctx.state.tick = 100 * _spacing()  # every queued member of both packs is due on this tick
+	_spawn.release_pack_members(false)
+	var ev := _drain()
+	var packs := ev.map(func(x: SimEvent) -> int: return _enemy(x.id).pack_of)
+	assert_int(packs.size()).is_greater(2)
+	assert_int(packs.front()).is_equal(pack_a)
+	assert_int(packs.back()).is_equal(pack_b)
+	var expected := packs.duplicate()
+	expected.sort()
+	assert_array(packs).is_equal(expected)  # all of pack A (queued first), then all of pack B
+
+
 func test_release_pack_members_with_an_empty_queue_does_nothing() -> void:
 	_spawn.release_pack_members(false)
 	_spawn.release_pack_members(true)
