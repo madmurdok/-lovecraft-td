@@ -20,11 +20,7 @@ func before_test() -> void:
 	var r := GameConfig.load_from_dir("res://data")
 	assert_bool(r.ok).override_failure_message("\n".join(r.errors)).is_true()
 	_config = r.config
-	_vp = SubViewport.new()
-	_vp.size = Vector2i(Vector2(BASE) * SCALE)
-	_vp.size_2d_override = BASE
-	_vp.size_2d_override_stretch = true
-	add_child(_vp)
+	_vp = GameFixture.make_viewport(self, Vector2i(Vector2(BASE) * SCALE), BASE)
 
 
 func after_test() -> void:
@@ -35,10 +31,7 @@ func after_test() -> void:
 
 
 func _start_game() -> void:
-	_game = Game.new()
-	_game.setup(_config, 7)
-	_vp.add_child(_game)
-	_game.set_process(false)
+	_game = GameFixture.make_game(_vp, _config, 7)
 	await get_tree().process_frame
 
 
@@ -138,7 +131,7 @@ func test_click_under_a_scaled_viewport_picks_the_cell_and_builds() -> void:
 	await _start_game()
 	var cell := _far_buildable_cell()
 	var gold := _game.sim.state.gold
-	await _click(_game.board.position + (Vector2(cell) + Vector2(0.5, 0.5)) * Board.CELL)
+	await _click(_game.board.view.cell_to_screen(_game.sim.state.map.grid.centre(cell)))
 	assert_bool(_game.picker.visible).is_true()
 	assert_vector(_game.picker.cell).is_equal(cell)
 	await _click(_game.picker.buttons[RIFLE].get_global_rect().get_center())

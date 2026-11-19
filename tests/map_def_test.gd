@@ -131,3 +131,27 @@ func test_rejects_l_in_the_middle_of_the_path() -> void:
 
 func test_rejects_isolated_s() -> void:
 	_assert_map_rejected(["S.#L"], "rows[0]", "S must be a path end")
+
+
+# --- the "grid" key (LT-77 §6 behaviour 8) -----------------------------------------------
+
+func test_grid_key_absent_loads_as_square() -> void:
+	var m := real_config().map
+	assert_str(m.grid.kind()).is_equal("square")
+	assert_int(m.grid.cell_count()).is_equal(m.width * m.height)
+
+
+func test_grid_key_square_loads() -> void:
+	var r := load_json_edit(MAP, func(root: Dictionary) -> void: root["grid"] = "square")
+	assert_bool(r.ok).override_failure_message("\n".join(r.errors)).is_true()
+	assert_str(r.config.map.grid.kind()).is_equal("square")
+
+
+func test_grid_key_hex_is_rejected_as_unknown() -> void:
+	assert_rejected(load_json_edit(MAP, func(root: Dictionary) -> void: root["grid"] = "hex"),
+		MAP, "grid", "unknown grid")
+
+
+func test_other_unknown_map_keys_are_still_rejected() -> void:
+	assert_rejected(load_json_edit(MAP, func(root: Dictionary) -> void: root["gridd"] = "square"),
+		MAP, "gridd", "unknown field")

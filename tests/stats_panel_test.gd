@@ -20,9 +20,7 @@ func before_test() -> void:
 	var r := GameConfig.load_from_dir("res://data")
 	assert_bool(r.ok).override_failure_message("\n".join(r.errors)).is_true()
 	_config = r.config
-	_vp = SubViewport.new()
-	_vp.size = Vector2i(1200, 675)
-	add_child(_vp)
+	_vp = GameFixture.make_viewport(self)
 
 
 func after_test() -> void:
@@ -33,10 +31,7 @@ func after_test() -> void:
 
 
 func _start_game() -> void:
-	_game = Game.new()
-	_game.setup(_config, 7)
-	_vp.add_child(_game)
-	_game.set_process(false)
+	_game = GameFixture.make_game(_vp, _config, 7)
 	await get_tree().process_frame
 
 
@@ -54,10 +49,10 @@ func _tower(def_id: String, path: Array = [], cell := Vector2i(-1, -1)) -> SimTo
 	_game.sim.state.gold = 100000
 	if cell == Vector2i(-1, -1):
 		cell = _buildable_cell()
-	assert_int(_game.build(def_id, cell)).is_equal(Simulation.CommandResult.OK)
+	assert_int(_game.commands.build(def_id, cell)).is_equal(Simulation.CommandResult.OK)
 	var t := _game.sim.tower_by_id(_game.sim.state.tower_at[cell])
 	for b: String in path:
-		assert_int(_game.upgrade(t.id, b)).is_equal(Simulation.CommandResult.OK)
+		assert_int(_game.commands.upgrade(t.id, b)).is_equal(Simulation.CommandResult.OK)
 	_game.tower_panel.open_for(t.id)
 	return t
 
@@ -72,7 +67,7 @@ func _special_lines() -> PackedStringArray:
 
 func _rows(with_special := true) -> Array:
 	var out := []
-	for row: Array in TowerInfo.ROWS:
+	for row: Array in TowerText.ROWS:
 		if with_special or row[0] != "special":
 			out.append(row[0])
 	return out
@@ -83,7 +78,7 @@ func _color(l: Label) -> Color:
 
 
 func _values(t: SimTower, s: TowerDef.Level) -> Dictionary:
-	return TowerInfo.row_values(t.def, s, _config, _game.sim.state.sanity)
+	return TowerText.row_values(t.def, s, _config, _game.sim.state.sanity)
 
 
 ## LT-43 §2 for the table on screen: heads, every cell's text, one spanning cell for a row
@@ -198,7 +193,7 @@ func test_head_row_is_hidden_only_when_every_head_is_empty() -> void:
 func test_picker_and_panel_show_the_same_rows_in_the_same_order() -> void:
 	await _start_game()
 	var labels := []
-	for row: Array in TowerInfo.ROWS:
+	for row: Array in TowerText.ROWS:
 		labels.append(row[1])
 	_game.picker.open_for(_buildable_cell())
 	for id: String in _config.towers:
@@ -224,7 +219,7 @@ func test_picker_and_panel_show_the_same_rows_in_the_same_order() -> void:
 			assert_array(row_labels).override_failure_message(tag).is_equal([""]
 				+ labels.slice(0, labels.size() - 1))
 			_game.close_panels()
-			assert_int(_game.sell(t.id)).is_equal(Simulation.CommandResult.OK)
+			assert_int(_game.commands.sell(t.id)).is_equal(Simulation.CommandResult.OK)
 
 
 ## §2: Now | L2 at L1, Now | A | B at L2, Now at L3, for every tower: each cell is its level's
@@ -236,15 +231,15 @@ func test_every_tower_compares_now_with_its_upgrades() -> void:
 		var t := await _tower(id)
 		_assert_compare(id + " L1", ["Now", "L2"],
 			[_values(t, def.levels[0]), _values(t, def.levels[1])])
-		assert_int(_game.upgrade(t.id, "")).is_equal(Simulation.CommandResult.OK)
+		assert_int(_game.commands.upgrade(t.id, "")).is_equal(Simulation.CommandResult.OK)
 		_game.tower_panel.refresh()
 		_assert_compare(id + " L2", ["Now", "A", "B"], [_values(t, def.levels[1]),
 			_values(t, def.branches["a"]), _values(t, def.branches["b"])])
-		assert_int(_game.upgrade(t.id, "b")).is_equal(Simulation.CommandResult.OK)
+		assert_int(_game.commands.upgrade(t.id, "b")).is_equal(Simulation.CommandResult.OK)
 		_game.tower_panel.refresh()
 		_assert_compare(id + " B", ["Now"], [_values(t, def.branches["b"])])
 		_game.close_panels()
-		assert_int(_game.sell(t.id)).is_equal(Simulation.CommandResult.OK)
+		assert_int(_game.commands.sell(t.id)).is_equal(Simulation.CommandResult.OK)
 
 
 ## Review finding 4: the reserve, dead-zone range and Resonator deltas the old delta lines
@@ -254,8 +249,8 @@ func test_reserve_dead_zone_and_resonator_deltas_are_gold_cells() -> void:
 	var sign: TowerDef = _config.towers["elder_sign"]
 	assert_float(sign.levels[1].sanity_reserve).is_not_equal(sign.levels[0].sanity_reserve)
 	await _tower("elder_sign")
-	assert_str(_table().text_at("reserve", 0)).is_equal(TowerInfo.num(sign.levels[0].sanity_reserve))
-	assert_str(_table().text_at("reserve", 1)).is_equal(TowerInfo.num(sign.levels[1].sanity_reserve))
+	assert_str(_table().text_at("reserve", 0)).is_equal(TowerText.num(sign.levels[0].sanity_reserve))
+	assert_str(_table().text_at("reserve", 1)).is_equal(TowerText.num(sign.levels[1].sanity_reserve))
 	assert_that(_color(_table().cells["reserve"][1])).is_equal(StatsTable.COLOR_CHANGED)
 	assert_that(_color(_table().cells["reserve"][0])).is_equal(StatsTable.COLOR_RESERVE)
 	_game.close_panels()
@@ -264,10 +259,10 @@ func test_reserve_dead_zone_and_resonator_deltas_are_gold_cells() -> void:
 	var c1 := coast.levels[0]
 	var c2 := coast.levels[1]
 	await _tower("coast_battery")
-	assert_str(_table().text_at("range", 0)).is_equal("%s–%s" % [TowerInfo.num(c1.min_range),
-		TowerInfo.num(c1.range_cells)])
-	assert_str(_table().text_at("range", 1)).is_equal("%s–%s" % [TowerInfo.num(c2.min_range),
-		TowerInfo.num(c2.range_cells)])
+	assert_str(_table().text_at("range", 0)).is_equal("%s–%s" % [TowerText.num(c1.min_range),
+		TowerText.num(c1.range_cells)])
+	assert_str(_table().text_at("range", 1)).is_equal("%s–%s" % [TowerText.num(c2.min_range),
+		TowerText.num(c2.range_cells)])
 	assert_that(_color(_table().cells["range"][1])).is_equal(StatsTable.COLOR_CHANGED)
 	_game.close_panels()
 
@@ -283,14 +278,14 @@ func test_reserve_dead_zone_and_resonator_deltas_are_gold_cells() -> void:
 		var s: TowerDef.Level = pair[1]
 		var dps := s.damage / s.fire_interval * (1.0 + float(s.effects["sanity_scaling"])
 			* (1.0 - sanity / top))
-		assert_str(_table().text_at("dps", pair[0])).is_equal(TowerInfo.num(roundf(dps * 10.0)
+		assert_str(_table().text_at("dps", pair[0])).is_equal(TowerText.num(roundf(dps * 10.0)
 			/ 10.0))
-		assert_str(_table().text_at("damage", pair[0])).is_equal(TowerInfo.num(s.damage))
+		assert_str(_table().text_at("damage", pair[0])).is_equal(TowerText.num(s.damage))
 	assert_that(_color(_table().cells["damage"][1])).is_equal(StatsTable.COLOR_CHANGED)
 	assert_that(_color(_table().cells["dps"][1])).is_equal(StatsTable.COLOR_CHANGED)
 	# Q3: the panel says the DPS is live, first under the table.
 	assert_str(_special_lines()[0]).is_equal("DPS at sanity %s; grows as it falls"
-		% TowerInfo.num(floorf(sanity)))
+		% TowerText.num(floorf(sanity)))
 
 
 ## §2: special lines "Now: …" then "L2: …"/"A: …"/"B: …" (special_delta_lines); no prefix at L3.
@@ -299,15 +294,15 @@ func test_special_lines_are_prefixed_by_column_only_with_upgrade_columns() -> vo
 	var dyn: TowerDef = _config.towers["dynamite_crew"]
 	var t := await _tower("dynamite_crew", [""])
 	var want := []
-	for line in TowerInfo.special_lines(dyn.levels[1]):
+	for line in TowerText.special_lines(dyn.levels[1]):
 		want.append("Now: " + line)
 	for b: String in ["a", "b"]:
-		for line in TowerInfo.special_delta_lines(dyn.levels[1], dyn.branches[b]):
+		for line in TowerText.special_delta_lines(dyn.levels[1], dyn.branches[b]):
 			want.append("%s: %s" % [b.to_upper(), line])
 	assert_array(Array(_special_lines())).is_equal(want)
-	assert_int(_game.upgrade(t.id, "a")).is_equal(Simulation.CommandResult.OK)
+	assert_int(_game.commands.upgrade(t.id, "a")).is_equal(Simulation.CommandResult.OK)
 	_game.tower_panel.refresh()
-	assert_array(Array(_special_lines())).is_equal(Array(TowerInfo.special_lines(dyn.branches["a"])))
+	assert_array(Array(_special_lines())).is_equal(Array(TowerText.special_lines(dyn.branches["a"])))
 
 
 # --- §5 lit ----------------------------------------------------------------------------------
@@ -321,24 +316,24 @@ func test_lit_mundane_tower_shows_live_values_the_line_and_no_misses() -> void:
 	var m := _config.economy.beam.mundane_fire_interval_mult
 	var t := await _tower(RIFLE, [""])
 	assert_bool(_game.tower_panel.lit_label.visible).is_false()
-	assert_str(_game.tower_panel.kind_label.text).not_contains(TowerInfo.NO_MISSES_LIT)
+	assert_str(_game.tower_panel.kind_label.text).not_contains(TowerText.NO_MISSES_LIT)
 	for key: String in _rows(false):
 		for l: Label in _table().cells[key]:
 			assert_str(l.text).override_failure_message(key).not_contains(STAR)
 	t.lit = true
 	_game.tower_panel.refresh()
-	var lit := {"every": TowerInfo.num(s.fire_interval * m) + STAR,
-		"dps": TowerInfo.num(roundf(s.damage / s.fire_interval / m * 10.0) / 10.0) + STAR}
+	var lit := {"every": TowerText.num(s.fire_interval * m) + STAR,
+		"dps": TowerText.num(roundf(s.damage / s.fire_interval / m * 10.0) / 10.0) + STAR}
 	_assert_compare("lit rifleman L2", ["Now", "A", "B"], [_values(t, s),
 		_values(t, def.branches["a"]), _values(t, def.branches["b"])], lit)
 	assert_bool(_game.tower_panel.lit_label.visible).is_true()
 	assert_str(_game.tower_panel.lit_label.text).is_equal("* In the beam now: fire +%s%%, no misses"
-		% TowerInfo.num(roundf((1.0 / m - 1.0) * 100.0)))
-	assert_str(_game.tower_panel.kind_label.text).is_equal(TowerInfo.NO_MISSES_LIT)
+		% TowerText.num(roundf((1.0 / m - 1.0) * 100.0)))
+	assert_str(_game.tower_panel.kind_label.text).is_equal(TowerText.NO_MISSES_LIT)
 	t.lit = false
 	_game.tower_panel.refresh()
 	assert_bool(_game.tower_panel.lit_label.visible).is_false()
-	assert_str(_table().text_at("every", 0)).is_equal(TowerInfo.num(s.fire_interval))
+	assert_str(_table().text_at("every", 0)).is_equal(TowerText.num(s.fire_interval))
 
 
 ## Q4: occult Damage / DPS x power_mult, the circle's unit DPS and DPS too (LT-53/S8); the
@@ -346,15 +341,15 @@ func test_lit_mundane_tower_shows_live_values_the_line_and_no_misses() -> void:
 func test_lit_occult_shooter_and_circle_show_power_mult_values() -> void:
 	await _start_game()
 	var pm := _config.economy.beam.occult_power_mult
-	var power := "* In the beam now: −%s%% power" % TowerInfo.num(roundf((1.0 - pm) * 100.0))
+	var power := "* In the beam now: −%s%% power" % TowerText.num(roundf((1.0 - pm) * 100.0))
 	var necro: TowerDef = _config.towers["necronomicon_reader"]
 	var n1 := necro.levels[0]
 	var t := await _tower("necronomicon_reader")
 	t.lit = true
 	_game.tower_panel.refresh()
 	_assert_compare("lit necro", ["Now", "L2"], [_values(t, n1), _values(t, necro.levels[1])],
-		{"damage": TowerInfo.num(n1.damage * pm) + STAR,
-		"dps": TowerInfo.num(roundf(n1.damage / n1.fire_interval * pm * 10.0) / 10.0) + STAR})
+		{"damage": TowerText.num(n1.damage * pm) + STAR,
+		"dps": TowerText.num(roundf(n1.damage / n1.fire_interval * pm * 10.0) / 10.0) + STAR})
 	assert_str(_game.tower_panel.lit_label.text).is_equal(power)
 	_game.close_panels()
 
@@ -366,8 +361,8 @@ func test_lit_occult_shooter_and_circle_show_power_mult_values() -> void:
 	_game.tower_panel.refresh()
 	_assert_compare("lit circle L2", ["Now", "A", "B"], [_values(c, c2),
 		_values(c, circle.branches["a"]), _values(c, circle.branches["b"])],
-		{"damage": TowerInfo.num(roundf(unit * 10.0) / 10.0) + STAR,
-		"dps": TowerInfo.num(roundf(unit * c2.summon_max() * 10.0) / 10.0) + STAR})
+		{"damage": TowerText.num(roundf(unit * 10.0) / 10.0) + STAR,
+		"dps": TowerText.num(roundf(unit * c2.summon_max() * 10.0) / 10.0) + STAR})
 	assert_str(_game.tower_panel.lit_label.text).is_equal(power)
 
 
@@ -383,9 +378,9 @@ func test_lit_mark_only_on_the_special_lines_the_beam_changes() -> void:
 	_game.tower_panel.refresh()
 	var lines := Array(_special_lines())
 	assert_array(lines).contains(["Now: Banish %s cells back*"
-		% TowerInfo.num(float(k1.effects["banish_cells"]) * pm)])
+		% TowerText.num(float(k1.effects["banish_cells"]) * pm)])
 	assert_array(lines).contains(["Now: Max %s HP; immune %s s" % [
-		TowerInfo.num(k1.effects["banish_max_hp"]), TowerInfo.num(k1.effects["banish_immune_seconds"])]])
+		TowerText.num(k1.effects["banish_max_hp"]), TowerText.num(k1.effects["banish_immune_seconds"])]])
 	_assert_marks_only_changed(lines)
 	_game.close_panels()
 
@@ -396,8 +391,8 @@ func test_lit_mark_only_on_the_special_lines_the_beam_changes() -> void:
 	_game.tower_panel.refresh()
 	lines = Array(_special_lines())
 	assert_array(lines).contains([
-		"Now: Slows enemies %s%%*" % TowerInfo.num(float(s1.effects["slow"]) * pm * 100.0),
-		"Now: Foes take +%s%% damage*" % TowerInfo.num((float(s1.effects["damage_taken_multiplier"])
+		"Now: Slows enemies %s%%*" % TowerText.num(float(s1.effects["slow"]) * pm * 100.0),
+		"Now: Foes take +%s%% damage*" % TowerText.num((float(s1.effects["damage_taken_multiplier"])
 			- 1.0) * pm * 100.0)])
 	_assert_marks_only_changed(lines)
 	_game.close_panels()
@@ -409,8 +404,8 @@ func test_lit_mark_only_on_the_special_lines_the_beam_changes() -> void:
 	_game.tower_panel.refresh()
 	lines = Array(_special_lines())
 	var starred := lines.filter(func(l: String) -> bool: return l.ends_with(STAR))
-	assert_array(starred).is_equal(["Now: Unit %s HP, %s DPS*" % [TowerInfo.num(c2.effects["summon_hp"]),
-		TowerInfo.num(float(c2.effects["summon_dps"]) * pm)]])
+	assert_array(starred).is_equal(["Now: Unit %s HP, %s DPS*" % [TowerText.num(c2.effects["summon_hp"]),
+		TowerText.num(float(c2.effects["summon_dps"]) * pm)]])
 	_assert_marks_only_changed(lines)
 
 
@@ -418,7 +413,7 @@ func test_lit_mark_only_on_the_special_lines_the_beam_changes() -> void:
 ## line is marked.
 func _assert_marks_only_changed(lines: Array) -> void:
 	var t := _game.sim.tower_by_id(_game.tower_panel.tower_id)
-	var base := Array(TowerInfo.special_lines(t.stats()))
+	var base := Array(TowerText.special_lines(t.stats()))
 	var marked := 0
 	for l: String in lines:
 		if not l.begins_with("Now: "):
@@ -446,7 +441,7 @@ func test_the_flare_lights_a_tower_and_the_panel_marks_it() -> void:
 				cell = c
 	assert_int(cell.x).is_greater_equal(0)
 	var t := await _tower(RIFLE, [], cell)
-	assert_int(_game.call_wave()).is_equal(Simulation.CommandResult.OK)
+	assert_int(_game.commands.call_wave()).is_equal(Simulation.CommandResult.OK)
 	_game.sim.step()
 	assert_bool(t.lit).is_false()
 	_game.tower_panel.refresh()
@@ -458,7 +453,7 @@ func test_the_flare_lights_a_tower_and_the_panel_marks_it() -> void:
 	assert_bool(t.lit).is_true()
 	_game.tower_panel.refresh()
 	var s := t.stats()
-	assert_str(_table().text_at("every", 0)).is_equal(TowerInfo.num(s.fire_interval
+	assert_str(_table().text_at("every", 0)).is_equal(TowerText.num(s.fire_interval
 		* _config.economy.beam.mundane_fire_interval_mult) + STAR)
 	assert_bool(_game.tower_panel.lit_label.visible).is_true()
 
@@ -497,7 +492,7 @@ func test_no_table_value_is_cut_at_1280x720() -> void:
 					if right > _game.side_panel.get_global_rect().end.x + 0.5:
 						cuts.append("%s table right %.1f" % [tag, right])
 					_game.close_panels()
-					assert_int(_game.sell(t.id)).is_equal(Simulation.CommandResult.OK)
+					assert_int(_game.commands.sell(t.id)).is_equal(Simulation.CommandResult.OK)
 	assert_array(cuts).is_empty()
 
 
@@ -536,7 +531,7 @@ func _circle_table(max_width: int) -> StatsTable:
 	var def: TowerDef = _config.towers["summoning_circle"]
 	var cols: Array[Dictionary] = []
 	for s: TowerDef.Level in [def.levels[1], def.branches["a"], def.branches["b"]]:
-		cols.append(TowerInfo.row_values(def, s, _config, 80.0))
+		cols.append(TowerText.row_values(def, s, _config, 80.0))
 	var table := StatsTable.new()
 	table.max_width = max_width
 	_vp.add_child(table)
@@ -603,6 +598,6 @@ func test_three_column_cards_keep_the_full_gap_and_fit_the_usable_width() -> voi
 		if w > widest["w"]:
 			widest = {"id": id, "w": w}
 		_game.close_panels()
-		assert_int(_game.sell(t.id)).is_equal(Simulation.CommandResult.OK)
+		assert_int(_game.commands.sell(t.id)).is_equal(Simulation.CommandResult.OK)
 	assert_int(three).is_greater(0)
 	assert_str(widest["id"]).is_equal("summoning_circle")

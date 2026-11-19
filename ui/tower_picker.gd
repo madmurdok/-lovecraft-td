@@ -4,7 +4,7 @@ extends VBoxContainer
 ## top of the side panel (SidePanel creates it above its Scroll), never over the board.
 ## A title line ("Build here" + Cancel), then the towers grouped by TowerDef.kind (mundane,
 ## then occult, data order inside each kind), one row each: short name, $, DPS and the
-## TowerInfo.trait_text tag. Each row is one button (one click builds); hovering it frames
+## TowerText.trait_text tag. Each row is one button (one click builds); hovering it frames
 ## it, shows its range ring and board letter (a ghost) on the cell and emits
 ## hovered_changed (the side panel's L1 card below the list). Leaving the row hides them.
 ## A row is disabled whenever Simulation.can_build refuses it: unaffordable dims it and
@@ -16,13 +16,24 @@ extends VBoxContainer
 
 signal hovered_changed(def_id: String)  ## "" when no row is hovered
 
-## Kept for callers of the LT-7 name; the texts live in TowerInfo.REASONS.
-const REASONS := TowerInfo.REASONS
 const GROUP_TITLES := {"mundane": "MUNDANE", "occult": "OCCULT"}
 const STATUS_COLOR := Color(0.95, 0.55, 0.45)  ## refusal reason, unaffordable cost, "!"
 const DIM := Color(1, 1, 1, 0.5)  ## a refused row's cells (an unaffordable cost excepted)
 const MAD_MARK := "!"  ## after the Trait's reserve when building drives you mad
 const TITLE_TEXT := "Build here"
+const G_ROWS := 1  ## LT-78: the one field group (rows 28-33 of the design note's §3)
+## LT-78 §3: sim events that may change can_build or would_drive_mad_build for some row.
+const REFRESH_ON: Dictionary[SimEvent.Type, int] = {
+	SimEvent.Type.GOLD_CHANGED: G_ROWS,
+	SimEvent.Type.BUILD_STARTED: G_ROWS,
+	SimEvent.Type.WAVE_STARTED: G_ROWS,
+	SimEvent.Type.WAVE_CLEARED: G_ROWS,
+	SimEvent.Type.OUTCOME: G_ROWS,
+	SimEvent.Type.TOWER_BUILT: G_ROWS,
+	SimEvent.Type.TOWER_SOLD: G_ROWS,
+	SimEvent.Type.SANITY_CAP_CHANGED: G_ROWS,
+	SimEvent.Type.SANITY_STATE_CHANGED: G_ROWS,
+}
 const FONT_SIZE := 12
 const HEAD_FONT_SIZE := 11  ## group titles and column heads
 const NAME_FONT_MIN := 10  ## past LIST_MAX_ROWS the names shrink to this, then ellipsis
@@ -68,6 +79,8 @@ var title_label: Label  ## "Build here", or the refusal every row shares
 var cancel_button: Button  ## right of the title
 var rows_scroll: ScrollContainer  ## the rows (and later group lines) below the pinned line
 var _traits: Dictionary[String, String] = {}  ## def id -> trait_text of its L1
+var refresh_count := 0  ## LT-78 §8 B1: row rebuilds so far (refresh and flush)
+var _dirty := 0  ## LT-78: G_ROWS when an event marked the rows since the last flush
 
 
 func _ready() -> void:
@@ -173,16 +186,16 @@ func _row(id: String, def: TowerDef) -> Button:
 	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	names[id] = name_label
 	h.add_child(name_label)
-	var cost := _value("Cost", TowerInfo.cost_text(def.cost), StatsTable.COLOR_VALUE, COST_W)
+	var cost := _value("Cost", TowerText.cost_text(def.cost), StatsTable.COLOR_VALUE, COST_W)
 	costs[id] = cost
 	h.add_child(cost)
 	var gap := _spacer(COST_GAP)
 	gap.name = "Gap"
 	h.add_child(gap)
-	var dps_text := TowerInfo.dps_text(s, game.sim.config)
+	var dps_text := TowerText.dps_text(s, game.sim.config)
 	var dps := _value("Dps", dps_text, StatsTable.color_for("dps", dps_text), DPS_W)
 	h.add_child(dps)
-	_traits[id] = TowerInfo.trait_text(def, s)
+	_traits[id] = TowerText.trait_text(def, s)
 	var trait_cell := _value("Trait", _traits[id], _trait_color(_traits[id]), TRAIT_W)
 	h.add_child(trait_cell)
 	cells[id] = {"dps": dps, "trait": trait_cell}
@@ -227,10 +240,26 @@ func close() -> void:
 	game.board.queue_redraw()
 
 
+## LT-78 §1: marks the rows when `ev` may change them; flush() rebuilds them once per drain.
+func on_event(ev: SimEvent) -> void:
+	_dirty |= REFRESH_ON.get(ev.type, 0)
+
+
+## LT-78 §1: rebuilds the rows if an event marked them; a hidden picker drops the mark
+## (open_for syncs it).
+func flush() -> void:
+	if _dirty == 0:
+		return
+	_dirty = 0
+	refresh()
+
+
 ## Re-evaluates every row against the sim (money and the phase change while it is open).
 func refresh() -> void:
+	_dirty = 0
 	if not visible:
 		return
+	refresh_count += 1
 	var shared := Simulation.CommandResult.OK  ## LT-61 §6: the first refusal not about gold
 	var any_ok := false
 	for id in buttons:
@@ -256,11 +285,11 @@ func refresh() -> void:
 			cells[id][key].modulate = dim
 		names[id].modulate = dim
 		cost.modulate = Color.WHITE if poor else dim
-		var tip := def.name + TowerInfo.DASH + TowerInfo.cost_text(def.cost)
+		var tip := def.name + TowerText.DASH + TowerText.cost_text(def.cost)
 		if b.disabled:
-			tip += " (%s)" % TowerInfo.reason(r)
+			tip += " (%s)" % CommandText.reason(r)
 		elif mad:
-			tip += TowerInfo.MADNESS_WARNING
+			tip += TowerText.MADNESS_WARNING
 		var trait_tip := _trait_tip(base)
 		if not trait_tip.is_empty():
 			tip += "\n" + trait_tip
@@ -272,7 +301,7 @@ func refresh() -> void:
 			if game.sim.state.phase == SimState.Phase.WAVE \
 			else Simulation.CommandResult.NOT_ENOUGH_GOLD
 	var refused := shared != Simulation.CommandResult.OK
-	var why := TowerInfo.reason(shared)
+	var why := CommandText.reason(shared)
 	title_label.text = why.left(1).to_upper() + why.substr(1) if refused else TITLE_TEXT
 	title_label.add_theme_color_override("font_color", STATUS_COLOR if refused else Color.WHITE)
 
@@ -284,7 +313,7 @@ static func _trait_tip(tag: String) -> String:
 	if tip.is_empty() or words.size() < 2:
 		return tip
 	if words[0] == "Blind":  # the number twice: "Blind 1: can't fire within 1 cell"
-		return tip % [words[1], TowerInfo.cells_text(words[1])]
+		return tip % [words[1], TowerText.cells_text(words[1])]
 	return tip.replace("%s", words[1])
 
 
@@ -300,7 +329,7 @@ func _input(event: InputEvent) -> void:
 
 
 func _on_tower_pressed(def_id: String) -> void:
-	if game.build(def_id, cell) == Simulation.CommandResult.OK:
+	if game.commands.build(def_id, cell) == Simulation.CommandResult.OK:
 		close()
 
 

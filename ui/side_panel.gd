@@ -61,8 +61,9 @@ static func make_button(node_name: String, on_pressed: Callable, text := "") -> 
 static func panel_rect(map: MapDef) -> Rect2:
 	var base := Vector2(ProjectSettings.get_setting("display/window/size/viewport_width"),
 		ProjectSettings.get_setting("display/window/size/viewport_height"))
-	var left := Game.BOARD_ORIGIN.x + map.width * Board.CELL
-	return Rect2(left, Game.BOARD_ORIGIN.y, base.x - left, base.y - Game.BOARD_ORIGIN.y)
+	var board := BoardView.world_rect_for(map.grid)
+	var left := board.end.x
+	return Rect2(left, board.position.y, base.x - left, base.y - board.position.y)
 
 
 func _ready() -> void:
@@ -123,14 +124,14 @@ func show_card(def_id: String) -> void:
 		card_title.add_theme_color_override("font_color", StatsTable.kind_color(def.kind))
 		card_role.text = def.role
 		card_role.visible = not def.role.is_empty()
-		var cols: Array[Dictionary] = [TowerInfo.row_values(def, s, game.sim.config)]
+		var cols: Array[Dictionary] = [TowerText.row_values(def, s, game.sim.config)]
 		card_table.set_columns(PackedStringArray([""]), cols, {},  # no head row (LT-61 §1)
 			StatsTable.kind_color(def.kind))
-		card_special.text = "\n".join(TowerInfo.special_lines(s))
+		card_special.text = "\n".join(TowerText.special_lines(s))
 		card_special.visible = not card_special.text.is_empty()
-		card_kind.text = "\n".join(TowerInfo.kind_lines(def, s, game.sim.config.sanity))
+		card_kind.text = "\n".join(TowerText.kind_lines(def, s, game.sim.config.sanity))
 		card_kind.visible = not card_kind.text.is_empty()
-		card_path.text = TowerInfo.upgrade_path_text(def)
+		card_path.text = TowerText.upgrade_path_text(def)
 	_update_idle()
 
 

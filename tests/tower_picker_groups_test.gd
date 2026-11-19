@@ -38,9 +38,7 @@ var _ten_occult: Array = []
 
 
 func before_test() -> void:
-	_vp = SubViewport.new()
-	_vp.size = Vector2i(1200, 675)
-	add_child(_vp)
+	_vp = GameFixture.make_viewport(self)
 
 
 func after_test() -> void:
@@ -107,10 +105,7 @@ func _ten_config() -> GameConfig:
 
 func _start_game(config: GameConfig) -> void:
 	_config = config
-	_game = Game.new()
-	_game.setup(_config, 7)
-	_vp.add_child(_game)
-	_game.set_process(false)
+	_game = GameFixture.make_game(_vp, _config, 7)
 	await get_tree().process_frame
 
 
@@ -141,7 +136,7 @@ func _buildable_cell() -> Vector2i:
 
 func _open_picker() -> void:
 	var cell := _buildable_cell()
-	await _click(_game.board.position + (Vector2(cell) + Vector2(0.5, 0.5)) * Board.CELL)
+	await _click(_game.board.view.cell_to_screen(_game.sim.state.map.grid.centre(cell)))
 	assert_bool(_game.picker.visible).is_true()
 	await get_tree().process_frame
 
@@ -181,7 +176,7 @@ func _tip_line(id: String) -> String:
 
 func _tip(id: String) -> String:
 	var def: TowerDef = _config.towers[id]
-	return "%s — %s" % [def.name, TowerInfo.cost_text(def.cost)]
+	return "%s — %s" % [def.name, TowerText.cost_text(def.cost)]
 
 
 # --- grouping, order, headers ---------------------------------------------------------------
@@ -229,11 +224,11 @@ func test_every_row_shows_its_short_name_cost_dps_and_trait() -> void:
 	for id: String in _config.towers:
 		var def: TowerDef = _config.towers[id]
 		assert_str(_game.picker.names[id].text).is_equal(def.short_name)
-		assert_str(_game.picker.costs[id].text).is_equal(TowerInfo.cost_text(def.cost))
+		assert_str(_game.picker.costs[id].text).is_equal(TowerText.cost_text(def.cost))
 		assert_str(_game.picker.cells[id]["dps"].text).override_failure_message(id) \
-			.is_equal(TowerInfo.dps_text(def.levels[0], _config))
+			.is_equal(TowerText.dps_text(def.levels[0], _config))
 		assert_str(_game.picker.cells[id]["trait"].text).override_failure_message(id) \
-			.is_equal(TowerInfo.trait_text(def, def.levels[0]))
+			.is_equal(TowerText.trait_text(def, def.levels[0]))
 
 
 # --- fit: 10 towers, 1200x675, the side panel's 224 px --------------------------------------
@@ -309,7 +304,7 @@ func test_cost_cell_never_contains_the_money_reason() -> void:
 		_game.picker.refresh()
 		for id: String in _config.towers:
 			var t: String = _game.picker.costs[id].text
-			assert_str(t).is_equal(TowerInfo.cost_text(_config.towers[id].cost))
+			assert_str(t).is_equal(TowerText.cost_text(_config.towers[id].cost))
 			assert_str(t).not_contains("(")
 
 
@@ -327,7 +322,7 @@ func test_every_shipped_towers_price_is_visible_in_full() -> void:
 			l.get_theme_font_size("font_size")).x
 		assert_float(text_w).override_failure_message("%s: \"%s\" is %.1f px, cell %.1f px"
 			% [id, l.text, text_w, l.size.x]).is_less_equal(l.size.x)
-		assert_str(l.text).is_equal(TowerInfo.cost_text(_config.towers[id].cost))
+		assert_str(l.text).is_equal(TowerText.cost_text(_config.towers[id].cost))
 
 
 func test_pressing_a_button_in_either_group_builds_it_and_closes_the_picker() -> void:

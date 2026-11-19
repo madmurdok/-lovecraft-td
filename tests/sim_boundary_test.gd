@@ -21,8 +21,8 @@ const SIMULATION := "res://sim/core/simulation.gd"
 ## Engine types sim/ may name today (computed from the code once and pinned, LT-34/S2).
 const ENGINE_ALLOWLIST := [
 	"Array", "Dictionary", "FileAccess", "JSON", "PackedByteArray", "PackedInt64Array",
-	"PackedStringArray", "RandomNumberGenerator", "RefCounted", "RegEx", "String", "Variant",
-	"Vector2", "Vector2i",
+	"PackedStringArray", "PackedVector2Array", "RandomNumberGenerator", "Rect2",
+	"RefCounted", "RegEx", "String", "Variant", "Vector2", "Vector2i",
 ]
 ## Matched on the code of a sim file with comments and string literals blanked.
 const SIM_FORBIDDEN_CODE := [
@@ -898,21 +898,16 @@ func _tower_of(game: Game, def_id: String) -> int:
 
 func _dispatch(game: Game, c: Array) -> int:
 	match c[1]:
-		"build": return game.build(c[2], _cells[int(c[3])])
-		"upgrade": return game.upgrade(_tower_of(game, c[2]), c[3])
-		"set_target_priority": return game.set_target_priority(_tower_of(game, c[2]), c[3])
-		"call_wave": return game.call_wave()
+		"build": return game.commands.build(c[2], _cells[int(c[3])])
+		"upgrade": return game.commands.upgrade(_tower_of(game, c[2]), c[3])
+		"set_target_priority": return game.commands.set_target_priority(_tower_of(game, c[2]), c[3])
+		"call_wave": return game.commands.call_wave()
 	return -1
 
 
 func _frame_run(config: GameConfig, frame_seed: int) -> Game:
-	_vp = SubViewport.new()
-	_vp.size = Vector2i(1200, 675)
-	add_child(_vp)
-	var game := Game.new()
-	game.setup(config, 7)
-	_vp.add_child(game)
-	game.set_process(false)  # advance() below is the body of Game._process
+	_vp = GameFixture.make_viewport(self)
+	var game := GameFixture.make_game(_vp, config, 7)  # advance() below is the body of Game._process
 	await get_tree().process_frame
 	_load_cells(config)
 	game.sim.debug_set_sanity(70.0)

@@ -15,9 +15,7 @@ func before_test() -> void:
 	var r := GameConfig.load_from_dir("res://data")
 	assert_bool(r.ok).override_failure_message("\n".join(r.errors)).is_true()
 	_config = r.config
-	_vp = SubViewport.new()
-	_vp.size = Vector2i(1200, 675)
-	add_child(_vp)
+	_vp = GameFixture.make_viewport(self)
 
 
 func after_test() -> void:
@@ -30,10 +28,7 @@ func after_test() -> void:
 
 ## A Game that only advances through advance(): its own _process is switched off.
 func _start_game() -> void:
-	_game = Game.new()
-	_game.setup(_config, 7)
-	_vp.add_child(_game)
-	_game.set_process(false)
+	_game = GameFixture.make_game(_vp, _config, 7)
 	await get_tree().process_frame
 
 
@@ -53,7 +48,7 @@ func _click_control(c: Control) -> void:
 
 
 func _click_cell(cell: Vector2i) -> void:
-	await _click(_game.board.position + (Vector2(cell) + Vector2(0.5, 0.5)) * Board.CELL)
+	await _click(_game.board.view.cell_to_screen(_game.sim.state.map.grid.centre(cell)))
 
 
 func _buildable_cell() -> Vector2i:
@@ -110,8 +105,9 @@ func test_picker_enables_every_buildable_tower_and_disables_unaffordable_ones() 
 	for def_id: String in _config.towers:
 		var ok := _game.sim.can_build(def_id, cell) == Simulation.CommandResult.OK
 		assert_bool(_game.picker.buttons[def_id].disabled).is_equal(not ok)
-	# Money drops below the cost while the panel is open: re-evaluated on the next frame.
-	_game.sim.state.gold = _cost(RIFLE) - 1
+	# Money drops below the cost while the panel is open: re-evaluated on the next frame
+	# (LT-78: through GOLD_CHANGED, so the drop goes through the sim's gold writer).
+	_game.sim._add_gold(_cost(RIFLE) - 1 - _game.sim.state.gold, "test", 0)
 	_game.advance(0.0)
 	assert_bool(_game.picker.buttons[RIFLE].disabled).is_true()
 	assert_str(_game.picker.buttons[RIFLE].text).not_contains("not enough money")
@@ -160,9 +156,9 @@ func test_clicking_water_closes_open_panels_and_opens_nothing() -> void:
 func test_a_click_below_the_board_closes_both_panels() -> void:
 	await _start_game()
 	var m := _game.sim.state.map
-	var below := Vector2(_game.board.position.x + Board.CELL * 0.5,
-		_game.board.position.y + m.height * Board.CELL + 10.0)
-	assert_bool(m.in_bounds(_game.board.cell_at(below - _game.board.position))).is_false()
+	var board := _game.board.view.world_rect()
+	var below := Vector2(board.position.x + _game.board.view.cells_to_px(0.5), board.end.y + 10.0)
+	assert_bool(m.grid.contains(_game.board.view.cell_at_screen(below))).is_false()
 	assert_float(below.y).is_less(675.0)
 	var cell := _buildable_cell()
 	await _click_cell(cell)
@@ -263,8 +259,11 @@ func test_hud_labels_track_sim_state() -> void:
 	_game.sim.call_wave()
 	_game.advance(0.0)
 	assert_str(hud.gold_label.text).is_equal("Money: $%d" % s.gold)
-	assert_str(hud.hp_label.text).is_equal("Lighthouse %d/%d" % [s.lighthouse_hp, _config.economy.lighthouse_hp])
+	# LT-78 (review F1): the phase follows WAVE_STARTED through advance alone, no refresh().
 	assert_str(hud.phase_label.text).is_equal("Night 1 of %d" % s.waves_total)
+	# HP follows LEAKED; a direct state write emits none, so sync as on open.
+	hud.refresh()
+	assert_str(hud.hp_label.text).is_equal("Lighthouse %d/%d" % [s.lighthouse_hp, _config.economy.lighthouse_hp])
 
 
 func test_day_timer_shows_floored_seconds_matching_the_luck() -> void:
@@ -273,14 +272,29 @@ func test_day_timer_shows_floored_seconds_matching_the_luck() -> void:
 	var rate := _config.economy.early_night_luck_per_second
 	# One tick short of 25 whole seconds must read 24, never 25.
 	s.build_ticks_left = SimTime.ticks(25.0) - 1
-	_game.advance(0.0)
+	_game.hud.on_stepped()  # LT-78 §1.1: a stepped frame re-reads the day timer
 	assert_str(_game.hud.phase_label.text).is_equal("Day 1 — night falls in 24 s")
 	assert_float(_game.sim.early_night_luck()).is_equal_approx(1.0 + rate * 24, 1e-9)
 	assert_str(_game.hud.call_wave_button.text).contains(Hud.luck_text(1.0 + rate * 24))
 	s.build_ticks_left = SimTime.ticks(25.0)
-	_game.advance(0.0)
+	_game.hud.on_stepped()
 	assert_str(_game.hud.phase_label.text).contains("in 25 s")
 	assert_float(_game.sim.early_night_luck()).is_equal_approx(1.0 + rate * 25, 1e-9)
+
+
+## LT-78 (review F2): Game.advance calls hud.on_stepped() on frames that ran sim steps, and
+## only on those: the day label follows build_ticks_left without a refresh() or an event.
+func test_advance_calls_on_stepped_on_stepped_frames_only() -> void:
+	await _start_game()
+	var s := _game.sim.state
+	var hud := _game.hud
+	s.build_ticks_left = SimTime.ticks(25.0)  # a direct write: no event announces it
+	_game.advance(0.0)  # no sim step: the label is not read
+	assert_str(hud.phase_label.text).starts_with("Day 1 — night falls in 4")
+	_game.advance(0.1)  # steps: on_stepped re-reads the timer
+	assert_int(s.build_ticks_left).is_less(SimTime.ticks(25.0))
+	assert_str(hud.phase_label.text).is_equal(
+		"Day 1 — night falls in %d s" % SimTime.whole_seconds(s.build_ticks_left))
 
 
 func test_end_screen_appears_on_outcome_and_closes_panels() -> void:
@@ -326,4 +340,4 @@ func test_restart_button_creates_a_fresh_game() -> void:
 
 
 func _click_cell_of(g: Game, cell: Vector2i) -> void:
-	await _click(g.board.position + (Vector2(cell) + Vector2(0.5, 0.5)) * Board.CELL)
+	await _click(g.board.view.cell_to_screen(g.sim.state.map.grid.centre(cell)))

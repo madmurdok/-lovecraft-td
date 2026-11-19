@@ -1,6 +1,6 @@
 class_name StatsRowsTest
 extends GdUnitTestSuite
-## LT-53 (LT-43 §1, §5, Q3, Q4): the unified table's cells as TowerInfo builds them. Every
+## LT-53 (LT-43 §1, §5, Q3, Q4): the unified table's cells as TowerText builds them. Every
 ## expectation is computed here from the loaded config (TowerDef / SanityConfig /
 ## EconomyConfig.beam) by the rule the design note states, never copied from the code:
 ## the row set and its order, the dash rule, the DPS formulas (summon_dps x summon_max, the
@@ -21,7 +21,7 @@ func before_test() -> void:
 
 
 func _n(v: float) -> String:
-	return TowerInfo.num(v)
+	return TowerText.num(v)
 
 
 ## One decimal at most (LT-43 §1 DPS), formatted like every other table number.
@@ -60,14 +60,14 @@ func _dps(s: TowerDef.Level) -> float:
 func test_rows_are_the_ten_rows_of_the_note_in_order() -> void:
 	var keys := []
 	var labels := []
-	for row: Array in TowerInfo.ROWS:
+	for row: Array in TowerText.ROWS:
 		keys.append(row[0])
 		labels.append(row[1])
 	assert_array(labels).is_equal(["Attack", "Damage", "Every, s", "DPS", "Range", "Hits",
 		"Sanity/kill", "Reserve", "In light", "In shadow", "Special"])
 	for id: String in _cfg.towers:
 		for st: Array in _states(_def(id)):
-			var v := TowerInfo.row_values(_def(id), st[1], _cfg)
+			var v := TowerText.row_values(_def(id), st[1], _cfg)
 			assert_array(v.keys()).override_failure_message("%s %s" % [id, st[0]]) \
 				.contains_exactly_in_any_order(keys)
 			for k: String in keys:
@@ -86,7 +86,7 @@ func test_dash_rule_for_every_tower_level_and_branch() -> void:
 		for st: Array in _states(def):
 			var s: TowerDef.Level = st[1]
 			var tag := "%s %s" % [id, st[0]]
-			var v := TowerInfo.row_values(def, s, _cfg)
+			var v := TowerText.row_values(def, s, _cfg)
 			var summon := _e(s, "summon_max") > 0.0
 			var acts := s.damage > 0.0 or _e(s, "banish_cells") > 0.0 or summon
 			if s.damage <= 0.0 and not summon:
@@ -111,11 +111,11 @@ func test_dash_rule_for_every_tower_level_and_branch() -> void:
 					.is_not_equal("0")
 	# The shipped cases the note names.
 	for id: String in ["elder_sign", "searchlight"]:
-		var v := TowerInfo.row_values(_def(id), _def(id).levels[0], _cfg)
+		var v := TowerText.row_values(_def(id), _def(id).levels[0], _cfg)
 		assert_array([v["damage"], v["every"], v["dps"]]).is_equal([DASH, DASH, DASH])
-	assert_str(TowerInfo.row_values(_def("searchlight"), _def("searchlight").levels[0], _cfg)
+	assert_str(TowerText.row_values(_def("searchlight"), _def("searchlight").levels[0], _cfg)
 		["beam"]).is_equal(DASH)
-	var key := TowerInfo.row_values(_def("silver_key"), _def("silver_key").levels[0], _cfg)
+	var key := TowerText.row_values(_def("silver_key"), _def("silver_key").levels[0], _cfg)
 	assert_array([key["damage"], key["dps"]]).is_equal([DASH, DASH])
 
 
@@ -144,7 +144,7 @@ func test_attack_shape_follows_the_first_match_order() -> void:
 				want = "Line"
 			elif _e(s, "aoe_radius") > 0.0:
 				want = "Blast"
-			_eq(TowerInfo.row_values(_def(id), s, _cfg)["attack"], want, "%s %s" % [id, st[0]])
+			_eq(TowerText.row_values(_def(id), s, _cfg)["attack"], want, "%s %s" % [id, st[0]])
 
 
 # --- §1 DPS, Range, Hits ----------------------------------------------------------------------
@@ -156,7 +156,7 @@ func test_dps_formulas_for_every_tower_level_and_branch() -> void:
 	for id: String in _cfg.towers:
 		for st: Array in _states(_def(id)):
 			var s: TowerDef.Level = st[1]
-			var v := TowerInfo.row_values(_def(id), s, _cfg)
+			var v := TowerText.row_values(_def(id), s, _cfg)
 			var tag := "%s %s" % [id, st[0]]
 			var dps := _dps(s)
 			if dps <= 0.0:
@@ -171,13 +171,13 @@ func test_dps_formulas_for_every_tower_level_and_branch() -> void:
 	# The circle's L2 keeps more than one unit, so its DPS is not the unit's.
 	var c2 := _def("summoning_circle").levels[1]
 	assert_float(_e(c2, "summon_max")).is_greater(1.0)
-	_eq(TowerInfo.row_values(_def("summoning_circle"), c2, _cfg)["dps"],
+	_eq(TowerText.row_values(_def("summoning_circle"), c2, _cfg)["dps"],
 		_d1(_e(c2, "summon_dps") * _e(c2, "summon_max")), "circle L2")
 	# Live sanity (the panel, Q3): the value at that sanity, factor 1 + k (1 - s / max).
 	var r1 := _def("resonator").levels[0]
 	for sanity: float in [0.0, 37.0, 80.0, top]:
 		var f := 1.0 + _e(r1, "sanity_scaling") * (1.0 - sanity / top)
-		_eq(TowerInfo.row_values(_def("resonator"), r1, _cfg, sanity)["dps"],
+		_eq(TowerText.row_values(_def("resonator"), r1, _cfg, sanity)["dps"],
 			_d1(r1.damage / r1.fire_interval * f), "resonator at %s" % sanity)
 
 
@@ -186,7 +186,7 @@ func test_range_shows_the_dead_zone_and_hits_follow_targets_or_flying_units() ->
 		var def := _def(id)
 		for st: Array in _states(def):
 			var s: TowerDef.Level = st[1]
-			var v := TowerInfo.row_values(def, s, _cfg)
+			var v := TowerText.row_values(def, s, _cfg)
 			var tag := "%s %s" % [id, st[0]]
 			_eq(v["range"], ("%s–%s" % [_n(s.min_range), _n(s.range_cells)]) if s.min_range > 0.0
 				else _n(s.range_cells), tag + " range")
@@ -213,12 +213,12 @@ func test_beam_row_comes_from_the_beam_config_and_follows_an_edit() -> void:
 			want = down
 		elif s.damage > 0.0:
 			want = up
-		_eq(TowerInfo.row_values(def, s, _cfg)["beam"], want, id)
+		_eq(TowerText.row_values(def, s, _cfg)["beam"], want, id)
 	b.occult_power_mult = 0.5
 	b.mundane_fire_interval_mult = 0.5
-	_eq(TowerInfo.row_values(_def("necronomicon_reader"), _def("necronomicon_reader").levels[0],
+	_eq(TowerText.row_values(_def("necronomicon_reader"), _def("necronomicon_reader").levels[0],
 		_cfg)["beam"], MINUS + "50%", "edited occult")
-	_eq(TowerInfo.row_values(_def("rifleman"), _def("rifleman").levels[0], _cfg)["beam"],
+	_eq(TowerText.row_values(_def("rifleman"), _def("rifleman").levels[0], _cfg)["beam"],
 		"+100%", "edited mundane")
 
 
@@ -231,7 +231,7 @@ func test_lit_mundane_shooter_every_and_dps_carry_the_mark() -> void:
 			continue
 		for st: Array in _states(def):
 			var s: TowerDef.Level = st[1]
-			var lit := TowerInfo.lit_values(def, s, _cfg)
+			var lit := TowerText.lit_values(def, s, _cfg)
 			var tag := "%s %s" % [id, st[0]]
 			if s.damage <= 0.0:
 				assert_dict(lit).override_failure_message(tag).is_empty()
@@ -241,7 +241,7 @@ func test_lit_mundane_shooter_every_and_dps_carry_the_mark() -> void:
 			_eq(lit["every"], _n(s.fire_interval * m) + STAR, tag + " every")
 			_eq(lit["dps"], _d1(_dps(s) / m) + STAR, tag + " dps")
 	var r2 := _def("rifleman").levels[1]
-	assert_str(TowerInfo.lit_values(_def("rifleman"), r2, _cfg)["every"]) \
+	assert_str(TowerText.lit_values(_def("rifleman"), r2, _cfg)["every"]) \
 		.is_equal(_n(r2.fire_interval * m) + STAR)
 
 
@@ -256,7 +256,7 @@ func test_lit_occult_damage_and_dps_scale_by_power_mult() -> void:
 			continue
 		for st: Array in _states(def):
 			var s: TowerDef.Level = st[1]
-			var lit := TowerInfo.lit_values(def, s, _cfg, _cfg.sanity.max_sanity)
+			var lit := TowerText.lit_values(def, s, _cfg, _cfg.sanity.max_sanity)
 			var tag := "%s %s" % [id, st[0]]
 			if _e(s, "summon_max") > 0.0:
 				_eq(lit.get("damage", ""), _d1(_e(s, "summon_dps") * pm) + STAR, tag + " unit")
@@ -269,9 +269,9 @@ func test_lit_occult_damage_and_dps_scale_by_power_mult() -> void:
 				assert_dict(lit).override_failure_message(tag).is_empty()
 	var circle := _def("summoning_circle")
 	_cfg.economy.beam.occult_power_mult = 1.0
-	assert_dict(TowerInfo.lit_values(circle, circle.levels[1], _cfg)).is_empty()
+	assert_dict(TowerText.lit_values(circle, circle.levels[1], _cfg)).is_empty()
 	_cfg.economy.beam.occult_power_mult = 0.5
-	_eq(TowerInfo.lit_values(circle, circle.levels[1], _cfg)["dps"],
+	_eq(TowerText.lit_values(circle, circle.levels[1], _cfg)["dps"],
 		_d1(_dps(circle.levels[1]) * 0.5) + STAR, "circle at 0.5")
 
 
@@ -282,7 +282,7 @@ func test_lit_resonator_dps_is_the_live_value_times_power_mult() -> void:
 	var pm := _cfg.economy.beam.occult_power_mult
 	var top := _cfg.sanity.max_sanity
 	var f := 1.0 + _e(s, "sanity_scaling") * (1.0 - 37.0 / top)
-	_eq(TowerInfo.lit_values(def, s, _cfg, 37.0)["dps"], _d1(_dps(s) * f * pm) + STAR, "37")
+	_eq(TowerText.lit_values(def, s, _cfg, 37.0)["dps"], _d1(_dps(s) * f * pm) + STAR, "37")
 
 
 ## §5: an occult aura / gate / circle's effects while lit, as Simulation applies them;
@@ -292,7 +292,7 @@ func test_lit_effects_scale_the_aura_gate_and_circle_effects() -> void:
 	var sign := _def("elder_sign")
 	for st: Array in _states(sign):
 		var s: TowerDef.Level = st[1]
-		var fx := TowerInfo.lit_effects(sign, s, _cfg)
+		var fx := TowerStatsModel.lit_effects(sign, s, _cfg)
 		assert_dict(fx).override_failure_message(st[0]).is_not_empty()
 		for key: String in ["slow", "strip_armor"]:
 			if s.effects.has(key):
@@ -302,17 +302,17 @@ func test_lit_effects_scale_the_aura_gate_and_circle_effects() -> void:
 				1.0 + (_e(s, "damage_taken_multiplier") - 1.0) * pm, 1e-6)
 	var key := _def("silver_key")
 	var k1 := key.levels[0]
-	var kfx := TowerInfo.lit_effects(key, k1, _cfg)
+	var kfx := TowerStatsModel.lit_effects(key, k1, _cfg)
 	assert_float(kfx["banish_cells"]).is_equal_approx(_e(k1, "banish_cells") * pm, 1e-6)
 	assert_float(kfx["banish_max_hp"]).is_equal(_e(k1, "banish_max_hp"))
 	var circle := _def("summoning_circle")
 	var c2 := circle.levels[1]
-	var cfx := TowerInfo.lit_effects(circle, c2, _cfg)
+	var cfx := TowerStatsModel.lit_effects(circle, c2, _cfg)
 	assert_float(cfx["summon_dps"]).is_equal_approx(_e(c2, "summon_dps") * pm, 1e-6)
 	for k: String in ["summon_hp", "summon_max", "summon_lifetime"]:
 		assert_float(cfx[k]).is_equal(_e(c2, k))
 	for id: String in ["necronomicon_reader", "resonator", "rifleman", "searchlight"]:
-		assert_dict(TowerInfo.lit_effects(_def(id), _def(id).levels[0], _cfg)) \
+		assert_dict(TowerStatsModel.lit_effects(_def(id), _def(id).levels[0], _cfg)) \
 			.override_failure_message(id).is_empty()
 
 
@@ -325,47 +325,47 @@ func test_lit_line_per_kind() -> void:
 	var power := "* In the beam now: %s%s%% power" % [MINUS, _n(roundf((1.0 - b.occult_power_mult)
 		* 100.0))]
 	assert_bool(b.mundane_ignore_miss).is_true()
-	_eq(TowerInfo.lit_line(_def("rifleman"), _def("rifleman").levels[0], _cfg),
+	_eq(TowerText.lit_line(_def("rifleman"), _def("rifleman").levels[0], _cfg),
 		fire + ", no misses", "rifleman")
 	for id: String in ["necronomicon_reader", "elder_sign", "summoning_circle", "silver_key"]:
-		_eq(TowerInfo.lit_line(_def(id), _def(id).levels[0], _cfg), power, id)
-	_eq(TowerInfo.lit_line(_def("searchlight"), _def("searchlight").levels[0], _cfg), "",
+		_eq(TowerText.lit_line(_def(id), _def(id).levels[0], _cfg), power, id)
+	_eq(TowerText.lit_line(_def("searchlight"), _def("searchlight").levels[0], _cfg), "",
 		"searchlight")
 	b.mundane_ignore_miss = false
-	_eq(TowerInfo.lit_line(_def("rifleman"), _def("rifleman").levels[0], _cfg), fire, "no ignore")
+	_eq(TowerText.lit_line(_def("rifleman"), _def("rifleman").levels[0], _cfg), fire, "no ignore")
 	# The kind line of a lit mundane shooter (§5).
-	assert_array(Array(TowerInfo.kind_lines(_def("rifleman"), _def("rifleman").levels[0],
-		_cfg.sanity, true))).is_equal([TowerInfo.NO_MISSES_LIT])
+	assert_array(Array(TowerText.kind_lines(_def("rifleman"), _def("rifleman").levels[0],
+		_cfg.sanity, true))).is_equal([TowerText.NO_MISSES_LIT])
 
 
 # --- §1 Special, §3 upgrade path ------------------------------------------------------------
 
 func test_special_cell_says_what_no_row_says() -> void:
 	var dyn := _def("dynamite_crew").levels[0]
-	_eq(TowerInfo.row_values(_def("dynamite_crew"), dyn, _cfg)["special"],
+	_eq(TowerText.row_values(_def("dynamite_crew"), dyn, _cfg)["special"],
 		"r %s, fuse %s s" % [_n(_e(dyn, "aoe_radius")), _n(_e(dyn, "fuse_seconds"))], "dynamite")
 	var sign := _def("elder_sign").levels[0]
-	_eq(TowerInfo.special_short(sign), "Slow %s%%, +%s%% taken, shadows" % [_n(_e(sign, "slow") * 100.0),
+	_eq(TowerText.special_short(sign), "Slow %s%%, +%s%% taken, shadows" % [_n(_e(sign, "slow") * 100.0),
 		_n((_e(sign, "damage_taken_multiplier") - 1.0) * 100.0)], "elder sign")
 	var res := _def("resonator").levels[0]
-	_eq(TowerInfo.special_short(res), "No armor, ×%s at 0 sanity" % _n(1.0
+	_eq(TowerText.special_short(res), "No armor, ×%s at 0 sanity" % _n(1.0
 		+ _e(res, "sanity_scaling")), "resonator")
 	var key := _def("silver_key").levels[0]
-	_eq(TowerInfo.special_short(key), "Back %s cells, ≤%s HP" % [_n(_e(key, "banish_cells")),
+	_eq(TowerText.special_short(key), "Back %s cells, ≤%s HP" % [_n(_e(key, "banish_cells")),
 		_n(_e(key, "banish_max_hp"))], "silver key")
 	var c1 := _def("summoning_circle").levels[0]
 	assert_float(_e(c1, "summon_max")).is_equal(1.0)
-	_eq(TowerInfo.special_short(c1), "1 unit, %s HP" % _n(_e(c1, "summon_hp")), "circle L1")
-	_eq(TowerInfo.special_short(_def("rifleman").levels[0]), DASH, "rifleman")
+	_eq(TowerText.special_short(c1), "1 unit, %s HP" % _n(_e(c1, "summon_hp")), "circle L1")
+	_eq(TowerText.special_short(_def("rifleman").levels[0]), DASH, "rifleman")
 	# A row already says pierce (Line): the Harpooner L1 has nothing else.
 	assert_dict(_def("harpooner").levels[0].effects).is_equal({"pierce": 1.0})
-	_eq(TowerInfo.special_short(_def("harpooner").levels[0]), DASH, "harpooner")
+	_eq(TowerText.special_short(_def("harpooner").levels[0]), DASH, "harpooner")
 
 
 func test_upgrade_path_names_the_l2_price_and_both_branches() -> void:
 	for id: String in _cfg.towers:
 		var def := _def(id)
-		_eq(TowerInfo.upgrade_path_text(def), "L2 $%d · then A %s or B %s" % [
+		_eq(TowerText.upgrade_path_text(def), "L2 $%d · then A %s or B %s" % [
 			def.levels[1].upgrade_cost, def.branches["a"].name, def.branches["b"].name], id)
 
 
@@ -376,36 +376,36 @@ func test_the_shadow_row_reads_the_shadow_block() -> void:
 	var rifle := _def("rifleman")
 	var fire := "%s%s%%" % [MINUS, _n(roundf((1.0 - 1.0 / sh.mundane_fire_interval_mult) * 100.0))]
 	var power := "+%s%%" % _n(roundf((sh.occult_power_mult - 1.0) * 100.0))
-	assert_str(TowerInfo.row_values(rifle, rifle.levels[0], _cfg)["shadow"]).is_equal(fire)
+	assert_str(TowerText.row_values(rifle, rifle.levels[0], _cfg)["shadow"]).is_equal(fire)
 	var necro := _def("necronomicon_reader")
-	assert_str(TowerInfo.row_values(necro, necro.levels[0], _cfg)["shadow"]).is_equal(power)
+	assert_str(TowerText.row_values(necro, necro.levels[0], _cfg)["shadow"]).is_equal(power)
 	var sl := _def("searchlight")
-	assert_str(TowerInfo.row_values(sl, sl.levels[0], _cfg)["shadow"]).is_equal(DASH)
+	assert_str(TowerText.row_values(sl, sl.levels[0], _cfg)["shadow"]).is_equal(DASH)
 	# Follows a config edit; the row is a dash with no shadow block.
 	sh.occult_power_mult = 2.0
-	assert_str(TowerInfo.row_values(necro, necro.levels[0], _cfg)["shadow"]).is_equal("+100%")
+	assert_str(TowerText.row_values(necro, necro.levels[0], _cfg)["shadow"]).is_equal("+100%")
 	_cfg.economy.shadow = null
-	assert_str(TowerInfo.row_values(necro, necro.levels[0], _cfg)["shadow"]).is_equal(DASH)
-	assert_str(TowerInfo.row_values(rifle, rifle.levels[0], _cfg)["shadow"]).is_equal(DASH)
+	assert_str(TowerText.row_values(necro, necro.levels[0], _cfg)["shadow"]).is_equal(DASH)
+	assert_str(TowerText.row_values(rifle, rifle.levels[0], _cfg)["shadow"]).is_equal(DASH)
 
 
 func test_shadowed_values_use_the_shadow_multipliers_with_the_mark() -> void:
 	var sh := _cfg.economy.shadow
 	var rifle := _def("rifleman")
 	var s := rifle.levels[0]
-	var v := TowerInfo.lit_values(rifle, s, _cfg, -1.0, true)
+	var v := TowerText.lit_values(rifle, s, _cfg, -1.0, true)
 	_eq(v["every"], _n(s.fire_interval * sh.mundane_fire_interval_mult) + STAR, "every")
 	_eq(v["dps"], _d1(_dps(s) / sh.mundane_fire_interval_mult) + STAR, "dps")
 	var necro := _def("necronomicon_reader")
 	var n := necro.levels[0]
-	var nv := TowerInfo.lit_values(necro, n, _cfg, _cfg.sanity.max_sanity, true)
+	var nv := TowerText.lit_values(necro, n, _cfg, _cfg.sanity.max_sanity, true)
 	_eq(nv["damage"], _n(n.damage * sh.occult_power_mult) + STAR, "damage")
 	_eq(nv["dps"], _d1(_dps(n) * sh.occult_power_mult) + STAR, "dps")
 	var circle := _def("summoning_circle")
 	var c := circle.levels[1]
-	_eq(TowerInfo.lit_values(circle, c, _cfg, -1.0, true)["damage"],
+	_eq(TowerText.lit_values(circle, c, _cfg, -1.0, true)["damage"],
 		_d1(_e(c, "summon_dps") * sh.occult_power_mult) + STAR, "unit dps")
-	assert_dict(TowerInfo.lit_values(_def("searchlight"), _def("searchlight").levels[0], _cfg,
+	assert_dict(TowerText.lit_values(_def("searchlight"), _def("searchlight").levels[0], _cfg,
 		-1.0, true)).is_empty()
 
 
@@ -413,40 +413,40 @@ func test_shadowed_effects_and_status_line_per_kind() -> void:
 	var sh := _cfg.economy.shadow
 	var sign := _def("elder_sign")
 	var s := sign.levels[0]
-	var fx := TowerInfo.lit_effects(sign, s, _cfg, true)
+	var fx := TowerStatsModel.lit_effects(sign, s, _cfg, true)
 	assert_float(fx["slow"]).is_equal_approx(_e(s, "slow") * sh.occult_power_mult, 1e-6)
 	assert_float(fx["damage_taken_multiplier"]).is_equal_approx(
 		1.0 + (_e(s, "damage_taken_multiplier") - 1.0) * sh.occult_power_mult, 1e-6)
 	var rifle := _def("rifleman")
-	assert_dict(TowerInfo.lit_effects(rifle, rifle.levels[0], _cfg, true)).is_empty()
+	assert_dict(TowerStatsModel.lit_effects(rifle, rifle.levels[0], _cfg, true)).is_empty()
 	var fire := "* In shadow now: fire %s%s%%, +%s%% misses" % [MINUS,
 		_n(roundf((1.0 - 1.0 / sh.mundane_fire_interval_mult) * 100.0)),
 		_n(sh.mundane_miss_chance_add * 100.0)]
-	_eq(TowerInfo.lit_line(rifle, rifle.levels[0], _cfg, true), fire, "rifle")
-	_eq(TowerInfo.lit_line(sign, s, _cfg, true), "* In shadow now: +%s%% power"
+	_eq(TowerText.lit_line(rifle, rifle.levels[0], _cfg, true), fire, "rifle")
+	_eq(TowerText.lit_line(sign, s, _cfg, true), "* In shadow now: +%s%% power"
 		% _n(roundf((sh.occult_power_mult - 1.0) * 100.0)), "sign")
-	_eq(TowerInfo.lit_line(_def("searchlight"), _def("searchlight").levels[0], _cfg, true), "",
+	_eq(TowerText.lit_line(_def("searchlight"), _def("searchlight").levels[0], _cfg, true), "",
 		"searchlight")
 
 
 func test_kind_lines_add_the_shadow_miss_line_for_a_shooter_only() -> void:
 	var rifle := _def("rifleman")
-	var lines := Array(TowerInfo.kind_lines(rifle, rifle.levels[0], _cfg.sanity, false, 0.1))
+	var lines := Array(TowerText.kind_lines(rifle, rifle.levels[0], _cfg.sanity, false, 0.1))
 	assert_array(lines).contains(["+10% misses in shadow"])
-	assert_array(Array(TowerInfo.kind_lines(rifle, rifle.levels[0], _cfg.sanity, false, 0.0))) \
+	assert_array(Array(TowerText.kind_lines(rifle, rifle.levels[0], _cfg.sanity, false, 0.0))) \
 		.not_contains(["+10% misses in shadow"])
 	for id: String in ["necronomicon_reader", "searchlight"]:
 		var d := _def(id)
-		assert_array(Array(TowerInfo.kind_lines(d, d.levels[0], _cfg.sanity, false, 0.1))) \
+		assert_array(Array(TowerText.kind_lines(d, d.levels[0], _cfg.sanity, false, 0.1))) \
 			.not_contains(["+10% misses in shadow"])
 
 
 func test_effect_lines_and_special_short_name_the_casters() -> void:
 	var sl := _def("searchlight")
 	var sign := _def("elder_sign")
-	assert_array(Array(TowerInfo.effect_lines(sl.levels[0].effects))) \
+	assert_array(Array(TowerText.effect_lines(sl.levels[0].effects))) \
 		.contains(["Lights towers and foes"])
-	assert_array(Array(TowerInfo.effect_lines(sign.levels[0].effects))) \
+	assert_array(Array(TowerText.effect_lines(sign.levels[0].effects))) \
 		.contains(["Shadows nearby towers"])
-	assert_str(TowerInfo.special_short(sl.levels[0])).contains("lights")
-	assert_str(TowerInfo.special_short(sign.levels[0])).contains("shadows")
+	assert_str(TowerText.special_short(sl.levels[0])).contains("lights")
+	assert_str(TowerText.special_short(sign.levels[0])).contains("shadows")

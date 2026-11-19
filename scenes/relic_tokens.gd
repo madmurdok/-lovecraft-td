@@ -82,7 +82,7 @@ func tick(delta: float) -> void:
 
 ## A sim position in cells -> this layer's pixels (the board's top-left plus cells).
 func board_to_layer(cells: Vector2) -> Vector2:
-	return game.board.global_position + cells * Board.CELL
+	return game.board.view.cell_to_screen(cells)
 
 
 ## Where tokens land: beside the HUD relic counter (LT-28: its centre hid the digits).

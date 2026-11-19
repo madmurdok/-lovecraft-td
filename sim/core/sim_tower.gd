@@ -12,6 +12,7 @@ const DEFAULT_TARGET_PRIORITY := "first"
 var id: int  ## shared entity id counter (SimState.next_id)
 var def: TowerDef
 var cell: Vector2i
+var pos: Vector2  ## the cell centre in cell units, set once when built (towers never move)
 var level := 0  ## 0 = L1, 1 = L2 (indices into def.levels), 2 = L3 (def.branches[branch])
 var branch := ""  ## "" below L3; "a" or "b" at L3
 var spent := 0  ## total gold paid for this tower (build + upgrades); the sell refund base
@@ -48,4 +49,4 @@ func stats() -> TowerDef.Level:
 
 ## Cell centre in cell units (same frame as SimRoute.position_at).
 func centre() -> Vector2:
-	return Vector2(cell.x + 0.5, cell.y + 0.5)
+	return pos

@@ -17,13 +17,8 @@ func before_test() -> void:
 	var r := GameConfig.load_from_dir("res://data")
 	assert_bool(r.ok).override_failure_message("\n".join(r.errors)).is_true()
 	_config = r.config
-	_vp = SubViewport.new()
-	_vp.size = Vector2i(1200, 675)
-	add_child(_vp)
-	_game = Game.new()
-	_game.setup(_config, 7)
-	_vp.add_child(_game)
-	_game.set_process(false)
+	_vp = GameFixture.make_viewport(self)
+	_game = GameFixture.make_game(_vp, _config, 7)
 	await get_tree().process_frame
 
 
@@ -155,8 +150,10 @@ func test_tokens_land_beside_the_relic_counter_not_on_its_digits() -> void:
 func test_hud_shows_money_and_the_relic_stash_and_sells_it_by_day() -> void:
 	var s := _game.sim.state
 	var hud := _game.hud
+	# LT-78: through the sim's stash writer, so RELICS_CHANGED marks the HUD's relic group.
 	for k: String in {"bone": 2, "amber": 1, "idol": 0, "star_stone": 1}:
-		s.relics[k] = {"bone": 2, "amber": 1, "idol": 0, "star_stone": 1}[k]
+		_game.sim._add_relics(k, {"bone": 2, "amber": 1, "idol": 0, "star_stone": 1}[k]
+			- s.relics.get(k, 0), "test", 0)
 	var value := 2 * 5 + 15 + 200
 	_game.advance(0.0)
 	assert_str(hud.gold_label.text).is_equal("Money: $%d" % s.gold)
@@ -175,7 +172,7 @@ func test_hud_shows_money_and_the_relic_stash_and_sells_it_by_day() -> void:
 	assert_bool(hud.sell_relics_button.disabled).is_true()  # empty stash
 	# At night the button is disabled with a stash, and pressing it sells nothing.
 	s.relics["amber"] = 3
-	assert_int(_game.call_wave()).is_equal(R.OK)
+	assert_int(_game.commands.call_wave()).is_equal(R.OK)
 	_game.advance(0.0)
 	assert_bool(hud.sell_relics_button.disabled).is_true()
 	hud.sell_relics_button.pressed.emit()
@@ -189,7 +186,7 @@ func test_no_player_facing_text_says_gold() -> void:
 		for x in m.width:
 			if cell.x < 0 and m.is_buildable(Vector2i(x, y)):
 				cell = Vector2i(x, y)
-	assert_int(_game.build("rifleman", cell)).is_equal(R.OK)
+	assert_int(_game.commands.build("rifleman", cell)).is_equal(R.OK)
 	_game.sim.state.gold = 0  # refusal reasons on the picker and upgrade buttons
 	_game.sim.state.relics["bone"] = 1
 	_game.picker.open_for(cell + Vector2i.RIGHT)
@@ -198,7 +195,7 @@ func test_no_player_facing_text_says_gold() -> void:
 	_game.tower_panel.open_for(_game.sim.state.tower_at[cell])
 	_game.advance(0.0)
 	_assert_no_gold_word("day, tower view")
-	_game.call_wave()
+	_game.commands.call_wave()
 	_game.advance(0.0)
 	_assert_no_gold_word("night, tower view")
 	_game.sim.state.lighthouse_hp = 0

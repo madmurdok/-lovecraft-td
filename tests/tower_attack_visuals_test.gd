@@ -17,9 +17,7 @@ func before_test() -> void:
 	assert_bool(r.ok).override_failure_message("\n".join(r.errors)).is_true()
 	_config = r.config
 	_next_cell = 0
-	_vp = SubViewport.new()
-	_vp.size = Vector2i(1200, 675)
-	add_child(_vp)
+	_vp = GameFixture.make_viewport(self)
 
 
 func after_test() -> void:
@@ -30,10 +28,7 @@ func after_test() -> void:
 
 
 func _start_game() -> void:
-	_game = Game.new()
-	_game.setup(_config, 7)
-	_vp.add_child(_game)
-	_game.set_process(false)
+	_game = GameFixture.make_game(_vp, _config, 7)
 	await get_tree().process_frame
 	_game.sim.state.gold = 10000
 
@@ -53,7 +48,7 @@ func _buildable(n: int) -> Vector2i:
 func _tower(def_id: String) -> SimTower:
 	var cell := _buildable(_next_cell)
 	_next_cell += 1
-	var r := _game.build(def_id, cell)
+	var r := _game.commands.build(def_id, cell)
 	assert_int(r as int).override_failure_message("build %s at %s -> %d" % [def_id, cell, r]) \
 		.is_equal(Simulation.CommandResult.OK)
 	return _game.sim.tower_by_id(_game.sim.state.tower_at[cell])

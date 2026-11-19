@@ -12,9 +12,7 @@ func before_test() -> void:
 	var r := GameConfig.load_from_dir("res://data")
 	assert_bool(r.ok).override_failure_message("\n".join(r.errors)).is_true()
 	_config = r.config
-	_vp = SubViewport.new()
-	_vp.size = Vector2i(1200, 675)
-	add_child(_vp)
+	_vp = GameFixture.make_viewport(self)
 
 
 func after_test() -> void:
@@ -25,16 +23,14 @@ func after_test() -> void:
 
 
 func _start_game() -> void:
-	_game = Game.new()
-	_game.setup(_config, 7)
-	_vp.add_child(_game)
-	_game.set_process(false)
+	_game = GameFixture.make_game(_vp, _config, 7)
 	await get_tree().process_frame
 	_game.sim.state.gold = 10000
 
 
 func _tower(lit: bool, shadowed: bool) -> SimTower:
 	var t := SimTower.new()
+	t.pos = SquareGrid.new(1, 1).centre(t.cell)
 	t.lit = lit
 	t.shadowed = shadowed
 	return t
@@ -52,7 +48,7 @@ func _cells(n: int) -> Array[Vector2i]:
 
 
 func _place(def_id: String, cell: Vector2i) -> SimTower:
-	assert_int(_game.build(def_id, cell) as int).is_equal(Simulation.CommandResult.OK)
+	assert_int(_game.commands.build(def_id, cell) as int).is_equal(Simulation.CommandResult.OK)
 	return _game.sim.tower_by_id(_game.sim.state.tower_at[cell])
 
 

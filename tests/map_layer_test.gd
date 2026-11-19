@@ -16,9 +16,7 @@ func before_test() -> void:
 	var r := GameConfig.load_from_dir("res://data")
 	assert_bool(r.ok).override_failure_message("\n".join(r.errors)).is_true()
 	_config = r.config
-	_vp = SubViewport.new()
-	_vp.size = Vector2i(1200, 675)
-	add_child(_vp)
+	_vp = GameFixture.make_viewport(self)
 
 
 func after_test() -> void:
@@ -30,10 +28,7 @@ func after_test() -> void:
 
 ## A Game that only advances through advance(): its own _process is switched off.
 func _start_game() -> void:
-	_game = Game.new()
-	_game.setup(_config, 7)
-	_vp.add_child(_game)
-	_game.set_process(false)
+	_game = GameFixture.make_game(_vp, _config, 7)
 	await _frames(2)
 
 
@@ -55,6 +50,7 @@ func _copy_map(m: MapDef) -> MapDef:
 	var c := MapDef.new()
 	c.width = m.width
 	c.height = m.height
+	c.grid = m.grid
 	c.spawn = m.spawn
 	c.lighthouse = m.lighthouse
 	c.path = m.path.duplicate()
@@ -133,14 +129,14 @@ func test_build_upgrade_and_sell_do_not_redraw_the_map_layer() -> void:
 	var board_draws := _count_draws(_game.board)
 	_game.sim.state.gold = 1_000_000
 	var cell := _buildable_cell()
-	assert_int(_game.build(RIFLE, cell)).is_equal(Simulation.CommandResult.OK)
+	assert_int(_game.commands.build(RIFLE, cell)).is_equal(Simulation.CommandResult.OK)
 	await _frames(2)
 	assert_int(_game.sim.state.towers.size()).is_equal(1)
 	var id: int = _game.sim.state.towers[0].id
-	assert_int(_game.upgrade(id)).is_equal(Simulation.CommandResult.OK)
+	assert_int(_game.commands.upgrade(id)).is_equal(Simulation.CommandResult.OK)
 	await _frames(2)
 	assert_int(_game.sim.state.towers[0].level).is_equal(1)
-	assert_int(_game.sell(id)).is_equal(Simulation.CommandResult.OK)
+	assert_int(_game.commands.sell(id)).is_equal(Simulation.CommandResult.OK)
 	await _frames(2)
 	assert_int(_game.sim.state.towers.size()).is_equal(0)
 	assert_int(board_draws[0]).is_greater_equal(3)

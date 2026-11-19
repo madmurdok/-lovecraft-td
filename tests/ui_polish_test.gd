@@ -29,11 +29,7 @@ func before_test() -> void:
 	var r := GameConfig.load_from_dir("res://data")
 	assert_bool(r.ok).override_failure_message("\n".join(r.errors)).is_true()
 	_config = r.config
-	_vp = SubViewport.new()
-	_vp.size = WINDOW
-	_vp.size_2d_override = BASE
-	_vp.size_2d_override_stretch = true
-	add_child(_vp)
+	_vp = GameFixture.make_viewport(self, WINDOW, BASE)
 
 
 func after_test() -> void:
@@ -44,10 +40,7 @@ func after_test() -> void:
 
 
 func _start_game() -> void:
-	_game = Game.new()
-	_game.setup(_config, 7)
-	_vp.add_child(_game)
-	_game.set_process(false)
+	_game = GameFixture.make_game(_vp, _config, 7)
 	await get_tree().process_frame
 
 
@@ -71,7 +64,7 @@ func _bar_controls(bar: Control, leaves: bool) -> Array[Control]:
 func _assert_bar_fits(names: Array) -> void:
 	var hud := _game.hud
 	var bar := hud.get_node("Bar") as Control
-	var strip := Rect2(0, 0, BASE.x, Game.BOARD_ORIGIN.y)
+	var strip := Rect2(0, 0, BASE.x, _game.board.view.world_rect().position.y)
 	# The bar spans the width up to the right margin.
 	var end := bar.get_global_rect().end.x
 	assert_float(end).is_between(BASE.x - Hud.MARGIN - 1.0, float(BASE.x))
@@ -184,7 +177,7 @@ func test_sanity_ticks_stay_out_of_the_label_band() -> void:
 
 
 func test_the_tower_letter_sits_on_a_dark_plate_inside_its_tile() -> void:
-	var tile := Board.CELL - 2.0 * TILE_INSET
+	var tile := BoardView.new().cells_to_px(1.0) - 2.0 * TILE_INSET
 	var inside := Rect2(Vector2(FRAME, FRAME), Vector2(tile, tile) - Vector2(2, 2) * FRAME)
 	assert_bool(inside.encloses(Board.LETTER_PLATE)) \
 		.override_failure_message("plate %s, tile inside %s" % [Board.LETTER_PLATE, inside]) \
