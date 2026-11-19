@@ -5,6 +5,7 @@ extends Node2D
 ## Scenes only read `sim.state` and call sim commands; no game rules live here.
 
 signal restart_requested
+signal speed_changed  ## LT-78: chosen_speed or paused changed (the HUD's speed group)
 
 const SKIP_KEY := KEY_N
 const UI_LAYER := 2  ## above SanityFx.SCREEN_LAYER, so the HUD is never distorted
@@ -148,25 +149,27 @@ func advance(delta: float) -> void:
 	var steps := clock.advance(delta)
 	for i in steps:
 		sim.step()
-	_consume_events()
+	# LT-78 §1: panels change only when events (or a running timer, on stepped frames) say so.
+	if _consume_events() > 0 or steps > 0:
+		_flush_ui()
+	if steps > 0:
+		hud.on_stepped()
 	board.alpha = clock.alpha()
 	board.tick_effects(delta)
 	relic_tokens.tick(delta)
 	board.queue_redraw()
-	hud.refresh()
-	picker.refresh()
-	tower_panel.refresh()
-	lighthouse_panel.refresh()
 
 
 func toggle_speed() -> void:
 	chosen_speed = 2 if chosen_speed == 1 else 1
 	_apply_speed()
+	speed_changed.emit()
 
 
 func toggle_pause() -> void:
 	paused = not paused
 	_apply_speed()
+	speed_changed.emit()
 
 
 func _apply_speed() -> void:
@@ -177,20 +180,24 @@ func _apply_speed() -> void:
 func _after_command() -> void:
 	_consume_events()
 	board.queue_redraw()
-	hud.refresh()
-	picker.refresh()
-	tower_panel.refresh()
-	lighthouse_panel.refresh()
+	_flush_ui()
 
 
-func _consume_events() -> void:
-	for ev in sim.drain_events():
+## Hands the drained events to their consumers (the panels only mark field groups; see
+## _flush_ui). Returns how many events there were.
+func _consume_events() -> int:
+	var events := sim.drain_events()
+	for ev in events:
 		if frame_stats != null:
 			var type_name: String = SimEvent.Type.keys()[ev.type]
 			_frame_events[type_name] = _frame_events.get(type_name, 0) + 1
 		board.on_event(ev)
 		sanity_fx.on_event(ev)
 		relic_tokens.on_event(ev)
+		hud.on_event(ev)
+		picker.on_event(ev)
+		tower_panel.on_event(ev)
+		lighthouse_panel.on_event(ev)
 		if ev.type == SimEvent.Type.RELICS_CHANGED and ev.data.get("reason", "") == "kill" \
 				and ev.data.get("kind", "") == RelicTokens.STAR_STONE:
 			star_stones_found += 1
@@ -201,6 +208,16 @@ func _consume_events() -> void:
 			side_panel.visible = false
 			end_screen.show_result(ev.data.get("result", "") == "won", sim.state,
 				star_stones_found)
+	return events.size()
+
+
+## LT-78 §1: once per drain (never per event), each panel rebuilds the field groups the
+## drained events marked, so a command that emits several events is read in its final state.
+func _flush_ui() -> void:
+	hud.flush()
+	picker.flush()
+	tower_panel.flush()
+	lighthouse_panel.flush()
 
 
 ## LT-28: closes the build and tower views (a click on a cell, or one off the grid).

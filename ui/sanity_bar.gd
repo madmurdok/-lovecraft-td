@@ -29,6 +29,7 @@ const SLICES := 12
 @export var glitch_rate := 9.0  ## new glitch pattern per second
 
 var game: Game
+var redraw_count := 0  ## LT-78 §8 B1: redraws asked for (Hud groups and the torn animation)
 var _time := 0.0
 var _rng := RandomNumberGenerator.new()  ## presentation-only
 
@@ -36,10 +37,23 @@ var _rng := RandomNumberGenerator.new()  ## presentation-only
 func _ready() -> void:
 	custom_minimum_size = SIZE
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	set_process(false)  # LT-78 Q3: the Hud turns the animation on (set_distorted)
 
 
+## LT-78 Q3: the torn-fill animation; processing only while Fraying or mad (set_distorted).
 func _process(delta: float) -> void:
 	_time += delta
+	redraw()
+
+
+## LT-78: the Hud's sanity group runs the animation only while the bar is drawn torn.
+func set_distorted(on: bool) -> void:
+	set_process(on)
+
+
+## LT-78: a redraw, counted (§8 B1).
+func redraw() -> void:
+	redraw_count += 1
 	queue_redraw()
 
 

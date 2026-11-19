@@ -3,8 +3,26 @@ extends VBoxContainer
 ## Lighthouse view of the side panel (LT-30 §3.2), opened by a click on the lighthouse cell:
 ## level, beams, how much of the sea the beams cover, the upgrade button (money, by day) and
 ## the lamp oil stock with "Buy oil for a flare" (by day; LT-57: one flare's oil per click). Buttons are disabled with the reason whenever
-## the sim refuses the command; refresh() re-reads everything each frame.
+## the sim refuses the command. LT-78: a field group is rebuilt only when a sim event marks
+## it (REFRESH_ON, flush); refresh() syncs every group on open.
 ## `visible` is "the lighthouse view is shown"; SidePanel shows its idle text otherwise.
+
+## LT-78 §1: field groups (bits of _dirty).
+const G_HEAD := 1  ## title, beams and coverage
+const G_UPGRADE := 2  ## the upgrade button
+const G_OIL := 4  ## oil stock and flare line, "Buy oil"
+const G_ALL := 7
+const _PH := G_UPGRADE | G_OIL  ## phase events: day-only commands
+## LT-78 §3 (rows 48-52): sim event -> the groups it may change.
+const REFRESH_ON: Dictionary[SimEvent.Type, int] = {
+	SimEvent.Type.LIGHTHOUSE_UPGRADED: G_ALL,
+	SimEvent.Type.GOLD_CHANGED: G_UPGRADE | G_OIL,
+	SimEvent.Type.OIL_CHANGED: G_OIL,
+	SimEvent.Type.BUILD_STARTED: _PH,
+	SimEvent.Type.WAVE_STARTED: _PH,
+	SimEvent.Type.WAVE_CLEARED: _PH,
+	SimEvent.Type.OUTCOME: _PH,
+}
 
 var game: Game
 var title_label: Label
@@ -12,6 +30,8 @@ var stats_label: Label
 var upgrade_button: Button
 var oil_label: Label
 var oil_button: Button
+var refresh_count := 0  ## LT-78 §8 B1: field groups rebuilt so far (refresh and flush)
+var _dirty := 0  ## groups marked by on_event since the last flush
 
 
 func _ready() -> void:
@@ -59,16 +79,52 @@ static func coverage_percent(beams: int, half_width_ratio: float) -> int:
 	return roundi(100.0 * beam_coverage(beams, half_width_ratio))
 
 
+## LT-78 §1: full sync of every group (open, tests).
 func refresh() -> void:
+	_dirty = 0
+	_rebuild(G_ALL)
+
+
+## LT-78 §1: marks the groups `ev` may change; flush() rebuilds them once per drain.
+func on_event(ev: SimEvent) -> void:
+	_dirty |= REFRESH_ON.get(ev.type, 0)
+
+
+## LT-78 §1: rebuilds the marked groups; a hidden view drops the marks (open syncs it).
+func flush() -> void:
+	if _dirty == 0:
+		return
+	var mask := _dirty
+	_dirty = 0
+	_rebuild(mask)
+
+
+func _rebuild(mask: int) -> void:
 	if not visible:
 		return
+	if mask & G_HEAD:
+		refresh_count += 1
+		_refresh_head()
+	if mask & G_UPGRADE:
+		refresh_count += 1
+		_refresh_upgrade()
+	if mask & G_OIL:
+		refresh_count += 1
+		_refresh_oil()
+
+
+func _refresh_head() -> void:
+	var sim := game.sim
+	var beams := sim.beam_count()
+	title_label.text = "Lighthouse  L%d" % (sim.state.lighthouse_level + 1)
+	stats_label.text = "Beams: %d\nCoverage: %d %%\nThe lamp is lit at night only." % [
+		beams, coverage_percent(beams, sim.config.economy.beam.half_width_ratio)]
+
+
+func _refresh_upgrade() -> void:
 	var sim := game.sim
 	var eco := sim.config.economy
 	var level := sim.state.lighthouse_level
-	var beams := sim.beam_count()
-	title_label.text = "Lighthouse  L%d" % (level + 1)
-	stats_label.text = "Beams: %d\nCoverage: %d %%\nThe lamp is lit at night only." % [
-		beams, coverage_percent(beams, eco.beam.half_width_ratio)]
 	var cost := sim.lighthouse_upgrade_cost()
 	var up := sim.can_upgrade_lighthouse()
 	if cost == 0:
@@ -83,6 +139,11 @@ func refresh() -> void:
 		if CommandText.panel_reason(up) != "":
 			upgrade_button.text += "\n" + CommandText.panel_reason(up)
 	upgrade_button.disabled = up != Simulation.CommandResult.OK
+
+
+func _refresh_oil() -> void:
+	var sim := game.sim
+	var eco := sim.config.economy
 	var has_oil := eco.oil != null
 	oil_label.visible = has_oil
 	oil_button.visible = has_oil
@@ -94,7 +155,7 @@ func refresh() -> void:
 			sim.flare_cost_oil(), ConfigReader.fmt(sim.flare_seconds())]
 	var buy := sim.can_buy_oil()
 	if eco.flare != null:
-		var units := game.sim.oil_for_flare()
+		var units := sim.oil_for_flare()
 		if units == 0:
 			units = sim.flare_cost_oil()
 		oil_button.text = "Buy oil for a flare (%s)" % TowerInfo.money(units * eco.oil.price)

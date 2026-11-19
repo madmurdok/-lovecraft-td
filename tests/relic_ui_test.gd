@@ -150,8 +150,10 @@ func test_tokens_land_beside_the_relic_counter_not_on_its_digits() -> void:
 func test_hud_shows_money_and_the_relic_stash_and_sells_it_by_day() -> void:
 	var s := _game.sim.state
 	var hud := _game.hud
+	# LT-78: through the sim's stash writer, so RELICS_CHANGED marks the HUD's relic group.
 	for k: String in {"bone": 2, "amber": 1, "idol": 0, "star_stone": 1}:
-		s.relics[k] = {"bone": 2, "amber": 1, "idol": 0, "star_stone": 1}[k]
+		_game.sim._add_relics(k, {"bone": 2, "amber": 1, "idol": 0, "star_stone": 1}[k]
+			- s.relics.get(k, 0), "test", 0)
 	var value := 2 * 5 + 15 + 200
 	_game.advance(0.0)
 	assert_str(hud.gold_label.text).is_equal("Money: $%d" % s.gold)

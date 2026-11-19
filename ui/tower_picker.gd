@@ -21,6 +21,19 @@ const STATUS_COLOR := Color(0.95, 0.55, 0.45)  ## refusal reason, unaffordable c
 const DIM := Color(1, 1, 1, 0.5)  ## a refused row's cells (an unaffordable cost excepted)
 const MAD_MARK := "!"  ## after the Trait's reserve when building drives you mad
 const TITLE_TEXT := "Build here"
+const G_ROWS := 1  ## LT-78: the one field group (rows 28-33 of the design note's §3)
+## LT-78 §3: sim events that may change can_build or would_drive_mad_build for some row.
+const REFRESH_ON: Dictionary[SimEvent.Type, int] = {
+	SimEvent.Type.GOLD_CHANGED: G_ROWS,
+	SimEvent.Type.BUILD_STARTED: G_ROWS,
+	SimEvent.Type.WAVE_STARTED: G_ROWS,
+	SimEvent.Type.WAVE_CLEARED: G_ROWS,
+	SimEvent.Type.OUTCOME: G_ROWS,
+	SimEvent.Type.TOWER_BUILT: G_ROWS,
+	SimEvent.Type.TOWER_SOLD: G_ROWS,
+	SimEvent.Type.SANITY_CAP_CHANGED: G_ROWS,
+	SimEvent.Type.SANITY_STATE_CHANGED: G_ROWS,
+}
 const FONT_SIZE := 12
 const HEAD_FONT_SIZE := 11  ## group titles and column heads
 const NAME_FONT_MIN := 10  ## past LIST_MAX_ROWS the names shrink to this, then ellipsis
@@ -66,6 +79,8 @@ var title_label: Label  ## "Build here", or the refusal every row shares
 var cancel_button: Button  ## right of the title
 var rows_scroll: ScrollContainer  ## the rows (and later group lines) below the pinned line
 var _traits: Dictionary[String, String] = {}  ## def id -> trait_text of its L1
+var refresh_count := 0  ## LT-78 §8 B1: row rebuilds so far (refresh and flush)
+var _dirty := 0  ## LT-78: G_ROWS when an event marked the rows since the last flush
 
 
 func _ready() -> void:
@@ -225,10 +240,26 @@ func close() -> void:
 	game.board.queue_redraw()
 
 
+## LT-78 §1: marks the rows when `ev` may change them; flush() rebuilds them once per drain.
+func on_event(ev: SimEvent) -> void:
+	_dirty |= REFRESH_ON.get(ev.type, 0)
+
+
+## LT-78 §1: rebuilds the rows if an event marked them; a hidden picker drops the mark
+## (open_for syncs it).
+func flush() -> void:
+	if _dirty == 0:
+		return
+	_dirty = 0
+	refresh()
+
+
 ## Re-evaluates every row against the sim (money and the phase change while it is open).
 func refresh() -> void:
+	_dirty = 0
 	if not visible:
 		return
+	refresh_count += 1
 	var shared := Simulation.CommandResult.OK  ## LT-61 §6: the first refusal not about gold
 	var any_ok := false
 	for id in buttons:

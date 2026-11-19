@@ -105,8 +105,9 @@ func test_picker_enables_every_buildable_tower_and_disables_unaffordable_ones() 
 	for def_id: String in _config.towers:
 		var ok := _game.sim.can_build(def_id, cell) == Simulation.CommandResult.OK
 		assert_bool(_game.picker.buttons[def_id].disabled).is_equal(not ok)
-	# Money drops below the cost while the panel is open: re-evaluated on the next frame.
-	_game.sim.state.gold = _cost(RIFLE) - 1
+	# Money drops below the cost while the panel is open: re-evaluated on the next frame
+	# (LT-78: through GOLD_CHANGED, so the drop goes through the sim's gold writer).
+	_game.sim._add_gold(_cost(RIFLE) - 1 - _game.sim.state.gold, "test", 0)
 	_game.advance(0.0)
 	assert_bool(_game.picker.buttons[RIFLE].disabled).is_true()
 	assert_str(_game.picker.buttons[RIFLE].text).not_contains("not enough money")
@@ -258,6 +259,8 @@ func test_hud_labels_track_sim_state() -> void:
 	_game.sim.call_wave()
 	_game.advance(0.0)
 	assert_str(hud.gold_label.text).is_equal("Money: $%d" % s.gold)
+	# LT-78: HP follows LEAKED; a direct state write emits none, so sync as on open.
+	hud.refresh()
 	assert_str(hud.hp_label.text).is_equal("Lighthouse %d/%d" % [s.lighthouse_hp, _config.economy.lighthouse_hp])
 	assert_str(hud.phase_label.text).is_equal("Night 1 of %d" % s.waves_total)
 
@@ -268,12 +271,12 @@ func test_day_timer_shows_floored_seconds_matching_the_luck() -> void:
 	var rate := _config.economy.early_night_luck_per_second
 	# One tick short of 25 whole seconds must read 24, never 25.
 	s.build_ticks_left = SimTime.ticks(25.0) - 1
-	_game.advance(0.0)
+	_game.hud.on_stepped()  # LT-78 §1.1: a stepped frame re-reads the day timer
 	assert_str(_game.hud.phase_label.text).is_equal("Day 1 — night falls in 24 s")
 	assert_float(_game.sim.early_night_luck()).is_equal_approx(1.0 + rate * 24, 1e-9)
 	assert_str(_game.hud.call_wave_button.text).contains(Hud.luck_text(1.0 + rate * 24))
 	s.build_ticks_left = SimTime.ticks(25.0)
-	_game.advance(0.0)
+	_game.hud.on_stepped()
 	assert_str(_game.hud.phase_label.text).contains("in 25 s")
 	assert_float(_game.sim.early_night_luck()).is_equal_approx(1.0 + rate * 25, 1e-9)
 
