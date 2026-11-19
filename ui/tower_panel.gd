@@ -117,7 +117,7 @@ func open_for(p_tower_id: int) -> void:
 		return
 	tower_id = p_tower_id
 	visible = true
-	game.board.selected_cell = t.cell
+	game.selection.set_cell(t.cell)
 	refresh()
 
 
@@ -125,10 +125,8 @@ func close() -> void:
 	if not visible:
 		return
 	visible = false
-	game.board.selected_cell = Vector2i(-1, -1)
-	game.board.selected_range = 0.0
-	game.board.selected_cast = ""
-	game.board.queue_redraw()
+	game.selection.set_cell(SelectionModel.NONE)
+	game.selection.set_ring(0.0, "")
 
 
 ## LT-78 §1: full sync of every group (open_for, tests). Closes the view once the tower is
@@ -201,10 +199,7 @@ func _rebuild(mask: int) -> void:
 	if mask & G_RANGE:
 		refresh_count += 1
 		var cast := Board.cast_of(s)  # LT-70 §5: the BUILD preview of a caster's radius
-		if game.board.selected_range != s.range_cells or game.board.selected_cast != cast:
-			game.board.selected_range = s.range_cells
-			game.board.selected_cast = cast
-			game.board.queue_redraw()
+		game.selection.set_ring(s.range_cells, cast)  # redraws only when it changed
 
 
 ## LT-78 §3 row 38: the table's width follows the side panel's scroll area (layout, not sim).

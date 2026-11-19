@@ -30,6 +30,8 @@ var sandbox: bool:
 		debug.sandbox = v
 
 var board: Board
+## LT-84: the board overlay's selection; the panels write it, the board redraws on change.
+var selection := SelectionModel.new()
 var lighting: Lighting  ## LT-8: darkness, beam, tower lights, sea fog (visual only)
 var sanity_fx: SanityFx  ## LT-14: screen distortion, UI jitter, whispers (visual only)
 var hud: Hud
@@ -66,6 +68,7 @@ func _ready() -> void:
 	board = Board.new()
 	board.name = "Board"
 	board.game = self
+	board.selection = selection
 	add_child(board)
 	board.cell_clicked.connect(_on_cell_clicked)
 	board.outside_clicked.connect(close_panels)
@@ -129,7 +132,7 @@ func spike_context(now_usec: int) -> Dictionary:
 		"sanity": SimState.SanityState.keys()[st.sanity_state],
 		"enemies": st.enemies.size(),
 		"towers": st.towers.size(),
-		"effects": board.effects.size() if board != null else 0,
+		"effects": board.fx_layer.effects.size() if board != null else 0,
 		"focus": win.has_focus() if win != null else false,
 		"events": _frame_events.duplicate(),
 	}

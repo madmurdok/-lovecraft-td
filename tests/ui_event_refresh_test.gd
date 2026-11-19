@@ -240,7 +240,7 @@ func test_b5_selling_a_tower_closes_its_panel() -> void:
 	assert_bool(_game.tower_panel.visible).is_true()
 	assert_int(_game.commands.sell(id)).is_equal(SimCommand.CommandResult.OK)
 	assert_bool(_game.tower_panel.visible).is_false()
-	assert_vector(_game.board.selected_cell).is_equal(Vector2i(-1, -1))
+	assert_vector(_game.selection.cell).is_equal(Vector2i(-1, -1))
 
 
 # ---- B6 ------------------------------------------------------------------------------

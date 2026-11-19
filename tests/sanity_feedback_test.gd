@@ -133,10 +133,10 @@ func test_an_empty_astray_shot_lands_off_its_aim_point() -> void:
 	var ev := SimEvent.new(SimEvent.Type.SHOT, 0, tower.id, {"def": "rifleman", "target": 0,
 		"hits": [], "to": aim, "miss": false, "astray": true})
 	_game.board.on_event(ev)
-	var fx: Dictionary = _game.board.effects.back()
+	var fx: Dictionary = _game.board.fx_layer.effects.back()
 	assert_str(fx["kind"]).is_equal("astray")
 	var d: float = (fx["to"] as Vector2).distance_to(aim)
-	assert_float(d).is_between(Board.ASTRAY_MIN_CELLS - 0.001, Board.ASTRAY_MAX_CELLS + 0.001)
+	assert_float(d).is_between(FxLayer.ASTRAY_MIN_CELLS - 0.001, FxLayer.ASTRAY_MAX_CELLS + 0.001)
 
 
 func test_sanity_arg_parses_only_its_own_flag() -> void:

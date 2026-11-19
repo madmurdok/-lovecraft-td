@@ -21,21 +21,40 @@ class LogSpy:
 		return out
 
 
-## Board that counts its warm-up draws and its _draw passes.
-class SpyBoard:
-	extends Board
+## FxLayer (LT-84: the warm-up's canvas item) that counts its warm-up draws.
+class SpyFx:
+	extends FxLayer
 	var warmups := 0
-	var draws := 0
 	var cold: Array[Array] = []  ## per warm-up call: [line, polyline, polygon] still cold
-
-	func _draw() -> void:
-		draws += 1
-		super._draw()
+	var stamps: Array[int] = []  ## LT-84 F7: Engine.get_process_frames() of each warm-up
 
 	func _draw_warmup() -> void:
 		warmups += 1
+		stamps.append(Engine.get_process_frames())
 		cold.append([not _line_drawn, not _polyline_drawn, not _polygon_drawn])
 		super._draw_warmup()
+
+
+## Board that counts its _draw passes, with a SpyFx as its effects layer.
+class SpyBoard:
+	extends Board
+	var draws := 0
+	var stamps: Array[int] = []  ## LT-84 F7: Engine.get_process_frames() of each board draw
+	var spy_fx := SpyFx.new()
+	var warmups: int:
+		get:
+			return spy_fx.warmups
+	var cold: Array[Array]:
+		get:
+			return spy_fx.cold
+
+	func _init() -> void:
+		fx_layer = spy_fx
+
+	func _draw() -> void:
+		draws += 1
+		stamps.append(Engine.get_process_frames())
+		super._draw()
 
 
 var _vp: SubViewport
@@ -103,6 +122,8 @@ func test_warmup_draws_on_every_frame_while_no_effect_has_drawn() -> void:
 	assert_int(b.draws).is_greater(0)
 	assert_int(b.warmups).is_greater(0)
 	assert_int(b.warmups).is_equal(b.draws)  # every draw before an effect drew warms up
+	# LT-84 F7: and in the same process frame: FxLayer is not drawn a frame after the board
+	assert_array(b.spy_fx.stamps).is_equal(b.stamps)
 
 
 func test_board_without_a_game_draws_no_warmup() -> void:
@@ -123,7 +144,7 @@ func _fx(kind: String) -> Dictionary:
 
 func _draw_effect(b: SpyBoard, kinds: Array[String]) -> void:
 	for k in kinds:
-		b.effects.append(_fx(k))
+		b.fx_layer.effects.append(_fx(k))
 	await _draw_frames(b, 1)
 
 
@@ -134,12 +155,13 @@ func test_warmup_keeps_drawing_after_the_old_half_second_gate() -> void:
 	await _draw_frames(b, 2)
 	assert_int(b.warmups).is_greater(before)
 	assert_int(b.warmups).is_equal(b.draws)
+	assert_array(b.spy_fx.stamps).is_equal(b.stamps)  # LT-84 F7: same frame as the board draw
 
 
 func test_warmup_stops_once_tracer_wave_and_harpoon_have_drawn() -> void:
 	var b := await _spy_board()
 	await _draw_effect(b, ["tracer", "wave", "harpoon"])
-	b.effects.clear()
+	b.fx_layer.effects.clear()
 	var before := b.warmups
 	await _draw_frames(b, 2)
 	assert_int(b.draws).is_greater(0)
@@ -149,7 +171,7 @@ func test_warmup_stops_once_tracer_wave_and_harpoon_have_drawn() -> void:
 func test_tracer_alone_leaves_polyline_and_polygon_warming() -> void:
 	var b := await _spy_board()
 	await _draw_effect(b, ["tracer"])
-	b.effects.clear()
+	b.fx_layer.effects.clear()
 	b.cold.clear()
 	await _draw_frames(b, 1)
 	assert_array(b.cold).is_not_empty()
@@ -159,24 +181,24 @@ func test_tracer_alone_leaves_polyline_and_polygon_warming() -> void:
 func test_tracer_draw_marks_the_line_kind_warmed() -> void:
 	var b := await _spy_board()
 	await _draw_effect(b, ["tracer"])
-	assert_bool(b._line_drawn).is_true()
-	assert_bool(b._polyline_drawn).is_false()
-	assert_bool(b._polygon_drawn).is_false()
+	assert_bool(b.fx_layer._line_drawn).is_true()
+	assert_bool(b.fx_layer._polyline_drawn).is_false()
+	assert_bool(b.fx_layer._polygon_drawn).is_false()
 
 
 func test_wave_draw_marks_the_polyline_kind_warmed() -> void:
 	var b := await _spy_board()
 	await _draw_effect(b, ["wave"])
-	assert_bool(b._polyline_drawn).is_true()
-	assert_bool(b._line_drawn).is_false()
-	assert_bool(b._polygon_drawn).is_false()
+	assert_bool(b.fx_layer._polyline_drawn).is_true()
+	assert_bool(b.fx_layer._line_drawn).is_false()
+	assert_bool(b.fx_layer._polygon_drawn).is_false()
 
 
 func test_harpoon_draw_marks_the_polygon_kind_warmed() -> void:
 	var b := await _spy_board()
 	await _draw_effect(b, ["harpoon"])
-	assert_bool(b._polygon_drawn).is_true()
-	assert_bool(b._polyline_drawn).is_false()
+	assert_bool(b.fx_layer._polygon_drawn).is_true()
+	assert_bool(b.fx_layer._polyline_drawn).is_false()
 
 
 # ---- P2: FrameStats ---------------------------------------------------------------------
@@ -299,7 +321,7 @@ func test_spike_context_reports_the_run_without_changing_it() -> void:
 		SimState.SanityState.keys()[_game.sim.state.sanity_state])
 	assert_int(ctx["enemies"]).is_equal(_game.sim.state.enemies.size())
 	assert_int(ctx["towers"]).is_equal(_game.sim.state.towers.size())
-	assert_int(ctx["effects"]).is_equal(_game.board.effects.size())
+	assert_int(ctx["effects"]).is_equal(_game.board.fx_layer.effects.size())
 	assert_array([_game.sim.state.tick, _game.sim.state.sanity, _game.sim.state.enemies.size()]) \
 		.is_equal(before)
 
