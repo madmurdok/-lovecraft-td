@@ -76,8 +76,6 @@ const TRACER_COLOR := Color(2.2, 2.0, 1.2)
 const TRACER_TRAVEL := 0.08  ## seconds for the dash to reach its end
 const TRACER_MUZZLE := 0.05
 const TRACER_SECONDS := 0.18  ## travel + hit spark
-## LT-62 P1: the warm-up draws (_draw_warmup) run while _time < this, from the first frame.
-const WARMUP_SECONDS := 0.5
 const WARMUP_ALPHA := 0.01  ## invisible over the board, but still a real draw
 const TRACER_DASH_CELLS := 0.35
 const TRACER_MISS_SIDE_CELLS := 0.4  ## a miss ends this far to the side of the aim point
@@ -199,6 +197,12 @@ var _last_pos: Dictionary[int, Vector2] = {}  ## enemy id -> last drawn position
 var phantom: Array[Vector2i] = []  ## LT-14: cells of the current phantom path (none Lucid)
 var _phantom_ttl := 0.0
 var _time := 0.0  ## seconds of effects time, drives the flicker
+## LT-90 F1: per primitive kind _draw_warmup warms, true once an effect drew it for real.
+## Only effect draws (shots) set them: those come after the window is up, while board draws
+## in the startup frames would set them before the first-use cost could be paid.
+var _line_drawn := false  ## draw_line with a width
+var _polyline_drawn := false  ## draw_polyline with a width
+var _polygon_drawn := false  ## draw_colored_polygon
 var _fx_rng := RandomNumberGenerator.new()  ## presentation-only; never the sim's RNG
 var map_layer: MapLayer  ## LT-41: the cached static map, drawn below everything else here
 var view := BoardView.new()  ## LT-35: cells <-> pixels; the only holder of the pixel scale
@@ -541,7 +545,7 @@ func _flicker_dip(key: int) -> float:
 func _draw() -> void:
 	if game == null or game.sim == null:
 		return
-	if _time < WARMUP_SECONDS:
+	if not (_line_drawn and _polyline_drawn and _polygon_drawn):
 		_draw_warmup()
 	var s := game.sim.state
 	sync_map()  # O(1) unless the map changed; the map itself is drawn by map_layer
@@ -567,14 +571,21 @@ func _draw() -> void:
 				_draw_dashed_circle(sc, view.cells_to_px(dz), Color(COLOR_LEAK, 0.7))
 
 
-## LT-62 P1: invisible (alpha WARMUP_ALPHA) draws in the board corner of each primitive the
-## effects use with a width or as a polygon, so the renderer's first-use cost (a 350-670 ms
-## stall at the first tower shot) is paid while the board is quiet. Presentation only.
+## LT-62 P1 / LT-90 F1: invisible (alpha WARMUP_ALPHA) draws in the board corner of each
+## primitive the effects use with a width or as a polygon, so the renderer's first-use cost
+## (a 350-1000 ms stall at the first tower shot) is paid before a shot needs it. _draw calls
+## this on every frame until an effect has drawn each of these primitive kinds for real
+## (_line_drawn, _polyline_drawn, _polygon_drawn), and it draws only the kinds still cold.
+## Not timed: the startup frames, before the window is up, do not pay the cost (LT-90), so
+## the warm-up must still be running once the window is presented. Presentation only.
 func _draw_warmup() -> void:
 	var c := Color(TRACER_COLOR, WARMUP_ALPHA)
-	draw_line(Vector2(2, 2), Vector2(6, 2), c, 2.0)
-	draw_polyline(PackedVector2Array([Vector2(2, 4), Vector2(4, 5), Vector2(6, 4)]), c, 3.0)
-	draw_colored_polygon(PackedVector2Array([Vector2(2, 6), Vector2(6, 6), Vector2(4, 8)]), c)
+	if not _line_drawn:
+		draw_line(Vector2(2, 2), Vector2(6, 2), c, 2.0)
+	if not _polyline_drawn:
+		draw_polyline(PackedVector2Array([Vector2(2, 4), Vector2(4, 5), Vector2(6, 4)]), c, 3.0)
+	if not _polygon_drawn:
+		draw_colored_polygon(PackedVector2Array([Vector2(2, 6), Vector2(6, 6), Vector2(4, 8)]), c)
 
 
 ## LT-48: the min_range (cells) of the tower on selected_cell while its range ring shows;
@@ -883,6 +894,7 @@ func _draw_astray(fx: Dictionary) -> void:
 	var fade := clampf(fx["ttl"] / ASTRAY_SECONDS, 0.0, 1.0)
 	var c := Color(COLOR_ASTRAY, fade)
 	draw_polyline(_waver_points(view.cell_to_world(fx["from"]), b, fx["seed"]), c, 3.0)
+	_polyline_drawn = true
 	if fx.has("radius"):
 		draw_arc(b, view.cells_to_px(fx["radius"]) * (0.3 + 0.7 * (1.0 - fade)), 0, TAU, 20, c, 2.0)
 	else:
@@ -923,6 +935,7 @@ func _draw_tracer(fx: Dictionary) -> void:
 		var head := a.lerp(b, clampf(el / TRACER_TRAVEL, 0.0, 1.0))
 		var tail := head - dir * minf(view.cells_to_px(TRACER_DASH_CELLS), head.distance_to(a))
 		draw_line(tail, head, TRACER_COLOR, 2.0)
+		_line_drawn = true
 	elif not fx["miss"]:
 		var fade := clampf(1.0 - (el - TRACER_TRAVEL) / (TRACER_SECONDS - TRACER_TRAVEL),
 			0.0, 1.0)
@@ -952,6 +965,7 @@ func _draw_harpoon(fx: Dictionary) -> void:
 		var w := view.cell_to_world(dir.orthogonal()) * 0.09
 		draw_colored_polygon(PackedVector2Array([head, base + w, base - w]),
 			Color(HARPOON_COLOR, fade))
+		_polygon_drawn = true
 	if el < CHAIN_SECONDS:  # LT-29: dashed steel chain from each pulled enemy to the tower
 		var cc := Color(HARPOON_COLOR, 1.0 - el / CHAIN_SECONDS * 0.7)
 		var chain: Dictionary = fx.get("chain", {})
@@ -969,6 +983,7 @@ func _draw_harpoon(fx: Dictionary) -> void:
 		var h := view.cells_to_px(0.125)
 		draw_line(p + Vector2(-h, -h), p + Vector2(h, h), c, 3.0)
 		draw_line(p + Vector2(-h, h), p + Vector2(h, -h), c, 3.0)
+		_line_drawn = true
 
 
 ## Necronomicon (LT-25 §1.4): an S-bent tendril to `to`, then a dark disc with a bright rim
@@ -983,6 +998,7 @@ func _draw_wave(fx: Dictionary) -> void:
 			else _wave_points(a, b, 0.0, 2.0, 6.0, 12)
 		var ta := clampf(1.0 - (el - WAVE_TENDRIL) / 0.05, 0.0, 1.0)
 		draw_polyline(pts, Color(rim, ta), 3.0)
+		_polyline_drawn = true
 	var be := el - WAVE_TENDRIL
 	if be < 0.0:
 		return
@@ -1015,6 +1031,8 @@ func _draw_beam(fx: Dictionary) -> void:
 	draw_line(a, b, glow, w * 3.5)
 	draw_polyline(_wave_points(a, b, ph, 5.0, 1.5 + 0.5 * f, 16), Color(BEAM_COLOR, fade), w)
 	draw_line(a, b, Color(BEAM_CORE, fade), maxf(1.0, w * 0.4))
+	_line_drawn = true
+	_polyline_drawn = true
 	var pulse := 0.5 + 0.5 * sin(ph * 0.5)
 	draw_circle(a, view.cells_to_px(0.06 + 0.03 * pulse), Color(BEAM_CORE, fade))
 	draw_arc(b, view.cells_to_px(0.18 + 0.08 * pulse), 0, TAU, 16, Color(BEAM_COLOR, fade), 2.0)
@@ -1039,6 +1057,7 @@ func _draw_banish(fx: Dictionary) -> void:
 		var rf := 1.0 - el / BANISH_REACH
 		o += (a - o).normalized() * minf(view.cells_to_px(BEAM_RIM_CELLS), o.distance_to(a))
 		draw_line(o, a, Color(BANISH_COLOR, 0.9 * rf), 2.0)
+		_line_drawn = true
 	if a.distance_to(b) > 1.0:
 		draw_dashed_line(a, b, Color(BANISH_COLOR, 0.7 * (1.0 - k)), 2.5, 6.0)
 	var fold := clampf(el / BANISH_FOLD, 0.0, 1.0)
@@ -1056,6 +1075,7 @@ func _draw_banish(fx: Dictionary) -> void:
 	draw_colored_polygon(PackedVector2Array([a + Vector2(-hole * 0.45, 0),
 		a + Vector2(hole * 0.45, 0), a + Vector2(hole * 0.8, hole * 1.9),
 		a + Vector2(-hole * 0.8, hole * 1.9)]), kc)
+	_polygon_drawn = true
 	if el >= BANISH_FOLD * 0.5:
 		var open := clampf((el - BANISH_FOLD * 0.5) / (dur - BANISH_FOLD * 0.5), 0.0, 1.0)
 		draw_arc(b, view.cells_to_px(0.25 + 0.35 * open), 0, TAU, 24,
@@ -1085,6 +1105,7 @@ func _draw_shell(fx: Dictionary) -> void:
 		var tail := head - dir * minf(view.cells_to_px(1.2), head.distance_to(a))
 		draw_line(tail, head, Color(SHELL_SMOKE, 0.45), 4.0)
 		draw_line(head - view.cell_to_world(dir) * 0.3, head, SHELL_COLOR, 4.0)
+		_line_drawn = true
 		draw_circle(head, 3.5, Color(3.0, 2.6, 2.0))
 		return
 	var ie := el - SHELL_TRAVEL

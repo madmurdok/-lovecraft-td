@@ -1,7 +1,7 @@
 class_name Lt62FpsTest
 extends GdUnitTestSuite
-## LT-62 P1 + P2: the board's first-use warm-up draw (runs in the first WARMUP_SECONDS
-## only) and the frame-spike log (FrameStats.is_spike / worst_ms / spike_line / text, and
+## LT-62 P1 + P2: the board's first-use warm-up draw (LT-90: runs until effects have drawn
+## each warmed primitive for real) and the frame-spike log (FrameStats.is_spike / worst_ms / spike_line / text, and
 ## Game.advance printing one line per spike, only under --frame-stats).
 
 ## Collects what print() writes, to see whether Game.advance logged a spike line.
@@ -101,18 +101,6 @@ func test_warmup_draw_runs_in_the_first_half_second() -> void:
 	assert_int(b.draws).is_greater(0)
 	assert_int(b.warmups).is_greater(0)
 	assert_int(b.warmups).is_equal(b.draws)  # every draw while _time == 0 warms up
-
-
-func test_warmup_draw_stops_after_half_second_of_effects_time() -> void:
-	var b := await _spy_board()
-	b.tick_effects(Board.WARMUP_SECONDS - 0.01)
-	await _draw_frames(b, 1)
-	var before := b.warmups
-	assert_int(before).is_greater(0)  # still inside the window
-	b.tick_effects(0.02)  # _time now past WARMUP_SECONDS
-	await _draw_frames(b, 3)
-	assert_int(b.warmups).is_equal(before)
-	assert_int(b.draws).is_greater(before)  # the board did keep drawing
 
 
 func test_board_without_a_game_draws_no_warmup() -> void:
