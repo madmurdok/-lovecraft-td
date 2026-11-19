@@ -158,7 +158,7 @@ func test_light_and_shadow_cancel_for_a_searchlight_beam_and_flare() -> void:
 	run(f, 1)
 	assert_array(_flags(rf)).is_equal([false, true])
 	f.state.oil = 2 * f.config.economy.flare.cost_oil
-	assert_int(f.fire_flare()).is_equal(Simulation.CommandResult.OK)
+	assert_int(f.fire_flare()).is_equal(SimCommand.CommandResult.OK)
 	run(f, 2)
 	assert_array(_flags(rf)).is_equal([false, false])
 	run(f, SimTime.ticks(f.flare_seconds()) + 2)
@@ -276,7 +276,7 @@ func test_a_circle_unit_summoned_in_shadow_keeps_its_1_15_dps_after_the_sign_is_
 		assert_int(sim.state.allies.size()).is_equal(1)
 		var a: SimAlly = sim.state.allies[0]
 		if shadowed:
-			assert_int(sim.sell_tower(es.id)).is_equal(Simulation.CommandResult.OK)
+			assert_int(sim.sell_tower(es.id)).is_equal(SimCommand.CommandResult.OK)
 		var e := put(sim, "cultist", 7.0)
 		for i in 300:
 			sim.step()
@@ -373,7 +373,7 @@ func test_tower_lit_fires_once_per_flip_of_either_flag_in_id_order() -> void:
 	assert_array(ev.map(func(e: SimEvent) -> Array: return [e.id, e.data["lit"], e.data["shadowed"]])) \
 		.is_equal([[a.id, true, false], [b.id, false, true]])
 	assert_array(of_type(run(sim, 5), T.TOWER_LIT)).is_empty()
-	assert_int(sim.sell_tower(s.id)).is_equal(Simulation.CommandResult.OK)
+	assert_int(sim.sell_tower(s.id)).is_equal(SimCommand.CommandResult.OK)
 	sim.drain_events()
 	var flip := of_type(run(sim, 1), T.TOWER_LIT)
 	assert_array(flip.map(func(e: SimEvent) -> Array: return [e.id, e.data["lit"], e.data["shadowed"]])) \

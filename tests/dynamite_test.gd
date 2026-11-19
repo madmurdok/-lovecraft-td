@@ -343,7 +343,7 @@ func test_a_charge_still_explodes_and_kills_after_its_tower_is_sold() -> void:
 	var e := put(sim, "cultist", 8.0, l.damage)
 	sim.drain_events()
 	_one_shot(sim)
-	assert_int(sim.sell_tower(t.id)).is_equal(Simulation.CommandResult.OK)
+	assert_int(sim.sell_tower(t.id)).is_equal(SimCommand.CommandResult.OK)
 	assert_object(sim.tower_by_id(t.id)).is_null()
 	var ev := run_to(sim, 1 + _fuse_ticks(l))
 	var blasts := of_type(ev, T.BLAST)

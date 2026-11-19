@@ -4,7 +4,7 @@ extends GdUnitTestSuite
 ## run without the flag. The flag itself comes from the command line, which a test cannot
 ## set: a sandbox run is a Game whose `sandbox` is switched on before it enters the tree.
 
-const R := Simulation.CommandResult
+const R := SimCommand.CommandResult
 
 var _vp: SubViewport
 var _game: Game

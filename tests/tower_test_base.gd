@@ -39,7 +39,7 @@ func put(sim: Simulation, def_id: String, cells: float, hp := HUGE_HP,
 func build(sim: Simulation, def_id: String, cell := TOWER) -> SimTower:
 	var r := sim.build_tower(def_id, cell)
 	assert_int(r).override_failure_message("build %s at %s -> %d" % [def_id, cell, r]) \
-		.is_equal(Simulation.CommandResult.OK)
+		.is_equal(SimCommand.CommandResult.OK)
 	return sim.tower_by_id(sim.state.tower_at[cell])
 
 

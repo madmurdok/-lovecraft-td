@@ -50,7 +50,7 @@ func _tower(def_id: String) -> SimTower:
 	_next_cell += 1
 	var r := _game.commands.build(def_id, cell)
 	assert_int(r as int).override_failure_message("build %s at %s -> %d" % [def_id, cell, r]) \
-		.is_equal(Simulation.CommandResult.OK)
+		.is_equal(SimCommand.CommandResult.OK)
 	return _game.sim.tower_by_id(_game.sim.state.tower_at[cell])
 
 
@@ -70,7 +70,7 @@ func _shoot(t: SimTower, to: Vector2, hits: Array, miss := false, astray := fals
 
 
 func _last_fx() -> Dictionary:
-	return _game.board.effects.back()
+	return _game.board.fx_layer.effects.back()
 
 
 # --- 1-4: event -> attack kind per tower ---------------------------------------------
@@ -121,9 +121,9 @@ func test_the_elder_sign_is_an_aura_and_draws_no_shot() -> void:
 	await _start_game()
 	var t := _tower("elder_sign")
 	assert_str(Board.shot_kind(t)).is_equal("aura")
-	var before := _game.board.effects.size()
+	var before := _game.board.fx_layer.effects.size()
 	_shoot(t, t.centre() + Vector2(1, 0), [])
-	assert_int(_game.board.effects.size()).is_equal(before)
+	assert_int(_game.board.fx_layer.effects.size()).is_equal(before)
 
 
 func test_shot_kind_follows_the_stats_of_each_tower() -> void:
@@ -140,7 +140,7 @@ func _marked(speed: float, taken: float) -> PackedStringArray:
 	var e := SimEnemy.new()
 	e.speed_mult = speed
 	e.damage_taken_mult = taken
-	return Board.enemy_markers(e)
+	return EntityLayer.enemy_markers(e)
 
 
 func test_enemy_markers_follow_slow_and_damage_taken() -> void:
@@ -157,14 +157,14 @@ func test_the_ward_is_faint_when_empty_and_bright_with_an_enemy_inside() -> void
 	var t := _tower("elder_sign")
 	var r := t.stats().range_cells
 	var board := _game.board
-	board._last_pos.clear()
-	assert_float(board.ward_alpha(t)).is_equal(Board.WARD_IDLE_ALPHA)
-	board._last_pos[9001] = t.centre() + Vector2(r + 0.5, 0)
-	assert_float(board.ward_alpha(t)).is_equal(Board.WARD_IDLE_ALPHA)
-	board._last_pos[9002] = t.centre() + Vector2(r * 0.5, 0)
-	var a := board.ward_alpha(t)
-	assert_float(a).is_between(Board.WARD_PULSE_LOW, Board.WARD_ACTIVE_ALPHA)
-	assert_float(a).is_greater(Board.WARD_IDLE_ALPHA)
+	board.last_pos.clear()
+	assert_float(board.entity_layer.ward_alpha(t)).is_equal(EntityLayer.WARD_IDLE_ALPHA)
+	board.last_pos[9001] = t.centre() + Vector2(r + 0.5, 0)
+	assert_float(board.entity_layer.ward_alpha(t)).is_equal(EntityLayer.WARD_IDLE_ALPHA)
+	board.last_pos[9002] = t.centre() + Vector2(r * 0.5, 0)
+	var a := board.entity_layer.ward_alpha(t)
+	assert_float(a).is_between(EntityLayer.WARD_PULSE_LOW, EntityLayer.WARD_ACTIVE_ALPHA)
+	assert_float(a).is_greater(EntityLayer.WARD_IDLE_ALPHA)
 
 
 # --- 7: astray variants ---------------------------------------------------------------
@@ -188,7 +188,7 @@ func test_an_empty_astray_wave_fizzles_small_off_its_aim() -> void:
 	_shoot(t, aim, [], false, true)
 	var fx := _last_fx()
 	assert_str(fx["kind"]).is_equal("astray")
-	assert_float(fx["radius"]).is_equal(Board.WAVE_FIZZLE_CELLS)
+	assert_float(fx["radius"]).is_equal(FxLayer.WAVE_FIZZLE_CELLS)
 	assert_float(fx["radius"]).is_less_equal(0.5)
 	assert_vector(fx["aim"]).is_equal(aim)
 	assert_bool((fx["to"] as Vector2).is_equal_approx(aim)).is_false()
@@ -247,9 +247,9 @@ func test_a_missed_rifle_shot_ends_beside_and_past_its_aim() -> void:
 	assert_bool(end.is_equal_approx(to)).is_false()
 	var dir := (to - t.centre()).normalized()
 	var off := end - to
-	assert_float(off.dot(dir)).is_equal_approx(Board.TRACER_MISS_PAST_CELLS, 0.001)
+	assert_float(off.dot(dir)).is_equal_approx(FxLayer.TRACER_MISS_PAST_CELLS, 0.001)
 	assert_float(absf(off.dot(dir.orthogonal()))) \
-		.is_equal_approx(Board.TRACER_MISS_SIDE_CELLS, 0.001)
+		.is_equal_approx(FxLayer.TRACER_MISS_SIDE_CELLS, 0.001)
 
 
 func test_a_missed_harpoon_flies_its_line_with_no_hit_ticks() -> void:
@@ -270,7 +270,7 @@ func test_a_missed_harpoon_flies_its_line_with_no_hit_ticks() -> void:
 
 func _fx_of(tower_id: int) -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
-	for fx in _game.board.effects:
+	for fx in _game.board.fx_layer.effects:
 		if fx.get("tower", -1) == tower_id:
 			out.append(fx)
 	return out
@@ -284,8 +284,8 @@ func test_one_tower_keeps_at_most_two_attack_effects_the_newest() -> void:
 	for i in 10:
 		_shoot(t, Vector2(1.5 + i, 2.5), [])
 	var mine := _fx_of(t.id)
-	assert_int(mine.size()).is_equal(Board.MAX_FX_PER_TOWER)
-	assert_int(Board.MAX_FX_PER_TOWER).is_equal(2)
+	assert_int(mine.size()).is_equal(FxLayer.MAX_FX_PER_TOWER)
+	assert_int(FxLayer.MAX_FX_PER_TOWER).is_equal(2)
 	assert_vector(mine[0]["to"]).is_equal(Vector2(9.5, 2.5))
 	assert_vector(mine[1]["to"]).is_equal(Vector2(10.5, 2.5))
 	assert_int(_fx_of(other.id).size()).is_equal(1)
@@ -299,17 +299,17 @@ func _shoot_data(t: SimTower, data: Dictionary) -> void:
 
 func test_bleed_marker_iff_bleed_ticks_above_zero() -> void:
 	var e := SimEnemy.new()
-	assert_array(Array(Board.enemy_markers(e))).is_empty()
+	assert_array(Array(EntityLayer.enemy_markers(e))).is_empty()
 	e.status = {"bleed_ticks": 0}
-	assert_array(Array(Board.enemy_markers(e))).is_empty()
+	assert_array(Array(EntityLayer.enemy_markers(e))).is_empty()
 	e.status = {"bleed_ticks": 1, "pull_immune_ticks": 30}
-	assert_array(Array(Board.enemy_markers(e))).contains_exactly(["bleed"])
+	assert_array(Array(EntityLayer.enemy_markers(e))).contains_exactly(["bleed"])
 	e.status = {"pull_immune_ticks": 30}
-	assert_array(Array(Board.enemy_markers(e))).is_empty()
+	assert_array(Array(EntityLayer.enemy_markers(e))).is_empty()
 	e.status = {"bleed_ticks": 45}
 	e.speed_mult = 0.7
 	e.damage_taken_mult = 1.25
-	assert_array(Array(Board.enemy_markers(e))).contains_exactly(["slow", "vuln", "bleed"])
+	assert_array(Array(EntityLayer.enemy_markers(e))).contains_exactly(["slow", "vuln", "bleed"])
 
 
 func test_a_crit_shot_copies_crit_into_its_effect() -> void:
@@ -324,7 +324,7 @@ func test_a_crit_shot_copies_crit_into_its_effect() -> void:
 	crit["crit"] = true
 	_shoot_data(t, crit)
 	assert_bool(_last_fx()["crit"]).is_true()
-	assert_float(Board.CRIT_SPARK_SCALE).is_greater(1.0)  # the spark the draw lengthens
+	assert_float(FxLayer.CRIT_SPARK_SCALE).is_greater(1.0)  # the spark the draw lengthens
 
 
 func test_a_pull_shot_holds_a_chain_from_each_pulled_enemy() -> void:
@@ -401,19 +401,19 @@ func test_a_dud_smokes_dyn_dud_ticks_past_its_detonate_tick() -> void:
 	await _start_game()
 	var t := _tower("dynamite_crew")
 	_throw(t, 100, 30, true)
-	assert_int(_last_fx()["end_tick"]).is_equal(130 + Board.DYN_DUD_TICKS)
+	assert_int(_last_fx()["end_tick"]).is_equal(130 + FxLayer.DYN_DUD_TICKS)
 	assert_bool(_alive_at(t, 130)).is_true()
-	assert_bool(_alive_at(t, 129 + Board.DYN_DUD_TICKS)).is_true()
-	assert_bool(_alive_at(t, 130 + Board.DYN_DUD_TICKS)).is_false()
+	assert_bool(_alive_at(t, 129 + FxLayer.DYN_DUD_TICKS)).is_true()
+	assert_bool(_alive_at(t, 130 + FxLayer.DYN_DUD_TICKS)).is_false()
 
 
 func test_a_blast_event_adds_a_blast_effect_at_its_centre() -> void:
 	await _start_game()
 	var e := _enemy()
-	var before := _game.board.effects.size()
+	var before := _game.board.fx_layer.effects.size()
 	_game.board.on_event(SimEvent.new(SimEvent.Type.BLAST, 5, 1, {"tower": 999,
 		"def": "dynamite_crew", "at": Vector2(3.5, 2.5), "radius": 1.3, "hits": [e.id]}))
-	assert_int(_game.board.effects.size()).is_equal(before + 1)
+	assert_int(_game.board.fx_layer.effects.size()).is_equal(before + 1)
 	var fx := _last_fx()
 	assert_str(fx["kind"]).is_equal("blast")
 	assert_vector(fx["from"]).is_equal(Vector2(3.5, 2.5))
@@ -444,7 +444,7 @@ func test_a_battery_shot_is_a_shell_of_its_aoe_radius() -> void:
 	_shoot(t, to, [e.id])
 	var fx := _last_fx()
 	assert_str(fx["kind"]).is_equal("shell")
-	assert_float(fx["ttl"]).is_equal(Board.SHELL_SECONDS)
+	assert_float(fx["ttl"]).is_equal(FxLayer.SHELL_SECONDS)
 	assert_float(fx["radius"]).is_equal(0.0)
 	assert_vector(fx["end"]).is_equal(to)
 	assert_array(fx["hits"]).is_equal([e.id])
@@ -470,9 +470,9 @@ func test_a_missed_shell_lands_off_its_aim() -> void:
 
 
 func test_the_shell_colour_is_its_own_and_marks_the_tower() -> void:
-	assert_bool(Board.attack_color("shell") == Board.SHELL_COLOR).is_true()
+	assert_bool(EntityLayer.attack_color("shell") == Board.SHELL_COLOR).is_true()
 	for k: String in ["tracer", "harpoon", "wave", "aura", "dynamite"]:
-		assert_bool(Board.attack_color(k) == Board.SHELL_COLOR).override_failure_message(k) \
+		assert_bool(EntityLayer.attack_color(k) == Board.SHELL_COLOR).override_failure_message(k) \
 			.is_false()
 
 
@@ -481,15 +481,15 @@ func test_selected_dead_zone_is_the_selected_towers_min_range_while_its_ring_sho
 	var board := _game.board
 	var cb := _tower("coast_battery")
 	var rifle := _tower("rifleman")
-	assert_float(board.selected_dead_zone()).is_equal(0.0)  # nothing selected
-	board.selected_cell = cb.cell
-	board.selected_range = cb.stats().range_cells
-	assert_float(board.selected_dead_zone()).is_equal(2.0)
-	board.selected_range = 0.0
-	assert_float(board.selected_dead_zone()).is_equal(0.0)  # ring hidden
-	board.selected_cell = rifle.cell
-	board.selected_range = rifle.stats().range_cells
-	assert_float(board.selected_dead_zone()).is_equal(0.0)  # no dead zone
+	assert_float(board.overlay_layer.selected_dead_zone()).is_equal(0.0)  # nothing selected
+	board.selection.cell = cb.cell
+	board.selection.range_cells = cb.stats().range_cells
+	assert_float(board.overlay_layer.selected_dead_zone()).is_equal(2.0)
+	board.selection.range_cells = 0.0
+	assert_float(board.overlay_layer.selected_dead_zone()).is_equal(0.0)  # ring hidden
+	board.selection.cell = rifle.cell
+	board.selection.range_cells = rifle.stats().range_cells
+	assert_float(board.overlay_layer.selected_dead_zone()).is_equal(0.0)  # no dead zone
 
 
 # --- LT-49: Searchlight ----------------------------------------------------------------------
@@ -505,15 +505,15 @@ func test_shot_kind_of_every_searchlight_level_is_searchlight_and_it_draws_no_sh
 		t.branch = b
 		assert_str(Board.shot_kind(t)).override_failure_message(b).is_equal("searchlight")
 	assert_str(Board.shot_kind(_tower("elder_sign"))).is_equal("aura")
-	var before := _game.board.effects.size()
+	var before := _game.board.fx_layer.effects.size()
 	_shoot(t, t.centre() + Vector2(1, 0), [])
-	assert_int(_game.board.effects.size()).is_equal(before)
+	assert_int(_game.board.fx_layer.effects.size()).is_equal(before)
 
 
 func test_the_searchlight_colour_is_its_own() -> void:
-	assert_bool(Board.attack_color("searchlight") == Board.SEARCHLIGHT_COLOR).is_true()
+	assert_bool(EntityLayer.attack_color("searchlight") == EntityLayer.SEARCHLIGHT_COLOR).is_true()
 	for k: String in ["tracer", "harpoon", "wave", "aura", "dynamite", "shell"]:
-		assert_bool(Board.attack_color(k) == Board.SEARCHLIGHT_COLOR) \
+		assert_bool(EntityLayer.attack_color(k) == EntityLayer.SEARCHLIGHT_COLOR) \
 			.override_failure_message(k).is_false()
 
 
@@ -530,7 +530,7 @@ func _func_body(src: String, name: String) -> String:
 ## never on is_fake. The look itself is checked by render; this pins the gating and the
 ## constants it relies on.
 func test_a_revealed_enemy_is_drawn_grey_with_an_amber_ring_and_slash_on_revealed_only() -> void:
-	var body := _func_body(FileAccess.get_file_as_string("res://scenes/board.gd"),
+	var body := _func_body(FileAccess.get_file_as_string("res://scenes/board/entity_layer.gd"),
 		"_draw_enemies")
 	assert_bool(RegEx.create_from_string("\\bis_fake\\b").search(body) == null).is_true()
 	var gated := RegEx.create_from_string("(?m)^(\\t+)if e\\.revealed:.*\\n((?:\\1\\t.*\\n)+)")
@@ -546,12 +546,12 @@ func test_a_revealed_enemy_is_drawn_grey_with_an_amber_ring_and_slash_on_reveale
 	for k: String in ["REVEALED_BODY", "REVEALED_MARK", "REVEALED_RING_CELLS"]:
 		assert_str(outside).override_failure_message(k).not_contains(k)
 	# Amber (r > g > b), outside the slow mark and inside the cell; the body is see-through.
-	var mk := Board.REVEALED_MARK
+	var mk := EntityLayer.REVEALED_MARK
 	assert_bool(mk.r > mk.g and mk.g > mk.b).is_true()
-	assert_float(Board.REVEALED_RING_CELLS).is_greater(Board.MARK_SLOW_CELLS)
-	assert_float(Board.REVEALED_RING_CELLS).is_less(0.5)
-	assert_float(Board.REVEALED_ALPHA).is_between(0.1, 0.9)
-	assert_bool(mk == Board.COLOR_DEBUG_FAKE).is_false()
+	assert_float(EntityLayer.REVEALED_RING_CELLS).is_greater(EntityLayer.MARK_SLOW_CELLS)
+	assert_float(EntityLayer.REVEALED_RING_CELLS).is_less(0.5)
+	assert_float(EntityLayer.REVEALED_ALPHA).is_between(0.1, 0.9)
+	assert_bool(mk == EntityLayer.COLOR_DEBUG_FAKE).is_false()
 
 
 func test_a_board_frame_with_a_revealed_and_a_hidden_fake_draws_without_errors() -> void:
@@ -583,9 +583,9 @@ func test_shot_kind_of_every_resonator_level_is_beam() -> void:
 
 
 func test_the_beam_colour_is_its_own() -> void:
-	assert_bool(Board.attack_color("beam") == Board.BEAM_COLOR).is_true()
+	assert_bool(EntityLayer.attack_color("beam") == Board.BEAM_COLOR).is_true()
 	for k: String in ["tracer", "harpoon", "wave", "aura", "dynamite", "shell", "searchlight"]:
-		assert_bool(Board.attack_color(k) == Board.BEAM_COLOR).override_failure_message(k) \
+		assert_bool(EntityLayer.attack_color(k) == Board.BEAM_COLOR).override_failure_message(k) \
 			.is_false()
 
 
@@ -615,7 +615,7 @@ func test_one_beam_per_tower_a_new_shot_replaces_it() -> void:
 	var mine := _fx_of(t.id)
 	assert_int(mine.size()).is_equal(1)
 	assert_str(mine[0]["kind"]).is_equal("beam")
-	assert_int(mine[0]["end_tick"]).is_equal(106 + n + Board.BEAM_GRACE_TICKS)
+	assert_int(mine[0]["end_tick"]).is_equal(106 + n + FxLayer.BEAM_GRACE_TICKS)
 	assert_float(mine[0]["factor"]).is_equal(2.2)
 	assert_int(mine[0]["target"]).is_equal(e.id)
 	assert_int(_fx_of(other.id).size()).is_equal(1)
@@ -646,8 +646,8 @@ func test_the_beam_stays_drawn_at_full_strength_until_the_next_shot_is_due() -> 
 			assert_int(fx.size()).override_failure_message("tick %d alpha %s" % [tick, a]) \
 				.is_equal(1)
 			assert_float(fx[0]["ttl"]).override_failure_message("tick %d alpha %s" % [tick, a]) \
-				.is_greater_equal(Board.BEAM_FADE)
+				.is_greater_equal(FxLayer.BEAM_FADE)
 	# A late SHOT (a frame of lag) still finds it drawn; it fades out at end_tick.
 	assert_bool(_alive_at(t, 100 + n)).is_true()
-	assert_bool(_alive_at(t, 99 + n + Board.BEAM_GRACE_TICKS)).is_true()
-	assert_bool(_alive_at(t, 100 + n + Board.BEAM_GRACE_TICKS)).is_false()
+	assert_bool(_alive_at(t, 99 + n + FxLayer.BEAM_GRACE_TICKS)).is_true()
+	assert_bool(_alive_at(t, 100 + n + FxLayer.BEAM_GRACE_TICKS)).is_false()

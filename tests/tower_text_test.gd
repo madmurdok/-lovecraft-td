@@ -399,11 +399,11 @@ func test_madness_warning_text() -> void:
 # --- LT-31 ---------------------------------------------------------------------------
 
 func test_target_priority_refusals_and_mode_names_have_texts() -> void:
-	assert_str(CommandText.TEXT.get(Simulation.CommandResult.NO_TARGETING, "")).is_not_empty()
-	assert_str(CommandText.TEXT.get(Simulation.CommandResult.BAD_PRIORITY, "")).is_not_empty()
-	assert_str(CommandText.reason(Simulation.CommandResult.NO_TARGETING)).is_not_equal("unavailable")
-	assert_str(CommandText.reason(Simulation.CommandResult.BAD_PRIORITY)).is_not_equal("unavailable")
-	assert_str(CommandText.reason(Simulation.CommandResult.NO_TARGETING)).is_not_equal(CommandText.reason(Simulation.CommandResult.BAD_PRIORITY))
+	assert_str(CommandText.TEXT.get(SimCommand.CommandResult.NO_TARGETING, "")).is_not_empty()
+	assert_str(CommandText.TEXT.get(SimCommand.CommandResult.BAD_PRIORITY, "")).is_not_empty()
+	assert_str(CommandText.reason(SimCommand.CommandResult.NO_TARGETING)).is_not_equal("unavailable")
+	assert_str(CommandText.reason(SimCommand.CommandResult.BAD_PRIORITY)).is_not_equal("unavailable")
+	assert_str(CommandText.reason(SimCommand.CommandResult.NO_TARGETING)).is_not_equal(CommandText.reason(SimCommand.CommandResult.BAD_PRIORITY))
 	assert_dict(TowerText.PRIORITY_NAMES).is_equal({"first": "Closest to the lighthouse",
 		"strongest": "Strongest", "fastest": "Fastest"})
 	for mode: String in SimTower.TARGET_PRIORITIES:

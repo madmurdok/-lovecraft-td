@@ -3,7 +3,7 @@ extends TowerTestBase
 ## Shared fixtures for the LT-5 suites: the TowerTestBase map with waves.json replaced by
 ## the groups a test needs and a WaveDirector attached.
 
-const R := Simulation.CommandResult
+const R := SimCommand.CommandResult
 const NO_EDITS := {}
 
 var director: WaveDirector

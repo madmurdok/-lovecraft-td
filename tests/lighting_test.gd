@@ -44,7 +44,7 @@ func test_one_light_per_tower_added_and_removed_with_it() -> void:
 	_game.sim.state.gold = 100000
 	var cells := _buildable_cells(2)
 	for c in cells:
-		assert_int(_game.commands.build("rifleman", c)).is_equal(Simulation.CommandResult.OK)
+		assert_int(_game.commands.build("rifleman", c)).is_equal(SimCommand.CommandResult.OK)
 	await get_tree().process_frame
 	assert_int(_game.lighting._tower_lights.size()).is_equal(2)
 	var t := _game.sim.tower_by_id(_game.sim.state.tower_at[cells[0]])
@@ -69,7 +69,7 @@ func test_tower_lights_are_capped() -> void:
 ## LT-30 §3.2 (LT-33 boundary rule): the beam turns with the sim's ticks at night, its
 ## rotation is the sim's direction at tick + alpha; frames without a tick do not turn it.
 func test_beam_rotates_over_time() -> void:
-	assert_int(_game.commands.call_wave()).is_equal(Simulation.CommandResult.OK)
+	assert_int(_game.commands.call_wave()).is_equal(SimCommand.CommandResult.OK)
 	await get_tree().process_frame
 	var before := _game.lighting.beam.rotation
 	for i in 3:
@@ -91,7 +91,7 @@ func test_ambient_is_day_by_day_and_night_after_the_fade_at_night() -> void:
 	assert_float(l.night).is_equal(0.0)
 	assert_that(l.modulate_node.color).is_equal(Lighting.AMBIENT_DAY)
 	assert_bool(l.beam.visible).is_false()
-	assert_int(_game.commands.call_wave()).is_equal(Simulation.CommandResult.OK)
+	assert_int(_game.commands.call_wave()).is_equal(SimCommand.CommandResult.OK)
 	l.ease_night(0.1)
 	assert_float(l.night).is_between(0.01, 0.99)  # fading, not a jump
 	l.ease_night(10.0)
@@ -170,7 +170,7 @@ func test_beam_texture_far_end_is_brighter_than_the_old_falloff() -> void:
 func test_beam_energy_is_beam_energy_times_night() -> void:
 	assert_float(Lighting.BEAM_ENERGY).is_equal(2.6)
 	var l := _game.lighting
-	assert_int(_game.commands.call_wave()).is_equal(Simulation.CommandResult.OK)
+	assert_int(_game.commands.call_wave()).is_equal(SimCommand.CommandResult.OK)
 	l.ease_night(10.0)
 	assert_float(l.night).is_equal(1.0)
 	for b: PointLight2D in l.beams:

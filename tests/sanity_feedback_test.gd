@@ -127,16 +127,16 @@ func test_buyout_button_visibility_is_the_sim_buyout_query() -> void:
 func test_an_empty_astray_shot_lands_off_its_aim_point() -> void:
 	await _start_game()
 	assert_int(_game.commands.build("rifleman", _first_buildable()) as int) \
-		.is_equal(Simulation.CommandResult.OK)
+		.is_equal(SimCommand.CommandResult.OK)
 	var tower: SimTower = _game.sim.state.towers[0]
 	var aim := Vector2(3.5, 1.5)
 	var ev := SimEvent.new(SimEvent.Type.SHOT, 0, tower.id, {"def": "rifleman", "target": 0,
 		"hits": [], "to": aim, "miss": false, "astray": true})
 	_game.board.on_event(ev)
-	var fx: Dictionary = _game.board.effects.back()
+	var fx: Dictionary = _game.board.fx_layer.effects.back()
 	assert_str(fx["kind"]).is_equal("astray")
 	var d: float = (fx["to"] as Vector2).distance_to(aim)
-	assert_float(d).is_between(Board.ASTRAY_MIN_CELLS - 0.001, Board.ASTRAY_MAX_CELLS + 0.001)
+	assert_float(d).is_between(FxLayer.ASTRAY_MIN_CELLS - 0.001, FxLayer.ASTRAY_MAX_CELLS + 0.001)
 
 
 func test_sanity_arg_parses_only_its_own_flag() -> void:

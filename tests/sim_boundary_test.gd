@@ -19,8 +19,9 @@ const SIM_DIR := "res://sim"
 const PRESENTATION_DIRS := ["res://scenes", "res://ui", "res://tools"]
 const SIMULATION := "res://sim/core/simulation.gd"
 ## Engine types sim/ may name today (computed from the code once and pinned, LT-34/S2).
+## LT-82: Callable for the Combat -> Ally summon hooks (owner decision, no RefCounted cycle).
 const ENGINE_ALLOWLIST := [
-	"Array", "Dictionary", "FileAccess", "JSON", "PackedByteArray", "PackedInt64Array",
+	"Array", "Callable", "Dictionary", "FileAccess", "JSON", "PackedByteArray", "PackedInt64Array",
 	"PackedStringArray", "PackedVector2Array", "RandomNumberGenerator", "Rect2",
 	"RefCounted", "RegEx", "String", "Variant", "Vector2", "Vector2i",
 ]
@@ -748,7 +749,7 @@ func test_the_scans_cover_the_expected_files() -> void:
 	for f in pres:
 		assert_bool(f.begins_with("res://sim/") or f.begins_with("res://tests/")).is_false()
 	assert_array(_private_members_of_simulation()).contains(["_add_sanity", "_spawner",
-		"_change_reserve", "_reserve_drives_mad"])
+		"_spawn", "_emit"])
 	assert_dict(_own_types(sim_files)).contains_keys(["Simulation", "GameConfig", "CommandResult",
 		"Phase", "SanityState"])
 
@@ -968,7 +969,7 @@ func test_a_frame_driven_game_equals_direct_stepping() -> void:
 	for entry: Array in log:
 		while bare.state.tick < int(entry[0]):
 			bare.step()
-		assert_int(bare.replay_command(entry)).is_equal(Simulation.CommandResult.OK)
+		assert_int(bare.replay_command(entry)).is_equal(SimCommand.CommandResult.OK)
 	while bare.state.tick < sim.state.tick:
 		bare.step()
 	assert_array(bare.state.command_log).is_equal(log)

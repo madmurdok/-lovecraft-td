@@ -1,7 +1,7 @@
 class_name Lt62FpsTest
 extends GdUnitTestSuite
-## LT-62 P1 + P2: the board's first-use warm-up draw (runs in the first WARMUP_SECONDS
-## only) and the frame-spike log (FrameStats.is_spike / worst_ms / spike_line / text, and
+## LT-62 P1 + P2: the board's first-use warm-up draw (LT-90: runs until effects have drawn
+## each warmed primitive for real) and the frame-spike log (FrameStats.is_spike / worst_ms / spike_line / text, and
 ## Game.advance printing one line per spike, only under --frame-stats).
 
 ## Collects what print() writes, to see whether Game.advance logged a spike line.
@@ -21,19 +21,40 @@ class LogSpy:
 		return out
 
 
-## Board that counts its warm-up draws and its _draw passes.
-class SpyBoard:
-	extends Board
+## FxLayer (LT-84: the warm-up's canvas item) that counts its warm-up draws.
+class SpyFx:
+	extends FxLayer
 	var warmups := 0
-	var draws := 0
-
-	func _draw() -> void:
-		draws += 1
-		super._draw()
+	var cold: Array[Array] = []  ## per warm-up call: [line, polyline, polygon] still cold
+	var stamps: Array[int] = []  ## LT-84 F7: Engine.get_process_frames() of each warm-up
 
 	func _draw_warmup() -> void:
 		warmups += 1
+		stamps.append(Engine.get_process_frames())
+		cold.append([not _line_drawn, not _polyline_drawn, not _polygon_drawn])
 		super._draw_warmup()
+
+
+## Board that counts its _draw passes, with a SpyFx as its effects layer.
+class SpyBoard:
+	extends Board
+	var draws := 0
+	var stamps: Array[int] = []  ## LT-84 F7: Engine.get_process_frames() of each board draw
+	var spy_fx := SpyFx.new()
+	var warmups: int:
+		get:
+			return spy_fx.warmups
+	var cold: Array[Array]:
+		get:
+			return spy_fx.cold
+
+	func _init() -> void:
+		fx_layer = spy_fx
+
+	func _draw() -> void:
+		draws += 1
+		stamps.append(Engine.get_process_frames())
+		super._draw()
 
 
 var _vp: SubViewport
@@ -95,24 +116,14 @@ func _draw_frames(b: SpyBoard, n: int) -> void:
 		await get_tree().process_frame
 
 
-func test_warmup_draw_runs_in_the_first_half_second() -> void:
+func test_warmup_draws_on_every_frame_while_no_effect_has_drawn() -> void:
 	var b := await _spy_board()
 	await _draw_frames(b, 2)
 	assert_int(b.draws).is_greater(0)
 	assert_int(b.warmups).is_greater(0)
-	assert_int(b.warmups).is_equal(b.draws)  # every draw while _time == 0 warms up
-
-
-func test_warmup_draw_stops_after_half_second_of_effects_time() -> void:
-	var b := await _spy_board()
-	b.tick_effects(Board.WARMUP_SECONDS - 0.01)
-	await _draw_frames(b, 1)
-	var before := b.warmups
-	assert_int(before).is_greater(0)  # still inside the window
-	b.tick_effects(0.02)  # _time now past WARMUP_SECONDS
-	await _draw_frames(b, 3)
-	assert_int(b.warmups).is_equal(before)
-	assert_int(b.draws).is_greater(before)  # the board did keep drawing
+	assert_int(b.warmups).is_equal(b.draws)  # every draw before an effect drew warms up
+	# LT-84 F7: and in the same process frame: FxLayer is not drawn a frame after the board
+	assert_array(b.spy_fx.stamps).is_equal(b.stamps)
 
 
 func test_board_without_a_game_draws_no_warmup() -> void:
@@ -120,6 +131,74 @@ func test_board_without_a_game_draws_no_warmup() -> void:
 	_vp.add_child(b)
 	await _draw_frames(b, 2)
 	assert_int(b.warmups).is_equal(0)
+
+
+# ---- LT-90 F1: warm-up runs until effects have drawn each primitive kind ------------------
+
+
+func _fx(kind: String) -> Dictionary:
+	return {"kind": kind, "from": Vector2(1, 1), "to": Vector2(4, 1), "end": Vector2(4, 1),
+		"dur": 1.0, "ttl": 1.0, "miss": false, "astray": false, "seed": 1, "radius": 1.0,
+		"hit_pos": [], "pass_t": [], "chain": {}}
+
+
+func _draw_effect(b: SpyBoard, kinds: Array[String]) -> void:
+	for k in kinds:
+		b.fx_layer.effects.append(_fx(k))
+	await _draw_frames(b, 1)
+
+
+func test_warmup_keeps_drawing_after_the_old_half_second_gate() -> void:
+	var b := await _spy_board()
+	b.tick_effects(5.0)
+	var before := b.warmups
+	await _draw_frames(b, 2)
+	assert_int(b.warmups).is_greater(before)
+	assert_int(b.warmups).is_equal(b.draws)
+	assert_array(b.spy_fx.stamps).is_equal(b.stamps)  # LT-84 F7: same frame as the board draw
+
+
+func test_warmup_stops_once_tracer_wave_and_harpoon_have_drawn() -> void:
+	var b := await _spy_board()
+	await _draw_effect(b, ["tracer", "wave", "harpoon"])
+	b.fx_layer.effects.clear()
+	var before := b.warmups
+	await _draw_frames(b, 2)
+	assert_int(b.draws).is_greater(0)
+	assert_int(b.warmups).is_equal(before)
+
+
+func test_tracer_alone_leaves_polyline_and_polygon_warming() -> void:
+	var b := await _spy_board()
+	await _draw_effect(b, ["tracer"])
+	b.fx_layer.effects.clear()
+	b.cold.clear()
+	await _draw_frames(b, 1)
+	assert_array(b.cold).is_not_empty()
+	assert_array(b.cold.back()).is_equal([false, true, true])
+
+
+func test_tracer_draw_marks_the_line_kind_warmed() -> void:
+	var b := await _spy_board()
+	await _draw_effect(b, ["tracer"])
+	assert_bool(b.fx_layer._line_drawn).is_true()
+	assert_bool(b.fx_layer._polyline_drawn).is_false()
+	assert_bool(b.fx_layer._polygon_drawn).is_false()
+
+
+func test_wave_draw_marks_the_polyline_kind_warmed() -> void:
+	var b := await _spy_board()
+	await _draw_effect(b, ["wave"])
+	assert_bool(b.fx_layer._polyline_drawn).is_true()
+	assert_bool(b.fx_layer._line_drawn).is_false()
+	assert_bool(b.fx_layer._polygon_drawn).is_false()
+
+
+func test_harpoon_draw_marks_the_polygon_kind_warmed() -> void:
+	var b := await _spy_board()
+	await _draw_effect(b, ["harpoon"])
+	assert_bool(b.fx_layer._polygon_drawn).is_true()
+	assert_bool(b.fx_layer._polyline_drawn).is_false()
 
 
 # ---- P2: FrameStats ---------------------------------------------------------------------
@@ -242,7 +321,7 @@ func test_spike_context_reports_the_run_without_changing_it() -> void:
 		SimState.SanityState.keys()[_game.sim.state.sanity_state])
 	assert_int(ctx["enemies"]).is_equal(_game.sim.state.enemies.size())
 	assert_int(ctx["towers"]).is_equal(_game.sim.state.towers.size())
-	assert_int(ctx["effects"]).is_equal(_game.board.effects.size())
+	assert_int(ctx["effects"]).is_equal(_game.board.fx_layer.effects.size())
 	assert_array([_game.sim.state.tick, _game.sim.state.sanity, _game.sim.state.enemies.size()]) \
 		.is_equal(before)
 

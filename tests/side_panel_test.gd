@@ -74,10 +74,10 @@ func _buildable_cell() -> Vector2i:
 func _open_tower(def_id: String, path: Array = []) -> SimTower:
 	_game.sim.state.gold = 10000
 	var cell := _buildable_cell()
-	assert_int(_game.commands.build(def_id, cell)).is_equal(Simulation.CommandResult.OK)
+	assert_int(_game.commands.build(def_id, cell)).is_equal(SimCommand.CommandResult.OK)
 	var t := _game.sim.tower_by_id(_game.sim.state.tower_at[cell])
 	for b: String in path:
-		assert_int(_game.commands.upgrade(t.id, b)).is_equal(Simulation.CommandResult.OK)
+		assert_int(_game.commands.upgrade(t.id, b)).is_equal(SimCommand.CommandResult.OK)
 	await _click_cell(cell)
 	assert_bool(_game.tower_panel.visible).is_true()
 	return t
@@ -100,7 +100,7 @@ func _first_line(l: Label) -> String:
 
 
 func _run_into_wave() -> void:
-	assert_int(_game.commands.call_wave()).is_equal(Simulation.CommandResult.OK)
+	assert_int(_game.commands.call_wave()).is_equal(SimCommand.CommandResult.OK)
 	_game.sim.step()
 	_game.advance(0.0)
 	assert_int(_game.sim.state.phase).is_equal(SimState.Phase.WAVE)
@@ -184,7 +184,7 @@ func test_cancel_water_sell_and_a_vanished_tower_return_to_idle() -> void:
 	await _click_control(_game.tower_panel.sell_button)
 	_assert_view(true, false, false)
 	var t2 := await _open_tower(RIFLE)
-	assert_int(_game.sim.sell_tower(t2.id)).is_equal(Simulation.CommandResult.OK)
+	assert_int(_game.sim.sell_tower(t2.id)).is_equal(SimCommand.CommandResult.OK)
 	_game.advance(0.0)
 	_game.tower_panel.refresh()
 	_assert_view(true, false, false)
@@ -405,7 +405,7 @@ func test_a_tower_without_a_reserve_never_warns() -> void:
 	_config.towers[SIGN].levels[0].sanity_reserve = _config.sanity.max_sanity - 0.5
 	await _start_game()
 	_game.sim.state.gold = 10000
-	assert_int(_game.commands.build(SIGN, _buildable_cell())).is_equal(Simulation.CommandResult.OK)
+	assert_int(_game.commands.build(SIGN, _buildable_cell())).is_equal(SimCommand.CommandResult.OK)
 	assert_float(_game.sim.state.sanity_cap).is_equal_approx(0.5, 0.0001)
 	await _open_tower(RIFLE)
 	assert_float(_game.sim.reserve_delta(RIFLE, _config.towers[RIFLE].levels[0],
@@ -453,12 +453,12 @@ func test_clicking_upgrade_and_branch_keeps_the_view_and_updates_ring_and_refund
 	assert_int(t.level).is_equal(1)
 	assert_bool(_game.tower_panel.visible).is_true()
 	assert_int(_game.tower_panel.tower_id).is_equal(id)
-	assert_float(_game.board.selected_range).is_equal(t.stats().range_cells)
+	assert_float(_game.selection.range_cells).is_equal(t.stats().range_cells)
 	await _click_control(_ups()["a"])
 	assert_int(t.level).is_equal(2)
 	assert_str(t.branch).is_equal("a")
 	assert_bool(_game.tower_panel.visible).is_true()
-	assert_float(_game.board.selected_range).is_equal(t.stats().range_cells)
+	assert_float(_game.selection.range_cells).is_equal(t.stats().range_cells)
 	var refund := _game.sim.sell_refund(t)
 	assert_str(_game.tower_panel.sell_button.text).is_equal("Sell (+$%d)" % refund)
 	if is_equal_approx(_config.economy.sell_refund_ratio, 0.7):
@@ -576,7 +576,7 @@ func test_after_the_outcome_the_other_modes_read_run_over() -> void:
 	await _start_game()
 	var t := await _open_tower(RIFLE)
 	assert_int(_game.commands.set_target_priority(t.id, "strongest")) \
-		.is_equal(Simulation.CommandResult.OK)
+		.is_equal(SimCommand.CommandResult.OK)
 	_game.sim.state.outcome = SimState.Outcome.LOST
 	_game.tower_panel.refresh()
 	assert_str(_prio("strongest").text).is_equal("▸ Strongest")
@@ -609,7 +609,7 @@ func test_a_range_ring_crossing_the_top_edge_is_drawn_under_the_hud() -> void:
 	var t := await _open_tower(RIFLE)
 	var v := _game.board.view
 	var top := v.world_rect().position.y
-	var ring_top := top + v.cells_to_px(t.cell.y + 0.5 - _game.board.selected_range)
+	var ring_top := top + v.cells_to_px(t.cell.y + 0.5 - _game.selection.range_cells)
 	var cx := v.world_rect().position.x + v.cells_to_px(t.cell.x + 0.5)
 	var bg: Control = hud.get_node("Background")
 	if ring_top < top:
@@ -684,15 +684,15 @@ func test_the_footer_covers_the_strip_below_the_board() -> void:
 					> _config.towers[best_def].branches[best_branch].range_cells:
 				best_def = id
 				best_branch = b
-	assert_int(_game.commands.build(best_def, cell)).is_equal(Simulation.CommandResult.OK)
+	assert_int(_game.commands.build(best_def, cell)).is_equal(SimCommand.CommandResult.OK)
 	var t := _game.sim.tower_by_id(_game.sim.state.tower_at[cell])
-	assert_int(_game.commands.upgrade(t.id, "")).is_equal(Simulation.CommandResult.OK)
-	assert_int(_game.commands.upgrade(t.id, best_branch)).is_equal(Simulation.CommandResult.OK)
+	assert_int(_game.commands.upgrade(t.id, "")).is_equal(SimCommand.CommandResult.OK)
+	assert_int(_game.commands.upgrade(t.id, best_branch)).is_equal(SimCommand.CommandResult.OK)
 	await _click_cell(cell)
 	assert_bool(_game.tower_panel.visible).is_true()
 	var v := _game.board.view
 	var ring_bottom := v.world_rect().position.y \
-		+ v.cells_to_px(cell.y + 0.5 + _game.board.selected_range)
+		+ v.cells_to_px(cell.y + 0.5 + _game.selection.range_cells)
 	var cx := v.world_rect().position.x + v.cells_to_px(cell.x + 0.5)
 	assert_float(ring_bottom).is_greater(bottom)
 	assert_bool(footer.get_global_rect().has_point(Vector2(cx, minf(ring_bottom, 647.0)))).is_true()

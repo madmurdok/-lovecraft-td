@@ -32,8 +32,8 @@ const LIGHTHOUSE_GLOW_CELLS := 3.0
 const TOWER_LIGHT_COLOR := Color(1.0, 0.78, 0.48)
 const TOWER_LIGHT_ENERGY := 0.9
 const TOWER_LIGHT_CELLS := 2.2  ## radius
-## Compatibility renderer: all lights hit the one board canvas item, so keep the count
-## small. Towers past the cap stay unlit (still visible under the ambient).
+## Compatibility renderer: all lights hit the board's layer canvas items (LT-84; draw calls
+## measured unchanged vs one item), so keep the count small. Towers past the cap stay unlit.
 const MAX_TOWER_LIGHTS := 12
 const BEAM_TEX_SIZE := 256
 ## LT-69: the flare light, a disc around the lighthouse whose bright core covers the board.

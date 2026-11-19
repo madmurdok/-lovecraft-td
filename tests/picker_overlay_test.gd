@@ -11,7 +11,7 @@ extends GdUnitTestSuite
 
 const RIFLE := "rifleman"
 const SIGN := "elder_sign"
-const R := Simulation.CommandResult
+const R := SimCommand.CommandResult
 
 var _vp: SubViewport
 var _game: Game
@@ -134,8 +134,8 @@ func test_hover_frames_the_column_rings_its_range_and_shows_the_l1_card() -> voi
 	await _open(cell)
 	assert_bool(_game.side_panel.idle_label.visible).is_true()
 	assert_str(_game.side_panel.idle_label.text).is_equal(SidePanel.PICK_TEXT)
-	assert_float(_game.board.selected_range).is_equal(0.0)
-	assert_that(_game.board.selected_cell).is_equal(cell)
+	assert_float(_game.selection.range_cells).is_equal(0.0)
+	assert_that(_game.selection.cell).is_equal(cell)
 	for id: String in ["dynamite_crew", "resonator"]:
 		var def: TowerDef = _config.towers[id]
 		var b: Button = _game.picker.buttons[id]
@@ -143,9 +143,9 @@ func test_hover_frames_the_column_rings_its_range_and_shows_the_l1_card() -> voi
 		assert_str(_game.picker.hovered).is_equal(id)
 		var frame := b.get_theme_stylebox("normal") as StyleBoxFlat
 		assert_that(frame.border_color).is_equal(TowerPicker.COLOR_FRAME)
-		assert_float(_game.board.selected_range).is_equal(def.levels[0].range_cells)
-		assert_str(_game.board.selected_glyph).is_equal(def.glyph)
-		assert_that(_game.board.selected_cell).is_equal(cell)
+		assert_float(_game.selection.range_cells).is_equal(def.levels[0].range_cells)
+		assert_str(_game.selection.glyph).is_equal(def.glyph)
+		assert_that(_game.selection.cell).is_equal(cell)
 		var sp := _game.side_panel
 		assert_bool(sp.card.is_visible_in_tree()).is_true()
 		assert_bool(sp.idle_label.visible).is_false()
@@ -169,8 +169,8 @@ func test_hover_frames_the_column_rings_its_range_and_shows_the_l1_card() -> voi
 	# Off the table: no hover, no ring, "Pick a tower to build".
 	await _move(_cell_centre(cell))
 	assert_str(_game.picker.hovered).is_equal("")
-	assert_float(_game.board.selected_range).is_equal(0.0)
-	assert_str(_game.board.selected_glyph).is_equal("")
+	assert_float(_game.selection.range_cells).is_equal(0.0)
+	assert_str(_game.selection.glyph).is_equal("")
 	assert_bool(_game.side_panel.card.visible).is_false()
 	assert_bool(_game.side_panel.idle_label.visible).is_true()
 	assert_str(_game.side_panel.idle_label.text).is_equal(SidePanel.PICK_TEXT)
@@ -182,9 +182,9 @@ func test_hover_frames_the_column_rings_its_range_and_shows_the_l1_card() -> voi
 func _assert_closed(how: String, cell: Vector2i) -> void:
 	assert_bool(_game.picker.visible).override_failure_message(how).is_false()
 	assert_str(_game.picker.hovered).override_failure_message(how).is_equal("")
-	assert_float(_game.board.selected_range).override_failure_message(how).is_equal(0.0)
-	assert_str(_game.board.selected_glyph).override_failure_message(how).is_equal("")
-	assert_that(_game.board.selected_cell).override_failure_message(how).is_equal(Vector2i(-1, -1))
+	assert_float(_game.selection.range_cells).override_failure_message(how).is_equal(0.0)
+	assert_str(_game.selection.glyph).override_failure_message(how).is_equal("")
+	assert_that(_game.selection.cell).override_failure_message(how).is_equal(Vector2i(-1, -1))
 	assert_bool(_game.side_panel.card.visible).override_failure_message(how).is_false()
 	assert_bool(_game.side_panel.idle_label.visible).override_failure_message(how).is_true()
 	assert_str(_game.side_panel.idle_label.text).override_failure_message(how) \
@@ -196,7 +196,7 @@ func _open_and_hover(cell: Vector2i) -> void:
 	await _open(cell)
 	await _move(_game.picker.buttons[RIFLE].get_global_rect().get_center())
 	assert_str(_game.picker.hovered).is_equal(RIFLE)
-	assert_str(_game.board.selected_glyph).is_equal(_config.towers[RIFLE].glyph)
+	assert_str(_game.selection.glyph).is_equal(_config.towers[RIFLE].glyph)
 	assert_bool(_game.side_panel.card.visible).is_true()
 
 
@@ -336,12 +336,12 @@ func test_ghost_glyph_follows_the_hovered_row_and_clears_on_leave_and_build() ->
 	_game.sim.state.gold = 10000
 	var cell := _buildable(3)
 	await _open(cell)
-	assert_str(_game.board.selected_glyph).is_equal("")
+	assert_str(_game.selection.glyph).is_equal("")
 	var glyphs := {}
 	for id: String in ["dynamite_crew", "resonator", RIFLE]:
 		await _move(_game.picker.buttons[id].get_global_rect().get_center())
 		glyphs[id] = _config.towers[id].glyph
-		assert_str(_game.board.selected_glyph).override_failure_message(id) \
+		assert_str(_game.selection.glyph).override_failure_message(id) \
 			.is_equal(_config.towers[id].glyph)
 	var letters := {}
 	for g: String in glyphs.values():
@@ -349,16 +349,16 @@ func test_ghost_glyph_follows_the_hovered_row_and_clears_on_leave_and_build() ->
 		letters[g] = true
 	assert_int(letters.size()).is_equal(3)  # three different letters, read from config
 	await _move(_cell_centre(cell))
-	assert_str(_game.board.selected_glyph).is_equal("")
+	assert_str(_game.selection.glyph).is_equal("")
 	await _move(_game.picker.buttons[RIFLE].get_global_rect().get_center())
-	assert_str(_game.board.selected_glyph).is_equal(_config.towers[RIFLE].glyph)
+	assert_str(_game.selection.glyph).is_equal(_config.towers[RIFLE].glyph)
 	await _click(_game.picker.buttons[RIFLE].get_global_rect().get_center())
 	assert_bool(_game.sim.state.tower_at.has(cell)).is_true()
 	assert_bool(_game.picker.visible).is_false()
-	assert_str(_game.board.selected_glyph).is_equal("")
+	assert_str(_game.selection.glyph).is_equal("")
 	# Reopening starts clean.
 	await _open(_buildable(5))
-	assert_str(_game.board.selected_glyph).is_equal("")
+	assert_str(_game.selection.glyph).is_equal("")
 	assert_str(_game.picker.hovered).is_equal("")
 
 
@@ -369,9 +369,9 @@ func test_close_clears_the_glyph_of_a_still_hovered_row() -> void:
 	_game.sim.state.gold = 10000
 	await _open(_buildable(3))
 	await _move(_game.picker.buttons[RIFLE].get_global_rect().get_center())
-	assert_str(_game.board.selected_glyph).is_not_empty()
+	assert_str(_game.selection.glyph).is_not_empty()
 	_game.picker.close()
-	assert_str(_game.board.selected_glyph).is_equal("")
+	assert_str(_game.selection.glyph).is_equal("")
 	assert_str(_game.picker.hovered).is_equal("")
 
 
@@ -545,8 +545,8 @@ func test_hovering_a_caster_sets_selected_cast_from_its_l1_and_closing_clears_it
 	for id: String in want:
 		await _move(_game.picker.buttons[id].get_global_rect().get_center())
 		assert_str(_game.picker.hovered).is_equal(id)
-		assert_str(_game.board.selected_cast).override_failure_message(id).is_equal(want[id])
+		assert_str(_game.selection.cast).override_failure_message(id).is_equal(want[id])
 	await _move(_game.picker.buttons[SIGN].get_global_rect().get_center())
-	assert_str(_game.board.selected_cast).is_equal("shadow")
+	assert_str(_game.selection.cast).is_equal("shadow")
 	_game.picker.close()
-	assert_str(_game.board.selected_cast).is_equal("")
+	assert_str(_game.selection.cast).is_equal("")

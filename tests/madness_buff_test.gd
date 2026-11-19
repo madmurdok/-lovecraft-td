@@ -181,7 +181,7 @@ func test_the_step_after_a_buyout_has_no_buff() -> void:
 	var e := put(sim, "cultist", FAR)
 	sim.step()
 	assert_float(e.speed_mult).is_equal_approx(_m(sim).enemy_speed_multiplier, 0.0001)
-	assert_int(sim.buy_sanity()).is_equal(Simulation.CommandResult.OK)
+	assert_int(sim.buy_sanity()).is_equal(SimCommand.CommandResult.OK)
 	assert_int(sim.state.sanity_state).is_not_equal(S.MADNESS)
 	sim.step()
 	assert_array(_mods(e)).is_equal([1.0, 1.0])

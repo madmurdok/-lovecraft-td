@@ -117,7 +117,7 @@ func open_for(p_tower_id: int) -> void:
 		return
 	tower_id = p_tower_id
 	visible = true
-	game.board.selected_cell = t.cell
+	game.selection.set_cell(t.cell)
 	refresh()
 
 
@@ -125,10 +125,8 @@ func close() -> void:
 	if not visible:
 		return
 	visible = false
-	game.board.selected_cell = Vector2i(-1, -1)
-	game.board.selected_range = 0.0
-	game.board.selected_cast = ""
-	game.board.queue_redraw()
+	game.selection.set_cell(SelectionModel.NONE)
+	game.selection.set_ring(0.0, "")
 
 
 ## LT-78 §1: full sync of every group (open_for, tests). Closes the view once the tower is
@@ -194,17 +192,14 @@ func _rebuild(mask: int) -> void:
 		refresh_count += 1
 		# LT-27 §3: towers are sold by day only.
 		var sell := game.sim.can_sell_tower(t.id)
-		sell_button.disabled = sell != Simulation.CommandResult.OK
+		sell_button.disabled = sell != SimCommand.CommandResult.OK
 		sell_button.text = "Sell (+%s)" % TowerText.money(game.sim.sell_refund(t))
 		if sell_button.disabled:
 			sell_button.text += " (%s)" % CommandText.reason(sell)
 	if mask & G_RANGE:
 		refresh_count += 1
 		var cast := Board.cast_of(s)  # LT-70 §5: the BUILD preview of a caster's radius
-		if game.board.selected_range != s.range_cells or game.board.selected_cast != cast:
-			game.board.selected_range = s.range_cells
-			game.board.selected_cast = cast
-			game.board.queue_redraw()
+		game.selection.set_ring(s.range_cells, cast)  # redraws only when it changed
 
 
 ## LT-78 §3 row 38: the table's width follows the side panel's scroll area (layout, not sim).
@@ -215,7 +210,7 @@ func _on_scroll_resized() -> void:
 func _refresh_upgrade(b: Button, info: Label, t: SimTower, s: TowerDef.Level, branch: String,
 		target: TowerDef.Level) -> void:
 	var r := game.sim.can_upgrade(t.id, branch)
-	b.disabled = r != Simulation.CommandResult.OK
+	b.disabled = r != SimCommand.CommandResult.OK
 	var label := "Upgrade to L%d" % (t.level + 2) if branch.is_empty() else target.name
 	var text := label + TowerText.DASH + TowerText.cost_text(target.upgrade_cost)
 	if b.disabled:
@@ -296,10 +291,10 @@ func _refresh_priority(t: SimTower) -> void:
 		var text: String = TowerText.PRIORITY_NAMES.get(mode, mode)
 		if current:
 			text = PRIORITY_MARK + text
-		elif r != Simulation.CommandResult.OK:
+		elif r != SimCommand.CommandResult.OK:
 			text += " (%s)" % CommandText.reason(r)
 		b.text = text
-		b.disabled = current or r != Simulation.CommandResult.OK
+		b.disabled = current or r != SimCommand.CommandResult.OK
 		# The current mode is disabled but must read as selected, not as unavailable.
 		if current:
 			b.add_theme_color_override("font_disabled_color", SidePanel.COLOR_ROLE)

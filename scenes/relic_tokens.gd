@@ -135,7 +135,7 @@ func _draw() -> void:
 			pos = tok["at"]
 			sz = k
 			a = k
-			draw_arc(pos, r * (2.2 - k), 0, TAU, 20, Color(Board.COLOR_DISSOLVE, k), 2.0)
+			draw_arc(pos, r * (2.2 - k), 0, TAU, 20, Color(FxLayer.COLOR_DISSOLVE, k), 2.0)
 		else:
 			var pz := pose(tok)
 			pos = pz[0]

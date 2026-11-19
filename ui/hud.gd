@@ -260,7 +260,7 @@ func _refresh_relics() -> void:
 	relics_label.text = relics_text(game.sim)
 	relics_label.tooltip_text = relics_tooltip(game.sim)
 	sell_relics_button.text = "Sell relics (+%s)" % TowerText.money(game.sim.relics_value())
-	sell_relics_button.disabled = game.sim.can_sell_relics() != Simulation.CommandResult.OK
+	sell_relics_button.disabled = game.sim.can_sell_relics() != SimCommand.CommandResult.OK
 
 
 func _refresh_hp() -> void:
@@ -275,7 +275,7 @@ func _refresh_phase() -> void:
 	refresh_count += 1
 	var s := game.sim.state
 	phase_label.text = phase_text(s)
-	call_wave_button.disabled = game.sim.can_call_wave() != Simulation.CommandResult.OK
+	call_wave_button.disabled = game.sim.can_call_wave() != SimCommand.CommandResult.OK
 	call_wave_button.text = "Light the lamp" if call_wave_button.disabled \
 		else "Light the lamp (luck %s)" % luck_text(game.sim.early_night_luck())
 	luck_label.visible = s.phase == SimState.Phase.WAVE and s.night_luck > 1.0
@@ -320,7 +320,7 @@ func _refresh_buyout() -> void:
 	# Visible only while it could ever apply (sim query, LT-36): exit rule "buyout", in madness.
 	buyout_button.visible = game.sim.buyout_applies()
 	buyout_button.text = "Restore (%s)" % TowerText.money(game.sim.config.sanity.madness.buyout_cost)
-	buyout_button.disabled = game.sim.can_buy_sanity() != Simulation.CommandResult.OK
+	buyout_button.disabled = game.sim.can_buy_sanity() != SimCommand.CommandResult.OK
 
 
 func _on_speed_changed() -> void:
@@ -340,7 +340,7 @@ func _refresh_flare() -> void:
 	flare_button.visible = night
 	oil_label.text = "Oil %d / %d" % [s.oil, sim.oil_cap()]
 	var can := sim.can_fire_flare()
-	flare_button.disabled = can != Simulation.CommandResult.OK
+	flare_button.disabled = can != SimCommand.CommandResult.OK
 	# LT-69: the flare lights the whole map, for the current level's seconds.
 	flare_button.tooltip_text = "Lights the whole map for %s s" % ConfigReader.fmt(
 		sim.flare_seconds())

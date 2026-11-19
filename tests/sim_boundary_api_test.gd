@@ -6,7 +6,7 @@ extends WaveTestBase
 
 const T := SimEvent.Type
 const S := SimState.SanityState
-const R2 := Simulation.CommandResult
+const R2 := SimCommand.CommandResult
 const SIGN := "elder_sign"
 const NECRO := "necronomicon_reader"
 const RIFLE := "rifleman"

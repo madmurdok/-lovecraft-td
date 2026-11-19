@@ -4,7 +4,7 @@ extends TowerTestBase
 ## rules with the sanity reserve (LT-23), the Elder Sign aura and the Necronomicon cast. Balance numbers
 ## are read from config, never hard-coded.
 
-const R := Simulation.CommandResult
+const R := SimCommand.CommandResult
 const T := SimEvent.Type
 const S := SimState.SanityState
 const SIGN := "elder_sign"

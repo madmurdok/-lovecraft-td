@@ -13,6 +13,7 @@ const SIGN := "elder_sign"
 const RIFLE := "rifleman"
 const RES := "resonator"
 const BOT_PATH := "res://tools/bot_runs.gd"
+const Placement := preload("res://tools/bot/bot_placement.gd")
 
 var _bot_script: GDScript
 var _bots: Array[Object] = []
@@ -51,7 +52,7 @@ func _c(x: float) -> Vector2:
 
 func _fire_flare(sim: Simulation) -> void:
 	sim.state.oil = 2 * sim.config.economy.flare.cost_oil
-	assert_int(sim.fire_flare()).is_equal(Simulation.CommandResult.OK)
+	assert_int(sim.fire_flare()).is_equal(SimCommand.CommandResult.OK)
 
 
 ## A bot harness instance whose constructor does nothing (see bot_upgrade_test).
@@ -386,7 +387,7 @@ func test_bot_light_checks_equal_the_sims_light_at() -> void:
 	for x in [4, 5, 6, 8, 9, 10]:
 		var cell := _at(x)
 		var want: bool = int(s2.light_at(s2.state.map.grid.centre(cell))["shadow_casters"]) > 0
-		assert_bool(bot.call("_in_shadow_radius", s2, cell)).override_failure_message(
+		assert_bool(Placement.in_shadow_radius(s2, cell)).override_failure_message(
 			"cell %d" % x).is_equal(want)
-	assert_bool(bot.call("_in_shadow_radius", s2, _at(6))).is_true()
-	assert_bool(bot.call("_in_shadow_radius", s2, _at(3))).is_false()
+	assert_bool(Placement.in_shadow_radius(s2, _at(6))).is_true()
+	assert_bool(Placement.in_shadow_radius(s2, _at(3))).is_false()

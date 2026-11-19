@@ -477,7 +477,7 @@ func test_regen_does_not_leave_madness_only_the_exit_rule_emits_the_reverse_tran
 	assert_array(_changes(ev)).is_empty()
 	assert_array(_state_changes(ev)).is_empty()
 	assert_int(sim.state.sanity_state).is_equal(S.MADNESS)
-	assert_int(sim.buy_sanity()).is_equal(Simulation.CommandResult.OK)
+	assert_int(sim.buy_sanity()).is_equal(SimCommand.CommandResult.OK)
 	var sc := _state_changes(sim.drain_events())
 	assert_int(sc.size()).is_equal(1)
 	var restored := sim.sanity_state_for(sim.config.sanity.madness.restore_sanity)

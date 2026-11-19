@@ -48,39 +48,39 @@ func _cells(n: int) -> Array[Vector2i]:
 
 
 func _place(def_id: String, cell: Vector2i) -> SimTower:
-	assert_int(_game.commands.build(def_id, cell) as int).is_equal(Simulation.CommandResult.OK)
+	assert_int(_game.commands.build(def_id, cell) as int).is_equal(SimCommand.CommandResult.OK)
 	return _game.sim.tower_by_id(_game.sim.state.tower_at[cell])
 
 
 func test_plate_color_is_warm_when_lit_violet_when_shadowed_plain_otherwise() -> void:
-	assert_that(Board.plate_color(_tower(true, false))).is_equal(Board.LIT_TINT)
-	assert_that(Board.plate_color(_tower(false, true))).is_equal(Board.SHADOW_TINT)
-	assert_that(Board.plate_color(_tower(false, false))).is_equal(Board.COLOR_TOWER)
+	assert_that(EntityLayer.plate_color(_tower(true, false))).is_equal(EntityLayer.LIT_TINT)
+	assert_that(EntityLayer.plate_color(_tower(false, true))).is_equal(EntityLayer.SHADOW_TINT)
+	assert_that(EntityLayer.plate_color(_tower(false, false))).is_equal(EntityLayer.COLOR_TOWER)
 	# The tints are told apart: warm has more red than blue, violet the reverse.
-	assert_bool(Board.LIT_TINT.r > Board.LIT_TINT.b).is_true()
-	assert_bool(Board.SHADOW_TINT.b > Board.SHADOW_TINT.r).is_true()
+	assert_bool(EntityLayer.LIT_TINT.r > EntityLayer.LIT_TINT.b).is_true()
+	assert_bool(EntityLayer.SHADOW_TINT.b > EntityLayer.SHADOW_TINT.r).is_true()
 	# A real flag wins over a preview.
-	assert_that(Board.plate_color(_tower(true, false), "shadow")).is_equal(Board.LIT_TINT)
-	assert_that(Board.plate_color(_tower(false, true), "light")).is_equal(Board.SHADOW_TINT)
+	assert_that(EntityLayer.plate_color(_tower(true, false), "shadow")).is_equal(EntityLayer.LIT_TINT)
+	assert_that(EntityLayer.plate_color(_tower(false, true), "light")).is_equal(EntityLayer.SHADOW_TINT)
 
 
 func test_a_preview_tints_a_plain_tower_only_and_by_its_kind() -> void:
 	var plain := _tower(false, false)
-	assert_that(Board.plate_color(plain, "shadow")).is_equal(
-		Board.COLOR_TOWER.lerp(Board.SHADOW_TINT, Board.PREVIEW_TINT_WEIGHT))
-	assert_that(Board.plate_color(plain, "light")).is_equal(
-		Board.COLOR_TOWER.lerp(Board.LIT_TINT, Board.PREVIEW_TINT_WEIGHT))
-	assert_that(Board.plate_color(plain, "")).is_equal(Board.COLOR_TOWER)
-	assert_that(Board.plate_color(plain, "shadow")).is_not_equal(Board.COLOR_TOWER)
+	assert_that(EntityLayer.plate_color(plain, "shadow")).is_equal(
+		EntityLayer.COLOR_TOWER.lerp(EntityLayer.SHADOW_TINT, EntityLayer.PREVIEW_TINT_WEIGHT))
+	assert_that(EntityLayer.plate_color(plain, "light")).is_equal(
+		EntityLayer.COLOR_TOWER.lerp(EntityLayer.LIT_TINT, EntityLayer.PREVIEW_TINT_WEIGHT))
+	assert_that(EntityLayer.plate_color(plain, "")).is_equal(EntityLayer.COLOR_TOWER)
+	assert_that(EntityLayer.plate_color(plain, "shadow")).is_not_equal(EntityLayer.COLOR_TOWER)
 
 
 func test_state_border_marks_lit_and_shadowed_and_nothing_else() -> void:
-	assert_that(Board.state_border(_tower(true, false))).is_equal(Board.LIT_BORDER)
-	assert_that(Board.state_border(_tower(false, true))).is_equal(Board.SHADOW_BORDER)
-	assert_that(Board.state_border(_tower(false, false))).is_equal(Color.TRANSPARENT)
-	assert_that(Board.state_border(_tower(false, false), "light")).is_equal(Board.LIT_TINT)
-	assert_that(Board.state_border(_tower(false, false), "shadow")).is_equal(Board.SHADOW_TINT)
-	assert_that(Board.state_border(_tower(true, false), "shadow")).is_equal(Board.LIT_BORDER)
+	assert_that(EntityLayer.state_border(_tower(true, false))).is_equal(EntityLayer.LIT_BORDER)
+	assert_that(EntityLayer.state_border(_tower(false, true))).is_equal(EntityLayer.SHADOW_BORDER)
+	assert_that(EntityLayer.state_border(_tower(false, false))).is_equal(Color.TRANSPARENT)
+	assert_that(EntityLayer.state_border(_tower(false, false), "light")).is_equal(EntityLayer.LIT_TINT)
+	assert_that(EntityLayer.state_border(_tower(false, false), "shadow")).is_equal(EntityLayer.SHADOW_TINT)
+	assert_that(EntityLayer.state_border(_tower(true, false), "shadow")).is_equal(EntityLayer.LIT_BORDER)
 
 
 func test_cast_of_names_the_level_flag() -> void:
@@ -98,26 +98,26 @@ func test_build_preview_tints_towers_inside_the_radius_inclusive_only() -> void:
 	var near := _place("rifleman", cs[1])
 	var far := _place("rifleman", cs[2])
 	var b := _game.board
-	b.selected_cell = centre_cell
-	b.selected_cast = "shadow"
+	b.selection.cell = centre_cell
+	b.selection.cast = "shadow"
 	var d_near := (Vector2(centre_cell) - Vector2(near.cell)).length()
 	var d_far := (Vector2(centre_cell) - Vector2(far.cell)).length()
 	assert_float(d_far).is_greater(d_near)
-	b.selected_range = d_near  # exactly on the boundary: inclusive
-	assert_str(b.preview_cast(near)).is_equal("shadow")
-	assert_str(b.preview_cast(far)).is_equal("")
-	b.selected_range = d_far
-	assert_str(b.preview_cast(far)).is_equal("shadow")
+	b.selection.range_cells = d_near  # exactly on the boundary: inclusive
+	assert_str(b.overlay_layer.preview_cast(near)).is_equal("shadow")
+	assert_str(b.overlay_layer.preview_cast(far)).is_equal("")
+	b.selection.range_cells = d_far
+	assert_str(b.overlay_layer.preview_cast(far)).is_equal("shadow")
 	# A tower on the selected cell itself is never previewed.
-	b.selected_cell = near.cell
-	assert_str(b.preview_cast(near)).is_equal("")
-	b.selected_cell = centre_cell
+	b.selection.cell = near.cell
+	assert_str(b.overlay_layer.preview_cast(near)).is_equal("")
+	b.selection.cell = centre_cell
 	# No preview without a cast kind or a range.
-	b.selected_cast = ""
-	assert_str(b.preview_cast(near)).is_equal("")
-	b.selected_cast = "shadow"
-	b.selected_range = 0.0
-	assert_str(b.preview_cast(near)).is_equal("")
+	b.selection.cast = ""
+	assert_str(b.overlay_layer.preview_cast(near)).is_equal("")
+	b.selection.cast = "shadow"
+	b.selection.range_cells = 0.0
+	assert_str(b.overlay_layer.preview_cast(near)).is_equal("")
 
 
 func test_no_preview_at_night() -> void:
@@ -125,11 +125,11 @@ func test_no_preview_at_night() -> void:
 	var cs := _cells(2)
 	var t := _place("rifleman", cs[1])
 	var b := _game.board
-	b.selected_cell = cs[0]
-	b.selected_cast = "light"
-	b.selected_range = 50.0
-	assert_str(b.preview_cast(t)).is_equal("light")  # BUILD: the arms differ
+	b.selection.cell = cs[0]
+	b.selection.cast = "light"
+	b.selection.range_cells = 50.0
+	assert_str(b.overlay_layer.preview_cast(t)).is_equal("light")  # BUILD: the arms differ
 	_game.sim.state.phase = SimState.Phase.WAVE
-	assert_str(b.preview_cast(t)).is_equal("")
+	assert_str(b.overlay_layer.preview_cast(t)).is_equal("")
 	_game.sim.state.phase = SimState.Phase.NONE
-	assert_str(b.preview_cast(t)).is_equal("")
+	assert_str(b.overlay_layer.preview_cast(t)).is_equal("")

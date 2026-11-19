@@ -103,7 +103,7 @@ func test_picker_enables_every_buildable_tower_and_disables_unaffordable_ones() 
 	await _click_cell(cell)
 	# Occult towers are buildable since LT-11: every tower the sim accepts is enabled.
 	for def_id: String in _config.towers:
-		var ok := _game.sim.can_build(def_id, cell) == Simulation.CommandResult.OK
+		var ok := _game.sim.can_build(def_id, cell) == SimCommand.CommandResult.OK
 		assert_bool(_game.picker.buttons[def_id].disabled).is_equal(not ok)
 	# Money drops below the cost while the panel is open: re-evaluated on the next frame
 	# (LT-78: through GOLD_CHANGED, so the drop goes through the sim's gold writer).
@@ -163,18 +163,18 @@ func test_a_click_below_the_board_closes_both_panels() -> void:
 	var cell := _buildable_cell()
 	await _click_cell(cell)
 	assert_bool(_game.picker.visible).is_true()
-	assert_that(_game.board.selected_cell).is_equal(cell)
+	assert_that(_game.selection.cell).is_equal(cell)
 	await _click(below)
 	assert_bool(_game.picker.visible).is_false()
-	assert_that(_game.board.selected_cell).is_equal(Vector2i(-1, -1))
+	assert_that(_game.selection.cell).is_equal(Vector2i(-1, -1))
 	await _build_via_ui(cell)
 	await _click_cell(cell)
 	assert_bool(_game.tower_panel.visible).is_true()
 	await _click(below)
 	assert_bool(_game.tower_panel.visible).is_false()
 	assert_bool(_game.picker.visible).is_false()
-	assert_that(_game.board.selected_cell).is_equal(Vector2i(-1, -1))
-	assert_float(_game.board.selected_range).is_equal(0.0)
+	assert_that(_game.selection.cell).is_equal(Vector2i(-1, -1))
+	assert_float(_game.selection.range_cells).is_equal(0.0)
 
 func test_building_while_paused_works_and_tick_does_not_advance() -> void:
 	await _start_game()

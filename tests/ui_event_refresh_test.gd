@@ -105,7 +105,7 @@ func _open(view: String) -> void:
 		"picker":
 			_game._on_cell_clicked(cells[0])
 		"tower":
-			assert_int(_game.commands.build(RIFLE, cells[1])).is_equal(Simulation.CommandResult.OK)
+			assert_int(_game.commands.build(RIFLE, cells[1])).is_equal(SimCommand.CommandResult.OK)
 			_game._on_cell_clicked(cells[1])
 		"lighthouse":
 			_game._on_cell_clicked(_game.sim.state.map.lighthouse)
@@ -203,9 +203,9 @@ func test_b4_hidden_panel_reopened_mid_game_is_current() -> void:
 	assert_str(old_title).is_equal("Lighthouse  L1")
 	_game.close_panels()
 	assert_bool(panel.visible).is_false()
-	assert_int(_game.commands.upgrade_lighthouse()).is_equal(Simulation.CommandResult.OK)
-	assert_int(_game.commands.buy_oil()).is_equal(Simulation.CommandResult.OK)
-	assert_int(_game.commands.buy_oil()).is_equal(Simulation.CommandResult.OK)
+	assert_int(_game.commands.upgrade_lighthouse()).is_equal(SimCommand.CommandResult.OK)
+	assert_int(_game.commands.buy_oil()).is_equal(SimCommand.CommandResult.OK)
+	assert_int(_game.commands.buy_oil()).is_equal(SimCommand.CommandResult.OK)
 	_game.advance(0.0)
 	_game._on_cell_clicked(sim.state.map.lighthouse)
 	assert_bool(panel.visible).is_true()
@@ -228,19 +228,19 @@ func test_b4_hidden_panel_reopened_mid_game_is_current() -> void:
 func test_b5_selling_a_tower_closes_its_panel() -> void:
 	await _start()
 	var cells := _buildable_cells()
-	assert_int(_game.commands.build(RIFLE, cells[1])).is_equal(Simulation.CommandResult.OK)
-	assert_int(_game.commands.build(RIFLE, cells[2])).is_equal(Simulation.CommandResult.OK)
+	assert_int(_game.commands.build(RIFLE, cells[1])).is_equal(SimCommand.CommandResult.OK)
+	assert_int(_game.commands.build(RIFLE, cells[2])).is_equal(SimCommand.CommandResult.OK)
 	var other := _game.sim.state.tower_at[cells[2]]
 	var id: int = _game.sim.state.tower_at[cells[1]]
 	_game._on_cell_clicked(cells[1])
 	assert_bool(_game.tower_panel.visible).is_true()
 	assert_int(_game.tower_panel.tower_id).is_equal(id)
 	# Selling another tower leaves this panel open (and current).
-	assert_int(_game.commands.sell(other)).is_equal(Simulation.CommandResult.OK)
+	assert_int(_game.commands.sell(other)).is_equal(SimCommand.CommandResult.OK)
 	assert_bool(_game.tower_panel.visible).is_true()
-	assert_int(_game.commands.sell(id)).is_equal(Simulation.CommandResult.OK)
+	assert_int(_game.commands.sell(id)).is_equal(SimCommand.CommandResult.OK)
 	assert_bool(_game.tower_panel.visible).is_false()
-	assert_vector(_game.board.selected_cell).is_equal(Vector2i(-1, -1))
+	assert_vector(_game.selection.cell).is_equal(Vector2i(-1, -1))
 
 
 # ---- B6 ------------------------------------------------------------------------------
@@ -430,7 +430,7 @@ func _frames(n: int, delta := 1.0 / 60.0, label := "frame") -> void:
 ## Runs `command` (it drains and flushes itself), then checks.
 func _cmd(label: String, command: Callable) -> void:
 	var r: Variant = command.call()
-	_results.append("%s=%s" % [label, Simulation.CommandResult.keys()[r] if r is int else "-"])
+	_results.append("%s=%s" % [label, SimCommand.CommandResult.keys()[r] if r is int else "-"])
 	_check(label)
 
 
@@ -462,9 +462,9 @@ func _hook(label: String, write: Callable) -> void:
 func _build(def_id: String, cell: Vector2i) -> int:
 	var r: int = _game.commands.build(def_id, cell)
 	assert_int(r).override_failure_message("build %s at %s: %s (phase %d wave %d tick %d outcome %d)\n%s" % [
-		def_id, cell, Simulation.CommandResult.keys()[r], _game.sim.state.phase,
+		def_id, cell, SimCommand.CommandResult.keys()[r], _game.sim.state.phase,
 		_game.sim.state.wave_index, _game.sim.state.tick, _game.sim.state.outcome,
-		", ".join(_results)]).is_equal(Simulation.CommandResult.OK)
+		", ".join(_results)]).is_equal(SimCommand.CommandResult.OK)
 	_check("build " + def_id)
 	return _game.sim.state.tower_at.get(cell, -1)
 
