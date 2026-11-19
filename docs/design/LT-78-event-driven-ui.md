@@ -299,3 +299,15 @@ pass today and pin the state (sanity_bar's gating itself is pinned by B6, not by
    16 test files.
    (b) Keep one-line forwarders on Game. Benefit: tiny diff. Risk: two names for each command, and
    the forwarders are what §3.8 asked to remove.
+
+## 10. Owner decisions (2026-11-19)
+
+1. Timer display: "Часы в UI, без новых событий симуляции (Recommended)" (option C, golden
+   byte-identical).
+2. Values: "Событие помечает группу, панель читает запросы правил (Recommended)".
+3. Per-frame exceptions: "FPS по таймеру 0.25 с, искажение — только в FRAYING/MADNESS
+   (Recommended)".
+4. Command callers: approved with the note as "перевести всех вызывающих на game.commands.X
+   сразу" (option a).
+
+Note approved: "Утверждаю (Recommended)".
