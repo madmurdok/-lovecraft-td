@@ -19,8 +19,9 @@ const SIM_DIR := "res://sim"
 const PRESENTATION_DIRS := ["res://scenes", "res://ui", "res://tools"]
 const SIMULATION := "res://sim/core/simulation.gd"
 ## Engine types sim/ may name today (computed from the code once and pinned, LT-34/S2).
+## LT-82: Callable for the Combat -> Ally summon hooks (owner decision, no RefCounted cycle).
 const ENGINE_ALLOWLIST := [
-	"Array", "Dictionary", "FileAccess", "JSON", "PackedByteArray", "PackedInt64Array",
+	"Array", "Callable", "Dictionary", "FileAccess", "JSON", "PackedByteArray", "PackedInt64Array",
 	"PackedStringArray", "PackedVector2Array", "RandomNumberGenerator", "Rect2",
 	"RefCounted", "RegEx", "String", "Variant", "Vector2", "Vector2i",
 ]

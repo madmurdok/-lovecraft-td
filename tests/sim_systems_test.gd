@@ -14,28 +14,59 @@ const S := SimState.SanityState
 
 # --- B4: no RefCounted cycles --------------------------------------------------------------
 
-## Weak refs to the sim, its context and each system; the sim itself dies on return.
+## Weak refs to the sim, its context and each system; the sim itself dies on return. LT-82:
+## a Summoning Circle summons first, so the hook Callables between Combat and Ally were called.
 func _weak_refs_of_a_dropped_sim() -> Array[WeakRef]:
 	var sim := tsim()
+	sim.state.gold = 100000
 	sim.step()
 	sim.upgrade_lighthouse()  # touch every system so none is only lazily referenced
 	sim.buy_oil()
+	build(sim, "summoning_circle")
+	sim.step()
+	assert_int(sim.state.allies.size()).override_failure_message("no unit was summoned").is_greater(0)
 	var refs: Array[WeakRef] = [weakref(sim)]
-	for system: Variant in [sim._ctx, sim._economy, sim._sanity, sim._light]:
+	for system: Variant in [sim._ctx, sim._economy, sim._sanity, sim._light, sim._combat, sim._ally]:
 		refs.append(weakref(system))
 	return refs
 
 
 func test_a_dropped_sim_frees_its_context_and_systems() -> void:
 	var refs := _weak_refs_of_a_dropped_sim()
-	assert_int(refs.size()).is_equal(5)
+	assert_int(refs.size()).is_equal(7)
 	var live: Array[int] = []
 	for i in refs.size():
 		if refs[i].get_ref() != null:
 			live.append(i)
 	assert_array(live).override_failure_message(
 		"still alive after the last Simulation reference was dropped (0 sim, 1 ctx, 2 economy, "
-		+ "3 sanity, 4 light): %s" % [live]).is_empty()
+		+ "3 sanity, 4 light, 5 combat, 6 ally): %s" % [live]).is_empty()
+
+
+## Weak refs to Combat and Ally of a dropped sim whose spawn hook captures the ally. The hook
+## lambdas die with this frame's stack, so only the cycle can keep the systems alive.
+func _weak_refs_with_a_capturing_hook() -> Array[WeakRef]:
+	var sim := tsim()
+	var combat: CombatSystem = sim._combat
+	var ally: AllySystem = sim._ally
+	combat.set_ally_hooks(
+		func(...args: Array) -> Variant: return ally.callv("spawn", args),
+		func(id: int) -> Array[SimAlly]: return ally.allies_of(id))
+	return [weakref(combat), weakref(ally)]
+
+
+## The check above can fail: a hook that captures the ally keeps Combat and Ally alive in a
+## cycle (Combat -> lambda -> Ally -> Combat) once the sim is gone.
+func test_a_hook_capturing_the_ally_is_seen_as_a_cycle() -> void:
+	var refs := _weak_refs_with_a_capturing_hook()
+	var combat_alive: bool = refs[0].get_ref() != null
+	var ally_alive: bool = refs[1].get_ref() != null
+	if combat_alive:  # break the cycle so the test leaves nothing behind
+		refs[0].get_ref().set_ally_hooks(Callable(), Callable())
+	assert_bool(combat_alive).override_failure_message("a capturing hook did not keep Combat").is_true()
+	assert_bool(ally_alive).override_failure_message("a capturing hook did not keep Ally").is_true()
+	assert_object(refs[0].get_ref()).is_null()
+	assert_object(refs[1].get_ref()).is_null()
 
 
 # --- B5: one event buffer, one drain -------------------------------------------------------
