@@ -51,9 +51,8 @@ func _ready() -> void:
 
 func open() -> void:
 	visible = true
-	game.board.selected_cell = game.sim.state.map.lighthouse
-	game.board.selected_range = 0.0
-	game.board.selected_cast = ""
+	game.selection.set_cell(game.sim.state.map.lighthouse)
+	game.selection.set_ring(0.0, "")
 	refresh()
 
 
@@ -61,8 +60,7 @@ func close() -> void:
 	if not visible:
 		return
 	visible = false
-	game.board.selected_cell = Vector2i(-1, -1)
-	game.board.queue_redraw()
+	game.selection.set_cell(SelectionModel.NONE)
 
 
 ## Share (0..1) of the full circle that `beams` beams of half-width ratio

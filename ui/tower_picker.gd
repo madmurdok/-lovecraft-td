@@ -221,11 +221,7 @@ func open_for(p_cell: Vector2i) -> void:
 	cell = p_cell
 	visible = true
 	refresh()
-	game.board.selected_cell = p_cell
-	game.board.selected_range = 0.0
-	game.board.selected_glyph = ""
-	game.board.selected_cast = ""
-	game.board.queue_redraw()
+	game.selection.show_cell(p_cell)
 
 
 func close() -> void:
@@ -233,11 +229,7 @@ func close() -> void:
 		return
 	visible = false
 	_set_hovered("")
-	game.board.selected_cell = Vector2i(-1, -1)
-	game.board.selected_range = 0.0
-	game.board.selected_glyph = ""
-	game.board.selected_cast = ""
-	game.board.queue_redraw()
+	game.selection.clear()
 
 
 ## LT-78 §1: marks the rows when `ev` may change them; flush() rebuilds them once per drain.
@@ -357,12 +349,8 @@ func _set_hovered(def_id: String) -> void:
 		r = def.levels[0].range_cells
 		glyph = def.glyph
 		cast = Board.cast_of(def.levels[0])
-	if visible and (game.board.selected_range != r or game.board.selected_glyph != glyph
-			or game.board.selected_cast != cast):
-		game.board.selected_range = r
-		game.board.selected_glyph = glyph
-		game.board.selected_cast = cast
-		game.board.queue_redraw()
+	if visible:
+		game.selection.set_preview(r, glyph, cast)  # redraws only when it changed
 	hovered_changed.emit(def_id)
 
 

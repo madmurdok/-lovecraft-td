@@ -13,7 +13,7 @@ const BAR_NAMES := ["GoldLabel", "RelicsLabel", "SellRelicsButton", "PhaseLabel"
 ## Mirrors SanityBar._draw: the label's baseline sits at half height + 5, 14 px text.
 const LABEL_BASELINE_BELOW_MIDDLE := 5.0
 const LABEL_FONT_SIZE := 14
-## Mirrors Board._draw_tower: the letter's origin in the tile, 16 px text, the tile inset.
+## Mirrors EntityLayer._draw_tower: the letter's origin in the tile, 16 px text, the tile inset.
 const LETTER_ORIGIN := Vector2(8, 20)
 const LETTER_FONT_SIZE := 16
 const TILE_INSET := 6.0
@@ -179,21 +179,21 @@ func test_sanity_ticks_stay_out_of_the_label_band() -> void:
 func test_the_tower_letter_sits_on_a_dark_plate_inside_its_tile() -> void:
 	var tile := BoardView.new().cells_to_px(1.0) - 2.0 * TILE_INSET
 	var inside := Rect2(Vector2(FRAME, FRAME), Vector2(tile, tile) - Vector2(2, 2) * FRAME)
-	assert_bool(inside.encloses(Board.LETTER_PLATE)) \
-		.override_failure_message("plate %s, tile inside %s" % [Board.LETTER_PLATE, inside]) \
+	assert_bool(inside.encloses(EntityLayer.LETTER_PLATE)) \
+		.override_failure_message("plate %s, tile inside %s" % [EntityLayer.LETTER_PLATE, inside]) \
 		.is_true()
 	for id: String in _config.towers:
 		var letter: String = (_config.towers[id] as TowerDef).name.left(1)
 		var ink := _ink(letter, LETTER_FONT_SIZE)
 		ink.position += LETTER_ORIGIN
-		assert_bool(Board.LETTER_PLATE.encloses(ink)).override_failure_message(
-			"%s ink %s, plate %s" % [letter, ink, Board.LETTER_PLATE]).is_true()
-	assert_float(Board.COLOR_LETTER_PLATE.get_luminance()).is_less(0.2)
-	assert_float(Board.COLOR_LETTER_PLATE.get_luminance()) \
-		.is_less(Board.COLOR_TOWER.get_luminance() - 0.4)
-	assert_float(Board.COLOR_LETTER_PLATE.a).is_equal(1.0)
+		assert_bool(EntityLayer.LETTER_PLATE.encloses(ink)).override_failure_message(
+			"%s ink %s, plate %s" % [letter, ink, EntityLayer.LETTER_PLATE]).is_true()
+	assert_float(EntityLayer.COLOR_LETTER_PLATE.get_luminance()).is_less(0.2)
+	assert_float(EntityLayer.COLOR_LETTER_PLATE.get_luminance()) \
+		.is_less(EntityLayer.COLOR_TOWER.get_luminance() - 0.4)
+	assert_float(EntityLayer.COLOR_LETTER_PLATE.a).is_equal(1.0)
 	# _draw_tower draws the plate after the tile and before the letter.
-	var src := FileAccess.get_file_as_string("res://scenes/board.gd")
+	var src := FileAccess.get_file_as_string("res://scenes/board/entity_layer.gd")
 	var start := src.find("func _draw_tower(")
 	assert_int(start).is_greater(-1)
 	var body := src.substr(start, src.find("\nfunc ", start + 1) - start)

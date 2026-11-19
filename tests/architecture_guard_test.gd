@@ -147,6 +147,46 @@ func test_g3_one_cell_centre() -> void:
 		"cell centre written by hand (use GridTopology.centre): " + ", ".join(hits)).is_empty()
 
 
+## G7 (LT-84, B9): selection via the model. Under ui/, scenes/ and tools/ nothing assigns the
+## board's selection fields (`selected_cell / _range / _glyph / _cast =`, the 21 UI writes
+## LT-65 #12 found) nor a SelectionModel field (`selection.cell = ...`) outside
+## scenes/board/selection_model.gd: the panels call its methods, which emit `changed`.
+## Comparisons (`==`, `!=`) are reads and pass.
+const G7_DIRS := ["res://ui", "res://scenes", "res://tools"]
+const G7_HOME := "res://scenes/board/selection_model.gd"
+const G7_DENY := "\\bselected_(cell|range|glyph|cast)\\s*=(?!=)" \
+	+ "|\\bselection\\.(cell|range_cells|glyph|cast)\\s*=(?!=)"
+
+
+func test_g7_selection_is_written_only_through_the_model() -> void:
+	var scan := SimBoundaryTest.new()
+	var hits: Array[String] = []
+	var home_scanned := false
+	for dir: String in G7_DIRS:
+		for f in scan._gd_files(dir):
+			if f == G7_HOME:
+				home_scanned = true
+				continue
+			hits.append_array(_find_joined(scan, f, FileAccess.get_file_as_string(f), G7_DENY))
+	var probes := ["game.board.selected_cell = c", "board.selected_range=0.0",
+		"b.selected_glyph = \"\"", "game.selection.cast = \"light\"",
+		"game.selection.range_cells = r"]
+	var reads := ["if game.board.selected_range != r:", "x = sel.cell == c",
+		"game.selection.set_ring(r, cast)"]
+	var probe_hits := 0
+	for p: String in probes:
+		probe_hits += _find_joined(scan, "probe.gd", p, G7_DENY).size()
+	var read_hits := 0
+	for p: String in reads:
+		read_hits += _find_joined(scan, "probe.gd", p, G7_DENY).size()
+	scan.free()
+	assert_int(probe_hits).is_equal(probes.size())  # each write form is caught
+	assert_int(read_hits).is_equal(0)  # reads and method calls pass
+	assert_bool(home_scanned).is_true()  # the model is in the scope
+	assert_array(hits).override_failure_message(
+		"selection written outside SelectionModel: " + ", ".join(hits)).is_empty()
+
+
 ## G10 (LT-77): one topology. Outside the topology files (sim/rules/*grid*.gd) no
 ## neighbour arithmetic, board-size loops, bounds test, NEIGHBOURS table or hand-written
 ## centre-to-centre length: those are GridTopology.neighbours / cells / contains / distance.
