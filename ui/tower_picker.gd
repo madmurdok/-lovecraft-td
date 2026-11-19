@@ -4,7 +4,7 @@ extends VBoxContainer
 ## top of the side panel (SidePanel creates it above its Scroll), never over the board.
 ## A title line ("Build here" + Cancel), then the towers grouped by TowerDef.kind (mundane,
 ## then occult, data order inside each kind), one row each: short name, $, DPS and the
-## TowerInfo.trait_text tag. Each row is one button (one click builds); hovering it frames
+## TowerText.trait_text tag. Each row is one button (one click builds); hovering it frames
 ## it, shows its range ring and board letter (a ghost) on the cell and emits
 ## hovered_changed (the side panel's L1 card below the list). Leaving the row hides them.
 ## A row is disabled whenever Simulation.can_build refuses it: unaffordable dims it and
@@ -186,16 +186,16 @@ func _row(id: String, def: TowerDef) -> Button:
 	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	names[id] = name_label
 	h.add_child(name_label)
-	var cost := _value("Cost", TowerInfo.cost_text(def.cost), StatsTable.COLOR_VALUE, COST_W)
+	var cost := _value("Cost", TowerText.cost_text(def.cost), StatsTable.COLOR_VALUE, COST_W)
 	costs[id] = cost
 	h.add_child(cost)
 	var gap := _spacer(COST_GAP)
 	gap.name = "Gap"
 	h.add_child(gap)
-	var dps_text := TowerInfo.dps_text(s, game.sim.config)
+	var dps_text := TowerText.dps_text(s, game.sim.config)
 	var dps := _value("Dps", dps_text, StatsTable.color_for("dps", dps_text), DPS_W)
 	h.add_child(dps)
-	_traits[id] = TowerInfo.trait_text(def, s)
+	_traits[id] = TowerText.trait_text(def, s)
 	var trait_cell := _value("Trait", _traits[id], _trait_color(_traits[id]), TRAIT_W)
 	h.add_child(trait_cell)
 	cells[id] = {"dps": dps, "trait": trait_cell}
@@ -285,11 +285,11 @@ func refresh() -> void:
 			cells[id][key].modulate = dim
 		names[id].modulate = dim
 		cost.modulate = Color.WHITE if poor else dim
-		var tip := def.name + TowerInfo.DASH + TowerInfo.cost_text(def.cost)
+		var tip := def.name + TowerText.DASH + TowerText.cost_text(def.cost)
 		if b.disabled:
-			tip += " (%s)" % TowerInfo.reason(r)
+			tip += " (%s)" % CommandText.reason(r)
 		elif mad:
-			tip += TowerInfo.MADNESS_WARNING
+			tip += TowerText.MADNESS_WARNING
 		var trait_tip := _trait_tip(base)
 		if not trait_tip.is_empty():
 			tip += "\n" + trait_tip
@@ -301,7 +301,7 @@ func refresh() -> void:
 			if game.sim.state.phase == SimState.Phase.WAVE \
 			else Simulation.CommandResult.NOT_ENOUGH_GOLD
 	var refused := shared != Simulation.CommandResult.OK
-	var why := TowerInfo.reason(shared)
+	var why := CommandText.reason(shared)
 	title_label.text = why.left(1).to_upper() + why.substr(1) if refused else TITLE_TEXT
 	title_label.add_theme_color_override("font_color", STATUS_COLOR if refused else Color.WHITE)
 
@@ -313,7 +313,7 @@ static func _trait_tip(tag: String) -> String:
 	if tip.is_empty() or words.size() < 2:
 		return tip
 	if words[0] == "Blind":  # the number twice: "Blind 1: can't fire within 1 cell"
-		return tip % [words[1], TowerInfo.cells_text(words[1])]
+		return tip % [words[1], TowerText.cells_text(words[1])]
 	return tip.replace("%s", words[1])
 
 

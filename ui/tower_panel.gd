@@ -11,7 +11,7 @@ extends VBoxContainer
 ## event marks it (REFRESH_ON, flush); refresh() syncs every group on open.
 ## `visible` is "the tower view is shown"; SidePanel shows its idle text otherwise.
 
-const MADNESS_WARNING := TowerInfo.MADNESS_WARNING
+const MADNESS_WARNING := TowerText.MADNESS_WARNING
 const PRIORITY_MARK := "▸ "  ## prefixes the current target priority (LT-31)
 ## LT-78 §1: field groups (bits of _dirty). Every rebuild first closes the view when the
 ## tower is gone, so TOWER_SOLD needs only a group that does nothing else (G_GONE).
@@ -195,9 +195,9 @@ func _rebuild(mask: int) -> void:
 		# LT-27 §3: towers are sold by day only.
 		var sell := game.sim.can_sell_tower(t.id)
 		sell_button.disabled = sell != Simulation.CommandResult.OK
-		sell_button.text = "Sell (+%s)" % TowerInfo.money(game.sim.sell_refund(t))
+		sell_button.text = "Sell (+%s)" % TowerText.money(game.sim.sell_refund(t))
 		if sell_button.disabled:
-			sell_button.text += " (%s)" % TowerInfo.reason(sell)
+			sell_button.text += " (%s)" % CommandText.reason(sell)
 	if mask & G_RANGE:
 		refresh_count += 1
 		var cast := Board.cast_of(s)  # LT-70 §5: the BUILD preview of a caster's radius
@@ -217,9 +217,9 @@ func _refresh_upgrade(b: Button, info: Label, t: SimTower, s: TowerDef.Level, br
 	var r := game.sim.can_upgrade(t.id, branch)
 	b.disabled = r != Simulation.CommandResult.OK
 	var label := "Upgrade to L%d" % (t.level + 2) if branch.is_empty() else target.name
-	var text := label + TowerInfo.DASH + TowerInfo.cost_text(target.upgrade_cost)
+	var text := label + TowerText.DASH + TowerText.cost_text(target.upgrade_cost)
 	if b.disabled:
-		text += " (%s)" % TowerInfo.reason(r)
+		text += " (%s)" % CommandText.reason(r)
 	elif game.sim.would_drive_mad_upgrade(t.id, branch):
 		text += MADNESS_WARNING
 	b.text = text
@@ -234,7 +234,7 @@ func _refresh_table(t: SimTower, s: TowerDef.Level, branches: PackedStringArray)
 	var cfg := game.sim.config
 	var sanity_now := game.sim.state.sanity
 	var heads := PackedStringArray(["Now"])
-	var cols: Array[Dictionary] = [TowerInfo.row_values(t.def, s, cfg, sanity_now)]
+	var cols: Array[Dictionary] = [TowerText.row_values(t.def, s, cfg, sanity_now)]
 	var targets: Array[TowerDef.Level] = []
 	for branch: String in upgrade_buttons:
 		if not branches.has(branch):
@@ -243,39 +243,39 @@ func _refresh_table(t: SimTower, s: TowerDef.Level, branches: PackedStringArray)
 		if target == null:
 			continue
 		heads.append("L%d" % (t.level + 2) if branch.is_empty() else branch.to_upper())
-		cols.append(TowerInfo.row_values(t.def, target, cfg, sanity_now))
+		cols.append(TowerText.row_values(t.def, target, cfg, sanity_now))
 		targets.append(target)
 	var shadow := t.shadowed  # LT-70 §5: never together with t.lit
 	var marked := t.lit or shadow
-	var lit := TowerInfo.lit_values(t.def, s, cfg, sanity_now, shadow) if marked else {}
+	var lit := TowerText.lit_values(t.def, s, cfg, sanity_now, shadow) if marked else {}
 	var bar := game.side_panel.scroll.get_v_scroll_bar()
 	stats_table.max_width = int(game.side_panel.scroll.size.x - bar.get_combined_minimum_size().x)
 	stats_table.set_columns(heads, cols, lit, StatsTable.kind_color(t.def.kind), shadow)
-	lit_label.text = TowerInfo.lit_line(t.def, s, cfg, shadow) if marked else ""
+	lit_label.text = TowerText.lit_line(t.def, s, cfg, shadow) if marked else ""
 	lit_label.add_theme_color_override("font_color",
 		StatsTable.COLOR_SHADOW if shadow else StatsTable.COLOR_LIT)
 	lit_label.visible = not lit_label.text.is_empty()
 	var lines := PackedStringArray()
 	if s.is_beam():
-		lines.append(TowerInfo.live_dps_text(sanity_now))
-	var lit_fx := TowerInfo.lit_effects(t.def, s, cfg, shadow) if marked else {}
+		lines.append(TowerText.live_dps_text(sanity_now))
+	var lit_fx := TowerStatsModel.lit_effects(t.def, s, cfg, shadow) if marked else {}
 	var fx: Variant = null if lit_fx.is_empty() else lit_fx
-	var now := TowerInfo.special_lines(s, fx)
+	var now := TowerText.special_lines(s, fx)
 	if not lit_fx.is_empty():  # LT-43 §5: "*" only on the lines the beam (or shadow) changes
-		var base := TowerInfo.special_lines(s)
+		var base := TowerText.special_lines(s)
 		for i in now.size():
 			if not base.has(now[i]):
-				now[i] += TowerInfo.LIT_MARK
+				now[i] += TowerText.LIT_MARK
 	var prefix := "Now: " if not targets.is_empty() else ""
 	for line in now:
 		lines.append(prefix + line)
 	for i in targets.size():
-		for line in TowerInfo.special_delta_lines(s, targets[i]):
+		for line in TowerText.special_delta_lines(s, targets[i]):
 			lines.append("%s: %s" % [heads[i + 1], line])
 	special_label.text = "\n".join(lines)
 	special_label.visible = not lines.is_empty()
 	var light := game.sim.tower_mults(t.id)
-	kind_label.text = "\n".join(TowerInfo.kind_lines(t.def, s, cfg.sanity, light["ignore_miss"],
+	kind_label.text = "\n".join(TowerText.kind_lines(t.def, s, cfg.sanity, light["ignore_miss"],
 		light["miss_add"]))
 	kind_label.visible = not kind_label.text.is_empty()
 
@@ -293,11 +293,11 @@ func _refresh_priority(t: SimTower) -> void:
 			continue
 		var current := mode == t.target_priority
 		var r := game.sim.can_set_target_priority(t.id, mode)
-		var text: String = TowerInfo.PRIORITY_NAMES.get(mode, mode)
+		var text: String = TowerText.PRIORITY_NAMES.get(mode, mode)
 		if current:
 			text = PRIORITY_MARK + text
 		elif r != Simulation.CommandResult.OK:
-			text += " (%s)" % TowerInfo.reason(r)
+			text += " (%s)" % CommandText.reason(r)
 		b.text = text
 		b.disabled = current or r != Simulation.CommandResult.OK
 		# The current mode is disabled but must read as selected, not as unavailable.

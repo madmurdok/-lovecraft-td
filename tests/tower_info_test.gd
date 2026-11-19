@@ -1,6 +1,6 @@
 class_name TowerInfoTest
 extends GdUnitTestSuite
-## LT-24 §3, LT-43 TowerInfo: the stats table cells (row_values) and the special, kind and
+## LT-24 §3, LT-43 TowerText: the stats table cells (row_values) and the special, kind and
 ## upgrade lines built from config (effects in EFFECT_GROUPS order), "(coming soon)" for
 ## PENDING keys (none since LT-29: every shipped effect is wired), number and cost formatting. Text formats come from the design note; the
 ## numbers in them are read from config.
@@ -17,7 +17,7 @@ func before() -> void:
 
 
 func _n(v: float) -> String:
-	return TowerInfo.num(v)
+	return TowerText.num(v)
 
 
 func _def(id: String) -> TowerDef:
@@ -25,11 +25,11 @@ func _def(id: String) -> TowerDef:
 
 
 func _row(id: String, s: TowerDef.Level, sanity_now := -1.0) -> Dictionary:
-	return TowerInfo.row_values(_def(id), s, _cfg, sanity_now)
+	return TowerText.row_values(_def(id), s, _cfg, sanity_now)
 
 
 func _special(s: TowerDef.Level) -> Array:
-	return Array(TowerInfo.special_lines(s))
+	return Array(TowerText.special_lines(s))
 
 
 func _mundane_kind() -> Array:
@@ -39,7 +39,7 @@ func _mundane_kind() -> Array:
 ## The shooter cells of `s` (LT-43 §1): damage, interval, DPS (one decimal), range.
 func _attack(s: TowerDef.Level) -> Dictionary:
 	return {"damage": _n(s.damage), "every": _n(s.fire_interval),
-		"dps": TowerInfo.one_decimal(s.damage / s.fire_interval), "range": _n(s.range_cells)}
+		"dps": TowerText.one_decimal(s.damage / s.fire_interval), "range": _n(s.range_cells)}
 
 
 func _assert_cells(got: Dictionary, want: Dictionary) -> void:
@@ -54,9 +54,9 @@ func test_rifleman_l1_reads_damage_range_then_mundane_kind_lines() -> void:
 	var l1 := _def("rifleman").levels[0]
 	var got := _row("rifleman", l1)
 	_assert_cells(got, _attack(l1))
-	_assert_cells(got, {"attack": "Single", "hits": "All", "reserve": TowerInfo.CELL_DASH,
-		"kill": "+" + _n(_cfg.sanity.regen_mundane_kill), "special": TowerInfo.CELL_DASH})
-	assert_array(Array(TowerInfo.kind_lines(_def("rifleman"), l1, _cfg.sanity))) \
+	_assert_cells(got, {"attack": "Single", "hits": "All", "reserve": TowerText.CELL_DASH,
+		"kill": "+" + _n(_cfg.sanity.regen_mundane_kill), "special": TowerText.CELL_DASH})
+	assert_array(Array(TowerText.kind_lines(_def("rifleman"), l1, _cfg.sanity))) \
 		.is_equal(_mundane_kind())
 	# Spec example at today's config.
 	if is_equal_approx(l1.damage, 10.0) and is_equal_approx(l1.fire_interval, 0.8):
@@ -89,7 +89,7 @@ func test_dynamite_shows_ground_only_the_blast_and_the_fuse() -> void:
 	var l1 := d.levels[0]
 	var e: Dictionary = l1.effects
 	_assert_cells(_row("dynamite_crew", l1), {"attack": "Blast", "hits": "Ground"})
-	assert_array(_special(l1)).is_equal(["Blast radius " + TowerInfo.cells_text(_n(e["aoe_radius"])),
+	assert_array(_special(l1)).is_equal(["Blast radius " + TowerText.cells_text(_n(e["aoe_radius"])),
 		"Fuse %s s, thrown ahead" % _n(e["fuse_seconds"])])
 	# Spec example at today's config.
 	if e["fuse_seconds"] == 1.0:
@@ -100,7 +100,7 @@ func test_dynamite_shows_ground_only_the_blast_and_the_fuse() -> void:
 
 func test_elder_sign_is_support_with_aura_and_effects_and_no_kind_line() -> void:
 	var l1 := _def("elder_sign").levels[0]
-	var dash := TowerInfo.CELL_DASH
+	var dash := TowerText.CELL_DASH
 	_assert_cells(_row("elder_sign", l1), {"attack": "Aura", "damage": dash, "every": dash,
 		"dps": dash, "range": _n(l1.range_cells), "reserve": _n(l1.sanity_reserve),
 		"kill": dash})
@@ -109,7 +109,7 @@ func test_elder_sign_is_support_with_aura_and_effects_and_no_kind_line() -> void
 		"Foes take +%s%% damage" % _n((l1.effects["damage_taken_multiplier"] - 1.0) * 100.0),
 		"Shadows nearby towers",  # LT-70 §5
 	])
-	assert_array(Array(TowerInfo.kind_lines(_def("elder_sign"), l1, _cfg.sanity))).is_empty()
+	assert_array(Array(TowerText.kind_lines(_def("elder_sign"), l1, _cfg.sanity))).is_empty()
 
 
 ## LT-23: the Seal's drain line became its reserve line; LT-29 wired the strip (no suffix).
@@ -128,11 +128,11 @@ func test_necronomicon_lines_and_the_madness_kind_line() -> void:
 	var l1 := n.levels[0]
 	_assert_cells(_row("necronomicon_reader", l1), _attack(l1))
 	_assert_cells(_row("necronomicon_reader", l1), {"attack": "Blast",
-		"reserve": _n(l1.sanity_reserve), "kill": TowerInfo.CELL_DASH})
-	assert_array(_special(l1)).is_equal(["Blast radius " + TowerInfo.cells_text(_n(l1.effects["aoe_radius"]))])
-	assert_array(Array(TowerInfo.kind_lines(n, l1, _cfg.sanity))).is_equal([
+		"reserve": _n(l1.sanity_reserve), "kill": TowerText.CELL_DASH})
+	assert_array(_special(l1)).is_equal(["Blast radius " + TowerText.cells_text(_n(l1.effects["aoe_radius"]))])
+	assert_array(Array(TowerText.kind_lines(n, l1, _cfg.sanity))).is_equal([
 		"Madness: x%s, astray" % _n(_cfg.sanity.madness.damage_multiplier)])
-	var got := Array(TowerInfo.kind_lines(n, n.branches["a"], _cfg.sanity))
+	var got := Array(TowerText.kind_lines(n, n.branches["a"], _cfg.sanity))
 	assert_array(got).is_equal(["Unaffected by madness"])
 
 
@@ -162,7 +162,7 @@ func test_a_config_edit_changes_the_text() -> void:
 	l.damage = 33.0
 	l.fire_interval = 1.5
 	l.range_cells = 4.25
-	_assert_cells(TowerInfo.row_values(def, l, r.config),
+	_assert_cells(TowerText.row_values(def, l, r.config),
 		{"damage": "33", "every": "1.5", "dps": "22", "range": "4.25"})
 
 
@@ -176,7 +176,7 @@ func test_every_tower_level_and_branch_gets_lines_and_none_is_coming_soon() -> v
 			all.append(def.branches[b])
 		for s: TowerDef.Level in all:
 			var got := _row(id, s)
-			for row: Array in TowerInfo.ROWS:
+			for row: Array in TowerText.ROWS:
 				assert_str(got.get(row[0], "")).override_failure_message("%s %s" % [id, row[0]]) \
 					.is_not_empty()
 			assert_array(shapes).contains([got["attack"]])
@@ -188,7 +188,7 @@ func test_every_tower_level_and_branch_gets_lines_and_none_is_coming_soon() -> v
 # --- 16: effect order, pending and unknown keys ---------------------------------------------
 
 func test_effect_lines_follow_effect_groups_order_and_pairs_share_a_line() -> void:
-	var got := Array(TowerInfo.effect_lines({"strip_armor": 1.0, "crit_multiplier": 3.0,
+	var got := Array(TowerText.effect_lines({"strip_armor": 1.0, "crit_multiplier": 3.0,
 		"pierce": 2.0, "crit_chance": 0.5, "slow": 0.1}))
 	assert_array(got).is_equal([
 		"Pierce: 2-cell-wide line",
@@ -203,13 +203,13 @@ func test_non_pending_effects_have_no_suffix() -> void:
 	assert_array(Array(TowerDef.Level.PENDING)).is_empty()
 	for key: String in TowerDef.Level.EFFECTS:
 		assert_bool(TowerDef.Level.PENDING.has(key)).is_false()
-		var got := TowerInfo.effect_lines({key: 1.5})
+		var got := TowerText.effect_lines({key: 1.5})
 		assert_int(got.size()).is_equal(1)
 		assert_bool(got[0].ends_with(CS)).override_failure_message(got[0]).is_false()
 
 
 func test_an_unknown_effect_key_renders_as_key_and_value() -> void:
-	var got := TowerInfo.effect_lines({"slow": 0.5, "frost_aura": 2.5})
+	var got := TowerText.effect_lines({"slow": 0.5, "frost_aura": 2.5})
 	assert_array(Array(got)).is_equal(["Slows enemies 50%", "frost_aura: 2.5"])
 
 
@@ -242,14 +242,14 @@ func test_shipped_effect_lines_fit_24_chars_and_keep_their_numbers() -> void:
 		for b: String in TowerDef.BRANCH_IDS:
 			all.append(def.branches[b])
 		for s: TowerDef.Level in all:
-			var lines := TowerInfo.effect_lines(s.effects, false)
+			var lines := TowerText.effect_lines(s.effects, false)
 			for line: String in lines:
 				assert_int(line.length()).override_failure_message("%s '%s'" % [id, line]) \
 					.is_less_equal(LINE_MAX)
 			for key: String in ["pierce", "aoe_radius", "slow", "damage_taken_multiplier",
 					"crit_chance", "burst_targets", "bleed_dps", "pull_cells", "strip_armor",
 			"fuse_seconds"]:
-				if not TowerInfo.is_active(s.effects, key):
+				if not TowerStatsModel.is_active(s.effects, key):
 					continue
 				var text := "|".join(lines)
 				for n: String in _numbers_for(key, s.effects):
@@ -273,7 +273,7 @@ func test_shipped_madness_line_fits_24_chars_and_keeps_the_multiplier() -> void:
 		for b: String in TowerDef.BRANCH_IDS:
 			all.append(def.branches[b])
 		for s: TowerDef.Level in all:
-			for line: String in TowerInfo.kind_lines(def, s, _cfg.sanity):
+			for line: String in TowerText.kind_lines(def, s, _cfg.sanity):
 				if not line.begins_with("Madness"):
 					continue
 				seen += 1
@@ -291,15 +291,15 @@ func test_shipped_madness_line_fits_24_chars_and_keeps_the_multiplier() -> void:
 
 func test_kind_lines_per_tower_kind() -> void:
 	var s := _cfg.sanity
-	assert_array(Array(TowerInfo.kind_lines(_def("rifleman"), _def("rifleman").levels[1], s))) \
+	assert_array(Array(TowerText.kind_lines(_def("rifleman"), _def("rifleman").levels[1], s))) \
 		.is_equal(_mundane_kind())
 	var n := _def("necronomicon_reader")
-	assert_array(Array(TowerInfo.kind_lines(n, n.levels[1], s))) \
+	assert_array(Array(TowerText.kind_lines(n, n.levels[1], s))) \
 		.is_equal(["Madness: x%s, astray" % _n(s.madness.damage_multiplier)])
-	assert_array(Array(TowerInfo.kind_lines(n, n.branches["a"], s))).is_equal(["Unaffected by madness"])
+	assert_array(Array(TowerText.kind_lines(n, n.branches["a"], s))).is_equal(["Unaffected by madness"])
 	var sign := _def("elder_sign")
 	for l: TowerDef.Level in [sign.levels[0], sign.levels[1], sign.branches["a"], sign.branches["b"]]:
-		assert_array(Array(TowerInfo.kind_lines(sign, l, s))).is_empty()
+		assert_array(Array(TowerText.kind_lines(sign, l, s))).is_empty()
 
 
 # --- 18: numbers and costs -----------------------------------------------------------------
@@ -308,16 +308,16 @@ func test_num_prints_up_to_two_decimals_without_trailing_zeros() -> void:
 	var cases := [[3.5, "3.5"], [82.5, "82.5"], [0.2, "0.2"], [12.0, "12"], [18.0 / 0.7, "25.71"],
 		[0.0, "0"], [1.25, "1.25"], [100.0, "100"]]
 	for c: Array in cases:
-		assert_str(TowerInfo.num(c[0])).override_failure_message(str(c)).is_equal(c[1])
+		assert_str(TowerText.num(c[0])).override_failure_message(str(c)).is_equal(c[1])
 
 
 func test_cost_text_and_the_currency_word() -> void:
 	# LT-27 §2: money is shown as "$" ("gold" stays the internal name).
-	assert_str(TowerInfo.CURRENCY).is_equal("$")
+	assert_str(TowerText.CURRENCY).is_equal("$")
 	# LT-23 Q5: sanity is reserved, never paid, so a cost is money only.
-	assert_str(TowerInfo.cost_text(80)).is_equal("$80")
-	assert_str(TowerInfo.cost_text(40)).is_equal("$40")
-	assert_str(TowerInfo.cost_text(0)).is_equal("$0")
+	assert_str(TowerText.cost_text(80)).is_equal("$80")
+	assert_str(TowerText.cost_text(40)).is_equal("$40")
+	assert_str(TowerText.cost_text(0)).is_equal("$0")
 
 
 ## LT-23 §1.4: a level without a reserve has no reserve line, and no line names a per-cast
@@ -331,7 +331,7 @@ func test_reserve_line_iff_the_level_reserves_and_no_cost_lines() -> void:
 		for s: TowerDef.Level in all:
 			var got: String = _row(id, s)["reserve"]
 			assert_str(got).override_failure_message(id).is_equal(
-				_n(s.sanity_reserve) if s.sanity_reserve > 0.0 else TowerInfo.CELL_DASH)
+				_n(s.sanity_reserve) if s.sanity_reserve > 0.0 else TowerText.CELL_DASH)
 			assert_bool(_special(s).any(func(x: String) -> bool:
 				return x.contains("per cast") or x.contains("sanity/s"))).is_false()
 
@@ -341,43 +341,43 @@ func test_reserve_line_iff_the_level_reserves_and_no_cost_lines() -> void:
 ## LT-43 §2: stats are table cells now, so a stats-only upgrade has no special line.
 func test_rifleman_l1_to_l2_delta_is_one_line_of_changed_stats() -> void:
 	var r := _def("rifleman")
-	assert_array(Array(TowerInfo.special_delta_lines(r.levels[0], r.levels[1]))).is_empty()
+	assert_array(Array(TowerText.special_delta_lines(r.levels[0], r.levels[1]))).is_empty()
 
 
 func test_marksman_delta_skips_the_unchanged_interval_and_adds_the_new_effect() -> void:
 	var r := _def("rifleman")
 	var a := r.levels[1]
 	var b := r.branches["a"]
-	assert_array(Array(TowerInfo.special_delta_lines(a, b))).is_equal([
+	assert_array(Array(TowerText.special_delta_lines(a, b))).is_equal([
 		"%s%% crit, x%s damage" % [_n(b.effects["crit_chance"] * 100.0),
 			_n(b.effects["crit_multiplier"])]])
 
 
 func test_support_delta_uses_aura_radius_and_unchanged_effects_are_left_out() -> void:
 	var s := _def("elder_sign")
-	assert_array(Array(TowerInfo.special_delta_lines(s.levels[1], s.branches["a"]))).is_empty()
+	assert_array(Array(TowerText.special_delta_lines(s.levels[1], s.branches["a"]))).is_empty()
 
 
 func test_same_stats_give_only_the_new_effect_line() -> void:
 	var h := _def("harpooner")
 	var a := h.levels[1]
 	var b := h.branches["a"]
-	assert_array(Array(TowerInfo.special_delta_lines(a, b))).is_equal([
+	assert_array(Array(TowerText.special_delta_lines(a, b))).is_equal([
 		"Bleed %s/s for %s s" % [_n(b.effects["bleed_dps"]), _n(b.effects["bleed_seconds"])]])
 
 
 func test_pure_rite_delta_ends_with_unaffected_by_madness() -> void:
 	var n := _def("necronomicon_reader")
-	var got := Array(TowerInfo.special_delta_lines(n.levels[1], n.branches["a"]))
+	var got := Array(TowerText.special_delta_lines(n.levels[1], n.branches["a"]))
 	assert_array(got).is_equal(["Unaffected by madness"])
-	assert_array(Array(TowerInfo.special_delta_lines(n.levels[1], n.branches["b"]))) \
+	assert_array(Array(TowerText.special_delta_lines(n.levels[1], n.branches["b"]))) \
 		.not_contains(["Unaffected by madness"])
 
 
 func test_identical_levels_give_no_delta() -> void:
 	for id: String in _cfg.towers:
 		var l := _def(id).levels[1]
-		assert_array(Array(TowerInfo.special_delta_lines(l, l))).is_empty()
+		assert_array(Array(TowerText.special_delta_lines(l, l))).is_empty()
 
 
 ## LT-43 §2: the reserve is a table cell, so a reserve change prints no special line.
@@ -386,14 +386,14 @@ func test_reserve_delta_line_signs_and_absence() -> void:
 	var b := TowerDef.Level.new()
 	a.sanity_reserve = 10.0
 	b.sanity_reserve = 15.0
-	assert_array(Array(TowerInfo.special_delta_lines(a, b))).is_empty()
-	assert_array(Array(TowerInfo.special_delta_lines(b, a))).is_empty()
+	assert_array(Array(TowerText.special_delta_lines(a, b))).is_empty()
+	assert_array(Array(TowerText.special_delta_lines(b, a))).is_empty()
 
 
 ## LT-23 Q3: the warning text. The rule itself moved to Simulation.would_drive_mad_build /
 ## would_drive_mad_upgrade (LT-34) and is pinned in the sim tests.
 func test_madness_warning_text() -> void:
-	assert_str(TowerInfo.MADNESS_WARNING).is_equal(" (drives you mad!)")
+	assert_str(TowerText.MADNESS_WARNING).is_equal(" (drives you mad!)")
 
 
 # --- LT-31 ---------------------------------------------------------------------------
@@ -401,13 +401,13 @@ func test_madness_warning_text() -> void:
 func test_target_priority_refusals_and_mode_names_have_texts() -> void:
 	assert_str(CommandText.TEXT.get(Simulation.CommandResult.NO_TARGETING, "")).is_not_empty()
 	assert_str(CommandText.TEXT.get(Simulation.CommandResult.BAD_PRIORITY, "")).is_not_empty()
-	assert_str(TowerInfo.reason(Simulation.CommandResult.NO_TARGETING)).is_not_equal("unavailable")
-	assert_str(TowerInfo.reason(Simulation.CommandResult.BAD_PRIORITY)).is_not_equal("unavailable")
-	assert_str(TowerInfo.reason(Simulation.CommandResult.NO_TARGETING)).is_not_equal(TowerInfo.reason(Simulation.CommandResult.BAD_PRIORITY))
-	assert_dict(TowerInfo.PRIORITY_NAMES).is_equal({"first": "Closest to the lighthouse",
+	assert_str(CommandText.reason(Simulation.CommandResult.NO_TARGETING)).is_not_equal("unavailable")
+	assert_str(CommandText.reason(Simulation.CommandResult.BAD_PRIORITY)).is_not_equal("unavailable")
+	assert_str(CommandText.reason(Simulation.CommandResult.NO_TARGETING)).is_not_equal(CommandText.reason(Simulation.CommandResult.BAD_PRIORITY))
+	assert_dict(TowerText.PRIORITY_NAMES).is_equal({"first": "Closest to the lighthouse",
 		"strongest": "Strongest", "fastest": "Fastest"})
 	for mode: String in SimTower.TARGET_PRIORITIES:
-		assert_bool(TowerInfo.PRIORITY_NAMES.has(mode)).override_failure_message(mode).is_true()
+		assert_bool(TowerText.PRIORITY_NAMES.has(mode)).override_failure_message(mode).is_true()
 
 
 # --- LT-28: neutral multipliers and removed effects ----------------------------------------
@@ -421,13 +421,13 @@ func _level(effects: Dictionary) -> TowerDef.Level:
 ## A x1 multiplier changes nothing, so it prints no line (known group or unknown key); any
 ## other value still does.
 func test_a_x1_multiplier_prints_no_effect_line() -> void:
-	assert_array(Array(TowerInfo.effect_lines({"damage_taken_multiplier": 1.0}))).is_empty()
-	assert_array(Array(TowerInfo.effect_lines({"frost_multiplier": 1.0}))).is_empty()
-	assert_array(Array(TowerInfo.effect_lines({"slow": 0.35, "damage_taken_multiplier": 1.0}))) \
+	assert_array(Array(TowerText.effect_lines({"damage_taken_multiplier": 1.0}))).is_empty()
+	assert_array(Array(TowerText.effect_lines({"frost_multiplier": 1.0}))).is_empty()
+	assert_array(Array(TowerText.effect_lines({"slow": 0.35, "damage_taken_multiplier": 1.0}))) \
 		.is_equal(["Slows enemies 35%"])
-	assert_array(Array(TowerInfo.effect_lines({"damage_taken_multiplier": 1.5}))) \
+	assert_array(Array(TowerText.effect_lines({"damage_taken_multiplier": 1.5}))) \
 		.is_equal(["Foes take +50% damage"])
-	assert_array(Array(TowerInfo.effect_lines({"frost_multiplier": 2.0}))) \
+	assert_array(Array(TowerText.effect_lines({"frost_multiplier": 2.0}))) \
 		.is_equal(["frost_multiplier: 2"])
 
 
@@ -435,14 +435,14 @@ func test_a_x1_multiplier_prints_no_effect_line() -> void:
 ## kept effect is not repeated.
 func test_a_removed_effect_prints_loses_and_its_old_line() -> void:
 	var from := _level({"slow": 0.35, "damage_taken_multiplier": 1.5})
-	var want := [TowerInfo.REMOVED + "Foes take +50% damage"]
-	assert_str(TowerInfo.REMOVED).is_equal("Loses: ")
-	assert_array(Array(TowerInfo.special_delta_lines(from, _level({"slow": 0.35})))).is_equal(want)
-	assert_array(Array(TowerInfo.special_delta_lines(from,
+	var want := [TowerText.REMOVED + "Foes take +50% damage"]
+	assert_str(TowerText.REMOVED).is_equal("Loses: ")
+	assert_array(Array(TowerText.special_delta_lines(from, _level({"slow": 0.35})))).is_equal(want)
+	assert_array(Array(TowerText.special_delta_lines(from,
 		_level({"slow": 0.35, "damage_taken_multiplier": 1.0})))).is_equal(want)
 	# An unknown key dropped reads the same way.
-	assert_array(Array(TowerInfo.special_delta_lines(_level({"frost_aura": 2.5}), _level({})))) \
-		.is_equal([TowerInfo.REMOVED + "frost_aura: 2.5"])
+	assert_array(Array(TowerText.special_delta_lines(_level({"frost_aura": 2.5}), _level({})))) \
+		.is_equal([TowerText.REMOVED + "frost_aura: 2.5"])
 
 
 ## A removed effect loses its old line without " (coming soon)"; a whole pair group shows
@@ -450,9 +450,9 @@ func test_a_removed_effect_prints_loses_and_its_old_line() -> void:
 func test_a_removed_effect_pair_shows_once_without_coming_soon() -> void:
 	var from := _level({"crit_chance": 0.5, "crit_multiplier": 3.0})
 	for key: String in TowerDef.Level.EFFECTS:
-		assert_bool(TowerInfo.is_pending(key)).override_failure_message(key).is_false()
-	assert_array(Array(TowerInfo.special_delta_lines(from, _level({})))) \
-		.is_equal([TowerInfo.REMOVED + "50% crit, x3 damage"])
+		assert_bool(TowerStatsModel.is_pending(key)).override_failure_message(key).is_false()
+	assert_array(Array(TowerText.special_delta_lines(from, _level({})))) \
+		.is_equal([TowerText.REMOVED + "50% crit, x3 damage"])
 
 
 # --- LT-48: the Coast battery's dead zone and AP / HE shells ---------------------------------
@@ -483,8 +483,8 @@ func _shell(min_range: float) -> TowerDef.Level:
 
 ## LT-43 §2: the dead zone is the Range cell ("2–7"), so it never prints a special line.
 func test_delta_shows_the_dead_zone_only_when_it_changes() -> void:
-	assert_array(Array(TowerInfo.special_delta_lines(_shell(2.0), _shell(3.0)))).is_empty()
-	assert_str(TowerInfo.range_text(_shell(3.0))).is_equal("3–7")
+	assert_array(Array(TowerText.special_delta_lines(_shell(2.0), _shell(3.0)))).is_empty()
+	assert_str(TowerText.range_text(_shell(3.0))).is_equal("3–7")
 
 
 # --- LT-49: Searchlight ----------------------------------------------------------------------
@@ -493,7 +493,7 @@ func test_searchlight_is_support_that_reveals_and_slows_with_no_mundane_kind_lin
 	var d := _def("searchlight")
 	var l1 := d.levels[0]
 	_assert_cells(_row("searchlight", l1), {"attack": "Aura", "range": _n(l1.range_cells),
-		"kill": TowerInfo.CELL_DASH, "beam": TowerInfo.CELL_DASH})
+		"kill": TowerText.CELL_DASH, "beam": TowerText.CELL_DASH})
 	assert_array(_special(l1)).is_equal([
 		"Reveals fakes",
 		"Slows enemies %s%%" % _n(l1.effects["slow"] * 100.0),
@@ -507,8 +507,8 @@ func test_searchlight_is_support_that_reveals_and_slows_with_no_mundane_kind_lin
 	# It never shoots: no Fraying miss line and no kill regen on any level.
 	assert_float(_cfg.sanity.thresholds["fraying"].miss_chance).is_greater(0.0)
 	for l: TowerDef.Level in [d.levels[0], d.levels[1], d.branches["a"], b]:
-		assert_array(Array(TowerInfo.kind_lines(d, l, _cfg.sanity))).is_empty()
-		assert_str(_row("searchlight", l)["kill"]).is_equal(TowerInfo.CELL_DASH)
+		assert_array(Array(TowerText.kind_lines(d, l, _cfg.sanity))).is_empty()
+		assert_str(_row("searchlight", l)["kill"]).is_equal(TowerText.CELL_DASH)
 
 
 ## LT-50, LT-43 Q3: the Resonator's effect line reads the most it multiplies by (1 +
@@ -519,20 +519,20 @@ func test_resonator_reads_its_scaling_and_the_factor_at_current_sanity() -> void
 	var l1 := d.levels[0]
 	assert_array(_special(l1)).is_equal(["Ignores armor", "Up to x3 at low sanity"])
 	var base := l1.damage / l1.fire_interval
-	assert_str(_row("resonator", l1)["dps"]).is_equal("%s–%s" % [TowerInfo.one_decimal(base),
-		TowerInfo.one_decimal(base * 3.0)])
+	assert_str(_row("resonator", l1)["dps"]).is_equal("%s–%s" % [TowerText.one_decimal(base),
+		TowerText.one_decimal(base * 3.0)])
 	assert_str(_row("resonator", l1)["attack"]).is_equal("Beam")
 	var top := _cfg.sanity.max_sanity
 	for sanity: float in [40.0, 92.0, top]:
 		assert_str(_row("resonator", l1, sanity)["dps"]).is_equal(
-			TowerInfo.one_decimal(base * l1.sanity_factor(sanity, top)))
+			TowerText.one_decimal(base * l1.sanity_factor(sanity, top)))
 	assert_array(_special(d.branches["a"])).contains(["Up to x2 at low sanity", "Reveals fakes"])
-	assert_array(Array(TowerInfo.kind_lines(d, d.branches["a"], _cfg.sanity))) \
+	assert_array(Array(TowerText.kind_lines(d, d.branches["a"], _cfg.sanity))) \
 		.is_equal(["Unaffected by madness"])
 	assert_array(_special(d.branches["b"])).contains(["Up to x5 at low sanity"])
 	# Only a sanity-scaled level's DPS depends on the live sanity.
 	var rifle := _def("rifleman")
-	assert_str(TowerInfo.row_values(rifle, rifle.levels[0], _cfg, 40.0)["dps"]) \
+	assert_str(TowerText.row_values(rifle, rifle.levels[0], _cfg, 40.0)["dps"]) \
 		.is_equal(_row("rifleman", rifle.levels[0])["dps"])
 
 
@@ -542,7 +542,7 @@ func test_resonator_reads_its_scaling_and_the_factor_at_current_sanity() -> void
 ## "Res N" first, then Ground, Blind N (min_range), Line (pierce), Reveal, else the dash.
 func test_trait_text_of_every_shipped_tower() -> void:
 	var want := {
-		"rifleman": TowerInfo.CELL_DASH,
+		"rifleman": TowerText.CELL_DASH,
 		"harpooner": "Line",
 		"elder_sign": "Res " + _n(_def("elder_sign").levels[0].sanity_reserve),
 		"necronomicon_reader": "Res " + _n(_def("necronomicon_reader").levels[0].sanity_reserve),
@@ -555,7 +555,7 @@ func test_trait_text_of_every_shipped_tower() -> void:
 	}
 	assert_array(_cfg.towers.keys()).contains_exactly_in_any_order(want.keys())
 	for id: String in want:
-		assert_str(TowerInfo.trait_text(_def(id), _def(id).levels[0])).override_failure_message(id) \
+		assert_str(TowerText.trait_text(_def(id), _def(id).levels[0])).override_failure_message(id) \
 			.is_equal(want[id])
 
 
@@ -571,43 +571,43 @@ func test_trait_text_rule_order_blast_and_dash_fallbacks() -> void:
 	ground.targets = "ground"
 	var l := TowerDef.Level.new()
 	l.effects = {"aoe_radius": 1.5}
-	assert_str(TowerInfo.trait_text(mundane, l)).is_equal("Blast")
+	assert_str(TowerText.trait_text(mundane, l)).is_equal("Blast")
 	l.effects = {"aoe_radius": 1.5, "reveal_fakes": 1}
-	assert_str(TowerInfo.trait_text(mundane, l)).is_equal("Reveal")
+	assert_str(TowerText.trait_text(mundane, l)).is_equal("Reveal")
 	l.effects = {"aoe_radius": 1.5, "reveal_fakes": 1, "pierce": 1}
-	assert_str(TowerInfo.trait_text(mundane, l)).is_equal("Line")
+	assert_str(TowerText.trait_text(mundane, l)).is_equal("Line")
 	l.min_range = 2.5
-	assert_str(TowerInfo.trait_text(mundane, l)).is_equal("Blind 2.5")
-	assert_str(TowerInfo.trait_text(ground, l)).is_equal("Ground")
+	assert_str(TowerText.trait_text(mundane, l)).is_equal("Blind 2.5")
+	assert_str(TowerText.trait_text(ground, l)).is_equal("Ground")
 	l.sanity_reserve = 7.0
-	assert_str(TowerInfo.trait_text(ground, l)).is_equal("Ground")  # mundane: no "Res"
-	assert_str(TowerInfo.trait_text(occult, l)).is_equal("Res 7")
+	assert_str(TowerText.trait_text(ground, l)).is_equal("Ground")  # mundane: no "Res"
+	assert_str(TowerText.trait_text(occult, l)).is_equal("Res 7")
 	var plain := TowerDef.Level.new()
-	assert_str(TowerInfo.trait_text(mundane, plain)).is_equal(TowerInfo.CELL_DASH)
-	assert_str(TowerInfo.trait_text(occult, plain)).is_equal(TowerInfo.CELL_DASH)  # reserve 0
+	assert_str(TowerText.trait_text(mundane, plain)).is_equal(TowerText.CELL_DASH)
+	assert_str(TowerText.trait_text(occult, plain)).is_equal(TowerText.CELL_DASH)  # reserve 0
 
 
 # --- LT-59: "1 cell" / "N cells" ---------------------------------------------------------------
 
 func test_cells_text_is_singular_only_for_exactly_one() -> void:
-	assert_str(TowerInfo.cells_text("1")).is_equal("1 cell")
+	assert_str(TowerText.cells_text("1")).is_equal("1 cell")
 	for n: String in ["0", "0.5", "1.5", "2", "10"]:
-		assert_str(TowerInfo.cells_text(n)).override_failure_message(n).is_equal(n + " cells")
+		assert_str(TowerText.cells_text(n)).override_failure_message(n).is_equal(n + " cells")
 
 
 func test_blast_banish_and_back_lines_count_cells_in_the_singular_at_one() -> void:
-	assert_array(Array(TowerInfo.effect_lines({"aoe_radius": 1.0}))) \
+	assert_array(Array(TowerText.effect_lines({"aoe_radius": 1.0}))) \
 		.is_equal(["Blast radius 1 cell"])
-	assert_array(Array(TowerInfo.effect_lines({"aoe_radius": 1.5}))) \
+	assert_array(Array(TowerText.effect_lines({"aoe_radius": 1.5}))) \
 		.is_equal(["Blast radius 1.5 cells"])
-	assert_array(Array(TowerInfo.effect_lines({"banish_cells": 1.0}))) \
+	assert_array(Array(TowerText.effect_lines({"banish_cells": 1.0}))) \
 		.is_equal(["Banish 1 cell back"])
-	assert_array(Array(TowerInfo.effect_lines({"banish_cells": 6.0}))) \
+	assert_array(Array(TowerText.effect_lines({"banish_cells": 6.0}))) \
 		.is_equal(["Banish 6 cells back"])
-	assert_array(Array(TowerInfo.effect_lines({"banish_cells": 1.0, "banish_targets": 3.0}))) \
+	assert_array(Array(TowerText.effect_lines({"banish_cells": 1.0, "banish_targets": 3.0}))) \
 		.is_equal(["Banish 3 foes 1 cell"])
-	assert_array(Array(TowerInfo.effect_lines({"banish_cells": 2.0, "banish_targets": 3.0}))) \
+	assert_array(Array(TowerText.effect_lines({"banish_cells": 2.0, "banish_targets": 3.0}))) \
 		.is_equal(["Banish 3 foes 2 cells"])
-	assert_str(TowerInfo.special_short(_level({"banish_cells": 1.0}))).contains("ack 1 cell")
-	assert_str(TowerInfo.special_short(_level({"banish_cells": 1.0}))).not_contains("cells")
-	assert_str(TowerInfo.special_short(_level({"banish_cells": 4.0}))).contains("ack 4 cells")
+	assert_str(TowerText.special_short(_level({"banish_cells": 1.0}))).contains("ack 1 cell")
+	assert_str(TowerText.special_short(_level({"banish_cells": 1.0}))).not_contains("cells")
+	assert_str(TowerText.special_short(_level({"banish_cells": 4.0}))).contains("ack 4 cells")

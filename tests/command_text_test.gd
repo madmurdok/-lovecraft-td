@@ -73,7 +73,7 @@ func test_g9_no_other_refusal_text_table() -> void:
 	files.append_array(_gd_files("res://sim"))
 	assert_bool(files.has("res://ui/command_text.gd")).is_true()
 	assert_bool(files.has("res://ui/lighthouse_panel.gd")).is_true()
-	assert_bool(files.has("res://ui/tower_info.gd")).is_true()
+	assert_bool(files.has("res://ui/text/tower_text.gd")).is_true()
 	for f: String in files:
 		if f == "res://ui/command_text.gd":
 			continue

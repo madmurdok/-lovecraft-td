@@ -252,14 +252,14 @@ func _rebuild(mask: int) -> void:
 
 func _refresh_purse() -> void:
 	refresh_count += 1
-	gold_label.text = "Money: " + TowerInfo.money(game.sim.state.gold)
+	gold_label.text = "Money: " + TowerText.money(game.sim.state.gold)
 
 
 func _refresh_relics() -> void:
 	refresh_count += 1
 	relics_label.text = relics_text(game.sim)
 	relics_label.tooltip_text = relics_tooltip(game.sim)
-	sell_relics_button.text = "Sell relics (+%s)" % TowerInfo.money(game.sim.relics_value())
+	sell_relics_button.text = "Sell relics (+%s)" % TowerText.money(game.sim.relics_value())
 	sell_relics_button.disabled = game.sim.can_sell_relics() != Simulation.CommandResult.OK
 
 
@@ -319,7 +319,7 @@ func _refresh_buyout() -> void:
 	refresh_count += 1
 	# Visible only while it could ever apply (sim query, LT-36): exit rule "buyout", in madness.
 	buyout_button.visible = game.sim.buyout_applies()
-	buyout_button.text = "Restore (%s)" % TowerInfo.money(game.sim.config.sanity.madness.buyout_cost)
+	buyout_button.text = "Restore (%s)" % TowerText.money(game.sim.config.sanity.madness.buyout_cost)
 	buyout_button.disabled = game.sim.can_buy_sanity() != Simulation.CommandResult.OK
 
 
@@ -388,10 +388,10 @@ static func hostile_text(m: SanityConfig.Madness) -> String:
 	var parts := PackedStringArray()
 	var speed := roundi((m.enemy_speed_multiplier - 1.0) * 100.0)
 	if speed != 0:
-		parts.append("%s%d %% speed" % ["+" if speed > 0 else TowerInfo.MINUS, absi(speed)])
+		parts.append("%s%d %% speed" % ["+" if speed > 0 else TowerText.MINUS, absi(speed)])
 	var taken := roundi((m.enemy_damage_taken_multiplier - 1.0) * 100.0)
 	if taken != 0:
-		parts.append("%s%d %% damage taken" % ["+" if taken > 0 else TowerInfo.MINUS, absi(taken)])
+		parts.append("%s%d %% damage taken" % ["+" if taken > 0 else TowerText.MINUS, absi(taken)])
 	if parts.is_empty():
 		return "The world turns hostile"
 	return "The world turns hostile: enemies " + ", ".join(parts)
@@ -414,7 +414,7 @@ static func phase_text(s: SimState) -> String:
 
 ## "×1.62": a luck multiplier, up to 2 decimals.
 static func luck_text(luck: float) -> String:
-	return "×" + TowerInfo.num(luck)
+	return "×" + TowerText.num(luck)
 
 
 ## LT-27 §4: "Relics: 12 (≈ $96)", the stash count and its value at today's prices.
@@ -422,7 +422,7 @@ static func relics_text(sim: Simulation) -> String:
 	var n := 0
 	for kind: String in sim.state.relics:
 		n += sim.state.relics[kind]
-	return "Relics: %d (≈ %s)" % [n, TowerInfo.money(sim.relics_value())]
+	return "Relics: %d (≈ %s)" % [n, TowerText.money(sim.relics_value())]
 
 
 ## One line per relic kind in config order: "Amber: 3 × $15".
@@ -430,7 +430,7 @@ static func relics_tooltip(sim: Simulation) -> String:
 	var lines := PackedStringArray()
 	for k in sim.config.economy.relics:
 		lines.append("%s: %d × %s" % [k.name, sim.state.relics.get(k.id, 0),
-			TowerInfo.money(sim.relic_price(k.id))])
+			TowerText.money(sim.relic_price(k.id))])
 	return "\n".join(lines)
 
 

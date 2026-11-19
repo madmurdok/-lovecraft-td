@@ -124,14 +124,14 @@ func show_card(def_id: String) -> void:
 		card_title.add_theme_color_override("font_color", StatsTable.kind_color(def.kind))
 		card_role.text = def.role
 		card_role.visible = not def.role.is_empty()
-		var cols: Array[Dictionary] = [TowerInfo.row_values(def, s, game.sim.config)]
+		var cols: Array[Dictionary] = [TowerText.row_values(def, s, game.sim.config)]
 		card_table.set_columns(PackedStringArray([""]), cols, {},  # no head row (LT-61 §1)
 			StatsTable.kind_color(def.kind))
-		card_special.text = "\n".join(TowerInfo.special_lines(s))
+		card_special.text = "\n".join(TowerText.special_lines(s))
 		card_special.visible = not card_special.text.is_empty()
-		card_kind.text = "\n".join(TowerInfo.kind_lines(def, s, game.sim.config.sanity))
+		card_kind.text = "\n".join(TowerText.kind_lines(def, s, game.sim.config.sanity))
 		card_kind.visible = not card_kind.text.is_empty()
-		card_path.text = TowerInfo.upgrade_path_text(def)
+		card_path.text = TowerText.upgrade_path_text(def)
 	_update_idle()
 
 

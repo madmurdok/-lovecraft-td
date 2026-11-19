@@ -216,13 +216,13 @@ func test_build_columns_show_name_cost_and_the_reserve_cell() -> void:
 	for id: String in _config.towers:
 		var def: TowerDef = _config.towers[id]
 		assert_str(_game.picker.names[id].text).is_equal(def.short_name)
-		assert_str(_game.picker.costs[id].text).is_equal(TowerInfo.cost_text(def.cost))
+		assert_str(_game.picker.costs[id].text).is_equal(TowerText.cost_text(def.cost))
 	# LT-23 Q5: an occult build costs gold only; its Trait cell names the reserve (LT-61).
 	var sign: TowerDef = _config.towers[SIGN]
 	assert_float(sign.levels[0].sanity_reserve).is_greater(0.0)
 	assert_str(_game.picker.costs[SIGN].text).not_contains("sanity")
 	assert_str(_game.picker.cells[SIGN]["trait"].text).is_equal(
-		"Res " + TowerInfo.num(sign.levels[0].sanity_reserve))
+		"Res " + TowerText.num(sign.levels[0].sanity_reserve))
 
 
 ## LT-43 §3: unaffordable reddens the cost cell (the reason in the tooltip); a madness
@@ -234,14 +234,14 @@ func _assert_status(id: String, status: String) -> void:
 	var cost: Label = _game.picker.costs[id]
 	var reserve: Label = _game.picker.cells[id]["trait"]
 	var tip_line := b.tooltip_text.get_slice("\n", 0)
-	var tip := "%s — %s" % [def.name, TowerInfo.cost_text(def.cost)]
-	assert_str(cost.text).is_equal(TowerInfo.cost_text(def.cost))
-	var mad := TowerInfo.MADNESS_WARNING.strip_edges()
+	var tip := "%s — %s" % [def.name, TowerText.cost_text(def.cost)]
+	assert_str(cost.text).is_equal(TowerText.cost_text(def.cost))
+	var mad := TowerText.MADNESS_WARNING.strip_edges()
 	if status == mad:
 		assert_that(cost.get_theme_color("font_color")).is_equal(StatsTable.COLOR_VALUE)
 		assert_str(reserve.text).ends_with(TowerPicker.MAD_MARK)
 		assert_that(reserve.get_theme_color("font_color")).is_equal(TowerPicker.STATUS_COLOR)
-		assert_str(tip_line).is_equal(tip + TowerInfo.MADNESS_WARNING)
+		assert_str(tip_line).is_equal(tip + TowerText.MADNESS_WARNING)
 		return
 	assert_str(reserve.text).not_contains(TowerPicker.MAD_MARK)
 	if status.is_empty():
@@ -291,7 +291,7 @@ func test_l1_view_shows_only_the_l2_upgrade() -> void:
 	assert_bool(p.role_label.visible).is_true()
 	assert_str(p.role_label.text).is_equal(def.role)
 	assert_array(_visible_ups()).is_equal([""])
-	assert_str(_ups()[""].text).is_equal("Upgrade to L2 — %s" % TowerInfo.cost_text(
+	assert_str(_ups()[""].text).is_equal("Upgrade to L2 — %s" % TowerText.cost_text(
 		def.levels[1].upgrade_cost))
 	assert_bool(p.max_label.visible).is_false()
 
@@ -307,7 +307,7 @@ func test_l2_view_shows_the_two_named_branches_with_role_first() -> void:
 	for b: String in ["a", "b"]:
 		var br := def.branches[b]
 		assert_str(_ups()[b].text).is_equal("%s — %s" % [br.name,
-			TowerInfo.cost_text(br.upgrade_cost)])
+			TowerText.cost_text(br.upgrade_cost)])
 		assert_str(_first_line(p.upgrade_infos[b])).is_equal(br.role)
 	assert_bool(p.max_label.visible).is_false()
 
@@ -387,7 +387,7 @@ func test_an_upgrade_that_takes_the_cap_to_zero_warns_but_stays_enabled() -> voi
 	l2.sanity_reserve = top  # cap after the upgrade: exactly 0
 	_game.tower_panel.refresh()
 	assert_bool(_ups()[""].disabled).is_false()
-	assert_str(_ups()[""].text).ends_with(TowerInfo.MADNESS_WARNING)
+	assert_str(_ups()[""].text).ends_with(TowerText.MADNESS_WARNING)
 	l2.sanity_reserve = top - 1.0  # cap after: 1
 	_game.tower_panel.refresh()
 	assert_str(_ups()[""].text).not_contains("drives you mad")
@@ -416,7 +416,7 @@ func test_a_tower_without_a_reserve_never_warns() -> void:
 ## LT-23 pin 25: an enabled build button warns when the L1 reserve would take the cap to 0;
 ## never for a reserve of 0, in MADNESS, or on a disabled button.
 func test_build_button_warns_when_its_reserve_takes_the_cap_to_zero() -> void:
-	var mad := TowerInfo.MADNESS_WARNING.strip_edges()
+	var mad := TowerText.MADNESS_WARNING.strip_edges()
 	var l1 := _config.towers[SIGN].levels[0]
 	l1.sanity_reserve = _config.sanity.max_sanity
 	await _start_game()

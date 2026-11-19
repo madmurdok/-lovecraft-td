@@ -135,7 +135,7 @@ func _refresh_upgrade() -> void:
 		if eco.flare != null and level + 1 < eco.flare.seconds.size():
 			next_flare = ", flare %s s" % ConfigReader.fmt(eco.flare.seconds[level + 1])
 		upgrade_button.text = "Upgrade: %d beams%s (%s)" % [next_beams, next_flare,
-			TowerInfo.money(cost)]
+			TowerText.money(cost)]
 		if CommandText.panel_reason(up) != "":
 			upgrade_button.text += "\n" + CommandText.panel_reason(up)
 	upgrade_button.disabled = up != Simulation.CommandResult.OK
@@ -158,9 +158,9 @@ func _refresh_oil() -> void:
 		var units := sim.oil_for_flare()
 		if units == 0:
 			units = sim.flare_cost_oil()
-		oil_button.text = "Buy oil for a flare (%s)" % TowerInfo.money(units * eco.oil.price)
+		oil_button.text = "Buy oil for a flare (%s)" % TowerText.money(units * eco.oil.price)
 	else:
-		oil_button.text = "Buy oil (%s)" % TowerInfo.money(eco.oil.price)
+		oil_button.text = "Buy oil (%s)" % TowerText.money(eco.oil.price)
 	if buy != Simulation.CommandResult.OK and CommandText.panel_reason(buy) != "":
 		oil_button.text += "\n" + CommandText.panel_reason(buy)
 	oil_button.disabled = buy != Simulation.CommandResult.OK
