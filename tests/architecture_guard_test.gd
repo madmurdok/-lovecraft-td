@@ -857,3 +857,56 @@ func test_g4b_a_planted_write_to_a_combat_or_ally_field_makes_the_guard_fail() -
 		with_plant.sort()
 		assert_array(with_plant).override_failure_message(field).is_not_equal(G4B_OWNERS[field])
 	scan.free()
+
+
+## LT-83 (B8): next_id has one writer file (SimContext), lighthouse_hp two (facade, SpawnSystem),
+## enemies one (SpawnSystem). A write from any other file lands in the writer list and so
+## differs from the pinned row.
+const G4B_SPAWN_ROWS := {
+	"next_id": ["core/systems/sim_context.gd"],
+	"lighthouse_hp": ["core/simulation.gd", "core/systems/spawn_system.gd"],
+	"enemies": ["core/systems/spawn_system.gd"],
+}
+
+
+func test_g4b_next_id_enemies_and_lighthouse_hp_have_the_pinned_writers() -> void:
+	var scan := SimBoundaryTest.new()
+	var writers := _g4b_writers(scan)
+	scan.free()
+	for field: String in G4B_SPAWN_ROWS:
+		assert_array(writers.get(field, [])).override_failure_message(field) \
+			.is_equal(G4B_SPAWN_ROWS[field])
+		assert_array(G4B_OWNERS[field]).override_failure_message(field + " pinned row") \
+			.is_equal(G4B_SPAWN_ROWS[field])
+
+
+## [planted text, field, file the plant is in]: a second next_id writer in the ally system or
+## the facade, and a third lighthouse_hp writer, make the guard's comparison fail.
+func test_g4b_a_planted_next_id_or_lighthouse_hp_write_makes_the_guard_fail() -> void:
+	var scan := SimBoundaryTest.new()
+	var writers := _g4b_writers(scan)
+	var plants := [
+		["_state.next_id += 1", "next_id", "core/systems/ally_system.gd"],
+		["_ctx.state.next_id = 5", "next_id", "core/systems/ally_system.gd"],
+		["state.next_id += 1", "next_id", "core/simulation.gd"],
+		["_state.lighthouse_hp -= 1", "lighthouse_hp", "core/systems/combat_system.gd"],
+		["_ctx.state.lighthouse_hp = 0", "lighthouse_hp", "core/systems/economy_system.gd"],
+		["state.lighthouse_hp = 0", "lighthouse_hp", "core/wave_director.gd"],
+	]
+	for p: Array in plants:
+		var hit := _g4b_written(scan, "func f() -> void:\n\t%s\n" % p[0])
+		assert_bool(hit.has(p[1])).override_failure_message("scan misses %s" % p[0]).is_true()
+		var with_plant: Array = writers.get(p[1], []).duplicate()
+		if not with_plant.has(p[2]):
+			with_plant.append(p[2])
+		with_plant.sort()
+		assert_array(with_plant).override_failure_message(p[0] + " in " + p[2]) \
+			.is_not_equal(G4B_OWNERS[p[1]])
+	# the owners themselves stay accepted: a plant in an owner file changes nothing
+	for owner: String in G4B_OWNERS["lighthouse_hp"]:
+		var same: Array = writers["lighthouse_hp"].duplicate()
+		if not same.has(owner):
+			same.append(owner)
+		same.sort()
+		assert_array(same).is_equal(G4B_OWNERS["lighthouse_hp"])
+	scan.free()
