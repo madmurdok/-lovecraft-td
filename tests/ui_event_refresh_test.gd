@@ -19,7 +19,7 @@ const WHOLE_SECOND_FRAMES := 60
 ## stats-table value cells are named one by one).
 const STATIC_OK: PackedStringArray = [
 	# Layout containers and gaps: no text, no state (LT-78 §3 rows 15, 27). The sanity bar is
-	# drawn, not a field: its redraws are pinned by B1 and B6.
+	# drawn, not a field: its redraws are pinned by B1, B6 and the within-state redraw test.
 	"hud:^\\.$",
 	"hud:^Bar(/(GapLeft|GapRight|Purse|SanityBar|Status))?$",
 	"hud:^(Background|Footer)$",
@@ -266,6 +266,22 @@ func test_b6_sanity_bar_animates_only_while_distorted() -> void:
 		assert_int(_game.sim.state.sanity_state).is_equal(st[1])
 		assert_bool(bar.is_processing()).override_failure_message(
 			"sanity %s (state %d)" % [st[0], st[1]]).is_equal(st[2])
+
+
+## §3 row 23: a sanity change inside one state (no SANITY_STATE_CHANGED, no cap change) still
+## redraws the bar, so its fill does not go stale while LUCID drains (LT-78/S10 finding 1).
+func test_b6_sanity_change_within_a_state_redraws_the_bar() -> void:
+	await _start()
+	var bar := _game.hud.sanity_bar
+	for value: float in [95.0, 85.0]:
+		var before_state := _game.sim.state.sanity_state
+		var before := bar.redraw_count
+		_game.sim.debug_set_sanity(value)
+		_game.advance(0.0)
+		assert_int(_game.sim.state.sanity_state).override_failure_message(
+			"sanity %s must stay in one state" % value).is_equal(before_state)
+		assert_int(bar.redraw_count).override_failure_message(
+			"sanity %s: the bar was not redrawn" % value).is_greater(before)
 
 
 # ---- B7 ------------------------------------------------------------------------------
