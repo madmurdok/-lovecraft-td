@@ -83,12 +83,12 @@ func test_panel_and_hud_flare_texts_come_from_the_config() -> void:
 	s.gold = 100000
 	p.open()
 	p.refresh()
-	assert_str(p.oil_button.text).starts_with("Buy oil for a flare (%s)" % TowerInfo.money(120))
+	assert_str(p.oil_button.text).starts_with("Buy oil for a flare (%s)" % TowerText.money(120))
 	assert_str(p.oil_label.text).contains("Flare: 12 oil, whole map, 5 s")
 	assert_str(p.upgrade_button.text).contains("flare 6 s")
 	s.oil = 12
 	p.refresh()
-	assert_str(p.oil_button.text).starts_with("Buy oil for a flare (%s)" % TowerInfo.money(40))
+	assert_str(p.oil_button.text).starts_with("Buy oil for a flare (%s)" % TowerText.money(40))
 	# Edited config: every number follows.
 	eco.oil.price = 7
 	eco.flare.cost_oil = 5
@@ -96,7 +96,7 @@ func test_panel_and_hud_flare_texts_come_from_the_config() -> void:
 	eco.flare.seconds[1] = 4.5
 	s.oil = 0
 	p.refresh()
-	assert_str(p.oil_button.text).starts_with("Buy oil for a flare (%s)" % TowerInfo.money(35))
+	assert_str(p.oil_button.text).starts_with("Buy oil for a flare (%s)" % TowerText.money(35))
 	assert_str(p.oil_label.text).contains("Flare: 5 oil, whole map, 3 s")
 	assert_str(p.upgrade_button.text).contains("flare 4.5 s")
 	s.oil = 5

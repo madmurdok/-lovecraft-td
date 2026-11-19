@@ -1,11 +1,11 @@
 class_name StatsTable
 extends VBoxContainer
 ## LT-43 §1-§2, §4: the unified stats table of the side panel (a placed tower and the
-## picker's hover card): a header row, then one row per TowerInfo.ROWS key (Special
+## picker's hover card): a header row, then one row per TowerText.ROWS key (Special
 ## excluded: its lines go under the table), one value column per state ("Now | L2",
 ## "Now | A | B", "L1"). A row equal in every column is one cell across all columns; an
 ## upgrade cell that differs from Now is gold; lit Now cells (LT-43 §5) show their value
-## with TowerInfo.LIT_MARK. Presentation only: the values come from TowerInfo.row_values.
+## with TowerText.LIT_MARK. Presentation only: the values come from TowerText.row_values.
 
 const FONT_SIZE := 12
 const FONT_SIZE_NARROW := 11  ## values at 3 columns, so "Single" / "Summon" keep a gap
@@ -25,7 +25,7 @@ const COLOR_SHADOW := Color(0.66, 0.56, 1.0)  ## LT-70 §5: cold violet, the sha
 const COLOR_MUNDANE := Color(0.85, 0.8, 0.6)  ## = SidePanel.COLOR_ROLE
 const COLOR_OCCULT := COLOR_RESERVE
 
-## The rows the table shows (TowerInfo.ROWS without "special").
+## The rows the table shows (TowerText.ROWS without "special").
 var row_keys: PackedStringArray = []
 ## Row key -> its value labels, left to right (one label when the row spans every column).
 var cells: Dictionary[String, Array] = {}
@@ -41,7 +41,7 @@ var _shown := []  ## the last set_columns arguments: refresh() calls it every fr
 func _init() -> void:
 	add_theme_constant_override("separation", 0)
 	size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	for row: Array in TowerInfo.ROWS:
+	for row: Array in TowerText.ROWS:
 		if row[0] != "special":
 			row_keys.append(row[0])
 
@@ -49,7 +49,7 @@ func _init() -> void:
 ## The semantic colour of `value` in row `key` (LT-43 §1 colours): dash dim, kill regen
 ## green, reserve violet, beam gain green / loss red, everything else plain.
 static func color_for(key: String, value: String) -> Color:
-	if value == TowerInfo.CELL_DASH:
+	if value == TowerText.CELL_DASH:
 		return COLOR_DASH
 	match key:
 		"kill":
@@ -66,7 +66,7 @@ static func kind_color(kind: String) -> Color:
 	return COLOR_OCCULT if kind == "occult" else COLOR_MUNDANE
 
 
-## Rebuilds the table: `heads[i]` over `cols[i]` (TowerInfo.row_values dictionaries);
+## Rebuilds the table: `heads[i]` over `cols[i]` (TowerText.row_values dictionaries);
 ## `lit` (row key -> text with LIT_MARK) overrides column 0, coloured COLOR_LIT, or
 ## COLOR_SHADOW when `shadow` (LT-70 §5: a shadowed tower's cells). `head_color` colours the
 ## heads; the head row is hidden when every head is "" (LT-61 §1).
@@ -165,7 +165,7 @@ func is_spanned(key: String) -> bool:
 
 
 static func _row_label(key: String) -> String:
-	for row: Array in TowerInfo.ROWS:
+	for row: Array in TowerText.ROWS:
 		if row[0] == key:
 			return row[1]
 	return key

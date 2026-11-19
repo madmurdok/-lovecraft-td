@@ -151,14 +151,14 @@ func test_hover_frames_the_column_rings_its_range_and_shows_the_l1_card() -> voi
 		assert_bool(sp.idle_label.visible).is_false()
 		assert_str(sp.card_title.text).is_equal(def.name)
 		assert_str(sp.card_role.text).is_equal(def.role)
-		var values := TowerInfo.row_values(def, def.levels[0], _config)
+		var values := TowerText.row_values(def, def.levels[0], _config)
 		assert_str(sp.card_table.heads[0].text).is_equal("")
 		assert_bool(sp.card_table.get_node("Head").visible).is_false()
 		for key: String in sp.card_table.row_keys:
 			assert_str(sp.card_table.text_at(key, 0)).override_failure_message(key) \
 				.is_equal(values[key])
-		assert_str(sp.card_special.text).is_equal("\n".join(TowerInfo.special_lines(def.levels[0])))
-		assert_str(sp.card_kind.text).is_equal("\n".join(TowerInfo.kind_lines(def, def.levels[0],
+		assert_str(sp.card_special.text).is_equal("\n".join(TowerText.special_lines(def.levels[0])))
+		assert_str(sp.card_kind.text).is_equal("\n".join(TowerText.kind_lines(def, def.levels[0],
 			_config.sanity)))
 		assert_str(sp.card_path.text).is_equal("L2 $%d · then A %s or B %s" % [
 			def.levels[1].upgrade_cost, def.branches["a"].name, def.branches["b"].name])
@@ -252,7 +252,7 @@ func _tip_line(b: Button) -> String:
 
 func _tip(id: String) -> String:
 	var def: TowerDef = _config.towers[id]
-	return "%s — %s" % [def.name, TowerInfo.cost_text(def.cost)]
+	return "%s — %s" % [def.name, TowerText.cost_text(def.cost)]
 
 
 ## LT-61 §6: at night every row is refused "only by day"; the title says it once ("Only by
@@ -273,16 +273,16 @@ func test_night_puts_only_by_day_in_the_title() -> void:
 		var l: Label = _game.picker.costs[id]
 		assert_int(_game.sim.can_build(id, cell)).is_equal(R.NOT_BUILD_PHASE)
 		assert_bool(b.disabled).is_true()
-		assert_str(l.text).is_equal(TowerInfo.cost_text(def.cost))
+		assert_str(l.text).is_equal(TowerText.cost_text(def.cost))
 		assert_float(_text_w(l)).override_failure_message("%s '%s' %.1f > %.1f"
 			% [id, l.text, _text_w(l), l.size.x]).is_less_equal(l.size.x)
-		assert_str(_tip_line(b)).is_equal(_tip(id) + " (%s)" % TowerInfo.reason(R.NOT_BUILD_PHASE))
+		assert_str(_tip_line(b)).is_equal(_tip(id) + " (%s)" % CommandText.reason(R.NOT_BUILD_PHASE))
 		assert_that(_game.picker.cells[id]["dps"].modulate).is_equal(TowerPicker.DIM)
 	_game.sim.state.gold = 0
 	_game.picker.refresh()
 	for id: String in _config.towers:
 		var l: Label = _game.picker.costs[id]
-		assert_str(l.text).is_equal(TowerInfo.cost_text(_config.towers[id].cost))
+		assert_str(l.text).is_equal(TowerText.cost_text(_config.towers[id].cost))
 		assert_that(l.get_theme_color("font_color")).is_equal(TowerPicker.STATUS_COLOR)
 		assert_str(_tip_line(_game.picker.buttons[id])).is_equal(_tip(id) + " (not enough money)")
 
@@ -298,9 +298,9 @@ func test_a_long_refusal_reason_never_cuts_the_cost_cell() -> void:
 	assert_int(_game.sim.build_tower(RIFLE, cell)).is_equal(R.OK)
 	_game.picker.refresh()
 	await get_tree().process_frame
-	var reason := TowerInfo.reason(R.OCCUPIED)
+	var reason := CommandText.reason(R.OCCUPIED)
 	for id: String in _config.towers:
-		var price := TowerInfo.cost_text(_config.towers[id].cost)
+		var price := TowerText.cost_text(_config.towers[id].cost)
 		var l: Label = _game.picker.costs[id]
 		assert_bool(_game.picker.buttons[id].disabled).is_true()
 		assert_str(l.text).override_failure_message("%s '%s'" % [id, l.text]).is_equal(price)
@@ -320,11 +320,11 @@ func test_a_build_that_drives_mad_marks_the_trait_cell() -> void:
 	await _open(_buildable(3))
 	var cell: Label = _game.picker.cells[SIGN]["trait"]
 	assert_bool(_game.picker.buttons[SIGN].disabled).is_false()
-	assert_str(cell.text).is_equal("Res " + TowerInfo.num(l1.sanity_reserve) + "!")
+	assert_str(cell.text).is_equal("Res " + TowerText.num(l1.sanity_reserve) + "!")
 	assert_that(cell.get_theme_color("font_color")).is_equal(TowerPicker.STATUS_COLOR)
-	assert_str(_tip_line(_game.picker.buttons[SIGN])).is_equal(_tip(SIGN) + TowerInfo.MADNESS_WARNING)
+	assert_str(_tip_line(_game.picker.buttons[SIGN])).is_equal(_tip(SIGN) + TowerText.MADNESS_WARNING)
 	var rifle: Label = _game.picker.cells[RIFLE]["trait"]
-	assert_str(rifle.text).is_equal(TowerInfo.CELL_DASH)
+	assert_str(rifle.text).is_equal(TowerText.CELL_DASH)
 
 
 # --- ghost glyph (LT-61 §7) ------------------------------------------------------------------
@@ -435,9 +435,9 @@ func test_tooltip_second_line_spells_out_the_trait() -> void:
 	var want := {
 		RIFLE: "",
 		"harpooner": "Line: pierces",
-		SIGN: "Sanity reserve " + TowerInfo.num(res),
+		SIGN: "Sanity reserve " + TowerText.num(res),
 		"dynamite_crew": "Ground: never hits flyers",
-		"coast_battery": "Blind %s: can't fire within %s cells" % [TowerInfo.num(blind), TowerInfo.num(blind)],
+		"coast_battery": "Blind %s: can't fire within %s cells" % [TowerText.num(blind), TowerText.num(blind)],
 		"searchlight": "Reveal: shows fakes",
 	}
 	for id: String in want:
@@ -486,14 +486,14 @@ func test_resonator_dps_is_a_range_in_the_picker_and_live_in_the_panel() -> void
 	_game.sim.state.gold = 10000
 	await _open(cell)
 	assert_str(_game.picker.cells["resonator"]["dps"].text).is_equal("%s–%s" % [
-		TowerInfo.num(roundf(base * 10.0) / 10.0), TowerInfo.num(roundf(base * (1.0 + k) * 10.0) / 10.0)])
+		TowerText.num(roundf(base * 10.0) / 10.0), TowerText.num(roundf(base * (1.0 + k) * 10.0) / 10.0)])
 	await _click(_game.picker.buttons["resonator"].get_global_rect().get_center())
 	assert_bool(_game.sim.state.tower_at.has(cell)).is_true()
 	await _click(_cell_centre(cell))
 	assert_bool(_game.tower_panel.visible).is_true()
 	var live := base * (1.0 + k * (1.0 - _game.sim.state.sanity / top))
 	assert_str(_game.tower_panel.stats_table.text_at("dps", 0)).is_equal(
-		TowerInfo.num(roundf(live * 10.0) / 10.0))
+		TowerText.num(roundf(live * 10.0) / 10.0))
 
 
 # --- nothing cut at 1280x720 -----------------------------------------------------------------

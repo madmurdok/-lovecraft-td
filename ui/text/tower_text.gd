@@ -1,8 +1,9 @@
-class_name TowerInfo
+class_name TowerText
 extends RefCounted
-## Player-facing tower text built from config (LT-24 §3, LT-43): the stats table cells
-## (row_values), special, kind and upgrade lines, cost text and refusal reasons. Pure and
-## static (no nodes); every number comes from TowerDef / SanityConfig / EconomyConfig.
+## Player-facing tower text (LT-24 §3, LT-43; LT-65 §3.6, LT-79): the stats table cells
+## (row_values), special, kind and upgrade lines, money and cost text. Pure strings, static
+## (no nodes): the table numbers come from TowerStatsModel (built on TowerRules), the rest
+## straight from TowerDef / SanityConfig. Refusal reasons are CommandText's.
 
 const CURRENCY := "$"  ## the money sign (LT-27 §2: "gold" internally, "$" on screen)
 const DASH := " — "  ## between a name and its cost: "Rifleman — $50"
@@ -57,25 +58,6 @@ static func money(amount: int) -> String:
 	return ("%s%s%d" % [MINUS if amount < 0 else "", CURRENCY, absi(amount)])
 
 
-## The reason text for a refused command (the table lives in CommandText).
-static func reason(r: Simulation.CommandResult) -> String:
-	return CommandText.reason(r)
-
-
-static func is_pending(key: String) -> bool:
-	return TowerDef.Level.PENDING.has(key)
-
-
-## The value of an effect key that means "no effect": 1 for a multiplier, 0 otherwise.
-static func neutral(key: String) -> float:
-	return 1.0 if key.ends_with("_multiplier") else 0.0
-
-
-## LT-28: an effect key with a value other than its neutral one (a x1 multiplier does nothing).
-static func is_active(effects: Dictionary, key: String) -> bool:
-	return effects.has(key) and effects[key] != neutral(key)
-
-
 ## One line per effect group present (a key off its neutral value) in `effects`, then
 ## `key: value` for any key no group reads; pending keys get COMING_SOON unless `suffix`
 ## is false.
@@ -87,16 +69,16 @@ static func effect_lines(effects: Dictionary, suffix := true) -> PackedStringArr
 		var pending := false
 		for key: String in group:
 			seen[key] = true
-			if is_active(effects, key):
+			if TowerStatsModel.is_active(effects, key):
 				present = true
-			if is_pending(key):
+			if TowerStatsModel.is_pending(key):
 				pending = true
 		if present:
 			out.append(_effect_text(group[0], effects) + (COMING_SOON if pending and suffix else ""))
 	for key: String in effects:
-		if not seen.has(key) and is_active(effects, key):
+		if not seen.has(key) and TowerStatsModel.is_active(effects, key):
 			out.append("%s: %s" % [key, num(effects[key])]
-				+ (COMING_SOON if is_pending(key) and suffix else ""))
+				+ (COMING_SOON if TowerStatsModel.is_pending(key) and suffix else ""))
 	return out
 
 
@@ -141,7 +123,8 @@ static func special_delta_lines(from: TowerDef.Level, to: TowerDef.Level) -> Pac
 	var out := PackedStringArray()
 	var changed := {}
 	for key: String in to.effects.keys() + from.effects.keys():
-		if to.effects.get(key, neutral(key)) != from.effects.get(key, neutral(key)):
+		var none := TowerStatsModel.neutral(key)
+		if to.effects.get(key, none) != from.effects.get(key, none):
 			changed[key] = true
 	# Whole groups: a pair line needs both values even if only one of them changed. A group
 	# still active in `to` shows its new line; one active only in `from` was removed.
@@ -152,20 +135,20 @@ static func special_delta_lines(from: TowerDef.Level, to: TowerDef.Level) -> Pac
 		grouped.merge(_keys_dict(group))
 		if not group.any(func(k: String) -> bool: return changed.has(k)):
 			continue
-		if group.any(func(k: String) -> bool: return is_active(to.effects, k)):
+		if group.any(func(k: String) -> bool: return TowerStatsModel.is_active(to.effects, k)):
 			for key: String in group:
 				if to.effects.has(key):
 					shown[key] = to.effects[key]
-		elif group.any(func(k: String) -> bool: return is_active(from.effects, k)):
+		elif group.any(func(k: String) -> bool: return TowerStatsModel.is_active(from.effects, k)):
 			for key: String in group:
 				if from.effects.has(key):
 					removed[key] = from.effects[key]
 	for key: String in changed:
 		if grouped.has(key):
 			continue
-		if is_active(to.effects, key):
+		if TowerStatsModel.is_active(to.effects, key):
 			shown[key] = to.effects[key]
-		elif is_active(from.effects, key):
+		elif TowerStatsModel.is_active(from.effects, key):
 			removed[key] = from.effects[key]
 	out.append_array(effect_lines(shown))
 	for line in effect_lines(removed, false):
@@ -189,22 +172,24 @@ const ROWS := [
 const ROW_EFFECT_KEYS: PackedStringArray = ["pierce", "summon_flying"]
 
 
-## One string per ROWS key for `s` (a level or branch of `def`). `sanity_now` < 0 (the
+## One string per ROWS key for `s` (a level or branch of `def`): TowerStatsModel.row_numbers
+## formatted, plus the attack shape, the hits and the special cell. `sanity_now` < 0 (the
 ## picker): a sanity-scaled DPS reads its range "15–45" (sanity max -> 0); >= 0 (the panel):
 ## the value at that sanity (LT-43 Q3). `cfg` null: the config rows read CELL_DASH.
 static func row_values(def: TowerDef, s: TowerDef.Level, cfg: GameConfig,
 		sanity_now := -1.0) -> Dictionary:
+	var n := TowerStatsModel.row_numbers(def, s, cfg, sanity_now)
 	return {
 		"attack": attack_text(s),
-		"damage": damage_cell(s),
-		"every": num(s.fire_interval) if s.acts() else CELL_DASH,
-		"dps": dps_text(s, cfg, sanity_now),
-		"range": range_text(s),
+		"damage": _damage_cell(s, n),
+		"every": num(n["every"]) if n.has("every") else CELL_DASH,
+		"dps": _dps_cell(n),
+		"range": _range_cell(n),
 		"hits": hits_text(def, s),
-		"kill": kill_text(def, s, cfg),
-		"reserve": num(s.sanity_reserve) if s.sanity_reserve > 0.0 else CELL_DASH,
-		"beam": beam_text(def, s, cfg),
-		"shadow": beam_text(def, s, cfg, true),
+		"kill": "+" + num(n["kill"]) if n.has("kill") else CELL_DASH,
+		"reserve": num(n["reserve"]) if n.has("reserve") else CELL_DASH,
+		"beam": _percent_cell(n["beam"]),
+		"shadow": _percent_cell(n["shadow"]),
 		"special": special_short(s),
 	}
 
@@ -220,26 +205,13 @@ static func attack_text(s: TowerDef.Level) -> String:
 		return "Aura"
 	if s.is_beam():
 		return "Beam"
-	if is_active(s.effects, "burst_targets"):
+	if TowerStatsModel.is_active(s.effects, "burst_targets"):
 		return "Burst"
-	if is_active(s.effects, "pierce"):
+	if TowerStatsModel.is_active(s.effects, "pierce"):
 		return "Line"
-	if is_active(s.effects, "aoe_radius"):
+	if TowerStatsModel.is_active(s.effects, "aoe_radius"):
 		return "Blast"
 	return "Single"
-
-
-## Damage per hit; a circle's unit DPS "15/s"; CELL_DASH without damage (aura, plain banish).
-static func damage_cell(s: TowerDef.Level) -> String:
-	if s.is_summon():
-		return "%s/s" % num(s.effects.get("summon_dps", 0.0))
-	return num(s.damage) if s.damage > 0.0 else CELL_DASH
-
-
-## Damage per second at full sanity, base stats (no beam, no madness, no crits or bleed):
-## TowerRules.effective's dps, neutral light, no sanity scaling.
-static func dps_value(s: TowerDef.Level) -> float:
-	return TowerRules.effective(null, s, null)["dps"]
 
 
 ## A table number with one decimal at most: 12.5, 11.3, 18.
@@ -250,22 +222,12 @@ static func one_decimal(v: float) -> String:
 ## The DPS cell: CELL_DASH for none; a sanity-scaled level reads "lo–hi" (sanity max -> 0)
 ## when `sanity_now` < 0, else its value at that sanity (LT-43 Q3).
 static func dps_text(s: TowerDef.Level, cfg: GameConfig, sanity_now := -1.0) -> String:
-	var v := dps_value(s)
-	if v <= 0.0:
-		return CELL_DASH
-	if not s.is_beam() or cfg == null:
-		return one_decimal(v)
-	if sanity_now < 0.0:
-		return "%s–%s" % [one_decimal(v),
-			one_decimal(TowerRules.effective(null, s, cfg, false, false, 0.0)["dps"])]
-	return one_decimal(TowerRules.effective(null, s, cfg, false, false, sanity_now)["dps"])
+	return _dps_cell(TowerStatsModel.dps_numbers(s, cfg, sanity_now))
 
 
 ## Range in cells; "2–7" with a dead zone (LT-48 min_range).
 static func range_text(s: TowerDef.Level) -> String:
-	if s.min_range > 0.0:
-		return "%s–%s" % [num(s.min_range), num(s.range_cells)]
-	return num(s.range_cells)
+	return _range_cell(TowerStatsModel.range_numbers(s))
 
 
 ## LT-61 §2: the build list's Trait cell, the one property to know before building, first
@@ -295,106 +257,34 @@ static func hits_text(def: TowerDef, s: TowerDef.Level) -> String:
 	return "Ground" if def.ground_only() else "All"
 
 
-## "+0.5": sanity a kill restores, for a mundane tower that deals damage.
-static func kill_text(def: TowerDef, s: TowerDef.Level, cfg: GameConfig) -> String:
-	if cfg == null or def.kind != "mundane" or s.damage <= 0.0 \
-			or cfg.sanity.regen_mundane_kill <= 0.0:
-		return CELL_DASH
-	return "+" + num(cfg.sanity.regen_mundane_kill)
-
-
-## LT-70 §5: TowerRules.light_effect of a `def` tower lit or, with `shadow`, shadowed;
-## {} when that block (beam / shadow) is absent.
-static func state_effect(def: TowerDef, cfg: GameConfig, shadow := false) -> Dictionary:
-	if cfg == null or cfg.economy == null:
-		return {}
-	if (cfg.economy.shadow if shadow else cfg.economy.beam) == null:
-		return {}
-	return TowerRules.light_effect(def, cfg, not shadow, shadow)
-
-
-## LT-30 beam effect as a percent: mundane fire rate "+25%" (1 / fire_interval_mult - 1),
-## occult power "−30%" (power_mult - 1); CELL_DASH for a mundane support tower (it never
-## fires) or a neutral multiplier. LT-70: `shadow` reads the shadow block ("−20%", "+15%").
-static func beam_text(def: TowerDef, s: TowerDef.Level, cfg: GameConfig, shadow := false) -> String:
-	var pct := beam_percent(def, s, cfg, shadow)
-	if pct == 0.0:
-		return CELL_DASH
-	return ("+" if pct > 0.0 else MINUS) + num(roundf(absf(pct))) + "%"
-
-
-## The light (or, with `shadow`, the shadow) percent beam_text shows (0 when none applies).
-static func beam_percent(def: TowerDef, s: TowerDef.Level, cfg: GameConfig,
-		shadow := false) -> float:
-	var fx := state_effect(def, cfg, shadow)
-	if fx.is_empty():
-		return 0.0
-	if def.kind == "mundane":
-		var m: float = fx["interval_mult"]
-		if s.damage <= 0.0 or m <= 0.0:
-			return 0.0
-		return (1.0 / m - 1.0) * 100.0
-	return (fx["power_mult"] - 1.0) * 100.0
-
-
-## LT-43 §5 (Q4): the cells the beam changes on a lit tower, value + LIT_MARK, keyed like
-## row_values: mundane Every x fire_interval_mult and DPS / it; occult Damage and DPS x
-## power_mult (a circle: its unit DPS and DPS, as Simulation._summon gives the units
-## it summons while lit). Empty when nothing changes. LT-70: `shadow` takes the shadow
-## multipliers (a shadowed tower), with the same mark.
+## LT-43 §5 (Q4): the cells the beam changes on a lit tower (TowerStatsModel.lit_numbers),
+## value + LIT_MARK, keyed like row_values: mundane Every and DPS; occult Damage and DPS (a
+## circle: its unit DPS and DPS). Empty when nothing changes. LT-70: `shadow` takes the
+## shadow multipliers (a shadowed tower), with the same mark.
 static func lit_values(def: TowerDef, s: TowerDef.Level, cfg: GameConfig,
 		sanity_now := -1.0, shadow := false) -> Dictionary:
 	var out := {}
-	var fx := state_effect(def, cfg, shadow)
-	if fx.is_empty():
-		return out
-	# TowerRules.effective in the sim's own order (damage x factor x power, / interval).
-	var sanity := sanity_now if s.is_beam() else -1.0
-	var now := TowerRules.effective(def, s, cfg, not shadow, shadow, sanity)
-	if def.kind == "mundane":
-		var m: float = fx["interval_mult"]
-		if s.damage > 0.0 and m > 0.0 and m != 1.0:
-			out["every"] = num(now["interval"]) + LIT_MARK
-			out["dps"] = one_decimal(now["dps"]) + LIT_MARK
-	elif fx["power_mult"] != 1.0 and (s.damage > 0.0 or s.is_summon() and dps_value(s) > 0.0):
-		var pm: float = fx["power_mult"]
-		if s.is_summon():
-			# "12.6*", no "/s": "12.6/s*" is cut in a 3-column panel
-			out["damage"] = one_decimal(now["unit_dps"]) + LIT_MARK
-		else:
-			out["damage"] = num(TowerRules.shot_damage(s, 1.0, pm)) + LIT_MARK
-		out["dps"] = one_decimal(now["dps"]) + LIT_MARK
+	var n := TowerStatsModel.lit_numbers(def, s, cfg, sanity_now, shadow)
+	for key: String in n:
+		var v: float = n[key]
+		# a circle's unit DPS reads "12.6*", no "/s": "12.6/s*" is cut in a 3-column panel
+		var one := key == "dps" or key == "damage" and s.is_summon()
+		out[key] = (one_decimal(v) if one else num(v)) + LIT_MARK
 	return out
-
-
-## LT-43 §5: the effects of an occult aura, gate or circle while lit (slow, the taken bonus,
-## the armor strip, the banish distance and a new unit's summon_dps x power_mult, as
-## Simulation applies them); {} when the beam does not change them. LT-70: `shadow` takes
-## shadow.occult_power_mult (a shadowed tower).
-static func lit_effects(def: TowerDef, s: TowerDef.Level, cfg: GameConfig,
-		shadow := false) -> Dictionary:
-	var fx := state_effect(def, cfg, shadow)
-	if def.kind != "occult" or fx.is_empty():
-		return {}
-	var pm: float = fx["power_mult"]
-	if pm == 1.0:
-		return {}
-	var e := TowerRules.powered_effects(s, pm)  # an aura, a gate or a circle only
-	return e if e != s.effects else {}
 
 
 ## LT-43 §5: the status line under the role of a lit tower; "" when the beam changes nothing.
 ## LT-70 §5: with `shadow`, a shadowed tower's line: NOW_SHADOW + "fire −20%, +10% misses"
 ## (mundane shooter) or "+15% power" (occult).
 static func lit_line(def: TowerDef, s: TowerDef.Level, cfg: GameConfig, shadow := false) -> String:
-	var pct := beam_percent(def, s, cfg, shadow)
+	var pct := TowerStatsModel.beam_percent(def, s, cfg, shadow)
 	if pct == 0.0:
 		return ""
 	var head := NOW_SHADOW if shadow else NOW_LIT
 	var signed := "%s%s%%" % [MINUS if pct < 0.0 else "+", num(roundf(absf(pct)))]
 	if def.kind == "mundane":
 		var t := head + "fire " + signed
-		var fx := TowerRules.light_effect(def, cfg, not shadow, shadow)
+		var fx := TowerStatsModel.state_effect(def, cfg, shadow)
 		if shadow:
 			var add: float = fx["miss_add"]
 			return t + (", +%s%% misses" % num(add * 100.0) if add > 0.0 else "")
@@ -412,44 +302,44 @@ static func live_dps_text(sanity_now: float) -> String:
 static func special_short(s: TowerDef.Level, effects: Variant = null) -> String:
 	var e: Dictionary = s.effects if effects == null else effects
 	var parts := PackedStringArray()
-	if is_active(e, "aoe_radius"):
+	if TowerStatsModel.is_active(e, "aoe_radius"):
 		parts.append("r %s" % num(e["aoe_radius"]))
-	if is_active(e, "fuse_seconds"):
+	if TowerStatsModel.is_active(e, "fuse_seconds"):
 		parts.append("fuse %s s" % num(e["fuse_seconds"]))
-	if is_active(e, "ignore_armor"):
+	if TowerStatsModel.is_active(e, "ignore_armor"):
 		parts.append("no armor")
-	if is_active(e, "sanity_scaling"):
+	if TowerStatsModel.is_active(e, "sanity_scaling"):
 		parts.append("×%s at 0 sanity" % num(1.0 + e["sanity_scaling"]))
-	if is_active(e, "slow"):
+	if TowerStatsModel.is_active(e, "slow"):
 		parts.append("slow %s%%" % num(e["slow"] * 100.0))
-	if is_active(e, "damage_taken_multiplier"):
+	if TowerStatsModel.is_active(e, "damage_taken_multiplier"):
 		parts.append("+%s%% taken" % num((e["damage_taken_multiplier"] - 1.0) * 100.0))
-	if is_active(e, "reveal_fakes"):
+	if TowerStatsModel.is_active(e, "reveal_fakes"):
 		parts.append("shows fakes")
-	if is_active(e, "crit_chance"):
+	if TowerStatsModel.is_active(e, "crit_chance"):
 		parts.append("%s%% crit ×%s" % [num(e["crit_chance"] * 100.0),
 			num(e.get("crit_multiplier", 1.0))])
-	if is_active(e, "burst_targets"):
+	if TowerStatsModel.is_active(e, "burst_targets"):
 		parts.append("%s targets in turn" % num(e["burst_targets"]))
-	if is_active(e, "bleed_dps"):
+	if TowerStatsModel.is_active(e, "bleed_dps"):
 		parts.append("bleed %s/s" % num(e["bleed_dps"]))
-	if is_active(e, "pull_cells"):
+	if TowerStatsModel.is_active(e, "pull_cells"):
 		parts.append("pull %s" % num(e["pull_cells"]))
-	if is_active(e, "strip_armor"):
+	if TowerStatsModel.is_active(e, "strip_armor"):
 		parts.append("%s%s armor" % [MINUS, num(e["strip_armor"])])
-	if is_active(e, "banish_cells"):
+	if TowerStatsModel.is_active(e, "banish_cells"):
 		parts.append("back " + cells_text(num(e["banish_cells"])))
 	if e.get("banish_targets", 1.0) > 1.0:
 		parts.append("%s foes" % num(e["banish_targets"]))
-	if is_active(e, "banish_max_hp"):
+	if TowerStatsModel.is_active(e, "banish_max_hp"):
 		parts.append("≤%s HP" % num(e["banish_max_hp"]))
-	if is_active(e, "summon_max"):
+	if TowerStatsModel.is_active(e, "summon_max"):
 		var n: float = e["summon_max"]
 		parts.append("%s unit%s, %s HP" % [num(n), "" if n == 1.0 else "s",
 			num(e.get("summon_hp", 0.0))])
-	if is_active(e, "casts_light"):  # LT-70
+	if TowerStatsModel.is_active(e, "casts_light"):  # LT-70
 		parts.append("lights")
-	if is_active(e, "casts_shadow"):
+	if TowerStatsModel.is_active(e, "casts_shadow"):
 		parts.append("shadows")
 	if parts.is_empty():
 		return CELL_DASH
@@ -482,6 +372,34 @@ static func upgrade_path_text(def: TowerDef) -> String:
 	if not names.is_empty():
 		t += " · then " + " or ".join(names)
 	return t
+
+
+## Damage per hit; a circle's unit DPS "15/s"; CELL_DASH without damage (aura, plain banish).
+static func _damage_cell(s: TowerDef.Level, n: Dictionary) -> String:
+	if not n.has("damage"):
+		return CELL_DASH
+	return ("%s/s" if s.is_summon() else "%s") % num(n["damage"])
+
+
+static func _dps_cell(n: Dictionary) -> String:
+	if not n.has("dps"):
+		return CELL_DASH
+	if n.has("dps_to"):
+		return "%s–%s" % [one_decimal(n["dps"]), one_decimal(n["dps_to"])]
+	return one_decimal(n["dps"])
+
+
+static func _range_cell(n: Dictionary) -> String:
+	if n.has("min_range"):
+		return "%s–%s" % [num(n["min_range"]), num(n["range"])]
+	return num(n["range"])
+
+
+## A light / shadow percent "+25%" / "−30%"; CELL_DASH for 0 (TowerStatsModel.beam_percent).
+static func _percent_cell(pct: float) -> String:
+	if pct == 0.0:
+		return CELL_DASH
+	return ("+" if pct > 0.0 else MINUS) + num(roundf(absf(pct))) + "%"
 
 
 static func _keys_dict(keys: Array) -> Dictionary:

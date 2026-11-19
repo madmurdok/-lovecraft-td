@@ -287,20 +287,20 @@ func test_tower_info_lit_text_equals_the_sims_tower_mults() -> void:
 	var m_lit := sim.tower_mults(lit.id)
 	var m_dark := sim.tower_mults(dark.id)
 	# Lit: every cell, the percent and the no-miss tail come from the same multipliers.
-	var v_lit := TowerInfo.lit_values(lit.def, lvl, cfg)
+	var v_lit := TowerText.lit_values(lit.def, lvl, cfg)
 	assert_str(v_lit["every"]).is_equal(
-		TowerInfo.num(lvl.fire_interval * m_lit["interval_mult"]) + TowerInfo.LIT_MARK)
-	assert_str(TowerInfo.lit_line(lit.def, lvl, cfg)).is_equal(
-		TowerInfo.NOW_LIT + "fire +%s%%, no misses" % TowerInfo.num(
+		TowerText.num(lvl.fire_interval * m_lit["interval_mult"]) + TowerText.LIT_MARK)
+	assert_str(TowerText.lit_line(lit.def, lvl, cfg)).is_equal(
+		TowerText.NOW_LIT + "fire +%s%%, no misses" % TowerText.num(
 			roundf((1.0 / m_lit["interval_mult"] - 1.0) * 100.0)))
 	# Shadowed: the same, with the sim's miss_add.
-	var v_dark := TowerInfo.lit_values(dark.def, dark.stats(), cfg, -1.0, true)
+	var v_dark := TowerText.lit_values(dark.def, dark.stats(), cfg, -1.0, true)
 	assert_str(v_dark["every"]).is_equal(
-		TowerInfo.num(dark.stats().fire_interval * m_dark["interval_mult"]) + TowerInfo.LIT_MARK)
-	assert_str(TowerInfo.lit_line(dark.def, dark.stats(), cfg, true)).is_equal(
-		TowerInfo.NOW_SHADOW + "fire %s%s%%, +%s%% misses" % [TowerInfo.MINUS,
-			TowerInfo.num(roundf(absf((1.0 / m_dark["interval_mult"] - 1.0) * 100.0))),
-			TowerInfo.num(m_dark["miss_add"] * 100.0)])
+		TowerText.num(dark.stats().fire_interval * m_dark["interval_mult"]) + TowerText.LIT_MARK)
+	assert_str(TowerText.lit_line(dark.def, dark.stats(), cfg, true)).is_equal(
+		TowerText.NOW_SHADOW + "fire %s%s%%, +%s%% misses" % [TowerText.MINUS,
+			TowerText.num(roundf(absf((1.0 / m_dark["interval_mult"] - 1.0) * 100.0))),
+			TowerText.num(m_dark["miss_add"] * 100.0)])
 	assert_float(m_dark["miss_add"]).is_equal(0.25)
 
 
@@ -313,9 +313,9 @@ func test_tower_info_occult_lit_damage_equals_the_sims_power_mult() -> void:
 	var pm: float = sim.tower_mults(res.id)["power_mult"]
 	assert_float(pm).is_equal(0.5)
 	var s := res.stats()
-	var v := TowerInfo.lit_values(res.def, s, sim.config, -1.0)
-	assert_str(v["damage"]).is_equal(TowerInfo.num(s.damage * pm) + TowerInfo.LIT_MARK)
-	assert_float(TowerInfo.beam_percent(res.def, s, sim.config)).is_equal((pm - 1.0) * 100.0)
+	var v := TowerText.lit_values(res.def, s, sim.config, -1.0)
+	assert_str(v["damage"]).is_equal(TowerText.num(s.damage * pm) + TowerText.LIT_MARK)
+	assert_float(TowerStatsModel.beam_percent(res.def, s, sim.config)).is_equal((pm - 1.0) * 100.0)
 
 
 func test_hud_and_game_flare_oil_equal_the_sims_oil_rules() -> void:
