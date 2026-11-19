@@ -3,7 +3,7 @@ extends GdUnitTestSuite
 ## LT-75 (LT-65 B3, guard G9): one table of refusal texts, CommandText.TEXT, and the lighthouse
 ## panel's capitalised subset. Pure static calls; no nodes.
 
-const R := Simulation.CommandResult
+const R := SimCommand.CommandResult
 ## A refusal-text map keyed by a CommandResult name with a string value, or a table named REASONS.
 const MAP_ENTRY := "(CommandResult|\\bR)\\.[A-Z_]+\\s*:\\s*\""
 const REASONS_DECL := "(const|var)\\s+REASONS\\b"

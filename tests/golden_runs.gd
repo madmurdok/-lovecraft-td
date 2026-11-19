@@ -213,7 +213,7 @@ static func frame_run(parent: Node, config: GameConfig) -> Dictionary:
 	for frame in FRAME_STEPS:
 		while next < PLAN.size() and game.sim.state.tick >= int(PLAN[next][0]):
 			var r := _dispatch(game, PLAN[next], cells)
-			if r != Simulation.CommandResult.OK:
+			if r != SimCommand.CommandResult.OK:
 				refused.append([PLAN[next], r])
 			next += 1
 		if frame == 50 or frame == 70:

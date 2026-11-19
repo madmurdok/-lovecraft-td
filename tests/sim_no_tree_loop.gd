@@ -33,7 +33,7 @@ static func play(config: GameConfig, run_seed: int, sink := Callable()) -> Simul
 	while sim.state.outcome == SimState.Outcome.NONE and sim.state.tick < MAX_TICKS:
 		if sim.state.tick % 90 == 0 and next_build < BUILDS.size():
 			if sim.build_tower(BUILDS[next_build], cells[next_build * 7 % cells.size()]) \
-					== Simulation.CommandResult.OK:
+					== SimCommand.CommandResult.OK:
 				next_build += 1
 		var events := sim.drain_events()
 		if sink.is_valid():

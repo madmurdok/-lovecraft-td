@@ -23,7 +23,7 @@ func _scenario(run_seed: int, circle := false) -> Array[String]:
 	sim.set_spawner(ScriptedSpawner.new(SCRIPT))
 	if circle:
 		sim.state.gold = 100000
-		var ok := Simulation.CommandResult.OK
+		var ok := SimCommand.CommandResult.OK
 		assert_int(sim.build_tower("summoning_circle", CIRCLE_CELL)).is_equal(ok)
 		var id: int = sim.state.tower_at[CIRCLE_CELL]
 		assert_int(sim.upgrade_tower(id)).is_equal(ok)

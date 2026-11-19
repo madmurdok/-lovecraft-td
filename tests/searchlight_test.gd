@@ -106,7 +106,7 @@ func test_revealed_stays_after_the_fake_leaves_and_after_the_searchlight_is_sold
 	_move_to(fake, 12.0)  # (12.5, 0.5): 9 cells off the aura centre
 	run(sim, 5)
 	assert_bool(fake.revealed).is_true()
-	assert_int(sim.sell_tower(sl.id)).is_equal(Simulation.CommandResult.OK)
+	assert_int(sim.sell_tower(sl.id)).is_equal(SimCommand.CommandResult.OK)
 	assert_array(sim.state.towers).is_empty()
 	# Back in a rifle's range with no searchlight left: still revealed, still not a target.
 	var rifle := build(sim, "rifleman")

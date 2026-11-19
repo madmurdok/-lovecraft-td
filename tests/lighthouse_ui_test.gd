@@ -5,7 +5,7 @@ extends GdUnitTestSuite
 ## panel (opened by a click on its cell) with its upgrade and oil buttons, the HUD flare
 ## button and oil label, and the Game command forwards.
 
-const R := Simulation.CommandResult
+const R := SimCommand.CommandResult
 
 var _vp: SubViewport
 var _game: Game

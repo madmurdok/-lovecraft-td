@@ -260,15 +260,15 @@ func refresh() -> void:
 	if not visible:
 		return
 	refresh_count += 1
-	var shared := Simulation.CommandResult.OK  ## LT-61 §6: the first refusal not about gold
+	var shared := SimCommand.CommandResult.OK  ## LT-61 §6: the first refusal not about gold
 	var any_ok := false
 	for id in buttons:
 		var def: TowerDef = game.sim.config.towers[id]
 		var r := game.sim.can_build(id, cell)
 		var b := buttons[id]
-		b.disabled = r != Simulation.CommandResult.OK
-		var poor := r == Simulation.CommandResult.NOT_ENOUGH_GOLD
-		if b.disabled and not poor and shared == Simulation.CommandResult.OK:
+		b.disabled = r != SimCommand.CommandResult.OK
+		var poor := r == SimCommand.CommandResult.NOT_ENOUGH_GOLD
+		if b.disabled and not poor and shared == SimCommand.CommandResult.OK:
 			shared = r
 		any_ok = any_ok or not b.disabled
 		var cost := costs[id]
@@ -296,11 +296,11 @@ func refresh() -> void:
 		b.tooltip_text = tip
 	# Every row poor: can_build reports gold before the phase, so the title says the night
 	# itself, or by day that nothing is affordable.
-	if shared == Simulation.CommandResult.OK and not any_ok and not buttons.is_empty():
-		shared = Simulation.CommandResult.NOT_BUILD_PHASE \
+	if shared == SimCommand.CommandResult.OK and not any_ok and not buttons.is_empty():
+		shared = SimCommand.CommandResult.NOT_BUILD_PHASE \
 			if game.sim.state.phase == SimState.Phase.WAVE \
-			else Simulation.CommandResult.NOT_ENOUGH_GOLD
-	var refused := shared != Simulation.CommandResult.OK
+			else SimCommand.CommandResult.NOT_ENOUGH_GOLD
+	var refused := shared != SimCommand.CommandResult.OK
 	var why := CommandText.reason(shared)
 	title_label.text = why.left(1).to_upper() + why.substr(1) if refused else TITLE_TEXT
 	title_label.add_theme_color_override("font_color", STATUS_COLOR if refused else Color.WHITE)
@@ -329,7 +329,7 @@ func _input(event: InputEvent) -> void:
 
 
 func _on_tower_pressed(def_id: String) -> void:
-	if game.commands.build(def_id, cell) == Simulation.CommandResult.OK:
+	if game.commands.build(def_id, cell) == SimCommand.CommandResult.OK:
 		close()
 
 

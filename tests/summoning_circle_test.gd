@@ -171,7 +171,7 @@ func test_selling_the_circle_dismisses_its_units() -> void:
 	run(sim, 271)
 	var ids := sim.allies_of(t.id).map(func(a: SimAlly) -> int: return a.id)
 	assert_int(ids.size()).is_equal(2)
-	assert_int(sim.sell_tower(t.id)).is_equal(Simulation.CommandResult.OK)
+	assert_int(sim.sell_tower(t.id)).is_equal(SimCommand.CommandResult.OK)
 	var gone := of_type(sim.drain_events(), T.ALLY_GONE)
 	assert_array(gone.map(func(e: SimEvent) -> int: return e.id)).is_equal(ids)
 	for g in gone:
@@ -186,7 +186,7 @@ func test_the_circle_has_no_targeting_at_any_level() -> void:
 		var t := _circle(sim, row[0], row[1])
 		assert_bool(sim.has_targeting(t)).is_false()
 		assert_int(sim.can_set_target_priority(t.id, "strongest")) \
-			.is_equal(Simulation.CommandResult.NO_TARGETING)
+			.is_equal(SimCommand.CommandResult.NO_TARGETING)
 
 
 # --- damage multipliers ------------------------------------------------------------------------

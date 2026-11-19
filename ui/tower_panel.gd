@@ -194,7 +194,7 @@ func _rebuild(mask: int) -> void:
 		refresh_count += 1
 		# LT-27 §3: towers are sold by day only.
 		var sell := game.sim.can_sell_tower(t.id)
-		sell_button.disabled = sell != Simulation.CommandResult.OK
+		sell_button.disabled = sell != SimCommand.CommandResult.OK
 		sell_button.text = "Sell (+%s)" % TowerText.money(game.sim.sell_refund(t))
 		if sell_button.disabled:
 			sell_button.text += " (%s)" % CommandText.reason(sell)
@@ -215,7 +215,7 @@ func _on_scroll_resized() -> void:
 func _refresh_upgrade(b: Button, info: Label, t: SimTower, s: TowerDef.Level, branch: String,
 		target: TowerDef.Level) -> void:
 	var r := game.sim.can_upgrade(t.id, branch)
-	b.disabled = r != Simulation.CommandResult.OK
+	b.disabled = r != SimCommand.CommandResult.OK
 	var label := "Upgrade to L%d" % (t.level + 2) if branch.is_empty() else target.name
 	var text := label + TowerText.DASH + TowerText.cost_text(target.upgrade_cost)
 	if b.disabled:
@@ -296,10 +296,10 @@ func _refresh_priority(t: SimTower) -> void:
 		var text: String = TowerText.PRIORITY_NAMES.get(mode, mode)
 		if current:
 			text = PRIORITY_MARK + text
-		elif r != Simulation.CommandResult.OK:
+		elif r != SimCommand.CommandResult.OK:
 			text += " (%s)" % CommandText.reason(r)
 		b.text = text
-		b.disabled = current or r != Simulation.CommandResult.OK
+		b.disabled = current or r != SimCommand.CommandResult.OK
 		# The current mode is disabled but must read as selected, not as unavailable.
 		if current:
 			b.add_theme_color_override("font_disabled_color", SidePanel.COLOR_ROLE)

@@ -218,7 +218,7 @@ func test_a_target_priority_change_applies_at_the_next_shot() -> void:
 	sim.drain_events()
 	assert_int(_one_shot(sim).data["target"]).is_equal(a.id)
 	assert_int(_next_shot(sim, t).data["target"]).is_equal(a.id)
-	assert_int(sim.set_target_priority(t.id, "strongest")).is_equal(Simulation.CommandResult.OK)
+	assert_int(sim.set_target_priority(t.id, "strongest")).is_equal(SimCommand.CommandResult.OK)
 	assert_int(t.locked_id).is_equal(-1)
 	assert_int(_next_shot(sim, t).data["target"]).is_equal(b.id)
 

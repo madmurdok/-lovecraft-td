@@ -3,7 +3,7 @@ extends TowerTestBase
 ## LT-6 gold (money) economy: kills (no money since LT-27), wave bonus, sell refund
 ## (behaviours 10-15).
 
-const R := Simulation.CommandResult
+const R := SimCommand.CommandResult
 
 
 # --- kills (LT-27: kills drop relic tokens, never money) ---------------------

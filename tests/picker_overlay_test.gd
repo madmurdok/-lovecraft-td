@@ -11,7 +11,7 @@ extends GdUnitTestSuite
 
 const RIFLE := "rifleman"
 const SIGN := "elder_sign"
-const R := Simulation.CommandResult
+const R := SimCommand.CommandResult
 
 var _vp: SubViewport
 var _game: Game

@@ -127,7 +127,7 @@ func test_buyout_button_visibility_is_the_sim_buyout_query() -> void:
 func test_an_empty_astray_shot_lands_off_its_aim_point() -> void:
 	await _start_game()
 	assert_int(_game.commands.build("rifleman", _first_buildable()) as int) \
-		.is_equal(Simulation.CommandResult.OK)
+		.is_equal(SimCommand.CommandResult.OK)
 	var tower: SimTower = _game.sim.state.towers[0]
 	var aim := Vector2(3.5, 1.5)
 	var ev := SimEvent.new(SimEvent.Type.SHOT, 0, tower.id, {"def": "rifleman", "target": 0,

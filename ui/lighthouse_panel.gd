@@ -138,7 +138,7 @@ func _refresh_upgrade() -> void:
 			TowerText.money(cost)]
 		if CommandText.panel_reason(up) != "":
 			upgrade_button.text += "\n" + CommandText.panel_reason(up)
-	upgrade_button.disabled = up != Simulation.CommandResult.OK
+	upgrade_button.disabled = up != SimCommand.CommandResult.OK
 
 
 func _refresh_oil() -> void:
@@ -161,6 +161,6 @@ func _refresh_oil() -> void:
 		oil_button.text = "Buy oil for a flare (%s)" % TowerText.money(units * eco.oil.price)
 	else:
 		oil_button.text = "Buy oil (%s)" % TowerText.money(eco.oil.price)
-	if buy != Simulation.CommandResult.OK and CommandText.panel_reason(buy) != "":
+	if buy != SimCommand.CommandResult.OK and CommandText.panel_reason(buy) != "":
 		oil_button.text += "\n" + CommandText.panel_reason(buy)
-	oil_button.disabled = buy != Simulation.CommandResult.OK
+	oil_button.disabled = buy != SimCommand.CommandResult.OK

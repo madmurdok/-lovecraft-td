@@ -48,7 +48,7 @@ func _cells(n: int) -> Array[Vector2i]:
 
 
 func _place(def_id: String, cell: Vector2i) -> SimTower:
-	assert_int(_game.commands.build(def_id, cell) as int).is_equal(Simulation.CommandResult.OK)
+	assert_int(_game.commands.build(def_id, cell) as int).is_equal(SimCommand.CommandResult.OK)
 	return _game.sim.tower_by_id(_game.sim.state.tower_at[cell])
 
 

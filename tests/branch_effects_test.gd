@@ -291,7 +291,7 @@ func test_gangsters_priority_modes_change_the_ranking() -> void:
 	var g := _gang(sim, [6.0, 7.0, 8.0, 9.0])
 	for c: float in g:  # hp rises against the route: strongest is the reverse of first
 		g[c].hp = 1000.0 * (10.0 - c)
-	assert_int(sim.set_target_priority(t.id, "strongest")).is_equal(Simulation.CommandResult.OK)
+	assert_int(sim.set_target_priority(t.id, "strongest")).is_equal(SimCommand.CommandResult.OK)
 	var r: Array = [g[6.0].id, g[7.0].id, g[8.0].id]
 	assert_array(_targets(_shots(sim, 4))).is_equal(r + [r[0]])
 	var f := _sim()
@@ -300,7 +300,7 @@ func test_gangsters_priority_modes_change_the_ranking() -> void:
 	fg[6.0].base_units_per_tick = 3
 	fg[8.0].base_units_per_tick = 2
 	fg[7.0].base_units_per_tick = 1
-	assert_int(f.set_target_priority(tf.id, "fastest")).is_equal(Simulation.CommandResult.OK)
+	assert_int(f.set_target_priority(tf.id, "fastest")).is_equal(SimCommand.CommandResult.OK)
 	assert_array(_targets(_shots(f, 3))).is_equal([fg[6.0].id, fg[8.0].id, fg[7.0].id])
 
 
@@ -310,7 +310,7 @@ func test_gangsters_ties_go_to_the_lower_id() -> void:
 	var a := put(sim, "cultist", 7.0)
 	var b := put(sim, "cultist", 8.0)
 	var c := put(sim, "cultist", 9.0)
-	assert_int(sim.set_target_priority(t.id, "strongest")).is_equal(Simulation.CommandResult.OK)
+	assert_int(sim.set_target_priority(t.id, "strongest")).is_equal(SimCommand.CommandResult.OK)
 	for e in [a, b, c]:
 		e.hp = 50000.0
 	# Equal hp at the first ranking: lower id first.
