@@ -71,15 +71,15 @@ func test_g9_no_other_refusal_text_table() -> void:
 	var files := _gd_files("res://ui")
 	files.append_array(_gd_files("res://scenes"))
 	files.append_array(_gd_files("res://sim"))
-	assert_bool(files.has("res://ui/command_text.gd")).is_true()
+	assert_bool(files.has("res://ui/text/command_text.gd")).is_true()
 	assert_bool(files.has("res://ui/lighthouse_panel.gd")).is_true()
 	assert_bool(files.has("res://ui/text/tower_text.gd")).is_true()
 	for f: String in files:
-		if f == "res://ui/command_text.gd":
+		if f == "res://ui/text/command_text.gd":
 			continue
 		var src := FileAccess.get_file_as_string(f)
 		assert_object(decl_re.search(src)).override_failure_message(
-			"%s declares REASONS; the table lives in ui/command_text.gd" % f).is_null()
+			"%s declares REASONS; the table lives in ui/text/command_text.gd" % f).is_null()
 		var m := map_re.search(src)
 		assert_object(m).override_failure_message(
 			"%s maps a CommandResult to text (%s); use CommandText" % [

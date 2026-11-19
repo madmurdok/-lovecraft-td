@@ -235,7 +235,8 @@ split starts after LT-62 merges and keeps the warm-up in `Board._ready`.
 - `ui/text/command_text.gd`: the one `CommandResult -> text` table (#10), used by picker, tower
   panel, lighthouse panel and HUD tooltips.
 
-`TowerInfo` stays as a thin forwarding facade for one release, so callers migrate in place.
+`TowerInfo` is removed with no facade; every caller migrated at once (owner Q6, LT-79): numbers in
+`ui/model/tower_stats_model.gd` (`TowerStatsModel`), strings in `ui/text/tower_text.gd` (`TowerText`).
 
 ### 3.7 Test helpers
 

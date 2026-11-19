@@ -1,4 +1,4 @@
-class_name TowerInfoTest
+class_name TowerTextTest
 extends GdUnitTestSuite
 ## LT-24 §3, LT-43 TowerText: the stats table cells (row_values) and the special, kind and
 ## upgrade lines built from config (effects in EFFECT_GROUPS order), "(coming soon)" for
