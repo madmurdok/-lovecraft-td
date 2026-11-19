@@ -66,7 +66,7 @@ extends SceneTree
 ## Searchlight's radius does not count, `lit_tower_ticks` covers every light source),
 ## "lit_tower_ticks" / "shadow_tower_ticks" (tower-ticks with the net `lit` / `shadowed` flag)
 ## and "shadowed_mundane_builds" (mundane towers the bot placed inside a shadow caster's radius).
-## LT-70 §6: placement is light/shadow-aware for every strategy (`_cast_term`, CAST_WEIGHT);
+## LT-70 §6: placement is light/shadow-aware for every strategy (`Placement.cast_term`, CAST_WEIGHT);
 ## the `light` strategy builds the Searchlight.
 ## Loot is random (seeded LOOT stream): compare strategies over the default 10 seeds.
 ## RUN lines add "relics_sold" ($ from sales), "drops" (real relics credited per kind, config
@@ -75,34 +75,14 @@ extends SceneTree
 
 const STRATEGIES := ["mundane", "occult", "mixed", "madness", "demolition", "battery",
 	"resonator", "gate", "circle", "light"]
-## LT-57 §5, LT-69: live enemies (reals and fakes) anywhere on the map that make the bot
-## fire the flare (tunable).
-const FLARE_MIN_LIVE := 4
+
+## LT-86: the harness (this file: CLI args, seed loop, RUN lines) plays the strategies of
+## tools/bot/bot_strategies.gd, which place towers with tools/bot/bot_placement.gd. The
+## tunables (BUILD_FIRST, BRANCH_PICK, CAP_FLOOR, ...) live there.
+const Strategies := preload("res://tools/bot/bot_strategies.gd")
+const Placement := preload("res://tools/bot/bot_placement.gd")
+
 const MAX_TICKS := 30 * 60 * 30
-## Strategy -> lowest sanity_cap an occult build/upgrade may leave (LT-23 §4, tunable).
-const CAP_FLOOR := {"occult": 30.0, "mixed": 60.0}
-const OCCULT_MAX_RIFLEMEN := 3  ## riflemen the occult bot builds per run, the first included
-const MIXED_ORDER := ["rifleman", "rifleman", "elder_sign", "rifleman", "harpooner",
-	"necronomicon_reader"]
-## LT-70 §6: the `light` strategy's build order, repeated.
-const LIGHT_ORDER := ["rifleman", "rifleman", "searchlight", "harpooner", "rifleman"]
-## LT-70 §6: path cells one lit/shadowed tower is worth in `_best_cell` (tunable).
-const CAST_WEIGHT := 3
-const BUILD_FIRST := 5  ## towers on the board before the bot starts upgrading (tunable)
-## Strategy -> tower def id -> L3 branch the bot buys (tunable); a tower not listed stays
-## at L2. Pure branches for the careful bot, corrupted for the mad one.
-const BRANCH_PICK := {
-	"mundane": {"rifleman": "a", "harpooner": "a"},
-	"occult": {"rifleman": "a", "elder_sign": "a", "necronomicon_reader": "a"},
-	"mixed": {"rifleman": "a", "harpooner": "a", "elder_sign": "a", "necronomicon_reader": "a"},
-	"madness": {"elder_sign": "b", "necronomicon_reader": "b"},
-	"demolition": {"rifleman": "a", "dynamite_crew": "a"},
-	"battery": {"rifleman": "a", "coast_battery": "a"},
-	"resonator": {"rifleman": "a", "resonator": "a"},
-	"gate": {"rifleman": "a", "silver_key": "a"},
-	"circle": {"rifleman": "a", "summoning_circle": "a"},
-	"light": {"rifleman": "a", "harpooner": "a", "searchlight": "b"},
-}
 
 var _cfg: GameConfig
 var _score_cache := {}  ## def id -> Array of [score, cell] sorted best first
@@ -110,11 +90,11 @@ var _upgrades := true  ## false with --upgrades=0
 var _lighthouse := true  ## false with --lighthouse=0
 var _flare := true  ## false with --flare=0
 var _branch_override := {}  ## tower def id -> branch from --branch=, wins over BRANCH_PICK
-var _shadowed_builds := 0  ## LT-70: mundane towers placed inside a shadow radius, this run
 var _strategies: Array = STRATEGIES  ## strategies to play, narrowed by --strategies=
 ## LT-73 golden replay (tests/golden_runs.gd): when valid, _play calls it with (sim, events)
 ## after every drain; it only reads them, so the runs and RUN lines do not change.
 var _event_sink := Callable()
+var _strategy: Strategies  ## created on first use by _policy()
 
 
 func _init() -> void:
@@ -212,12 +192,12 @@ func _play(strat: String, run_seed: int) -> Dictionary:
 	var lit_shots := 0
 	var lit_tower_ticks := 0
 	var shadow_tower_ticks := 0
-	_shadowed_builds = 0
+	_policy().shadowed_builds = 0
 	for kind in _cfg.economy.relic_ids():
 		drops[kind] = 0
 	while st.outcome == SimState.Outcome.NONE and st.tick < MAX_TICKS:
 		if st.tick % 30 == 0:
-			idx = _act(sim, strat, idx, built)
+			idx = _policy().act(sim, strat, idx, built)
 		sim.step()
 		for t in st.towers:
 			if t.lit:
@@ -307,7 +287,7 @@ func _play(strat: String, run_seed: int) -> Dictionary:
 		"wage": wage, "lighthouse_level": st.lighthouse_level, "flares": flares,
 		"oil_bought": oil_bought, "oil_gold": oil_gold, "lit_shots": lit_shots,
 		"lit_tower_ticks": lit_tower_ticks, "shadow_tower_ticks": shadow_tower_ticks,
-		"shadowed_mundane_builds": _shadowed_builds,
+		"shadowed_mundane_builds": _policy().shadowed_builds,
 	}
 	if _upgrades:
 		run["upgrades"] = upgrades
@@ -317,219 +297,19 @@ func _play(strat: String, run_seed: int) -> Dictionary:
 
 ## The next build of `strat` at order index `i`, or "" when the occult bot must save (its
 ## cap guard blocks the occult item and its riflemen are used up). Mixed returns its item
-## as is; _act skips a blocked one.
-func _order(strat: String, i: int, sim: Simulation, built: Dictionary) -> String:
-	match strat:
-		"mundane":
-			return "harpooner" if i % 3 == 2 else "rifleman"
-		"demolition":
-			return "dynamite_crew" if i % 3 == 2 else "rifleman"
-		"battery":
-			return "coast_battery" if i % 3 == 2 else "rifleman"
-		"resonator":
-			return "resonator" if i % 3 == 2 else "rifleman"
-		"gate":
-			return "silver_key" if i % 3 == 2 else "rifleman"
-		"circle":
-			return "summoning_circle" if i % 3 == 2 else "rifleman"
-		"occult":
-			if i == 0:
-				return "rifleman"
-			var d := "elder_sign" if i % 2 == 1 else "necronomicon_reader"
-			if not _cap_allows(sim, strat, _cfg.towers[d].levels[0].sanity_reserve):
-				return "rifleman" if built.get("rifleman", 0) < OCCULT_MAX_RIFLEMEN else ""
-			return d
-		"mixed":
-			return MIXED_ORDER[i % MIXED_ORDER.size()]
-		"light":
-			return LIGHT_ORDER[i % LIGHT_ORDER.size()]
-		_:
-			return "necronomicon_reader" if i % 2 == 0 else "elder_sign"
 
-
-## The cap guard (LT-23 §4): true when `strat` has no CAP_FLOOR, or reserving `delta` more
-## leaves sanity_cap >= its floor (a delta <= 0 always passes).
-func _cap_allows(sim: Simulation, strat: String, delta: float) -> bool:
-	if not CAP_FLOOR.has(strat) or delta <= 0.0:
-		return true
-	return sim.state.sanity_cap - delta >= CAP_FLOOR[strat]
-
-
-## At night (a wave) only tries buy_sanity() (occult, mixed). By day sells every relic,
-## buys as many purchases (builds, then upgrades per the header) as affordable, and in BUILD
-## then calls the wave. Returns the new build-order index.
-func _act(sim: Simulation, strat: String, idx: int, built: Dictionary) -> int:
-	if strat == "occult" or strat == "mixed":
-		sim.buy_sanity()  # refused unless exit_rule is "buyout" and state is MADNESS
-	if sim.state.phase == SimState.Phase.WAVE:
-		_night_flare(sim)
-		return idx  # LT-27 §3: night; builds, upgrades and sales are day only
-	sim.sell_relics()  # refused with an empty stash
-	var lighthouse_refused := false  # a refused lighthouse buy falls through to the builds
-	var topped := not _flare  # LT-57: the oil reserve comes after the BUILD_FIRST towers
-	while true:
-		if not topped and sim.state.towers.size() >= BUILD_FIRST:
-			topped = true
-			while sim.state.oil < _bot_oil_target(sim) \
-					and sim.buy_oil() == Simulation.CommandResult.OK:
-				pass  # refused: no oil block, full, or too poor
-		if _upgrades and _lighthouse and not lighthouse_refused \
-				and sim.state.towers.size() >= BUILD_FIRST and _lighthouse_next(sim, strat):
-			if sim.upgrade_lighthouse() != Simulation.CommandResult.OK:
-				lighthouse_refused = true
-			continue
-		if _upgrades and sim.state.towers.size() >= BUILD_FIRST:
-			var up := _next_upgrade(sim, strat)
-			if not up.is_empty():
-				if sim.upgrade_tower(up[0], up[1]) != Simulation.CommandResult.OK:
-					break
-				continue
-		var id := _order(strat, idx, sim, built)
-		if strat == "mixed" and _cfg.towers[id].kind == "occult" \
-				and not _cap_allows(sim, strat, _cfg.towers[id].levels[0].sanity_reserve):
-			idx += 1  # blocked occult item: skip to the next one in the order
-			continue
-		if id == "":
-			# Occult bot, blocked and out of riflemen: any upgrade that passes the cap
-			# guard if there is one (even below BUILD_FIRST towers), else save.
-			var up := _next_upgrade(sim, strat) if _upgrades else []
-			if up.is_empty() or sim.upgrade_tower(up[0], up[1]) != Simulation.CommandResult.OK:
-				break
-			continue
-		var cell := _best_cell(sim, id)
-		var in_sign := _cfg.towers[id].kind == "mundane" and _in_shadow_radius(sim, cell)
-		if cell.x < 0 or sim.build_tower(id, cell) != Simulation.CommandResult.OK:
-			break
-		if in_sign:
-			_shadowed_builds += 1
-		built[id] = built.get(id, 0) + 1
-		idx += 1
-	if sim.state.phase == SimState.Phase.BUILD:
-		sim.call_wave()
-	return idx
-
-
-## Whether the lighthouse level is the next purchase: one is left and its cost is at most
-## the cheapest tower upgrade's (or no tower upgrade is left).
-func _lighthouse_next(sim: Simulation, strat: String) -> bool:
-	var cost := sim.lighthouse_upgrade_cost()
-	if cost == 0:
-		return false
-	var up := _next_upgrade(sim, strat)
-	return up.is_empty() or cost <= sim.upgrade_target(sim.tower_by_id(up[0]), up[1]).upgrade_cost
-
-
-## LT-57 §5: oil the bot keeps by day: one flare (Simulation.flare_cost_oil), 0 without a
-## flare block. Not Simulation.oil_for_flare: that is a click's batch (up to the cap), the
-## bot stops at one flare's worth.
-static func _bot_oil_target(sim: Simulation) -> int:
-	return sim.flare_cost_oil()
-
-
-## Night: fires the flare when at least FLARE_MIN_LIVE live enemies (reals and fakes, as a
-## player sees them) are on the map (LT-69: the flare lights the whole map; e.lit is not the
-## count, it is set by the beams before firing). Refused on cooldown or without oil.
-func _night_flare(sim: Simulation) -> void:
-	if not _flare:
-		return
-	var live := 0
-	for e in sim.state.enemies:
-		if e.is_live():
-			live += 1
-	if live >= FLARE_MIN_LIVE:
-		sim.fire_flare()
-
-
-## The bot's next upgrade as [tower_id, branch], or [] when no tower can go further for it:
-## the cheapest target (gold) over the towers in id order, ties -> lower id. Skips a tower
-## whose L3 pick is missing from BRANCH_PICK or has_pending(), and (occult, mixed) an
-## upgrade whose reserve delta fails the cap guard (_cap_allows).
-func _next_upgrade(sim: Simulation, strat: String) -> Array:
-	var picks: Dictionary = BRANCH_PICK.get(strat, {}).duplicate()
-	picks.merge(_branch_override, true)
-	var best: Array = []
-	var best_cost := 0
-	for t in sim.state.towers:
-		var branches := sim.upgrade_branches(t)
-		if branches.is_empty():
-			continue
-		var branch := ""
-		if branches[0] != "":
-			branch = picks.get(t.def.id, "")
-			if branch == "":
-				continue
-		var target := sim.upgrade_target(t, branch)
-		if target == null or target.has_pending():
-			continue
-		if not _cap_allows(sim, strat, sim.reserve_delta(t.def.id, t.stats(), target)):
-			continue
-		if best.is_empty() or target.upgrade_cost < best_cost \
-				or (target.upgrade_cost == best_cost and t.id < best[0]):
-			best = [t.id, branch]
-			best_cost = target.upgrade_cost
-	return best
-
-
-func _best_cell(sim: Simulation, id: String) -> Vector2i:
-	if not _score_cache.has(id):
-		var rng_cells: float = _cfg.towers[id].levels[0].range_cells
-		var min_cells: float = _cfg.towers[id].levels[0].min_range
-		var m := _cfg.map
-		var list: Array = []
-		for c in m.grid.cells():
-			if not m.is_buildable(c):
-				continue
-			var score := 0
-			for p in m.path:
-				var d := m.grid.distance(c, p)
-				if d <= rng_cells and d >= min_cells:
-					score += 1
-			if score > 0:
-				list.append([score, c])
-		list.sort_custom(func(a, b): return a[0] > b[0])  # stable enough: row-major kept
-		_score_cache[id] = list
-	var best := Vector2i(-1, -1)
-	var best_score := -1000000
-	for e in _score_cache[id]:
-		if sim.state.tower_at.has(e[1]):
-			continue
-		var sc: int = e[0] + CAST_WEIGHT * _cast_term(sim, id, e[1])
-		if sc > best_score:  # strict: ties keep the cached order (path score, row-major)
-			best_score = sc
-			best = e[1]
-	return best
-
-
-## LT-70 §6: how many towers on the board a build of `id` at `cell` would put on the right
-## side of the light/shadow. A caster (level 0 flags): +1 per firing tower in its radius that
-## it helps (light: mundane, shadow: occult), -1 per one it hurts. A firing tower: +1 per
-## caster in range that helps it, -1 per one that hurts it. Read from the config flags, so a
-## variant without casts_* gives 0 and today's placement.
-func _cast_term(sim: Simulation, id: String, cell: Vector2i) -> int:
-	var def: TowerDef = _cfg.towers[id]
-	var s: TowerDef.Level = def.levels[0]
-	var term := 0
-	if s.casts_light() or s.casts_shadow():
-		for o in sim.state.towers:
-			var o_mundane: bool = o.def.kind == "mundane"
-			if o.stats().acts() \
-					and LightRules.covers(sim.config.map.grid, cell, s.range_cells, o.centre()):
-				if s.casts_light():
-					term += 1 if o_mundane else -1
-				if s.casts_shadow():
-					term += -1 if o_mundane else 1
-	if s.acts():
-		# Casters on the board covering the cell (LT-76: Simulation.light_at counts them).
-		var light := sim.light_at(sim.config.map.grid.centre(cell))
-		var sign_ := 1 if def.kind == "mundane" else -1
-		term += sign_ * int(light["light_casters"])
-		term -= sign_ * int(light["shadow_casters"])
-	return term
-
-
-## LT-70: true when a shadow caster on the board covers the centre of `cell`.
-func _in_shadow_radius(sim: Simulation, cell: Vector2i) -> bool:
-	return int(sim.light_at(sim.config.map.grid.centre(cell))["shadow_casters"]) > 0
+## The strategies object, its fields synced from the harness's (a test sets those after
+## construction, so they are copied on every call).
+func _policy() -> Strategies:
+	if _strategy == null:
+		_strategy = Strategies.new()
+	_strategy.cfg = _cfg
+	_strategy.score_cache = _score_cache
+	_strategy.upgrades = _upgrades
+	_strategy.lighthouse = _lighthouse
+	_strategy.flare = _flare
+	_strategy.branch_override = _branch_override
+	return _strategy
 
 
 ## LT-70 §6: `lit_shots` keeps its meaning (lighthouse beam / flare value): a lit shooter that
