@@ -371,17 +371,17 @@ func _act(sim: Simulation, strat: String, idx: int, built: Dictionary) -> int:
 		if not topped and sim.state.towers.size() >= BUILD_FIRST:
 			topped = true
 			while sim.state.oil < _bot_oil_target(sim) \
-					and sim.buy_oil() == Simulation.CommandResult.OK:
+					and sim.buy_oil() == SimCommand.CommandResult.OK:
 				pass  # refused: no oil block, full, or too poor
 		if _upgrades and _lighthouse and not lighthouse_refused \
 				and sim.state.towers.size() >= BUILD_FIRST and _lighthouse_next(sim, strat):
-			if sim.upgrade_lighthouse() != Simulation.CommandResult.OK:
+			if sim.upgrade_lighthouse() != SimCommand.CommandResult.OK:
 				lighthouse_refused = true
 			continue
 		if _upgrades and sim.state.towers.size() >= BUILD_FIRST:
 			var up := _next_upgrade(sim, strat)
 			if not up.is_empty():
-				if sim.upgrade_tower(up[0], up[1]) != Simulation.CommandResult.OK:
+				if sim.upgrade_tower(up[0], up[1]) != SimCommand.CommandResult.OK:
 					break
 				continue
 		var id := _order(strat, idx, sim, built)
@@ -393,12 +393,12 @@ func _act(sim: Simulation, strat: String, idx: int, built: Dictionary) -> int:
 			# Occult bot, blocked and out of riflemen: any upgrade that passes the cap
 			# guard if there is one (even below BUILD_FIRST towers), else save.
 			var up := _next_upgrade(sim, strat) if _upgrades else []
-			if up.is_empty() or sim.upgrade_tower(up[0], up[1]) != Simulation.CommandResult.OK:
+			if up.is_empty() or sim.upgrade_tower(up[0], up[1]) != SimCommand.CommandResult.OK:
 				break
 			continue
 		var cell := _best_cell(sim, id)
 		var in_sign := _cfg.towers[id].kind == "mundane" and _in_shadow_radius(sim, cell)
-		if cell.x < 0 or sim.build_tower(id, cell) != Simulation.CommandResult.OK:
+		if cell.x < 0 or sim.build_tower(id, cell) != SimCommand.CommandResult.OK:
 			break
 		if in_sign:
 			_shadowed_builds += 1

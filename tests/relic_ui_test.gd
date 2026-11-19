@@ -5,7 +5,7 @@ extends GdUnitTestSuite
 ## "Sell relics" works by day only; no player-facing text says "gold".
 
 const T := SimEvent.Type
-const R := Simulation.CommandResult
+const R := SimCommand.CommandResult
 const GOLD_WORD := "(?i)\\bgold\\b"
 
 var _vp: SubViewport

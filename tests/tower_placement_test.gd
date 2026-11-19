@@ -2,7 +2,7 @@ class_name TowerPlacementTest
 extends TowerTestBase
 ## LT-6 placement rules and build command (handover behaviours 1-9, 12).
 
-const R := Simulation.CommandResult
+const R := SimCommand.CommandResult
 const DEFS := ["rifleman", "harpooner"]
 
 

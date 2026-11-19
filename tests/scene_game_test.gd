@@ -103,7 +103,7 @@ func test_picker_enables_every_buildable_tower_and_disables_unaffordable_ones() 
 	await _click_cell(cell)
 	# Occult towers are buildable since LT-11: every tower the sim accepts is enabled.
 	for def_id: String in _config.towers:
-		var ok := _game.sim.can_build(def_id, cell) == Simulation.CommandResult.OK
+		var ok := _game.sim.can_build(def_id, cell) == SimCommand.CommandResult.OK
 		assert_bool(_game.picker.buttons[def_id].disabled).is_equal(not ok)
 	# Money drops below the cost while the panel is open: re-evaluated on the next frame
 	# (LT-78: through GOLD_CHANGED, so the drop goes through the sim's gold writer).

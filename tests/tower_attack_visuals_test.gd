@@ -50,7 +50,7 @@ func _tower(def_id: String) -> SimTower:
 	_next_cell += 1
 	var r := _game.commands.build(def_id, cell)
 	assert_int(r as int).override_failure_message("build %s at %s -> %d" % [def_id, cell, r]) \
-		.is_equal(Simulation.CommandResult.OK)
+		.is_equal(SimCommand.CommandResult.OK)
 	return _game.sim.tower_by_id(_game.sim.state.tower_at[cell])
 
 

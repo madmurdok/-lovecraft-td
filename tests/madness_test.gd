@@ -438,8 +438,8 @@ func test_buyout_pays_the_cost_sets_sanity_logs_and_emits_in_order() -> void:
 	var sim := _buyout_sim()
 	var m := sim.config.sanity.madness
 	var gold := sim.state.gold
-	assert_int(sim.can_buy_sanity()).is_equal(Simulation.CommandResult.OK)
-	assert_int(sim.buy_sanity()).is_equal(Simulation.CommandResult.OK)
+	assert_int(sim.can_buy_sanity()).is_equal(SimCommand.CommandResult.OK)
+	assert_int(sim.buy_sanity()).is_equal(SimCommand.CommandResult.OK)
 	assert_int(sim.state.gold).is_equal(gold - m.buyout_cost)
 	assert_float(sim.state.sanity).is_equal(m.restore_sanity)
 	var new_state := sim.sanity_state_for(m.restore_sanity)
@@ -456,8 +456,8 @@ func test_buyout_pays_the_cost_sets_sanity_logs_and_emits_in_order() -> void:
 	assert_int(ev[2].type).is_equal(T.SANITY_STATE_CHANGED)
 	assert_dict(ev[2].data).is_equal({"old": S.MADNESS, "new": new_state})
 	# Out of madness: a second purchase is refused, and regen works again.
-	assert_int(sim.can_buy_sanity()).is_equal(Simulation.CommandResult.NOT_IN_MADNESS)
-	assert_int(sim.buy_sanity()).is_equal(Simulation.CommandResult.NOT_IN_MADNESS)
+	assert_int(sim.can_buy_sanity()).is_equal(SimCommand.CommandResult.NOT_IN_MADNESS)
+	assert_int(sim.buy_sanity()).is_equal(SimCommand.CommandResult.NOT_IN_MADNESS)
 	assert_float(sim.award_wave_sanity()).is_greater(0.0)
 
 
@@ -468,14 +468,14 @@ func test_buyout_works_with_exactly_the_cost_and_during_a_wave() -> void:
 	assert_int(sim.state.phase).is_equal(SimState.Phase.WAVE)
 	sim.state.gold = sim.config.sanity.madness.buyout_cost
 	sim.drain_events()
-	assert_int(sim.buy_sanity()).is_equal(Simulation.CommandResult.OK)
+	assert_int(sim.buy_sanity()).is_equal(SimCommand.CommandResult.OK)
 	assert_int(sim.state.gold).is_equal(0)
 	assert_float(sim.state.sanity).is_equal(sim.config.sanity.madness.restore_sanity)
 	assert_array(sim.state.command_log).contains([[1, "buy_sanity"]])
 
 
 func test_refused_buyouts_change_nothing_and_report_the_first_failing_reason() -> void:
-	var R := Simulation.CommandResult
+	var R := SimCommand.CommandResult
 	var cases := {}  # name -> [sim, expected]
 	var permanent := _buyout_sim()
 	_rule(permanent, "permanent")

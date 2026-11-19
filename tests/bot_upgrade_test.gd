@@ -10,7 +10,7 @@ extends SimTestBase
 ## with today's config no bot reaches L3 (LT-24/S2 behaviour 13 correction).
 
 const BOT_PATH := "res://tools/bot_runs.gd"
-const R := Simulation.CommandResult
+const R := SimCommand.CommandResult
 const RIFLE := "rifleman"
 const HARP := "harpooner"
 const SIGN := "elder_sign"
@@ -763,7 +763,7 @@ class CountingSim extends Simulation:
 	func _init(p_config: GameConfig, run_seed: int) -> void:
 		super(p_config, run_seed)
 
-	func upgrade_lighthouse() -> Simulation.CommandResult:
+	func upgrade_lighthouse() -> SimCommand.CommandResult:
 		lighthouse_calls += 1
 		if lighthouse_calls > RETRY_GUARD:
 			state.lighthouse_level = config.economy.beam.levels.size() - 1

@@ -81,7 +81,7 @@ func test_sell_raises_the_cap_by_the_reserve_after_the_gold_and_keeps_sanity() -
 	var t := _reserve_tower(sim, 20.0)
 	_set_sanity(sim, 50.0)
 	var cap := sim.state.sanity_cap
-	assert_int(sim.sell_tower(t.id)).is_equal(Simulation.CommandResult.OK)
+	assert_int(sim.sell_tower(t.id)).is_equal(SimCommand.CommandResult.OK)
 	var ev := sim.drain_events()
 	assert_array(ev.map(func(x: SimEvent) -> int: return x.type)).is_equal(
 		[T.TOWER_SOLD, T.GOLD_CHANGED, T.SANITY_CAP_CHANGED])
@@ -100,7 +100,7 @@ func test_sell_in_madness_raises_the_cap_and_stays_mad() -> void:
 	var t := _reserve_tower(sim, 20.0)
 	_set_sanity(sim, 0.0)
 	assert_int(sim.state.sanity_state).is_equal(S.MADNESS)
-	assert_int(sim.sell_tower(t.id)).is_equal(Simulation.CommandResult.OK)
+	assert_int(sim.sell_tower(t.id)).is_equal(SimCommand.CommandResult.OK)
 	assert_float(sim.state.sanity_cap).is_equal(sim.config.sanity.max_sanity)
 	assert_float(sim.state.sanity).is_equal(0.0)
 	assert_int(sim.state.sanity_state).is_equal(S.MADNESS)
@@ -165,7 +165,7 @@ func test_buyout_restores_restore_sanity_when_the_cap_allows_it() -> void:
 	var sim := _rule_sim("buyout", 10.0)
 	var m := sim.config.sanity.madness
 	assert_float(m.restore_sanity).is_less(sim.state.sanity_cap)
-	assert_int(sim.buy_sanity()).is_equal(Simulation.CommandResult.OK)
+	assert_int(sim.buy_sanity()).is_equal(SimCommand.CommandResult.OK)
 	assert_float(sim.state.sanity).is_equal(m.restore_sanity)
 
 
@@ -179,7 +179,7 @@ func test_buyout_restores_only_up_to_a_lower_cap() -> void:
 	assert_float(cap).is_equal_approx(m.restore_sanity / 2.0, 0.0001)
 	sim.state.gold = m.buyout_cost
 	assert_float(sim.restore_target()).is_equal_approx(cap, 0.0001)
-	assert_int(sim.buy_sanity()).is_equal(Simulation.CommandResult.OK)
+	assert_int(sim.buy_sanity()).is_equal(SimCommand.CommandResult.OK)
 	assert_float(sim.state.sanity).is_equal_approx(cap, 0.0001)
 	assert_int(sim.state.gold).is_equal(0)
 	var ch := of_type(sim.drain_events(), T.SANITY_CHANGED)
@@ -195,22 +195,22 @@ func test_buyout_at_cap_zero_is_no_sanity_room_and_pays_nothing() -> void:
 	sim.drain_events()
 	var log_size := sim.state.command_log.size()
 	assert_float(sim.state.sanity_cap).is_equal(0.0)
-	assert_int(sim.can_buy_sanity()).is_equal(Simulation.CommandResult.NO_SANITY_ROOM)
-	assert_int(sim.buy_sanity()).is_equal(Simulation.CommandResult.NO_SANITY_ROOM)
+	assert_int(sim.can_buy_sanity()).is_equal(SimCommand.CommandResult.NO_SANITY_ROOM)
+	assert_int(sim.buy_sanity()).is_equal(SimCommand.CommandResult.NO_SANITY_ROOM)
 	assert_int(sim.state.gold).is_equal(1000)
 	assert_int(sim.state.sanity_state).is_equal(S.MADNESS)
 	assert_int(sim.state.command_log.size()).is_equal(log_size)
 	assert_array(sim.drain_events()).is_empty()
 	# Before NOT_ENOUGH_GOLD: no gold either still reads NO_SANITY_ROOM.
 	sim.state.gold = 0
-	assert_int(sim.can_buy_sanity()).is_equal(Simulation.CommandResult.NO_SANITY_ROOM)
+	assert_int(sim.can_buy_sanity()).is_equal(SimCommand.CommandResult.NO_SANITY_ROOM)
 	# After NOT_IN_MADNESS (state forced: at cap 0 the sim itself is always mad).
 	sim.state.sanity_state = S.FRAYING
-	assert_int(sim.can_buy_sanity()).is_equal(Simulation.CommandResult.NOT_IN_MADNESS)
+	assert_int(sim.can_buy_sanity()).is_equal(SimCommand.CommandResult.NOT_IN_MADNESS)
 	# After NO_BUYOUT.
 	sim.state.sanity_state = S.MADNESS
 	sim.config.sanity.madness.exit_rule = "permanent"
-	assert_int(sim.can_buy_sanity()).is_equal(Simulation.CommandResult.NO_BUYOUT)
+	assert_int(sim.can_buy_sanity()).is_equal(SimCommand.CommandResult.NO_BUYOUT)
 
 
 func test_auto_restore_restores_only_up_to_a_lower_cap() -> void:

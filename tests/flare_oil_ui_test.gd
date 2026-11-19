@@ -5,7 +5,7 @@ extends GdUnitTestSuite
 ## sim buy_oil each, stops at the first refusal; and the flare texts in the lighthouse panel
 ## and the HUD come from the config (price, oil cost, seconds by level).
 
-const R := Simulation.CommandResult
+const R := SimCommand.CommandResult
 
 var _vp: SubViewport
 var _game: Game

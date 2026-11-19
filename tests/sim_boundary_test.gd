@@ -968,7 +968,7 @@ func test_a_frame_driven_game_equals_direct_stepping() -> void:
 	for entry: Array in log:
 		while bare.state.tick < int(entry[0]):
 			bare.step()
-		assert_int(bare.replay_command(entry)).is_equal(Simulation.CommandResult.OK)
+		assert_int(bare.replay_command(entry)).is_equal(SimCommand.CommandResult.OK)
 	while bare.state.tick < sim.state.tick:
 		bare.step()
 	assert_array(bare.state.command_log).is_equal(log)

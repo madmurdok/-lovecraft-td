@@ -4,38 +4,6 @@ extends RefCounted
 ## time by step(); scenes read `state` directly and drain one-shot events.
 ## Same config + seed + command log -> same events and state (§4).
 
-## Result of a player command (build/sell/upgrade/set_target_priority). OK = applied; anything else = rejected
-## and nothing changed (no gold, no event, no command_log entry).
-enum CommandResult {
-	OK,
-	OUTCOME_REACHED,  ## the run is over; every command is refused
-	UNKNOWN_TOWER,  ## no such tower def
-	NOT_AVAILABLE,  ## reserved: no tower kind is refused since LT-11 (kept so values never shift)
-	NOT_BUILDABLE,  ## path, water, the lighthouse or out of bounds
-	OCCUPIED,  ## another tower stands on the cell
-	NOT_ENOUGH_GOLD,
-	NO_SUCH_TOWER,  ## sell/upgrade/set_target_priority: unknown or already sold tower id
-	## call_wave: not in the build phase (or no WaveDirector); build, sell, upgrade,
-	## sell_relics: at night (during a wave, _day_only)
-	NOT_BUILD_PHASE,
-	NO_BUYOUT,  ## buy_sanity: madness.exit_rule is not "buyout"
-	NOT_IN_MADNESS,  ## buy_sanity: sanity state is not MADNESS
-	MAX_LEVEL,  ## upgrade: the tower is at L3
-	NEED_BRANCH,  ## upgrade: L2 -> L3 needs branch "a" or "b"
-	BAD_BRANCH,  ## upgrade: branch is not ""/"a"/"b", or non-empty for L1 -> L2
-	NO_TARGETING,  ## set_target_priority: the tower picks no target (aura, Elder Sign)
-	BAD_PRIORITY,  ## set_target_priority: mode is not one of SimTower.TARGET_PRIORITIES
-	NO_SANITY_ROOM,  ## buy_sanity: the sanity cap is 0, a buyout would restore nothing (LT-23)
-	NO_RELICS,  ## sell_relics: unknown kind or nothing of it in the stash (LT-27)
-	UNKNOWN_COMMAND,  ## replay_command: the entry names no command (LT-34)
-	BAD_ARGS,  ## replay_command: a known command with missing, extra or wrong-typed args (LT-36)
-	NOT_NIGHT,  ## fire_flare: by day (phase BUILD) or after the last wave (DONE) (LT-30)
-	ON_COOLDOWN,  ## fire_flare: the previous flare's cooldown is still running (LT-30)
-	NO_FLARE,  ## fire_flare / buy_oil: no lighthouse.flare / lighthouse.oil block (LT-30)
-	NO_OIL,  ## fire_flare: less oil in stock than flare.cost_oil (LT-30)
-	OIL_FULL,  ## buy_oil: the stock is at oil.cap (LT-30)
-}
-
 ## Sanity change reasons that may move sanity while in MADNESS (LT-13): the exit rules.
 const MADNESS_EXIT_REASONS: PackedStringArray = ["buyout", "auto_restore"]
 ## SimEnemy.status timers that only count down to 0 and go (LT-29 pull, LT-51 banish).
@@ -251,20 +219,20 @@ func apply_damage(enemy_id: int, amount: float, source: String, ignore_armor := 
 
 
 ## Whether `def_id` may be built on `cell` now; OK or the first failing reason, checked in
-## the order of CommandResult. Changes nothing.
-func can_build(def_id: String, cell: Vector2i) -> CommandResult:
+## the order of SimCommand.CommandResult. Changes nothing.
+func can_build(def_id: String, cell: Vector2i) -> SimCommand.CommandResult:
 	if state.outcome != SimState.Outcome.NONE:
-		return CommandResult.OUTCOME_REACHED
+		return SimCommand.CommandResult.OUTCOME_REACHED
 	if not config.towers.has(def_id):
-		return CommandResult.UNKNOWN_TOWER
+		return SimCommand.CommandResult.UNKNOWN_TOWER
 	var def: TowerDef = config.towers[def_id]
 	if not state.map.is_buildable(cell):
-		return CommandResult.NOT_BUILDABLE
+		return SimCommand.CommandResult.NOT_BUILDABLE
 	if state.tower_at.has(cell):
-		return CommandResult.OCCUPIED
+		return SimCommand.CommandResult.OCCUPIED
 	if state.gold < def.cost:
-		return CommandResult.NOT_ENOUGH_GOLD
-	return _day_only()  # last: keeps "first failing reason in CommandResult order" (LT-27 §3)
+		return SimCommand.CommandResult.NOT_ENOUGH_GOLD
+	return _day_only()  # last: keeps "first failing reason in SimCommand.CommandResult order" (LT-27 §3)
 
 
 ## Player command (§1.3, applied at once between ticks): builds an L1 `def_id` on `cell`
@@ -272,9 +240,9 @@ func can_build(def_id: String, cell: Vector2i) -> CommandResult:
 ## tick, and TOWER_BUILT + GOLD_CHANGED are emitted. Its L1 sanity_reserve then lowers the
 ## cap (_change_reserve "build", LT-23 §1.2); a cap taken to 0 empties sanity and so starts
 ## MADNESS. Only gold is checked. Day only (LT-27 §3): refused at night with NOT_BUILD_PHASE.
-func build_tower(def_id: String, cell: Vector2i) -> CommandResult:
+func build_tower(def_id: String, cell: Vector2i) -> SimCommand.CommandResult:
 	var result := can_build(def_id, cell)
-	if result != CommandResult.OK:
+	if result != SimCommand.CommandResult.OK:
 		return result
 	var def: TowerDef = config.towers[def_id]
 	var t := SimTower.new()
@@ -291,17 +259,17 @@ func build_tower(def_id: String, cell: Vector2i) -> CommandResult:
 	_emit(SimEvent.Type.TOWER_BUILT, t.id, {"def": def_id, "cell": cell, "cost": def.cost})
 	_add_gold(-def.cost, "build", t.id)
 	_change_reserve(t, reserve_of(t), "build")
-	return CommandResult.OK
+	return SimCommand.CommandResult.OK
 
 
 ## Whether sell_tower(tower_id) would be applied now; OK or the first failing reason in this
 ## order: OUTCOME_REACHED, NO_SUCH_TOWER, NOT_BUILD_PHASE (at night, LT-27 §3). Changes
 ## nothing.
-func can_sell_tower(tower_id: int) -> CommandResult:
+func can_sell_tower(tower_id: int) -> SimCommand.CommandResult:
 	if state.outcome != SimState.Outcome.NONE:
-		return CommandResult.OUTCOME_REACHED
+		return SimCommand.CommandResult.OUTCOME_REACHED
 	if tower_by_id(tower_id) == null:
-		return CommandResult.NO_SUCH_TOWER
+		return SimCommand.CommandResult.NO_SUCH_TOWER
 	return _day_only()
 
 
@@ -310,9 +278,9 @@ func can_sell_tower(tower_id: int) -> CommandResult:
 ## TOWER_SOLD + GOLD_CHANGED, then the cap rises by the tower's reserve (_change_reserve
 ## "sell", LT-23 Q4); current sanity does not change, in MADNESS too. Day only (LT-27 §3):
 ## OUTCOME_REACHED, NO_SUCH_TOWER, then NOT_BUILD_PHASE at night.
-func sell_tower(tower_id: int) -> CommandResult:
+func sell_tower(tower_id: int) -> SimCommand.CommandResult:
 	var result := can_sell_tower(tower_id)
-	if result != CommandResult.OK:
+	if result != SimCommand.CommandResult.OK:
 		return result
 	var t := tower_by_id(tower_id)
 	var refund := sell_refund(t)
@@ -324,7 +292,7 @@ func sell_tower(tower_id: int) -> CommandResult:
 	_emit(SimEvent.Type.TOWER_SOLD, t.id, {"def": t.def.id, "cell": t.cell, "refund": refund})
 	_add_gold(refund, "sell", t.id)
 	_change_reserve(t, -reserve, "sell")
-	return CommandResult.OK
+	return SimCommand.CommandResult.OK
 
 
 ## Branches upgrade_tower accepts for `t` now (LT-24 §2): [""] at L1, ["a", "b"] at L2,
@@ -351,25 +319,25 @@ func upgrade_target(t: SimTower, branch := "") -> TowerDef.Level:
 ## reason in this order: OUTCOME_REACHED, NO_SUCH_TOWER, MAX_LEVEL, NEED_BRANCH,
 ## BAD_BRANCH, NOT_BUILD_PHASE (at night, _day_only), NOT_ENOUGH_GOLD. Only gold is checked,
 ## not the sanity cap. Changes nothing.
-func can_upgrade(tower_id: int, branch := "") -> CommandResult:
+func can_upgrade(tower_id: int, branch := "") -> SimCommand.CommandResult:
 	if state.outcome != SimState.Outcome.NONE:
-		return CommandResult.OUTCOME_REACHED
+		return SimCommand.CommandResult.OUTCOME_REACHED
 	var t := tower_by_id(tower_id)
 	if t == null:
-		return CommandResult.NO_SUCH_TOWER
+		return SimCommand.CommandResult.NO_SUCH_TOWER
 	if t.level >= TowerDef.LEVEL_COUNT:
-		return CommandResult.MAX_LEVEL
+		return SimCommand.CommandResult.MAX_LEVEL
 	if t.level == TowerDef.LEVEL_COUNT - 1 and branch.is_empty():
-		return CommandResult.NEED_BRANCH
+		return SimCommand.CommandResult.NEED_BRANCH
 	var target := upgrade_target(t, branch)
 	if target == null:
-		return CommandResult.BAD_BRANCH
+		return SimCommand.CommandResult.BAD_BRANCH
 	var day := _day_only()
-	if day != CommandResult.OK:
+	if day != SimCommand.CommandResult.OK:
 		return day
 	if state.gold < target.upgrade_cost:
-		return CommandResult.NOT_ENOUGH_GOLD
-	return CommandResult.OK
+		return SimCommand.CommandResult.NOT_ENOUGH_GOLD
+	return SimCommand.CommandResult.OK
 
 
 ## Player command (LT-24): raises tower `tower_id` one level (L1 -> L2 with branch "", L2 ->
@@ -378,9 +346,9 @@ func can_upgrade(tower_id: int, branch := "") -> CommandResult:
 ## shot. Emits TOWER_UPGRADED {def, cell, level, branch, cost} + GOLD_CHANGED "upgrade";
 ## the cap then moves by target reserve - current reserve (_change_reserve "upgrade",
 ## LT-23 §1.2), like a build: a cap taken to 0 starts MADNESS; a lower reserve raises it.
-func upgrade_tower(tower_id: int, branch := "") -> CommandResult:
+func upgrade_tower(tower_id: int, branch := "") -> SimCommand.CommandResult:
 	var result := can_upgrade(tower_id, branch)
-	if result != CommandResult.OK:
+	if result != SimCommand.CommandResult.OK:
 		return result
 	var t := tower_by_id(tower_id)
 	var target := upgrade_target(t, branch)
@@ -393,7 +361,7 @@ func upgrade_tower(tower_id: int, branch := "") -> CommandResult:
 		"level": t.level, "branch": branch, "cost": target.upgrade_cost})
 	_add_gold(-target.upgrade_cost, "upgrade", t.id)
 	_change_reserve(t, delta, "upgrade")
-	return CommandResult.OK
+	return SimCommand.CommandResult.OK
 
 
 ## LT-34 (LT-33 finding 4): whether build_tower(def_id, ...) would start MADNESS: its L1
@@ -440,26 +408,26 @@ func has_targeting(t: SimTower) -> bool:
 ## Whether set_target_priority(tower_id, mode) would be applied now; OK or the first
 ## failing reason in this order: OUTCOME_REACHED, NO_SUCH_TOWER, NO_TARGETING,
 ## BAD_PRIORITY. Any phase (it costs nothing). Changes nothing.
-func can_set_target_priority(tower_id: int, mode: String) -> CommandResult:
+func can_set_target_priority(tower_id: int, mode: String) -> SimCommand.CommandResult:
 	if state.outcome != SimState.Outcome.NONE:
-		return CommandResult.OUTCOME_REACHED
+		return SimCommand.CommandResult.OUTCOME_REACHED
 	var t := tower_by_id(tower_id)
 	if t == null:
-		return CommandResult.NO_SUCH_TOWER
+		return SimCommand.CommandResult.NO_SUCH_TOWER
 	if not has_targeting(t):
-		return CommandResult.NO_TARGETING
+		return SimCommand.CommandResult.NO_TARGETING
 	if not SimTower.TARGET_PRIORITIES.has(mode):
-		return CommandResult.BAD_PRIORITY
-	return CommandResult.OK
+		return SimCommand.CommandResult.BAD_PRIORITY
+	return SimCommand.CommandResult.OK
 
 
 ## Player command (LT-31): sets whom tower `tower_id` shoots from its next shot on, in
 ## any phase, for free. Re-setting the current mode is applied too (logged, event).
 ## Emits TARGET_PRIORITY_SET {def, cell, mode}; logs [tick, "set_target_priority", id,
 ## mode]. The tower's cooldown is not touched.
-func set_target_priority(tower_id: int, mode: String) -> CommandResult:
+func set_target_priority(tower_id: int, mode: String) -> SimCommand.CommandResult:
 	var result := can_set_target_priority(tower_id, mode)
-	if result != CommandResult.OK:
+	if result != SimCommand.CommandResult.OK:
 		return result
 	var t := tower_by_id(tower_id)
 	t.target_priority = mode
@@ -467,33 +435,33 @@ func set_target_priority(tower_id: int, mode: String) -> CommandResult:
 	state.command_log.append([state.tick, "set_target_priority", tower_id, mode])
 	_emit(SimEvent.Type.TARGET_PRIORITY_SET, t.id, {"def": t.def.id, "cell": t.cell,
 		"mode": mode})
-	return CommandResult.OK
+	return SimCommand.CommandResult.OK
 
 
 ## Whether call_wave() would be applied now; OK, OUTCOME_REACHED, or NOT_BUILD_PHASE (no
 ## WaveDirector, or not by day). Changes nothing.
-func can_call_wave() -> CommandResult:
+func can_call_wave() -> SimCommand.CommandResult:
 	if state.outcome != SimState.Outcome.NONE:
-		return CommandResult.OUTCOME_REACHED
+		return SimCommand.CommandResult.OUTCOME_REACHED
 	if not (_spawner is WaveDirector) or state.phase != SimState.Phase.BUILD:
-		return CommandResult.NOT_BUILD_PHASE
-	return CommandResult.OK
+		return SimCommand.CommandResult.NOT_BUILD_PHASE
+	return SimCommand.CommandResult.OK
 
 
 ## Player command ("Light the lamp", LT-27 §1.2): ends the day now; the next wave spawns
 ## from the next tick on. Sets state.night_luck to early_night_luck() (1 +
 ## economy.early_night_luck_per_second x whole seconds left on the day timer) for this
 ## night; pays no money. Emits WAVE_STARTED {early: true}.
-func call_wave() -> CommandResult:
+func call_wave() -> SimCommand.CommandResult:
 	var result := can_call_wave()
-	if result != CommandResult.OK:
+	if result != SimCommand.CommandResult.OK:
 		return result
 	var director := _spawner as WaveDirector
 	var luck := early_night_luck()
 	state.command_log.append([state.tick, "call_wave"])
 	director.start_wave(self, true)
 	state.night_luck = luck
-	return CommandResult.OK
+	return SimCommand.CommandResult.OK
 
 
 ## LT-36: whether the buyout can apply at all right now: exit rule "buyout" and the player
@@ -507,34 +475,34 @@ func buyout_applies() -> bool:
 ## Whether buy_sanity() would be applied now; OK or the first failing reason, in this
 ## order: OUTCOME_REACHED, NO_BUYOUT, NOT_IN_MADNESS, NO_SANITY_ROOM (the cap is 0, LT-23
 ## Q6), NOT_ENOUGH_GOLD. Changes nothing.
-func can_buy_sanity() -> CommandResult:
+func can_buy_sanity() -> SimCommand.CommandResult:
 	if state.outcome != SimState.Outcome.NONE:
-		return CommandResult.OUTCOME_REACHED
+		return SimCommand.CommandResult.OUTCOME_REACHED
 	var m := config.sanity.madness
 	if m.exit_rule != "buyout":
-		return CommandResult.NO_BUYOUT
+		return SimCommand.CommandResult.NO_BUYOUT
 	if state.sanity_state != SimState.SanityState.MADNESS:
-		return CommandResult.NOT_IN_MADNESS
+		return SimCommand.CommandResult.NOT_IN_MADNESS
 	if restore_target() <= 0.0:
-		return CommandResult.NO_SANITY_ROOM
+		return SimCommand.CommandResult.NO_SANITY_ROOM
 	if state.gold < m.buyout_cost:
-		return CommandResult.NOT_ENOUGH_GOLD
-	return CommandResult.OK
+		return SimCommand.CommandResult.NOT_ENOUGH_GOLD
+	return SimCommand.CommandResult.OK
 
 
 ## Player command (LT-13, exit rule "buyout"): pays madness.buyout_cost gold and sets sanity
 ## to restore_target() (min of madness.restore_sanity and the cap), in any phase (also at
 ## night, LT-27 §3). Emits GOLD_CHANGED {reason: "buyout"}, then
 ## SANITY_CHANGED {reason: "buyout"} and SANITY_STATE_CHANGED (MADNESS -> the new state).
-func buy_sanity() -> CommandResult:
+func buy_sanity() -> SimCommand.CommandResult:
 	var result := can_buy_sanity()
-	if result != CommandResult.OK:
+	if result != SimCommand.CommandResult.OK:
 		return result
 	var m := config.sanity.madness
 	state.command_log.append([state.tick, "buy_sanity"])
 	_add_gold(-m.buyout_cost, "buyout", 0)
 	_add_sanity(restore_target() - state.sanity, "buyout", 0)
-	return CommandResult.OK
+	return SimCommand.CommandResult.OK
 
 
 ## Debug command (LT-34, LT-33 finding 5; the `--sanity` flag of debug builds): sets
@@ -542,12 +510,12 @@ func buy_sanity() -> CommandResult:
 ## {reason: "debug"} and SANITY_STATE_CHANGED as usual; nothing applies while in MADNESS,
 ## "debug" is no exit reason). Logged as [tick, "debug_set_sanity", value] so a replay
 ## reproduces it. OUTCOME_REACHED once the run is over, else OK.
-func debug_set_sanity(value: float) -> CommandResult:
+func debug_set_sanity(value: float) -> SimCommand.CommandResult:
 	if state.outcome != SimState.Outcome.NONE:
-		return CommandResult.OUTCOME_REACHED
+		return SimCommand.CommandResult.OUTCOME_REACHED
 	state.command_log.append([state.tick, "debug_set_sanity", value])
 	_add_sanity(value - state.sanity, "debug", 0)
-	return CommandResult.OK
+	return SimCommand.CommandResult.OK
 
 
 ## LT-67 (debug, `--sandbox`): ends the current night now. The WaveDirector marks every
@@ -557,11 +525,11 @@ func debug_set_sanity(value: float) -> CommandResult:
 ## of the next tick (wage, sanity regen, BUILD_STARTED or DONE). Logged as
 ## [tick, "debug_end_night"] so a replay reproduces it. OUTCOME_REACHED once the run is
 ## over; NOT_NIGHT without a WaveDirector or outside a wave (phase BUILD / DONE); else OK.
-func debug_end_night() -> CommandResult:
+func debug_end_night() -> SimCommand.CommandResult:
 	if state.outcome != SimState.Outcome.NONE:
-		return CommandResult.OUTCOME_REACHED
+		return SimCommand.CommandResult.OUTCOME_REACHED
 	if not (_spawner is WaveDirector) or state.phase != SimState.Phase.WAVE:
-		return CommandResult.NOT_NIGHT
+		return SimCommand.CommandResult.NOT_NIGHT
 	state.command_log.append([state.tick, "debug_end_night"])
 	(_spawner as WaveDirector).debug_fire_all(self)
 	_pack_queue.clear()
@@ -570,7 +538,7 @@ func debug_end_night() -> CommandResult:
 			e.dead = true
 			_emit(SimEvent.Type.DIED, e.id, {"source": "debug"})
 	_compact()
-	return CommandResult.OK
+	return SimCommand.CommandResult.OK
 
 
 # --- LT-30: lighthouse levels, lamp oil and the flare (player commands) -----------------
@@ -591,26 +559,26 @@ func lighthouse_upgrade_cost() -> int:
 ## Whether upgrade_lighthouse() would be applied now; OK or the first failing reason, in
 ## this order: OUTCOME_REACHED, MAX_LEVEL, NOT_BUILD_PHASE (at night, _day_only),
 ## NOT_ENOUGH_GOLD. Changes nothing.
-func can_upgrade_lighthouse() -> CommandResult:
+func can_upgrade_lighthouse() -> SimCommand.CommandResult:
 	if state.outcome != SimState.Outcome.NONE:
-		return CommandResult.OUTCOME_REACHED
+		return SimCommand.CommandResult.OUTCOME_REACHED
 	if state.lighthouse_level + 1 >= config.economy.beam.levels.size():
-		return CommandResult.MAX_LEVEL
+		return SimCommand.CommandResult.MAX_LEVEL
 	var day := _day_only()
-	if day != CommandResult.OK:
+	if day != SimCommand.CommandResult.OK:
 		return day
 	if state.gold < lighthouse_upgrade_cost():
-		return CommandResult.NOT_ENOUGH_GOLD
-	return CommandResult.OK
+		return SimCommand.CommandResult.NOT_ENOUGH_GOLD
+	return SimCommand.CommandResult.OK
 
 
 ## Player command (LT-30 §0, LT-27 D7): raises the lighthouse one level for money, by day
 ## only. The new beams light from the next night tick on, evenly spaced from the current
 ## base direction. Emits LIGHTHOUSE_UPGRADED {level, beams, cost} (id 0), then GOLD_CHANGED
 ## {reason: "lighthouse"}. No refund: the lighthouse is never sold.
-func upgrade_lighthouse() -> CommandResult:
+func upgrade_lighthouse() -> SimCommand.CommandResult:
 	var result := can_upgrade_lighthouse()
-	if result != CommandResult.OK:
+	if result != SimCommand.CommandResult.OK:
 		return result
 	var cost := lighthouse_upgrade_cost()
 	state.lighthouse_level += 1
@@ -618,66 +586,66 @@ func upgrade_lighthouse() -> CommandResult:
 	_emit(SimEvent.Type.LIGHTHOUSE_UPGRADED, 0, {"level": state.lighthouse_level,
 		"beams": beam_count(), "cost": cost})
 	_add_gold(-cost, "lighthouse", 0)
-	return CommandResult.OK
+	return SimCommand.CommandResult.OK
 
 
 ## Whether buy_oil() would be applied now; OK or the first failing reason, in this order
 ## (LT-30 §1.2): OUTCOME_REACHED, NO_FLARE (no lighthouse.oil block), NOT_BUILD_PHASE (at
 ## night, _day_only), OIL_FULL, NOT_ENOUGH_GOLD. Changes nothing.
-func can_buy_oil() -> CommandResult:
+func can_buy_oil() -> SimCommand.CommandResult:
 	if state.outcome != SimState.Outcome.NONE:
-		return CommandResult.OUTCOME_REACHED
+		return SimCommand.CommandResult.OUTCOME_REACHED
 	var oil := config.economy.oil
 	if oil == null:
-		return CommandResult.NO_FLARE
+		return SimCommand.CommandResult.NO_FLARE
 	var day := _day_only()
-	if day != CommandResult.OK:
+	if day != SimCommand.CommandResult.OK:
 		return day
 	if state.oil >= oil.cap:
-		return CommandResult.OIL_FULL
+		return SimCommand.CommandResult.OIL_FULL
 	if state.gold < oil.price:
-		return CommandResult.NOT_ENOUGH_GOLD
-	return CommandResult.OK
+		return SimCommand.CommandResult.NOT_ENOUGH_GOLD
+	return SimCommand.CommandResult.OK
 
 
 ## Player command (LT-30 §1.2): buys one unit of lamp oil for oil.price money, by day only.
 ## Emits OIL_CHANGED {delta: 1, oil, reason: "buy"}, then GOLD_CHANGED {reason: "oil"}.
 ## Oil stays across nights and is never sold back.
-func buy_oil() -> CommandResult:
+func buy_oil() -> SimCommand.CommandResult:
 	var result := can_buy_oil()
-	if result != CommandResult.OK:
+	if result != SimCommand.CommandResult.OK:
 		return result
 	state.command_log.append([state.tick, "buy_oil"])
 	_add_oil(1, "buy")
 	_add_gold(-config.economy.oil.price, "oil", 0)
-	return CommandResult.OK
+	return SimCommand.CommandResult.OK
 
 
 ## Whether fire_flare() would be applied now; OK or the first failing reason, in this order
 ## (LT-30 §1.1): OUTCOME_REACHED, NO_FLARE (no lighthouse.flare block), NOT_NIGHT (phase
 ## BUILD or DONE; NONE allowed, like _day_only), ON_COOLDOWN, NO_OIL. Changes nothing.
-func can_fire_flare() -> CommandResult:
+func can_fire_flare() -> SimCommand.CommandResult:
 	if state.outcome != SimState.Outcome.NONE:
-		return CommandResult.OUTCOME_REACHED
+		return SimCommand.CommandResult.OUTCOME_REACHED
 	var flare := config.economy.flare
 	if flare == null:
-		return CommandResult.NO_FLARE
+		return SimCommand.CommandResult.NO_FLARE
 	if not _beam_on():
-		return CommandResult.NOT_NIGHT
+		return SimCommand.CommandResult.NOT_NIGHT
 	if state.flare_cooldown_ticks > 0:
-		return CommandResult.ON_COOLDOWN
+		return SimCommand.CommandResult.ON_COOLDOWN
 	if state.oil < flare.cost_oil:
-		return CommandResult.NO_OIL
-	return CommandResult.OK
+		return SimCommand.CommandResult.NO_OIL
+	return SimCommand.CommandResult.OK
 
 
 ## Player command (LT-30 §1.1, LT-69 whole map): for flare_seconds() every tower and enemy
 ## on the map is lit (beams keep turning and keep their width),
 ## and every lit enemy moves at x enemy_speed_mult; the cooldown runs from now. Emits FLARE_FIRED {ticks, cooldown}
 ## (id 0), then OIL_CHANGED {delta: -cost_oil, oil, reason: "flare"}.
-func fire_flare() -> CommandResult:
+func fire_flare() -> SimCommand.CommandResult:
 	var result := can_fire_flare()
-	if result != CommandResult.OK:
+	if result != SimCommand.CommandResult.OK:
 		return result
 	var flare := config.economy.flare
 	state.flare_ticks_left = _flare_ticks()
@@ -686,7 +654,7 @@ func fire_flare() -> CommandResult:
 	_emit(SimEvent.Type.FLARE_FIRED, 0, {"ticks": state.flare_ticks_left,
 		"cooldown": state.flare_cooldown_ticks})
 	_add_oil(-flare.cost_oil, "flare")
-	return CommandResult.OK
+	return SimCommand.CommandResult.OK
 
 
 ## Render only (LT-30 §3.2): the direction of every beam, interpolated between the previous
@@ -731,14 +699,14 @@ const REPLAY_ARGS: Dictionary[String, Array] = {
 ## UNKNOWN_COMMAND (and an error) for an entry naming no command; BAD_ARGS (and an error)
 ## for a known name whose args do not match REPLAY_ARGS in count and type (LT-36). Never
 ## raises a script error, and a refused entry changes nothing.
-func replay_command(entry: Array) -> CommandResult:
+func replay_command(entry: Array) -> SimCommand.CommandResult:
 	var cmd: Variant = entry[1] if entry.size() > 1 else ""
 	if typeof(cmd) not in [TYPE_STRING, TYPE_STRING_NAME] or not REPLAY_ARGS.has(String(cmd)):
 		push_error("Simulation.replay_command: unknown entry %s" % [entry])
-		return CommandResult.UNKNOWN_COMMAND
+		return SimCommand.CommandResult.UNKNOWN_COMMAND
 	if not _replay_args_ok(entry, REPLAY_ARGS[String(cmd)]):
 		push_error("Simulation.replay_command: bad args %s" % [entry])
-		return CommandResult.BAD_ARGS
+		return SimCommand.CommandResult.BAD_ARGS
 	match String(cmd):
 		"build": return build_tower(entry[2], entry[3])
 		"sell": return sell_tower(entry[2])
@@ -752,7 +720,7 @@ func replay_command(entry: Array) -> CommandResult:
 		"buy_oil": return buy_oil()
 		"fire_flare": return fire_flare()
 		"debug_end_night": return debug_end_night()
-	return CommandResult.UNKNOWN_COMMAND  # unreachable: every REPLAY_ARGS key has an arm
+	return SimCommand.CommandResult.UNKNOWN_COMMAND  # unreachable: every REPLAY_ARGS key has an arm
 
 
 ## Whether entry[2..] has exactly types.size() values, each of the matching type.
@@ -787,27 +755,27 @@ func relics_value() -> int:
 ## Whether sell_relics(kind) would be applied now; OK or the first failing reason in this
 ## order: OUTCOME_REACHED, NOT_BUILD_PHASE (at night), NO_RELICS (unknown kind, or nothing
 ## of `kind` / nothing at all for "" in the stash). Changes nothing.
-func can_sell_relics(kind := "") -> CommandResult:
+func can_sell_relics(kind := "") -> SimCommand.CommandResult:
 	if state.outcome != SimState.Outcome.NONE:
-		return CommandResult.OUTCOME_REACHED
+		return SimCommand.CommandResult.OUTCOME_REACHED
 	var day := _day_only()
-	if day != CommandResult.OK:
+	if day != SimCommand.CommandResult.OK:
 		return day
 	if kind != "":
-		return CommandResult.OK if state.relics.get(kind, 0) > 0 else CommandResult.NO_RELICS
+		return SimCommand.CommandResult.OK if state.relics.get(kind, 0) > 0 else SimCommand.CommandResult.NO_RELICS
 	for k: String in state.relics:
 		if state.relics[k] > 0:
-			return CommandResult.OK
-	return CommandResult.NO_RELICS
+			return SimCommand.CommandResult.OK
+	return SimCommand.CommandResult.NO_RELICS
 
 
 ## Player command (LT-27 §1.4, day only): sells the whole stack of `kind`, or of every kind
 ## for "", at the fixed relic_price. Logs [tick, "sell_relics", kind]; emits one
 ## RELICS_CHANGED {kind, delta: -n, count: 0, reason: "sell"} per non-empty kind in config
 ## order, then one GOLD_CHANGED {reason: "relic_sale"} for the sum (none when it is 0).
-func sell_relics(kind := "") -> CommandResult:
+func sell_relics(kind := "") -> SimCommand.CommandResult:
 	var result := can_sell_relics(kind)
-	if result != CommandResult.OK:
+	if result != SimCommand.CommandResult.OK:
 		return result
 	state.command_log.append([state.tick, "sell_relics", kind])
 	var total := 0
@@ -820,7 +788,7 @@ func sell_relics(kind := "") -> CommandResult:
 		total += relic_price(k) * n
 		_add_relics(k, -n, "sell", 0)
 	_add_gold(total, "relic_sale", 0)
-	return CommandResult.OK
+	return SimCommand.CommandResult.OK
 
 
 ## Exit rule "auto_restore" (LT-13): called by the wave system when a wave is cleared,
@@ -1150,10 +1118,10 @@ func _on_enemy_killed(e: SimEnemy, source: String) -> void:
 ## LT-27 §3: NOT_BUILD_PHASE at night (phase WAVE), else OK. Not `!= BUILD`, so a sim
 ## without a WaveDirector (phase NONE) allows everything. The one seam for day-only rules
 ## (build, sell tower, upgrade, sell relics; later the crew layer, §7).
-func _day_only() -> CommandResult:
+func _day_only() -> SimCommand.CommandResult:
 	if state.phase == SimState.Phase.WAVE:
-		return CommandResult.NOT_BUILD_PHASE
-	return CommandResult.OK
+		return SimCommand.CommandResult.NOT_BUILD_PHASE
+	return SimCommand.CommandResult.OK
 
 
 ## LT-27 §1.2: one draw on `stream` picks a relic kind from `def.drops` (config order).

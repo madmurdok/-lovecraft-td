@@ -51,7 +51,7 @@ func _c(x: float) -> Vector2:
 
 func _fire_flare(sim: Simulation) -> void:
 	sim.state.oil = 2 * sim.config.economy.flare.cost_oil
-	assert_int(sim.fire_flare()).is_equal(Simulation.CommandResult.OK)
+	assert_int(sim.fire_flare()).is_equal(SimCommand.CommandResult.OK)
 
 
 ## A bot harness instance whose constructor does nothing (see bot_upgrade_test).
