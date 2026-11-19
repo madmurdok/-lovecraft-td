@@ -259,10 +259,11 @@ func test_hud_labels_track_sim_state() -> void:
 	_game.sim.call_wave()
 	_game.advance(0.0)
 	assert_str(hud.gold_label.text).is_equal("Money: $%d" % s.gold)
-	# LT-78: HP follows LEAKED; a direct state write emits none, so sync as on open.
+	# LT-78 (review F1): the phase follows WAVE_STARTED through advance alone, no refresh().
+	assert_str(hud.phase_label.text).is_equal("Night 1 of %d" % s.waves_total)
+	# HP follows LEAKED; a direct state write emits none, so sync as on open.
 	hud.refresh()
 	assert_str(hud.hp_label.text).is_equal("Lighthouse %d/%d" % [s.lighthouse_hp, _config.economy.lighthouse_hp])
-	assert_str(hud.phase_label.text).is_equal("Night 1 of %d" % s.waves_total)
 
 
 func test_day_timer_shows_floored_seconds_matching_the_luck() -> void:
@@ -279,6 +280,21 @@ func test_day_timer_shows_floored_seconds_matching_the_luck() -> void:
 	_game.hud.on_stepped()
 	assert_str(_game.hud.phase_label.text).contains("in 25 s")
 	assert_float(_game.sim.early_night_luck()).is_equal_approx(1.0 + rate * 25, 1e-9)
+
+
+## LT-78 (review F2): Game.advance calls hud.on_stepped() on frames that ran sim steps, and
+## only on those: the day label follows build_ticks_left without a refresh() or an event.
+func test_advance_calls_on_stepped_on_stepped_frames_only() -> void:
+	await _start_game()
+	var s := _game.sim.state
+	var hud := _game.hud
+	s.build_ticks_left = SimTime.ticks(25.0)  # a direct write: no event announces it
+	_game.advance(0.0)  # no sim step: the label is not read
+	assert_str(hud.phase_label.text).starts_with("Day 1 — night falls in 4")
+	_game.advance(0.1)  # steps: on_stepped re-reads the timer
+	assert_int(s.build_ticks_left).is_less(SimTime.ticks(25.0))
+	assert_str(hud.phase_label.text).is_equal(
+		"Day 1 — night falls in %d s" % SimTime.whole_seconds(s.build_ticks_left))
 
 
 func test_end_screen_appears_on_outcome_and_closes_panels() -> void:
