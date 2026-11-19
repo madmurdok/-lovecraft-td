@@ -18,6 +18,7 @@ var _sanity: SanitySystem
 var _light: LightSystem
 var _combat: CombatSystem
 var _ally: AllySystem
+var _spawn: SpawnSystem
 
 
 ## Counts the calls AllySystem makes to its Combat peer.
@@ -26,8 +27,8 @@ class SpyCombat:
 	var damage_calls: Array = []
 
 	func _init(ctx: SimContext, light: LightSystem, sanity: SanitySystem,
-			economy: EconomySystem) -> void:
-		super(ctx, light, sanity, economy)
+			economy: EconomySystem, spawn: SpawnSystem) -> void:
+		super(ctx, light, sanity, economy, spawn)
 
 	func apply_damage(enemy_id: int, amount: float, source: String, ignore_armor := false) -> float:
 		damage_calls.append([enemy_id, amount, source, ignore_armor])
@@ -45,7 +46,8 @@ func _build(combat_class: GDScript) -> void:
 	_eco = EconomySystem.new(_ctx)
 	_sanity = SanitySystem.new(_ctx, _eco)
 	_light = LightSystem.new(_ctx, _eco)
-	_combat = combat_class.new(_ctx, _light, _sanity, _eco)
+	_spawn = SpawnSystem.new(_ctx)
+	_combat = combat_class.new(_ctx, _light, _sanity, _eco, _spawn)
 	_ally = AllySystem.new(_ctx, _combat)
 
 
@@ -252,10 +254,10 @@ func test_a_blast_is_queued_by_the_shot_and_settled_when_its_fuse_has_burnt() ->
 func test_push_back_moves_along_the_route_never_before_its_start() -> void:
 	var e := _enemy("hybrid", 8.0)
 	e.prev_distance = 0
-	_combat.push_back(e, 2.0)
+	_spawn.push_back(e, 2.0)
 	assert_int(e.distance).is_equal(6 * SimTime.UNITS_PER_CELL)
 	assert_int(e.prev_distance).is_equal(e.distance)  # the render does not slide it back
-	_combat.push_back(e, 100.0)
+	_spawn.push_back(e, 100.0)
 	assert_int(e.distance).is_equal(0)
 	assert_int(e.prev_distance).is_equal(0)
 
@@ -635,7 +637,7 @@ func test_the_facade_damage_and_test_only_forwarders_match_the_systems_on_a_twin
 	var c := put(via_facade, "hybrid", 8.0)
 	var d := put(via_system, "hybrid", 8.0)
 	via_facade._push_back(c, 1.5)
-	via_system._combat.push_back(d, 1.5)
+	via_system._spawn.push_back(d, 1.5)
 	assert_int(c.distance).is_equal(d.distance)
 	assert_int(c.distance).is_equal(roundi(6.5 * SimTime.UNITS_PER_CELL))
 	via_facade._apply_bleed(c, 3.0, 2.0, "x")

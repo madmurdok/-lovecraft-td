@@ -34,8 +34,7 @@ func spawn(tower: int, source: String, at: Vector2, hp: float, dps: float, speed
 	if _state.outcome != SimState.Outcome.NONE or hp <= 0.0:
 		return 0
 	var a := SimAlly.new()
-	a.id = _state.next_id
-	_state.next_id += 1
+	a.id = _ctx.next_id()
 	a.tower = tower
 	a.source = source
 	a.home = at

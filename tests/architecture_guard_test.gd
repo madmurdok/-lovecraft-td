@@ -532,10 +532,10 @@ const G4B_OWNERS := {
 	"night_luck": ["core/simulation.gd", "core/wave_director.gd"],
 	"tick": ["core/simulation.gd"],
 	"outcome": ["core/simulation.gd"],
-	"lighthouse_hp": ["core/simulation.gd"],
+	"lighthouse_hp": ["core/simulation.gd", "core/systems/spawn_system.gd"],
 	"map": ["core/simulation.gd"],
-	"enemies": ["core/simulation.gd"],
-	"next_id": ["core/simulation.gd", "core/systems/ally_system.gd"],
+	"enemies": ["core/systems/spawn_system.gd"],
+	"next_id": ["core/systems/sim_context.gd"],
 	"relics": ["core/systems/economy_system.gd"],
 	"relic_tokens": ["core/systems/economy_system.gd"],
 	"next_token_id": ["core/systems/economy_system.gd"],
@@ -620,7 +620,7 @@ func test_g4a_systems_are_internal() -> void:
 	assert_int(new_probe.size()).is_equal(1)
 	assert_array(new_near).is_empty()  # other classes, and a system outside systems/
 	for n in ["SimContext", "LightSystem", "SanitySystem", "EconomySystem", "CombatSystem",
-			"AllySystem"]:
+			"AllySystem", "SpawnSystem"]:
 		assert_bool(pattern.contains(n)).override_failure_message(n + " not in " + pattern).is_true()
 	assert_array(hits).override_failure_message(
 		"systems must be internal (no Simulation, no foreign _private, no own RNG, SimEvent.new "
@@ -817,18 +817,18 @@ func test_g4b_a_planted_write_to_an_economy_field_makes_the_guard_fail() -> void
 
 
 ## LT-82 (B7): the charges and the allied units belong to Combat and Ally; the shared entity
-## id counter has exactly these two writers until B8 gives it one allocator.
+## id counter has one writer, SimContext.next_id (LT-83).
 const G4B_COMBAT_ALLY_WRITES := {
 	"blasts": "_state.blasts.append(b)",
 	"next_blast_id": "_state.next_blast_id += 1",
 	"allies": "_state.allies.append(a)",
-	"next_id": "_state.next_id += 1",
+	"next_id": "state.next_id += 1",
 }
 const G4B_COMBAT_ALLY_OWNERS := {
 	"blasts": ["core/systems/combat_system.gd"],
 	"next_blast_id": ["core/systems/combat_system.gd"],
 	"allies": ["core/systems/ally_system.gd"],
-	"next_id": ["core/simulation.gd", "core/systems/ally_system.gd"],
+	"next_id": ["core/systems/sim_context.gd"],
 }
 
 
@@ -856,4 +856,57 @@ func test_g4b_a_planted_write_to_a_combat_or_ally_field_makes_the_guard_fail() -
 		with_plant.append("core/wave_director.gd")  # an owner of neither
 		with_plant.sort()
 		assert_array(with_plant).override_failure_message(field).is_not_equal(G4B_OWNERS[field])
+	scan.free()
+
+
+## LT-83 (B8): next_id has one writer file (SimContext), lighthouse_hp two (facade, SpawnSystem),
+## enemies one (SpawnSystem). A write from any other file lands in the writer list and so
+## differs from the pinned row.
+const G4B_SPAWN_ROWS := {
+	"next_id": ["core/systems/sim_context.gd"],
+	"lighthouse_hp": ["core/simulation.gd", "core/systems/spawn_system.gd"],
+	"enemies": ["core/systems/spawn_system.gd"],
+}
+
+
+func test_g4b_next_id_enemies_and_lighthouse_hp_have_the_pinned_writers() -> void:
+	var scan := SimBoundaryTest.new()
+	var writers := _g4b_writers(scan)
+	scan.free()
+	for field: String in G4B_SPAWN_ROWS:
+		assert_array(writers.get(field, [])).override_failure_message(field) \
+			.is_equal(G4B_SPAWN_ROWS[field])
+		assert_array(G4B_OWNERS[field]).override_failure_message(field + " pinned row") \
+			.is_equal(G4B_SPAWN_ROWS[field])
+
+
+## [planted text, field, file the plant is in]: a second next_id writer in the ally system or
+## the facade, and a third lighthouse_hp writer, make the guard's comparison fail.
+func test_g4b_a_planted_next_id_or_lighthouse_hp_write_makes_the_guard_fail() -> void:
+	var scan := SimBoundaryTest.new()
+	var writers := _g4b_writers(scan)
+	var plants := [
+		["_state.next_id += 1", "next_id", "core/systems/ally_system.gd"],
+		["_ctx.state.next_id = 5", "next_id", "core/systems/ally_system.gd"],
+		["state.next_id += 1", "next_id", "core/simulation.gd"],
+		["_state.lighthouse_hp -= 1", "lighthouse_hp", "core/systems/combat_system.gd"],
+		["_ctx.state.lighthouse_hp = 0", "lighthouse_hp", "core/systems/economy_system.gd"],
+		["state.lighthouse_hp = 0", "lighthouse_hp", "core/wave_director.gd"],
+	]
+	for p: Array in plants:
+		var hit := _g4b_written(scan, "func f() -> void:\n\t%s\n" % p[0])
+		assert_bool(hit.has(p[1])).override_failure_message("scan misses %s" % p[0]).is_true()
+		var with_plant: Array = writers.get(p[1], []).duplicate()
+		if not with_plant.has(p[2]):
+			with_plant.append(p[2])
+		with_plant.sort()
+		assert_array(with_plant).override_failure_message(p[0] + " in " + p[2]) \
+			.is_not_equal(G4B_OWNERS[p[1]])
+	# the owners themselves stay accepted: a plant in an owner file changes nothing
+	for owner: String in G4B_OWNERS["lighthouse_hp"]:
+		var same: Array = writers["lighthouse_hp"].duplicate()
+		if not same.has(owner):
+			same.append(owner)
+		same.sort()
+		assert_array(same).is_equal(G4B_OWNERS["lighthouse_hp"])
 	scan.free()

@@ -38,3 +38,11 @@ func day_only() -> SimCommand.CommandResult:
 	if state.phase == SimState.Phase.WAVE:
 		return SimCommand.CommandResult.NOT_BUILD_PHASE
 	return SimCommand.CommandResult.OK
+
+
+## LT-83: the one writer of state.next_id, the shared entity id counter (towers, allies,
+## enemies). Returns the id to use now and advances the counter (post-increment).
+func next_id() -> int:
+	var id := state.next_id
+	state.next_id += 1
+	return id
