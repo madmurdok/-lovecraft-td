@@ -749,7 +749,7 @@ func test_the_scans_cover_the_expected_files() -> void:
 	for f in pres:
 		assert_bool(f.begins_with("res://sim/") or f.begins_with("res://tests/")).is_false()
 	assert_array(_private_members_of_simulation()).contains(["_add_sanity", "_spawner",
-		"_pack_queue", "_emit"])
+		"_spawn", "_emit"])
 	assert_dict(_own_types(sim_files)).contains_keys(["Simulation", "GameConfig", "CommandResult",
 		"Phase", "SanityState"])
 

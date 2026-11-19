@@ -5,7 +5,7 @@ extends RefCounted
 ## e.status, e.dead, t.cooldown_ticks, t.burst_index, t.locked_id, state.blasts and
 ## state.next_blast_id. Built once by the sim facade, which orders the step slots and
 ## forwards the public names. Peers by constructor: Light (power / interval mult), Sanity
-## (threshold, kill regen), Economy (drop on kill). AllySystem holds this system; summons
+## (threshold, kill regen), Economy (drop on kill), Spawn (push_back). AllySystem holds this system; summons
 ## reach it back only through Callables the facade sets (set_ally_hooks): a method Callable
 ## keeps the object id, not a reference, so there is no RefCounted cycle.
 
@@ -19,19 +19,21 @@ var _config: GameConfig
 var _light: LightSystem
 var _sanity: SanitySystem
 var _economy: EconomySystem
+var _spawn: SpawnSystem
 ## AllySystem.spawn / AllySystem.allies_of, set by the facade after both systems exist.
 var _spawn_ally: Callable
 var _allies_of: Callable
 
 
 func _init(ctx: SimContext, light: LightSystem, sanity: SanitySystem,
-		economy: EconomySystem) -> void:
+		economy: EconomySystem, spawn: SpawnSystem) -> void:
 	_ctx = ctx
 	_state = ctx.state
 	_config = ctx.config
 	_light = light
 	_sanity = sanity
 	_economy = economy
+	_spawn = spawn
 
 
 ## The facade wires the summon path once: `spawn` places a unit (AllySystem.spawn), `allies_of`
@@ -360,7 +362,7 @@ func _cast_banish(t: SimTower, s: TowerDef.Level) -> void:
 	var immune := SimTime.ticks(float(s.effects.get("banish_immune_seconds", 0.0)))
 	for e in picks:
 		var from := e.route.position_at(e.distance)
-		push_back(e, cells)
+		_spawn.push_back(e, cells)
 		if immune > 0:
 			e.status["banish_immune_ticks"] = immune
 		var shot := {"def": t.def.id, "target": e.id, "hits": [e.id], "banish": true,
@@ -595,15 +597,6 @@ func _line_hits(origin: Vector2, end: Vector2, half_width: float,
 	return out
 
 
-## LT-29 P5: moves `e` `cells` back along its own route (path walkers along the path,
-## flyers along their straight line), never before its start. prev_distance follows, so the
-## render does not slide it backwards through the tick. Distance only decreases, so _leak
-## and _check_outcome are unaffected.
-func push_back(e: SimEnemy, cells: float) -> void:
-	e.distance = maxi(0, e.distance - roundi(cells * SimTime.UNITS_PER_CELL))
-	e.prev_distance = e.distance
-
-
 ## Slot 5, after a shot's damage (LT-29 §1.3-1.4): bleed on every hit still live; the chain
 ## pull on the shot's primary target only (Q4), if it was hit, is still live, has max_hp <=
 ## pull_max_hp (0 = no cap) and no pull immunity. SHOT was emitted before the damage (the
@@ -626,7 +619,7 @@ func _on_hit_effects(t: SimTower, s: TowerDef.Level, target: SimEnemy, hits: Arr
 	var cap: float = s.effects.get("pull_max_hp", 0.0)
 	if hits.has(target) and target.is_live() and (cap <= 0.0 or target.max_hp <= cap) \
 			and int(target.status.get("pull_immune_ticks", 0)) <= 0:
-		push_back(target, pull)
+		_spawn.push_back(target, pull)
 		var immune := SimTime.ticks(float(s.effects.get("pull_immune_seconds", 0.0)))
 		if immune > 0:
 			target.status["pull_immune_ticks"] = immune

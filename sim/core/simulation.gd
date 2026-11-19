@@ -26,12 +26,8 @@ var _sanity: SanitySystem
 var _light: LightSystem
 var _combat: CombatSystem
 var _ally: AllySystem
-var _ground_route: SimRoute
+var _spawn: SpawnSystem
 var _hallucinations := HallucinationSystem.new()
-## LT-63: pack members not entered yet, queue order: [due_tick, EnemyDef, is_fake, pack_of].
-## Sim only (fakes are queued too, LT-12 §1); real members enter in slot 7, fake ones in
-## slot 8 after the dawn check (_release_pack_members).
-var _pack_queue: Array = []
 
 
 func _init(p_config: GameConfig, run_seed: int) -> void:
@@ -46,10 +42,12 @@ func _init(p_config: GameConfig, run_seed: int) -> void:
 	_sanity = SanitySystem.new(_ctx, _economy)
 	_light = LightSystem.new(_ctx, _economy)
 	# LT-82: Ally holds Combat; Combat spawns through method Callables (object id, no ref).
-	_combat = CombatSystem.new(_ctx, _light, _sanity, _economy)
+	# LT-83: Combat holds Spawn (push_back); Spawn compacts allies through a method Callable.
+	_spawn = SpawnSystem.new(_ctx)
+	_combat = CombatSystem.new(_ctx, _light, _sanity, _economy, _spawn)
 	_ally = AllySystem.new(_ctx, _combat)
 	_combat.set_ally_hooks(_ally.spawn, _ally.allies_of)
-	_ground_route = SimRoute.from_cells(config.map.grid, config.map.path)
+	_spawn.set_ally_compact(_ally.compact)
 
 
 ## Without a spawner the run never wins (nothing can be "exhausted"). A WaveDirector
@@ -86,10 +84,10 @@ func step() -> void:
 	_ally.tick_allies()
 	_light.count_down_flare()
 	# 3. Movement: enemies, then allies chase them (LT-52; contact starts a hold).
-	_move()
+	_spawn.move()
 	_ally.move_allies()
 	# 4. Leaks.
-	_leak()
+	_spawn.leak()
 	# 5. Towers fire / damage: single and line shots (LT-6), AoE casts (LT-11, no sanity
 	# cost since LT-23); madness damage and astray shots (LT-13). Kills drop relic tokens
 	# (LT-27 §1.3).
@@ -106,93 +104,31 @@ func step() -> void:
 	_economy.settle_tokens()
 	# 7. Spawning: queued real pack members due now (LT-63), then the spawner, then fakes
 	# (LT-12) from the spawner's candidates.
-	_release_pack_members(false)
+	_spawn.release_pack_members(false)
 	if _spawner != null:
 		_spawner.tick(self)
 		_hallucinations.tick(self, _spawner)
 	# 8. Remove dead and leaked enemies and gone allies (LT-52); then the wave system settles
 	# a cleared wave (its bonus is paid before the outcome check, so the last wave's bonus
 	# lands too).
-	_compact()
+	_spawn.compact()
 	if _spawner != null:
 		_spawner.end_tick(self)
 	# 8b. Queued fake pack members due now enter after the dawn check (LT-63), so one due on
 	# the dawn tick is dropped with the rest instead of entering and dissolving at once.
-	_release_pack_members(true)
+	_spawn.release_pack_members(true)
 	# 9. Outcome.
 	_check_outcome()
 
 
-## Spawns `def_id` at the start of its route; a `pack` enemy spawns min..max of them
-## (rolled on SPAWN, or on SANITY for a fake so hallucinations never change real pack
-## sizes, LT-12 §2). LT-63: only the first member enters now; member k (1..count-1) is
-## queued and enters at the start of the route on tick now + k x ticks(pack.spacing_s), so
-## members never stack on one spot: a real one in slot 7 before the spawner's spawns, a
-## fake one in slot 8 after the wave system's dawn check. Every member's pack_of is the first member's id. Returns the first new id,
-## or 0 if `def_id` is unknown or the outcome is set (then nothing changes and no event is
-## emitted).
+## LT-83: SpawnSystem.spawn_enemy (pack rolls, queue, ids).
 func spawn_enemy(def_id: String, is_fake := false) -> int:
-	if state.outcome != SimState.Outcome.NONE:
-		return 0
-	if not config.enemies.has(def_id):
-		push_error("Simulation.spawn_enemy: unknown enemy \"%s\"" % def_id)
-		return 0
-	var def: EnemyDef = config.enemies[def_id]
-	if not def.traits.has("pack"):
-		return _enter(def, is_fake, 0)
-	var pack: Dictionary = def.traits["pack"]
-	var stream := SimRng.Stream.SANITY if is_fake else SimRng.Stream.SPAWN
-	var count := rng(stream).randi_range(int(pack["min"]), int(pack["max"]))
-	var spacing := SimTime.ticks(pack["spacing_s"])
-	var first_id := _enter(def, is_fake, state.next_id)
-	for k in range(1, count):
-		_pack_queue.append([state.tick + k * spacing, def, is_fake, first_id])
-	return first_id
+	return _spawn.spawn_enemy(def_id, is_fake)
 
 
-## LT-63: true while a real pack member is queued and not entered yet (a wave is not
-## cleared and the run is not won before it has entered).
+## LT-63: true while a real pack member is queued and not entered yet.
 func has_queued_real_members() -> bool:
-	for q: Array in _pack_queue:
-		if not q[2]:
-			return true
-	return false
-
-
-## LT-63: every queued pack member with is_fake == `fakes` whose due tick has come enters,
-## queue order (slot 7 for real members, slot 8 for fake ones). Draws no RNG.
-func _release_pack_members(fakes: bool) -> void:
-	if _pack_queue.is_empty():
-		return
-	var left: Array = []
-	for q: Array in _pack_queue:
-		if bool(q[2]) != fakes or int(q[0]) > state.tick:
-			left.append(q)
-		else:
-			_enter(q[1], q[2], q[3])
-	_pack_queue = left
-
-
-## One enemy of `def` enters at the start of its route on this tick, with a new id and
-## SPAWNED {def}; returns that id.
-func _enter(def: EnemyDef, is_fake: bool, pack_of: int) -> int:
-	var e := SimEnemy.new()
-	e.id = state.next_id
-	state.next_id += 1
-	e.def = def
-	e.hp = def.hp
-	e.max_hp = def.hp
-	e.is_fake = is_fake
-	e.pack_of = pack_of
-	e.spawn_tick = state.tick
-	e.base_units_per_tick = SimTime.units_per_tick(def.speed)
-	# Flyers start at S too (owner decision, §7 Q3) and fly straight to L.
-	e.route = _ground_route
-	if def.flying:
-		e.route = SimRoute.straight(state.map.grid, state.map.spawn, state.map.lighthouse)
-	state.enemies.append(e)
-	_emit(SimEvent.Type.SPAWNED, e.id, {"def": def.id})
-	return e.id
+	return _spawn.has_queued_real_members()
 
 
 func apply_damage(enemy_id: int, amount: float, source: String, ignore_armor := false) -> float:
@@ -227,8 +163,7 @@ func build_tower(def_id: String, cell: Vector2i) -> SimCommand.CommandResult:
 		return result
 	var def: TowerDef = config.towers[def_id]
 	var t := SimTower.new()
-	t.id = state.next_id
-	state.next_id += 1
+	t.id = _ctx.next_id()
 	t.def = def
 	t.cell = cell
 	t.pos = state.map.grid.centre(cell)
@@ -468,12 +403,12 @@ func debug_end_night() -> SimCommand.CommandResult:
 		return SimCommand.CommandResult.NOT_NIGHT
 	_ctx.log_command([state.tick, "debug_end_night"])
 	(_spawner as WaveDirector).debug_fire_all(self)
-	_pack_queue.clear()
+	_spawn.clear_pack_queue()
 	for e in state.enemies:
 		if e.is_live() and not e.is_fake:
 			e.dead = true
 			_emit(SimEvent.Type.DIED, e.id, {"source": "debug"})
-	_compact()
+	_spawn.compact()
 	return SimCommand.CommandResult.OK
 
 
@@ -761,52 +696,18 @@ func _madness_buff_blocked(e: SimEnemy) -> bool:
 	return _sanity.madness_buff_blocked(e)
 
 
-func _move() -> void:
-	for e in state.enemies:
-		if not e.is_live():
-			continue
-		e.prev_distance = e.distance
-		var step_units := roundi(e.base_units_per_tick * e.speed_mult)
-		e.distance = clampi(e.distance + step_units, 0, e.route.length)
-
-
 ## Test-only forwarders (LT-82, like LT-80 Q1: dynamite / branch_effects tests).
 func _push_back(e: SimEnemy, cells: float) -> void:
-	_combat.push_back(e, cells)
+	_spawn.push_back(e, cells)
 
 
 func _apply_bleed(e: SimEnemy, dps: float, seconds: float, source: String) -> void:
 	_combat.apply_bleed(e, dps, seconds, source)
 
 
-## Every enemy at the end of its route leaks; all leaks of the tick are processed (§5).
-## A fake never leaks: it dissolves there (LT-12 §3), no HP change and no LEAKED.
-func _leak() -> void:
-	for e in state.enemies:
-		if not e.is_live() or e.distance != e.route.length:
-			continue
-		if e.is_fake:
-			e.dissolved = true
-			_emit(SimEvent.Type.FAKE_DISSOLVED, e.id, {"reason": "lighthouse"})
-			continue
-		e.leaked = true
-		state.lighthouse_hp = maxi(0, state.lighthouse_hp - e.def.leak_damage)
-		_emit(SimEvent.Type.LEAKED, e.id,
-			{"damage": e.def.leak_damage, "hp_after": state.lighthouse_hp})
-
-
-## LT-12 §5 (called by the wave director when a wave is cleared): every live fake, in id
-## order, is marked dissolved with FAKE_DISSOLVED {reason}; then state.enemies is
-## compacted again, so the build phase starts with no enemy in `state`. Fake pack members
-## still queued (LT-63), due on this tick or later, are dropped without an event: they
-## never entered.
+## LT-12 §5 (called by the wave director when a wave is cleared): SpawnSystem.dissolve_fakes.
 func dissolve_fakes(reason: String) -> void:
-	_pack_queue = _pack_queue.filter(func(q: Array) -> bool: return not q[2])
-	for e in state.enemies:
-		if e.is_live() and e.is_fake:
-			e.dissolved = true
-			_emit(SimEvent.Type.FAKE_DISSOLVED, e.id, {"reason": reason})
-	_compact()
+	_spawn.dissolve_fakes(reason)
 
 
 ## The only way a scene may tell a fake (LT-12 §1): false unless debug_reveal_fakes.
@@ -822,22 +723,13 @@ func threshold() -> SanityConfig.Threshold:
 	return _sanity.threshold()
 
 
-func _compact() -> void:
-	var live: Array[SimEnemy] = []
-	for e in state.enemies:
-		if e.is_live():
-			live.append(e)
-	state.enemies = live
-	_ally.compact()
-
-
 ## Lose first, so a leak that empties HP on the last enemy is a loss (§5).
 func _check_outcome() -> void:
 	if state.lighthouse_hp == 0:
 		state.outcome = SimState.Outcome.LOST
 		_emit(SimEvent.Type.OUTCOME, 0, {"result": "lost"})
 		return
-	if _spawner == null or not _spawner.is_exhausted() or has_queued_real_members():
+	if _spawner == null or not _spawner.is_exhausted() or _spawn.has_queued_real_members():
 		return
 	for e in state.enemies:
 		if not e.is_fake:

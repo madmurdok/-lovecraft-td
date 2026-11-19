@@ -532,10 +532,10 @@ const G4B_OWNERS := {
 	"night_luck": ["core/simulation.gd", "core/wave_director.gd"],
 	"tick": ["core/simulation.gd"],
 	"outcome": ["core/simulation.gd"],
-	"lighthouse_hp": ["core/simulation.gd"],
+	"lighthouse_hp": ["core/simulation.gd", "core/systems/spawn_system.gd"],
 	"map": ["core/simulation.gd"],
-	"enemies": ["core/simulation.gd"],
-	"next_id": ["core/simulation.gd", "core/systems/ally_system.gd"],
+	"enemies": ["core/systems/spawn_system.gd"],
+	"next_id": ["core/systems/sim_context.gd"],
 	"relics": ["core/systems/economy_system.gd"],
 	"relic_tokens": ["core/systems/economy_system.gd"],
 	"next_token_id": ["core/systems/economy_system.gd"],
@@ -620,7 +620,7 @@ func test_g4a_systems_are_internal() -> void:
 	assert_int(new_probe.size()).is_equal(1)
 	assert_array(new_near).is_empty()  # other classes, and a system outside systems/
 	for n in ["SimContext", "LightSystem", "SanitySystem", "EconomySystem", "CombatSystem",
-			"AllySystem"]:
+			"AllySystem", "SpawnSystem"]:
 		assert_bool(pattern.contains(n)).override_failure_message(n + " not in " + pattern).is_true()
 	assert_array(hits).override_failure_message(
 		"systems must be internal (no Simulation, no foreign _private, no own RNG, SimEvent.new "
@@ -817,18 +817,18 @@ func test_g4b_a_planted_write_to_an_economy_field_makes_the_guard_fail() -> void
 
 
 ## LT-82 (B7): the charges and the allied units belong to Combat and Ally; the shared entity
-## id counter has exactly these two writers until B8 gives it one allocator.
+## id counter has one writer, SimContext.next_id (LT-83).
 const G4B_COMBAT_ALLY_WRITES := {
 	"blasts": "_state.blasts.append(b)",
 	"next_blast_id": "_state.next_blast_id += 1",
 	"allies": "_state.allies.append(a)",
-	"next_id": "_state.next_id += 1",
+	"next_id": "state.next_id += 1",
 }
 const G4B_COMBAT_ALLY_OWNERS := {
 	"blasts": ["core/systems/combat_system.gd"],
 	"next_blast_id": ["core/systems/combat_system.gd"],
 	"allies": ["core/systems/ally_system.gd"],
-	"next_id": ["core/simulation.gd", "core/systems/ally_system.gd"],
+	"next_id": ["core/systems/sim_context.gd"],
 }
 
 
