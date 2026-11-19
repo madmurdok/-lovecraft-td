@@ -535,13 +535,13 @@ const G4B_OWNERS := {
 	"lighthouse_hp": ["core/simulation.gd"],
 	"map": ["core/simulation.gd"],
 	"enemies": ["core/simulation.gd"],
-	"next_id": ["core/simulation.gd"],
+	"next_id": ["core/simulation.gd", "core/systems/ally_system.gd"],
 	"relics": ["core/systems/economy_system.gd"],
 	"relic_tokens": ["core/systems/economy_system.gd"],
 	"next_token_id": ["core/systems/economy_system.gd"],
-	"blasts": ["core/simulation.gd"],
-	"next_blast_id": ["core/simulation.gd"],
-	"allies": ["core/simulation.gd"],
+	"blasts": ["core/systems/combat_system.gd"],
+	"next_blast_id": ["core/systems/combat_system.gd"],
+	"allies": ["core/systems/ally_system.gd"],
 	"towers": ["core/simulation.gd"],
 	"tower_at": ["core/simulation.gd"],
 }
@@ -619,7 +619,8 @@ func test_g4a_systems_are_internal() -> void:
 	assert_array(facade_hits).is_not_empty()  # the facade really builds the systems
 	assert_int(new_probe.size()).is_equal(1)
 	assert_array(new_near).is_empty()  # other classes, and a system outside systems/
-	for n in ["SimContext", "LightSystem", "SanitySystem", "EconomySystem"]:
+	for n in ["SimContext", "LightSystem", "SanitySystem", "EconomySystem", "CombatSystem",
+			"AllySystem"]:
 		assert_bool(pattern.contains(n)).override_failure_message(n + " not in " + pattern).is_true()
 	assert_array(hits).override_failure_message(
 		"systems must be internal (no Simulation, no foreign _private, no own RNG, SimEvent.new "
