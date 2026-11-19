@@ -26,9 +26,11 @@ class SpyFx:
 	extends FxLayer
 	var warmups := 0
 	var cold: Array[Array] = []  ## per warm-up call: [line, polyline, polygon] still cold
+	var stamps: Array[int] = []  ## LT-84 F7: Engine.get_process_frames() of each warm-up
 
 	func _draw_warmup() -> void:
 		warmups += 1
+		stamps.append(Engine.get_process_frames())
 		cold.append([not _line_drawn, not _polyline_drawn, not _polygon_drawn])
 		super._draw_warmup()
 
@@ -37,6 +39,7 @@ class SpyFx:
 class SpyBoard:
 	extends Board
 	var draws := 0
+	var stamps: Array[int] = []  ## LT-84 F7: Engine.get_process_frames() of each board draw
 	var spy_fx := SpyFx.new()
 	var warmups: int:
 		get:
@@ -50,6 +53,7 @@ class SpyBoard:
 
 	func _draw() -> void:
 		draws += 1
+		stamps.append(Engine.get_process_frames())
 		super._draw()
 
 
@@ -118,6 +122,8 @@ func test_warmup_draws_on_every_frame_while_no_effect_has_drawn() -> void:
 	assert_int(b.draws).is_greater(0)
 	assert_int(b.warmups).is_greater(0)
 	assert_int(b.warmups).is_equal(b.draws)  # every draw before an effect drew warms up
+	# LT-84 F7: and in the same process frame: FxLayer is not drawn a frame after the board
+	assert_array(b.spy_fx.stamps).is_equal(b.stamps)
 
 
 func test_board_without_a_game_draws_no_warmup() -> void:
@@ -149,6 +155,7 @@ func test_warmup_keeps_drawing_after_the_old_half_second_gate() -> void:
 	await _draw_frames(b, 2)
 	assert_int(b.warmups).is_greater(before)
 	assert_int(b.warmups).is_equal(b.draws)
+	assert_array(b.spy_fx.stamps).is_equal(b.stamps)  # LT-84 F7: same frame as the board draw
 
 
 func test_warmup_stops_once_tracer_wave_and_harpoon_have_drawn() -> void:

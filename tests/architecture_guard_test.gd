@@ -149,13 +149,40 @@ func test_g3_one_cell_centre() -> void:
 
 ## G7 (LT-84, B9): selection via the model. Under ui/, scenes/ and tools/ nothing assigns the
 ## board's selection fields (`selected_cell / _range / _glyph / _cast =`, the 21 UI writes
-## LT-65 #12 found) nor a SelectionModel field (`selection.cell = ...`) outside
-## scenes/board/selection_model.gd: the panels call its methods, which emit `changed`.
-## Comparisons (`==`, `!=`) are reads and pass.
+## LT-65 #12 found) nor a SelectionModel field outside scenes/board/selection_model.gd: the
+## panels call its methods, which emit `changed`. Forms caught (LT-84 F2): `selection.cell =`,
+## compound `selection.range_cells += 1`, an alias (`var s := game.selection` or any name
+## typed `: SelectionModel`) then `s.cell = c`, the private `_assign(` and `selection.set(`.
+## Comparisons (`==`, `!=`, `<=`, `>=`) are reads and pass.
 const G7_DIRS := ["res://ui", "res://scenes", "res://tools"]
 const G7_HOME := "res://scenes/board/selection_model.gd"
-const G7_DENY := "\\bselected_(cell|range|glyph|cast)\\s*=(?!=)" \
-	+ "|\\bselection\\.(cell|range_cells|glyph|cast)\\s*=(?!=)"
+const G7_WRITE_OP := "\\s*[-+*/%|&^]?=(?!=)"
+const G7_DENY := "\\bselected_(cell|range|glyph|cast)" + G7_WRITE_OP \
+	+ "|\\bselection\\.(cell|range_cells|glyph|cast)" + G7_WRITE_OP \
+	+ "|\\bselection\\.(set|_assign)\\(|\\b_assign\\("
+## A name that holds a SelectionModel: typed `: SelectionModel` (var, parameter) or `var x =
+## <anything>.selection` / `SelectionModel.new()`.
+const G7_ALIAS := "\\b(\\w+)\\s*:\\s*SelectionModel\\b" \
+	+ "|\\bvar\\s+(\\w+)\\s*:?=\\s*(?:[\\w.]*\\.)?selection\\s*$" \
+	+ "|\\b(\\w+)\\s*:?=\\s*SelectionModel\\.new\\("
+
+
+## `file:line: match` for every selection write in `text`: G7_DENY plus a field write through
+## any alias of a SelectionModel found in the same file.
+func _g7_hits(scan: SimBoundaryTest, file: String, text: String) -> Array[String]:
+	var alias_re := RegEx.create_from_string(G7_ALIAS)
+	var aliases: Array[String] = []
+	for st: Array in _statements(scan, text):
+		for m in alias_re.search_all(st[1]):
+			for g in range(1, 4):
+				var n := m.get_string(g)
+				if not n.is_empty() and n != "selection" and not aliases.has(n):
+					aliases.append(n)
+	var hits := _find_joined(scan, file, text, G7_DENY)
+	if not aliases.is_empty():
+		hits.append_array(_find_joined(scan, file, text,
+			"\\b(" + "|".join(aliases) + ")\\.(cell|range_cells|glyph|cast)" + G7_WRITE_OP))
+	return hits
 
 
 func test_g7_selection_is_written_only_through_the_model() -> void:
@@ -167,24 +194,61 @@ func test_g7_selection_is_written_only_through_the_model() -> void:
 			if f == G7_HOME:
 				home_scanned = true
 				continue
-			hits.append_array(_find_joined(scan, f, FileAccess.get_file_as_string(f), G7_DENY))
-	var probes := ["game.board.selected_cell = c", "board.selected_range=0.0",
-		"b.selected_glyph = \"\"", "game.selection.cast = \"light\"",
-		"game.selection.range_cells = r"]
-	var reads := ["if game.board.selected_range != r:", "x = sel.cell == c",
-		"game.selection.set_ring(r, cast)"]
-	var probe_hits := 0
-	for p: String in probes:
-		probe_hits += _find_joined(scan, "probe.gd", p, G7_DENY).size()
-	var read_hits := 0
-	for p: String in reads:
-		read_hits += _find_joined(scan, "probe.gd", p, G7_DENY).size()
+			hits.append_array(_g7_hits(scan, f, FileAccess.get_file_as_string(f)))
 	scan.free()
-	assert_int(probe_hits).is_equal(probes.size())  # each write form is caught
-	assert_int(read_hits).is_equal(0)  # reads and method calls pass
 	assert_bool(home_scanned).is_true()  # the model is in the scope
 	assert_array(hits).override_failure_message(
 		"selection written outside SelectionModel: " + ", ".join(hits)).is_empty()
+
+
+## The guard fires on planted violations (each source string is one violation) and not on
+## reads, comparisons, method calls or other objects' `.cell`.
+func test_g7_catches_planted_writes_and_passes_reads() -> void:
+	var scan := SimBoundaryTest.new()
+	var planted := {
+		"board field": "game.board.selected_cell = c",
+		"board field spaced": "board.selected_range=0.0",
+		"board glyph": "b.selected_glyph = \"\"",
+		"board cast compound": "b.selected_cast += \"x\"",
+		"direct cell": "game.selection.cell = c",
+		"direct range": "game.selection.range_cells = r",
+		"direct compound": "game.selection.range_cells += 1.0",
+		"direct compound minus": "selection.range_cells -= 1.0",
+		"alias var": "var s = game.selection\ns.cell = c",
+		"alias inferred": "var sel := board.selection\nsel.glyph = \"R\"",
+		"alias compound": "var sel := board.selection\nsel.range_cells *= 2.0",
+		"alias typed var": "var m: SelectionModel = make()\nm.cast = \"light\"",
+		"alias typed param": "func f(m: SelectionModel, c: Vector2i) -> void:\n\tm.cell = c",
+		"alias new": "var m := SelectionModel.new()\nm.cell = c",
+		"alias multiline": "var s := game.selection\ns.range_cells \\\n\t= 3.0",
+		"private _assign": "game.selection._assign(c, 0.0, \"\", \"\")",
+		"bare _assign": "_assign(c, 0.0, \"\", \"\")",
+		"set()": "game.selection.set(\"cell\", c)",
+	}
+	var missed: Array[String] = []
+	for k: String in planted:
+		if _g7_hits(scan, "probe.gd", planted[k]).is_empty():
+			missed.append(k)
+	var reads := {
+		"compare": "if game.board.selected_range != r:",
+		"equals": "x = sel.cell == c",
+		"alias compare": "var s := game.selection\nif s.cell == c and s.range_cells >= 1.0:",
+		"alias read": "var s := game.selection\nx = s.cell",
+		"alias le": "var s := game.selection\nok = s.range_cells <= 2.0",
+		"methods": "game.selection.set_ring(r, cast)\ngame.selection.clear()",
+		"other object": "var t := sim.tower_at_cell(c)\nt.cell = c",
+		"comment": "# game.selection.cell = c",
+		"string": "x = \"selection.cell = c\"",
+	}
+	var false_hits: Array[String] = []
+	for k: String in reads:
+		if not _g7_hits(scan, "probe.gd", reads[k]).is_empty():
+			false_hits.append(k)
+	scan.free()
+	assert_array(missed).override_failure_message(
+		"G7 did not fire on: " + ", ".join(missed)).is_empty()
+	assert_array(false_hits).override_failure_message(
+		"G7 fired on a read: " + ", ".join(false_hits)).is_empty()
 
 
 ## G10 (LT-77): one topology. Outside the topology files (sim/rules/*grid*.gd) no
@@ -397,6 +461,11 @@ func test_g6d_game_refreshes_no_panel_except_the_hud_in_ready() -> void:
 ## unclosed ( [ { takes the next one; the match is reported at the statement's first line.
 func _find_joined(scan: SimBoundaryTest, file: String, text: String,
 		pattern: String) -> Array[String]:
+	return scan._find(file, _statements(scan, text), pattern)
+
+
+## The statements of `text` as [first line, joined code] (see _find_joined).
+func _statements(scan: SimBoundaryTest, text: String) -> Array:
 	var joined := []
 	var buf := ""
 	var first := 0
@@ -419,4 +488,4 @@ func _find_joined(scan: SimBoundaryTest, file: String, text: String,
 			buf = ""
 	if not buf.is_empty():
 		joined.append([first, buf])
-	return scan._find(file, joined, pattern)
+	return joined
