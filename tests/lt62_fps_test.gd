@@ -189,7 +189,7 @@ func test_spike_line_has_ms_and_context_in_insertion_order() -> void:
 
 
 func test_flag_creates_stats_in_a_debug_build_and_no_flag_does_not() -> void:
-	await _start_game(PackedStringArray([Game.FRAME_STATS_ARG]))
+	await _start_game(PackedStringArray([DebugArgs.FRAME_STATS_ARG]))
 	assert_bool(_game.frame_stats != null).is_equal(OS.is_debug_build())
 	_game.queue_free()
 	await _start_game(PackedStringArray())
@@ -199,7 +199,7 @@ func test_flag_creates_stats_in_a_debug_build_and_no_flag_does_not() -> void:
 func test_spike_interval_prints_one_line_under_the_flag() -> void:
 	if not OS.is_debug_build():
 		return
-	await _start_game(PackedStringArray([Game.FRAME_STATS_ARG]))
+	await _start_game(PackedStringArray([DebugArgs.FRAME_STATS_ARG]))
 	_game.advance(0.0)  # first frame only records the time
 	_watch_log()
 	OS.delay_msec(130)
@@ -212,7 +212,7 @@ func test_spike_interval_prints_one_line_under_the_flag() -> void:
 func test_fast_and_first_frames_print_no_spike_line() -> void:
 	if not OS.is_debug_build():
 		return
-	await _start_game(PackedStringArray([Game.FRAME_STATS_ARG]))
+	await _start_game(PackedStringArray([DebugArgs.FRAME_STATS_ARG]))
 	_watch_log()
 	_game.advance(0.0)  # first frame: no interval to judge
 	_game.advance(0.0)  # microseconds later
@@ -231,7 +231,7 @@ func test_no_spike_line_without_the_flag() -> void:
 
 
 func test_spike_context_reports_the_run_without_changing_it() -> void:
-	await _start_game(PackedStringArray([Game.FRAME_STATS_ARG]))
+	await _start_game(PackedStringArray([DebugArgs.FRAME_STATS_ARG]))
 	var before := [_game.sim.state.tick, _game.sim.state.sanity, _game.sim.state.enemies.size()]
 	var ctx := _game.spike_context(2_500_000)
 	assert_array(ctx.keys()).is_equal(
@@ -248,7 +248,7 @@ func test_spike_context_reports_the_run_without_changing_it() -> void:
 
 
 func test_events_are_counted_by_type_only_under_the_flag_and_cleared_by_advance() -> void:
-	await _start_game(PackedStringArray([Game.FRAME_STATS_ARG]))
+	await _start_game(PackedStringArray([DebugArgs.FRAME_STATS_ARG]))
 	if _game.frame_stats == null:
 		return  # release build: no stats
 	_game.sim._add_sanity(-5.0, "test", 0)

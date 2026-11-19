@@ -48,7 +48,7 @@ func _buildable(n: int) -> Vector2i:
 func _tower(def_id: String) -> SimTower:
 	var cell := _buildable(_next_cell)
 	_next_cell += 1
-	var r := _game.build(def_id, cell)
+	var r := _game.commands.build(def_id, cell)
 	assert_int(r as int).override_failure_message("build %s at %s -> %d" % [def_id, cell, r]) \
 		.is_equal(Simulation.CommandResult.OK)
 	return _game.sim.tower_by_id(_game.sim.state.tower_at[cell])

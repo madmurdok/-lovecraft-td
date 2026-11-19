@@ -120,7 +120,7 @@ func test_percentile_does_not_mutate_its_input() -> void:
 
 func test_setup_creates_stats_only_with_the_flag_in_a_debug_build() -> void:
 	var g := GameFixture.make_game(null, _config, 7)
-	var expected := OS.is_debug_build() and OS.get_cmdline_user_args().has(Game.FRAME_STATS_ARG)
+	var expected := OS.is_debug_build() and OS.get_cmdline_user_args().has(DebugArgs.FRAME_STATS_ARG)
 	assert_bool(g.frame_stats != null).is_equal(expected)
 	g.free()
 
@@ -153,8 +153,7 @@ func test_advance_feeds_the_wall_clock_interval_not_the_delta() -> void:
 
 func test_hud_label_shows_the_stats_text() -> void:
 	await _start_game(true)
-	OS.delay_msec(260)  # past the label's 250 ms refresh throttle
 	for ms in [10.0, 20.0, 30.0]:
 		_game.frame_stats.push(ms)
-	_game.hud.refresh()
+	_game.hud.refresh_readouts()  # LT-78 Q3: the readout Timer's callback
 	assert_str(_game.hud.frame_label.text).is_equal(_game.frame_stats.text())

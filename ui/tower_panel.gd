@@ -7,11 +7,39 @@ extends VBoxContainer
 ## the two branch buttons (L2) with their role lines, "Max level" at L3, the target priority
 ## switch below them (LT-31, LT-59; hidden for an aura tower), and Sell with the refund
 ## Simulation.sell_refund reports now. Buttons are disabled with the reason whenever
-## Simulation.can_upgrade refuses them; refresh() re-reads everything each frame.
+## Simulation.can_upgrade refuses them. LT-78: a field group is rebuilt only when a sim
+## event marks it (REFRESH_ON, flush); refresh() syncs every group on open.
 ## `visible` is "the tower view is shown"; SidePanel shows its idle text otherwise.
 
 const MADNESS_WARNING := TowerInfo.MADNESS_WARNING
 const PRIORITY_MARK := "▸ "  ## prefixes the current target priority (LT-31)
+## LT-78 §1: field groups (bits of _dirty). Every rebuild first closes the view when the
+## tower is gone, so TOWER_SOLD needs only a group that does nothing else (G_GONE).
+const G_GONE := 1
+const G_HEAD := 2  ## title, role
+const G_TABLE := 4  ## stats table, lit line, special lines, kind line
+const G_UPGRADE := 8  ## upgrade title, buttons, role lines, "Max level"
+const G_PRIORITY := 16  ## target priority switch
+const G_SELL := 32  ## Sell and its refund
+const G_RANGE := 64  ## the board's range ring and cast preview
+const G_ALL := 127
+const _PH := G_UPGRADE | G_SELL  ## phase events: day-only commands
+## LT-78 §3 (rows 34-47): sim event -> the groups it may change (for any tower: an event
+## about another tower only costs a rebuild).
+const REFRESH_ON: Dictionary[SimEvent.Type, int] = {
+	SimEvent.Type.TOWER_SOLD: G_GONE,
+	SimEvent.Type.TOWER_UPGRADED: G_ALL,
+	SimEvent.Type.TOWER_LIT: G_TABLE,
+	SimEvent.Type.TARGET_PRIORITY_SET: G_PRIORITY,
+	SimEvent.Type.SANITY_CHANGED: G_TABLE,
+	SimEvent.Type.SANITY_CAP_CHANGED: G_TABLE | G_UPGRADE,
+	SimEvent.Type.SANITY_STATE_CHANGED: G_TABLE | G_UPGRADE,
+	SimEvent.Type.GOLD_CHANGED: G_UPGRADE,
+	SimEvent.Type.BUILD_STARTED: _PH,
+	SimEvent.Type.WAVE_STARTED: _PH,
+	SimEvent.Type.WAVE_CLEARED: _PH,
+	SimEvent.Type.OUTCOME: _PH | G_PRIORITY,
+}
 
 var game: Game
 var tower_id := 0
@@ -31,6 +59,8 @@ var sell_button: Button
 var priority_title: Label
 ## SimTower.TARGET_PRIORITIES mode -> its button; the current mode is marked and disabled.
 var priority_buttons: Dictionary[String, Button] = {}
+var refresh_count := 0  ## LT-78 §8 B1: field groups rebuilt so far (refresh and flush)
+var _dirty := 0  ## groups marked by on_event since the last flush
 
 
 func _ready() -> void:
@@ -77,6 +107,8 @@ func _ready() -> void:
 	sell_button = SidePanel.make_button("SellButton", _on_sell_pressed)
 	add_child(sell_button)
 	add_child(SidePanel.make_button("CancelButton", close, "Cancel"))
+	if game != null and game.side_panel != null and game.side_panel.scroll != null:
+		game.side_panel.scroll.resized.connect(_on_scroll_resized)
 
 
 func open_for(p_tower_id: int) -> void:
@@ -99,47 +131,85 @@ func close() -> void:
 	game.board.queue_redraw()
 
 
-## Closes itself once the tower is gone; otherwise re-reads level, stats, the upgrade
-## buttons (cost, can_upgrade, sanity warning), the refund and the range ring.
+## LT-78 §1: full sync of every group (open_for, tests). Closes the view once the tower is
+## gone; otherwise re-reads level, stats, the upgrade buttons (cost, can_upgrade, sanity
+## warning), the priority switch, the refund and the range ring.
 func refresh() -> void:
+	_dirty = 0
+	_rebuild(G_ALL)
+
+
+## LT-78 §1: marks the groups `ev` may change; flush() rebuilds them once per drain.
+func on_event(ev: SimEvent) -> void:
+	_dirty |= REFRESH_ON.get(ev.type, 0)
+
+
+## LT-78 §1: rebuilds the marked groups; a hidden view drops the marks (open_for syncs it).
+func flush() -> void:
+	if _dirty == 0:
+		return
+	var mask := _dirty
+	_dirty = 0
+	_rebuild(mask)
+
+
+func _rebuild(mask: int) -> void:
 	if not visible:
 		return
 	var t := game.sim.tower_by_id(tower_id)
-	if t == null:
+	if t == null:  # LT-78 §3 row 47: sold (TOWER_SOLD) or never there
 		close()
 		return
 	var s := t.stats()
-	var at_max := t.level >= TowerDef.LEVEL_COUNT
-	title_label.text = "%s  L%d" % [t.def.name, t.level + 1]
-	if at_max:
-		title_label.text += " · " + s.name
-	role_label.text = s.role if at_max else t.def.role
-	role_label.visible = not role_label.text.is_empty()
 	var branches := game.sim.upgrade_branches(t)
-	_refresh_table(t, s, branches)
-	_refresh_priority(t)
-	upgrade_title.visible = not branches.is_empty()
-	max_label.visible = branches.is_empty()
-	for branch: String in upgrade_buttons:
-		var b := upgrade_buttons[branch]
-		var info := upgrade_infos[branch]
-		var target: TowerDef.Level = game.sim.upgrade_target(t, branch) if branches.has(branch) else null
-		b.visible = target != null
-		info.visible = target != null
-		if target == null:
-			continue
-		_refresh_upgrade(b, info, t, s, branch, target)
-	# LT-27 §3: towers are sold by day only.
-	var sell := game.sim.can_sell_tower(t.id)
-	sell_button.disabled = sell != Simulation.CommandResult.OK
-	sell_button.text = "Sell (+%s)" % TowerInfo.money(game.sim.sell_refund(t))
-	if sell_button.disabled:
-		sell_button.text += " (%s)" % TowerInfo.reason(sell)
-	var cast := Board.cast_of(s)  # LT-70 §5: the BUILD preview of a caster's radius
-	if game.board.selected_range != s.range_cells or game.board.selected_cast != cast:
-		game.board.selected_range = s.range_cells
-		game.board.selected_cast = cast
-		game.board.queue_redraw()
+	if mask & G_HEAD:
+		refresh_count += 1
+		var at_max := t.level >= TowerDef.LEVEL_COUNT
+		title_label.text = "%s  L%d" % [t.def.name, t.level + 1]
+		if at_max:
+			title_label.text += " · " + s.name
+		role_label.text = s.role if at_max else t.def.role
+		role_label.visible = not role_label.text.is_empty()
+	if mask & G_TABLE:
+		refresh_count += 1
+		_refresh_table(t, s, branches)
+	if mask & G_PRIORITY:
+		refresh_count += 1
+		_refresh_priority(t)
+	if mask & G_UPGRADE:
+		refresh_count += 1
+		upgrade_title.visible = not branches.is_empty()
+		max_label.visible = branches.is_empty()
+		for branch: String in upgrade_buttons:
+			var b := upgrade_buttons[branch]
+			var info := upgrade_infos[branch]
+			var target: TowerDef.Level = game.sim.upgrade_target(t, branch) \
+				if branches.has(branch) else null
+			b.visible = target != null
+			info.visible = target != null
+			if target == null:
+				continue
+			_refresh_upgrade(b, info, t, s, branch, target)
+	if mask & G_SELL:
+		refresh_count += 1
+		# LT-27 §3: towers are sold by day only.
+		var sell := game.sim.can_sell_tower(t.id)
+		sell_button.disabled = sell != Simulation.CommandResult.OK
+		sell_button.text = "Sell (+%s)" % TowerInfo.money(game.sim.sell_refund(t))
+		if sell_button.disabled:
+			sell_button.text += " (%s)" % TowerInfo.reason(sell)
+	if mask & G_RANGE:
+		refresh_count += 1
+		var cast := Board.cast_of(s)  # LT-70 §5: the BUILD preview of a caster's radius
+		if game.board.selected_range != s.range_cells or game.board.selected_cast != cast:
+			game.board.selected_range = s.range_cells
+			game.board.selected_cast = cast
+			game.board.queue_redraw()
+
+
+## LT-78 §3 row 38: the table's width follows the side panel's scroll area (layout, not sim).
+func _on_scroll_resized() -> void:
+	_rebuild(G_TABLE)
 
 
 func _refresh_upgrade(b: Button, info: Label, t: SimTower, s: TowerDef.Level, branch: String,
@@ -238,13 +308,13 @@ func _refresh_priority(t: SimTower) -> void:
 
 
 func _on_upgrade_pressed(branch: String) -> void:
-	game.upgrade(tower_id, branch)
+	game.commands.upgrade(tower_id, branch)
 
 
 func _on_priority_pressed(mode: String) -> void:
-	game.set_target_priority(tower_id, mode)
+	game.commands.set_target_priority(tower_id, mode)
 
 
 func _on_sell_pressed() -> void:
-	game.sell(tower_id)
+	game.commands.sell(tower_id)
 	close()

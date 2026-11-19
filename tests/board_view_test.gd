@@ -235,7 +235,7 @@ func test_tower_lights_and_the_lighthouse_glow_sit_at_cell_centres_in_world() ->
 	await _start_game()
 	_game.sim.state.gold = 100000
 	var c := _buildable_cell()
-	assert_int(_game.build(RIFLE, c)).is_equal(Simulation.CommandResult.OK)
+	assert_int(_game.commands.build(RIFLE, c)).is_equal(Simulation.CommandResult.OK)
 	await get_tree().process_frame
 	var t := _game.sim.tower_by_id(_game.sim.state.tower_at[c])
 	assert_vector(_game.lighting._tower_lights[t.id].position).is_equal(
@@ -287,7 +287,7 @@ func test_clicks_on_a_tower_and_on_the_lighthouse_open_their_panels() -> void:
 	await _start_game()
 	_game.sim.state.gold = 100000
 	var c := _buildable_cell()
-	assert_int(_game.build(RIFLE, c)).is_equal(Simulation.CommandResult.OK)
+	assert_int(_game.commands.build(RIFLE, c)).is_equal(Simulation.CommandResult.OK)
 	await get_tree().process_frame
 	await _click(_screen_of(c))
 	assert_bool(_game.tower_panel.visible).is_true()

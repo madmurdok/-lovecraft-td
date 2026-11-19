@@ -5,26 +5,8 @@ extends Node2D
 ## Scenes only read `sim.state` and call sim commands; no game rules live here.
 
 signal restart_requested
+signal speed_changed  ## LT-78: chosen_speed or paused changed (the HUD's speed group)
 
-const REVEAL_FAKES_ARG := "--reveal-fakes"  ## `-- --reveal-fakes` (debug builds only)
-## `-- --sanity=<v>` or `-- --sanity <v>` (debug builds only, LT-14, LT-21): sets sanity at
-## the start of the run through the sim's own sanity path, so SANITY_CHANGED /
-## SANITY_STATE_CHANGED fire as usual. User args must follow a bare `--`.
-const SANITY_ARG := "--sanity"
-## `-- --frame-stats` (debug builds only, LT-38 P1): shows the wall-clock frame time
-## (median / p90 over the last FrameStats.CAPACITY frames) in the HUD.
-const FRAME_STATS_ARG := "--frame-stats"
-## `-- --sandbox` (debug builds only, LT-67): a playtest run for late-game features. The run
-## starts with SANDBOX_GOLD money and a full oil stock (oil.start = oil.cap; the cap stays),
-## set in a copy of the config before the sim is built (GameConfig.sandboxed), so the sim stays
-## deterministic. SKIP_KEY skips ahead: by day it lights the lamp (sim call_wave), at night it
-## ends the night (sim debug_end_night, logged). The HUD shows a "SANDBOX" marker.
-const SANDBOX_ARG := "--sandbox"
-## `-- --mute` (any build, LT-87): mutes the Master bus for the run, so game windows that
-## agents open for screenshots and frame-time measures stay silent. Without it the run
-## leaves the bus as it is (unmuted by default).
-const MUTE_ARG := "--mute"
-const SANDBOX_GOLD := 100000  ## enough to build and fully upgrade every tower and the lighthouse
 const SKIP_KEY := KEY_N
 const UI_LAYER := 2  ## above SanityFx.SCREEN_LAYER, so the HUD is never distorted
 
@@ -38,7 +20,14 @@ var _last_frame_usec := 0
 ## LT-62 P2: SimEvent type name -> count of the events consumed in the latest advance (only
 ## with frame_stats); a spike line reports the frame before it, whose draw took the time.
 var _frame_events := {}
-var sandbox := false  ## LT-67: `--sandbox` in a debug build
+var debug := DebugArgs.new()  ## LT-78: the parsed launch args
+var commands: GameCommands  ## LT-78: player commands (build, sell, ...), built in setup
+## LT-67: `--sandbox` in a debug build (lives in `debug`; tests may set it after setup)
+var sandbox: bool:
+	get:
+		return debug.sandbox
+	set(v):
+		debug.sandbox = v
 
 var board: Board
 var lighting: Lighting  ## LT-8: darkness, beam, tower lights, sea fog (visual only)
@@ -58,44 +47,19 @@ func setup(
 	config: GameConfig, p_seed: int, args: PackedStringArray = OS.get_cmdline_user_args()
 ) -> void:
 	run_seed = p_seed
-	sandbox = OS.is_debug_build() and args.has(SANDBOX_ARG)
-	if sandbox:
-		config = config.sandboxed(SANDBOX_GOLD)
+	debug = DebugArgs.parse(args)
+	if debug.sandbox:
+		config = config.sandboxed(DebugArgs.SANDBOX_GOLD)
 	sim = Simulation.new(config, p_seed)
 	sim.set_spawner(WaveDirector.new(config.waves))
 	# LT-12 §1: debug builds only; the board then marks fakes via sim.debug_is_fake.
-	sim.debug_reveal_fakes = OS.is_debug_build() \
-		and args.has(REVEAL_FAKES_ARG)
-	apply_mute_arg(args)
-	if OS.is_debug_build():
-		var forced := debug_sanity_arg(args)
-		if forced >= 0.0:
-			sim.debug_set_sanity(forced)
-		if args.has(FRAME_STATS_ARG):
-			frame_stats = FrameStats.new()
-
-
-## Mutes the Master bus when `args` has MUTE_ARG; returns whether it did. Never unmutes.
-static func apply_mute_arg(args: PackedStringArray) -> bool:
-	if not args.has(MUTE_ARG):
-		return false
-	AudioServer.set_bus_mute(AudioServer.get_bus_index("Master"), true)
-	return true
-
-
-## The `--sanity=<v>` / `--sanity <v>` value clamped to >= 0, or -1 when absent or not a
-## number.
-static func debug_sanity_arg(args: PackedStringArray) -> float:
-	for i in args.size():
-		var v := ""
-		if args[i].begins_with(SANITY_ARG + "="):
-			v = args[i].trim_prefix(SANITY_ARG + "=")
-		elif args[i] == SANITY_ARG and i + 1 < args.size():
-			v = args[i + 1]
-		else:
-			continue
-		return maxf(v.to_float(), 0.0) if v.is_valid_float() else -1.0
-	return -1.0
+	sim.debug_reveal_fakes = OS.is_debug_build() and debug.reveal_fakes
+	DebugArgs.apply_mute(args)
+	if debug.sanity >= 0.0:
+		sim.debug_set_sanity(debug.sanity)
+	if debug.frame_stats:
+		frame_stats = FrameStats.new()
+	commands = GameCommands.new(sim, debug, _after_command)
 
 
 func _ready() -> void:
@@ -149,20 +113,8 @@ func _process(delta: float) -> void:
 func _unhandled_key_input(event: InputEvent) -> void:
 	var k := event as InputEventKey
 	if sandbox and k != null and k.pressed and not k.echo and k.keycode == SKIP_KEY:
-		skip_ahead()
+		commands.skip_ahead()
 		get_viewport().set_input_as_handled()
-
-
-## LT-67 (sandbox only): by day lights the lamp (call_wave), at night ends the night
-## (sim debug_end_night). Refused (NOT_BUILD_PHASE) outside a sandbox run.
-func skip_ahead() -> Simulation.CommandResult:
-	if not sandbox:
-		return Simulation.CommandResult.NOT_BUILD_PHASE
-	if sim.state.phase == SimState.Phase.WAVE:
-		var r := sim.debug_end_night()
-		_after_command()
-		return r
-	return call_wave()
 
 
 ## LT-62 P2: the context of a spike line at wall clock `now_usec`: run time, sim tick, sanity
@@ -197,115 +149,27 @@ func advance(delta: float) -> void:
 	var steps := clock.advance(delta)
 	for i in steps:
 		sim.step()
-	_consume_events()
+	# LT-78 §1: panels change only when events (or a running timer, on stepped frames) say so.
+	if _consume_events() > 0 or steps > 0:
+		_flush_ui()
+	if steps > 0:
+		hud.on_stepped()
 	board.alpha = clock.alpha()
 	board.tick_effects(delta)
 	relic_tokens.tick(delta)
 	board.queue_redraw()
-	hud.refresh()
-	picker.refresh()
-	tower_panel.refresh()
-	lighthouse_panel.refresh()
-
-
-# --- Player commands (forwarded to the sim) -------------------------------------------
-
-func build(def_id: String, cell: Vector2i) -> Simulation.CommandResult:
-	var r := sim.build_tower(def_id, cell)
-	_after_command()
-	return r
-
-
-func sell(tower_id: int) -> Simulation.CommandResult:
-	var r := sim.sell_tower(tower_id)
-	_after_command()
-	return r
-
-
-## LT-24: branch "" for L1 -> L2, "a"/"b" for L2 -> L3.
-func upgrade(tower_id: int, branch := "") -> Simulation.CommandResult:
-	var r := sim.upgrade_tower(tower_id, branch)
-	_after_command()
-	return r
-
-
-## LT-31: mode is one of SimTower.TARGET_PRIORITIES; allowed in any phase.
-func set_target_priority(tower_id: int, mode: String) -> Simulation.CommandResult:
-	var r := sim.set_target_priority(tower_id, mode)
-	_after_command()
-	return r
-
-
-func call_wave() -> Simulation.CommandResult:
-	var r := sim.call_wave()
-	_after_command()
-	return r
-
-
-## LT-27 §1.4: sells the whole stash (by day only).
-func sell_relics() -> Simulation.CommandResult:
-	var r := sim.sell_relics()
-	_after_command()
-	return r
-
-
-func buy_sanity() -> Simulation.CommandResult:
-	var r := sim.buy_sanity()
-	_after_command()
-	return r
-
-
-## LT-30: lighthouse level, by day, paid in money.
-func upgrade_lighthouse() -> Simulation.CommandResult:
-	var r := sim.upgrade_lighthouse()
-	_after_command()
-	return r
-
-
-## LT-30: one unit of lamp oil, by day.
-func buy_oil() -> Simulation.CommandResult:
-	var r := sim.buy_oil()
-	_after_command()
-	return r
-
-
-## LT-57 §4: oil for one flare, by day: buys one unit at a time (each a logged sim
-## buy_oil) up to flare_oil_to_buy() units, stopping at the first refusal. Returns OK when
-## at least one unit was bought, else the refusal.
-func buy_flare_oil() -> Simulation.CommandResult:
-	var r := Simulation.CommandResult.OK
-	var bought := 0
-	for i in flare_oil_to_buy():
-		r = sim.buy_oil()
-		if r != Simulation.CommandResult.OK:
-			break
-		bought += 1
-	if bought == 0 and r == Simulation.CommandResult.OK:
-		r = sim.can_buy_oil()
-	_after_command()
-	return Simulation.CommandResult.OK if bought > 0 else r
-
-
-## LT-57: units buy_flare_oil() tries (the rule is Simulation.oil_for_flare, LT-76).
-func flare_oil_to_buy() -> int:
-	return sim.oil_for_flare()
-
-
-## LT-30: the night flare, paid with oil.
-func fire_flare() -> Simulation.CommandResult:
-	var r := sim.fire_flare()
-	_after_command()
-	return r
 
 
 func toggle_speed() -> void:
 	chosen_speed = 2 if chosen_speed == 1 else 1
 	_apply_speed()
+	speed_changed.emit()
 
 
 func toggle_pause() -> void:
 	paused = not paused
 	_apply_speed()
+	speed_changed.emit()
 
 
 func _apply_speed() -> void:
@@ -316,20 +180,24 @@ func _apply_speed() -> void:
 func _after_command() -> void:
 	_consume_events()
 	board.queue_redraw()
-	hud.refresh()
-	picker.refresh()
-	tower_panel.refresh()
-	lighthouse_panel.refresh()
+	_flush_ui()
 
 
-func _consume_events() -> void:
-	for ev in sim.drain_events():
+## Hands the drained events to their consumers (the panels only mark field groups; see
+## _flush_ui). Returns how many events there were.
+func _consume_events() -> int:
+	var events := sim.drain_events()
+	for ev in events:
 		if frame_stats != null:
 			var type_name: String = SimEvent.Type.keys()[ev.type]
 			_frame_events[type_name] = _frame_events.get(type_name, 0) + 1
 		board.on_event(ev)
 		sanity_fx.on_event(ev)
 		relic_tokens.on_event(ev)
+		hud.on_event(ev)
+		picker.on_event(ev)
+		tower_panel.on_event(ev)
+		lighthouse_panel.on_event(ev)
 		if ev.type == SimEvent.Type.RELICS_CHANGED and ev.data.get("reason", "") == "kill" \
 				and ev.data.get("kind", "") == RelicTokens.STAR_STONE:
 			star_stones_found += 1
@@ -340,6 +208,16 @@ func _consume_events() -> void:
 			side_panel.visible = false
 			end_screen.show_result(ev.data.get("result", "") == "won", sim.state,
 				star_stones_found)
+	return events.size()
+
+
+## LT-78 §1: once per drain (never per event), each panel rebuilds the field groups the
+## drained events marked, so a command that emits several events is read in its final state.
+func _flush_ui() -> void:
+	hud.flush()
+	picker.flush()
+	tower_panel.flush()
+	lighthouse_panel.flush()
 
 
 ## LT-28: closes the build and tower views (a click on a cell, or one off the grid).

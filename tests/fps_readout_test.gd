@@ -1,7 +1,7 @@
 class_name FpsReadoutTest
 extends GdUnitTestSuite
-## LT-44: always-visible FPS label in the Hud (presentation only). The throttle is driven
-## through Hud's own timestamp/shown fields, so no test depends on the real frame rate.
+## LT-44: always-visible FPS label in the Hud (presentation only). LT-78: the readout Timer
+## calls Hud.refresh_readouts; tests call it directly, so none depends on the real frame rate.
 
 var _vp: SubViewport
 var _game: Game
@@ -51,28 +51,25 @@ func test_fps_label_exists_with_frame_stats() -> void:
 	assert_object(_game.hud.frame_label).is_not_null()
 
 
-func test_fps_refresh_is_throttled_and_formats_the_integer() -> void:
+func test_fps_readout_runs_on_a_quarter_second_timer_and_formats_the_integer() -> void:
 	await _start_game(false)
 	var hud: Hud = _game.hud
 	assert_int(Hud.FPS_INTERVAL_MSEC).is_equal(250)
-	# Inside the interval: refresh leaves the text alone.
-	# _fps_shown = -1 so the change guard cannot hide a missing throttle.
+	# LT-78 Q3: a 0.25 s Timer drives the readout, not the per-frame refresh.
+	assert_object(hud.readout_timer).is_not_null()
+	assert_float(hud.readout_timer.wait_time).is_equal_approx(0.25, 0.0001)
+	assert_bool(hud.readout_timer.one_shot).is_false()
+	assert_bool(hud.readout_timer.is_stopped()).is_false()
+	assert_bool(hud.readout_timer.timeout.is_connected(hud.refresh_readouts)).is_true()
+	# refresh() (field groups) leaves the readout alone.
 	hud.fps_label.text = "sentinel"
 	hud._fps_shown = -1
-	hud._fps_label_msec = Time.get_ticks_msec()
 	hud.refresh()
 	assert_str(hud.fps_label.text).is_equal("sentinel")
-	# Interval elapsed and nothing shown yet: text becomes "FPS <int>".
-	hud._fps_label_msec = Time.get_ticks_msec() - Hud.FPS_INTERVAL_MSEC
-	hud._fps_shown = -1
-	hud.refresh()
+	# The Timer callback with nothing shown yet: text becomes "FPS <int>".
+	hud.refresh_readouts()
 	assert_str(hud.fps_label.text).is_equal("FPS %d" % hud._fps_shown)
 	assert_int(hud._fps_shown).is_greater_equal(0)
-	# The timestamp was reset, so an immediate second refresh does nothing.
-	hud.fps_label.text = "sentinel"
-	hud._fps_shown = -1
-	hud.refresh()
-	assert_str(hud.fps_label.text).is_equal("sentinel")
 
 
 func test_fps_string_is_rebuilt_only_when_the_integer_changes() -> void:
@@ -81,14 +78,12 @@ func test_fps_string_is_rebuilt_only_when_the_integer_changes() -> void:
 	var before := int(Engine.get_frames_per_second())
 	hud.fps_label.text = "sentinel"
 	hud._fps_shown = before
-	hud._fps_label_msec = Time.get_ticks_msec() - Hud.FPS_INTERVAL_MSEC
-	hud.refresh()
+	hud.refresh_readouts()
 	if int(Engine.get_frames_per_second()) == before:  # Engine updates the value ~1/s
 		assert_str(hud.fps_label.text).is_equal("sentinel")
 	# A different shown value forces the rebuild.
 	hud._fps_shown = -2
-	hud._fps_label_msec = Time.get_ticks_msec() - Hud.FPS_INTERVAL_MSEC
-	hud.refresh()
+	hud.refresh_readouts()
 	assert_str(hud.fps_label.text).starts_with("FPS ")
 
 

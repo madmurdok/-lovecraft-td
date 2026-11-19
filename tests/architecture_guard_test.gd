@@ -221,6 +221,137 @@ func test_g11_the_sim_is_trig_free() -> void:
 		"trig in sim/ (cross-platform determinism): " + ", ".join(hits)).is_empty()
 
 
+## G6 (LT-78, B8): the UI follows sim events. Four static scans (comments and strings blanked).
+## G6a: `drain_events(` is called only in scenes/game.gd, tools/ and tests/ (and defined in
+## sim/): one consumer per drain. G6b: every SimEvent.Type is named as `SimEvent.Type.<KEY>`
+## in scenes/ or ui/ (a match arm, an if, a REFRESH_ON key), or is pinned in UNCONSUMED_OK
+## (the board draws those from state); both ways, so the list stays exact. G6c: no
+## `_process` / `_physics_process` in ui/ except PROCESS_OK (decor, gated by set_process:
+## B6 pins the gating). G6d: scenes/game.gd calls `.refresh()` on no panel except the one
+## `hud.refresh()` in `_ready`.
+const G6_DRAIN_HOMES := ["res://scenes/game.gd"]
+const UNCONSUMED_OK: PackedStringArray = ["SPAWNED", "ALLY_SUMMONED", "ALLY_GONE"]
+const PROCESS_OK: PackedStringArray = ["res://ui/sanity_bar.gd"]
+const G6_PROCESS := "\\bfunc\\s+_(physics_)?process\\s*\\("
+const G6_REFRESH := "\\b(hud|picker|tower_panel|lighthouse_panel)\\.refresh\\(\\)"
+
+
+func test_g6a_drain_events_only_in_the_frame_driver() -> void:
+	var scan := SimBoundaryTest.new()
+	var pattern := "(?<!func )\\bdrain_events\\("
+	var hits: Array[String] = []
+	var files: Array[String] = []
+	for dir in ["res://ui", "res://scenes", "res://sim"]:
+		files.append_array(scan._gd_files(dir))
+	for f in files:
+		if G6_DRAIN_HOMES.has(f):
+			continue
+		hits.append_array(scan._find(f, scan._code_lines(FileAccess.get_file_as_string(f)),
+			pattern))
+	var home_hits := scan._find("game.gd", scan._code_lines(
+		FileAccess.get_file_as_string(G6_DRAIN_HOMES[0])), pattern)
+	var probe := scan._find("probe.gd", scan._code_lines("var e = sim.drain_events()"), pattern)
+	var decl := scan._find("decl.gd", scan._code_lines("func drain_events() -> void:"), pattern)
+	scan.free()
+	assert_int(files.size()).is_greater(20)
+	assert_int(home_hits.size()).is_greater(0)  # the home really drains
+	assert_int(probe.size()).is_equal(1)
+	assert_array(decl).is_empty()  # the declaration is not a call
+	assert_array(hits).override_failure_message(
+		"drain_events( outside scenes/game.gd, tools/, tests/: " + ", ".join(hits)).is_empty()
+
+
+func test_g6b_every_sim_event_type_is_consumed_by_the_ui_or_pinned() -> void:
+	var scan := SimBoundaryTest.new()
+	var named := {}  # key -> first "file:line"
+	var files: Array[String] = []
+	for dir in ["res://scenes", "res://ui"]:
+		files.append_array(scan._gd_files(dir))
+	var re := RegEx.create_from_string("\\bSimEvent\\.Type\\.([A-Z_0-9]+)\\b")
+	for f in files:
+		for entry: Array in scan._code_lines(FileAccess.get_file_as_string(f)):
+			for m in re.search_all(entry[1]):
+				if not named.has(m.get_string(1)):
+					named[m.get_string(1)] = "%s:%d" % [f, entry[0]]
+	scan.free()
+	var keys: Array = SimEvent.Type.keys()
+	assert_int(keys.size()).is_greater(20)
+	var unconsumed: Array[String] = []
+	var wrongly_pinned: Array[String] = []
+	for key: String in keys:
+		if not named.has(key) and not UNCONSUMED_OK.has(key):
+			unconsumed.append(key)
+		if named.has(key) and UNCONSUMED_OK.has(key):
+			wrongly_pinned.append("%s (%s)" % [key, named[key]])
+	for key in UNCONSUMED_OK:
+		assert_bool(keys.has(key)).override_failure_message(
+			"UNCONSUMED_OK names no SimEvent.Type: " + key).is_true()
+	assert_array(unconsumed).override_failure_message(
+		"SimEvent.Type never named in scenes/ or ui/ (consume it or pin it in UNCONSUMED_OK): "
+		+ ", ".join(unconsumed)).is_empty()
+	assert_array(wrongly_pinned).override_failure_message(
+		"in UNCONSUMED_OK but consumed (drop it from the list): " + ", ".join(wrongly_pinned)
+	).is_empty()
+
+
+func test_g6c_no_process_in_ui_except_the_pinned_decor() -> void:
+	var scan := SimBoundaryTest.new()
+	var hits: Array[String] = []
+	var files: Array[String] = scan._gd_files("res://ui")
+	for f in files:
+		if PROCESS_OK.has(f):
+			continue
+		hits.append_array(scan._find(f, scan._code_lines(FileAccess.get_file_as_string(f)),
+			G6_PROCESS))
+	var pinned := scan._find("sanity_bar.gd", scan._code_lines(
+		FileAccess.get_file_as_string(PROCESS_OK[0])), G6_PROCESS)
+	var probes := scan._find("probe.gd", scan._code_lines(
+		"func _process(delta: float) -> void:\nfunc _physics_process(d) -> void:"), G6_PROCESS)
+	scan.free()
+	assert_int(files.size()).is_greater(8)
+	assert_int(pinned.size()).override_failure_message(
+		"PROCESS_OK entry has no _process: stale pin").is_equal(1)
+	assert_int(probes.size()).is_equal(2)
+	assert_array(hits).override_failure_message(
+		"_process in ui/ (panels change on events; pin decor in PROCESS_OK): "
+		+ ", ".join(hits)).is_empty()
+
+
+func test_g6d_game_refreshes_no_panel_except_the_hud_in_ready() -> void:
+	var scan := SimBoundaryTest.new()
+	var text := FileAccess.get_file_as_string("res://scenes/game.gd")
+	var code := scan._code_lines(text)
+	var hits := scan._find("game.gd", code, G6_REFRESH)
+	# The one allowed call lives between `func _ready(` and the next top-level `func`.
+	var ready_from := 0
+	var ready_to := 0
+	for entry: Array in code:
+		var line: String = entry[1]
+		if ready_from == 0 and line.begins_with("func _ready("):
+			ready_from = entry[0]
+		elif ready_from != 0 and ready_to == 0 and line.begins_with("func "):
+			ready_to = entry[0]
+	var outside: Array[String] = []
+	var inside := 0
+	for h in hits:
+		var n := int(h.get_slice(":", 1))
+		if n > ready_from and n < ready_to and h.ends_with("hud.refresh()"):
+			inside += 1
+		else:
+			outside.append(h)
+	var probe := scan._find("probe.gd", scan._code_lines("tower_panel.refresh()"), G6_REFRESH)
+	var near := scan._find("near.gd", scan._code_lines("hud.refresh_readouts()"), G6_REFRESH)
+	scan.free()
+	assert_int(ready_from).is_greater(0)
+	assert_int(ready_to).is_greater(ready_from)
+	assert_int(probe.size()).is_equal(1)
+	assert_array(near).is_empty()
+	assert_int(inside).override_failure_message("hud.refresh() in _ready").is_equal(1)
+	assert_array(outside).override_failure_message(
+		"panel refresh() in game.gd outside _ready (events drive the panels): "
+		+ ", ".join(outside)).is_empty()
+
+
 ## `file:line: match` for `pattern` over the code lines of `text` (comments and strings
 ## blanked) with each statement joined into one line: a line ending in `\` or with an
 ## unclosed ( [ { takes the next one; the match is reported at the statement's first line.

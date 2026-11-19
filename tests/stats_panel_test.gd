@@ -49,10 +49,10 @@ func _tower(def_id: String, path: Array = [], cell := Vector2i(-1, -1)) -> SimTo
 	_game.sim.state.gold = 100000
 	if cell == Vector2i(-1, -1):
 		cell = _buildable_cell()
-	assert_int(_game.build(def_id, cell)).is_equal(Simulation.CommandResult.OK)
+	assert_int(_game.commands.build(def_id, cell)).is_equal(Simulation.CommandResult.OK)
 	var t := _game.sim.tower_by_id(_game.sim.state.tower_at[cell])
 	for b: String in path:
-		assert_int(_game.upgrade(t.id, b)).is_equal(Simulation.CommandResult.OK)
+		assert_int(_game.commands.upgrade(t.id, b)).is_equal(Simulation.CommandResult.OK)
 	_game.tower_panel.open_for(t.id)
 	return t
 
@@ -219,7 +219,7 @@ func test_picker_and_panel_show_the_same_rows_in_the_same_order() -> void:
 			assert_array(row_labels).override_failure_message(tag).is_equal([""]
 				+ labels.slice(0, labels.size() - 1))
 			_game.close_panels()
-			assert_int(_game.sell(t.id)).is_equal(Simulation.CommandResult.OK)
+			assert_int(_game.commands.sell(t.id)).is_equal(Simulation.CommandResult.OK)
 
 
 ## §2: Now | L2 at L1, Now | A | B at L2, Now at L3, for every tower: each cell is its level's
@@ -231,15 +231,15 @@ func test_every_tower_compares_now_with_its_upgrades() -> void:
 		var t := await _tower(id)
 		_assert_compare(id + " L1", ["Now", "L2"],
 			[_values(t, def.levels[0]), _values(t, def.levels[1])])
-		assert_int(_game.upgrade(t.id, "")).is_equal(Simulation.CommandResult.OK)
+		assert_int(_game.commands.upgrade(t.id, "")).is_equal(Simulation.CommandResult.OK)
 		_game.tower_panel.refresh()
 		_assert_compare(id + " L2", ["Now", "A", "B"], [_values(t, def.levels[1]),
 			_values(t, def.branches["a"]), _values(t, def.branches["b"])])
-		assert_int(_game.upgrade(t.id, "b")).is_equal(Simulation.CommandResult.OK)
+		assert_int(_game.commands.upgrade(t.id, "b")).is_equal(Simulation.CommandResult.OK)
 		_game.tower_panel.refresh()
 		_assert_compare(id + " B", ["Now"], [_values(t, def.branches["b"])])
 		_game.close_panels()
-		assert_int(_game.sell(t.id)).is_equal(Simulation.CommandResult.OK)
+		assert_int(_game.commands.sell(t.id)).is_equal(Simulation.CommandResult.OK)
 
 
 ## Review finding 4: the reserve, dead-zone range and Resonator deltas the old delta lines
@@ -300,7 +300,7 @@ func test_special_lines_are_prefixed_by_column_only_with_upgrade_columns() -> vo
 		for line in TowerInfo.special_delta_lines(dyn.levels[1], dyn.branches[b]):
 			want.append("%s: %s" % [b.to_upper(), line])
 	assert_array(Array(_special_lines())).is_equal(want)
-	assert_int(_game.upgrade(t.id, "a")).is_equal(Simulation.CommandResult.OK)
+	assert_int(_game.commands.upgrade(t.id, "a")).is_equal(Simulation.CommandResult.OK)
 	_game.tower_panel.refresh()
 	assert_array(Array(_special_lines())).is_equal(Array(TowerInfo.special_lines(dyn.branches["a"])))
 
@@ -441,7 +441,7 @@ func test_the_flare_lights_a_tower_and_the_panel_marks_it() -> void:
 				cell = c
 	assert_int(cell.x).is_greater_equal(0)
 	var t := await _tower(RIFLE, [], cell)
-	assert_int(_game.call_wave()).is_equal(Simulation.CommandResult.OK)
+	assert_int(_game.commands.call_wave()).is_equal(Simulation.CommandResult.OK)
 	_game.sim.step()
 	assert_bool(t.lit).is_false()
 	_game.tower_panel.refresh()
@@ -492,7 +492,7 @@ func test_no_table_value_is_cut_at_1280x720() -> void:
 					if right > _game.side_panel.get_global_rect().end.x + 0.5:
 						cuts.append("%s table right %.1f" % [tag, right])
 					_game.close_panels()
-					assert_int(_game.sell(t.id)).is_equal(Simulation.CommandResult.OK)
+					assert_int(_game.commands.sell(t.id)).is_equal(Simulation.CommandResult.OK)
 	assert_array(cuts).is_empty()
 
 
@@ -598,6 +598,6 @@ func test_three_column_cards_keep_the_full_gap_and_fit_the_usable_width() -> voi
 		if w > widest["w"]:
 			widest = {"id": id, "w": w}
 		_game.close_panels()
-		assert_int(_game.sell(t.id)).is_equal(Simulation.CommandResult.OK)
+		assert_int(_game.commands.sell(t.id)).is_equal(Simulation.CommandResult.OK)
 	assert_int(three).is_greater(0)
 	assert_str(widest["id"]).is_equal("summoning_circle")

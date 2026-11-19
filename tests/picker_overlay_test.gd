@@ -262,7 +262,7 @@ func test_night_puts_only_by_day_in_the_title() -> void:
 	await _start_game()
 	_game.sim.state.gold = 10000
 	var cell := _buildable(3)
-	assert_int(_game.call_wave()).is_equal(R.OK)
+	assert_int(_game.commands.call_wave()).is_equal(R.OK)
 	_game.sim.step()
 	assert_int(_game.sim.state.phase).is_equal(SimState.Phase.WAVE)
 	await _open(cell)
@@ -411,7 +411,7 @@ func test_title_says_the_refusal_once_and_costs_redden_alone() -> void:
 	_game.picker.refresh()
 	assert_str(t.text).is_equal(TowerPicker.TITLE_TEXT)
 	assert_that(t.get_theme_color("font_color")).is_equal(Color.WHITE)
-	assert_int(_game.call_wave()).is_equal(R.OK)
+	assert_int(_game.commands.call_wave()).is_equal(R.OK)
 	_game.sim.step()
 	_game.sim.state.gold = 0
 	_game.picker.refresh()
@@ -510,7 +510,7 @@ func test_no_picker_text_is_cut_at_1280x720() -> void:
 	for night: bool in [false, true]:
 		_game.sim.state.gold = 10000
 		if night:
-			assert_int(_game.call_wave()).is_equal(R.OK)
+			assert_int(_game.commands.call_wave()).is_equal(R.OK)
 			_game.sim.step()
 		_game.picker.open_for(_buildable(3))
 		await get_tree().process_frame
