@@ -66,7 +66,7 @@ extends SceneTree
 ## Searchlight's radius does not count, `lit_tower_ticks` covers every light source),
 ## "lit_tower_ticks" / "shadow_tower_ticks" (tower-ticks with the net `lit` / `shadowed` flag)
 ## and "shadowed_mundane_builds" (mundane towers the bot placed inside a shadow caster's radius).
-## LT-70 §6: placement is light/shadow-aware for every strategy (`_cast_term`, CAST_WEIGHT);
+## LT-70 §6: placement is light/shadow-aware for every strategy (`Placement.cast_term`, CAST_WEIGHT);
 ## the `light` strategy builds the Searchlight.
 ## Loot is random (seeded LOOT stream): compare strategies over the default 10 seeds.
 ## RUN lines add "relics_sold" ($ from sales), "drops" (real relics credited per kind, config
@@ -78,19 +78,11 @@ const STRATEGIES := ["mundane", "occult", "mixed", "madness", "demolition", "bat
 
 ## LT-86: the harness (this file: CLI args, seed loop, RUN lines) plays the strategies of
 ## tools/bot/bot_strategies.gd, which place towers with tools/bot/bot_placement.gd. The
-## tunables stay readable here, under their old names.
+## tunables (BUILD_FIRST, BRANCH_PICK, CAP_FLOOR, ...) live there.
 const Strategies := preload("res://tools/bot/bot_strategies.gd")
 const Placement := preload("res://tools/bot/bot_placement.gd")
 
-const FLARE_MIN_LIVE := Strategies.FLARE_MIN_LIVE
 const MAX_TICKS := 30 * 60 * 30
-const CAP_FLOOR := Strategies.CAP_FLOOR
-const OCCULT_MAX_RIFLEMEN := Strategies.OCCULT_MAX_RIFLEMEN
-const MIXED_ORDER := Strategies.MIXED_ORDER
-const LIGHT_ORDER := Strategies.LIGHT_ORDER
-const CAST_WEIGHT := Placement.CAST_WEIGHT
-const BUILD_FIRST := Strategies.BUILD_FIRST
-const BRANCH_PICK := Strategies.BRANCH_PICK
 
 var _cfg: GameConfig
 var _score_cache := {}  ## def id -> Array of [score, cell] sorted best first
@@ -205,7 +197,7 @@ func _play(strat: String, run_seed: int) -> Dictionary:
 		drops[kind] = 0
 	while st.outcome == SimState.Outcome.NONE and st.tick < MAX_TICKS:
 		if st.tick % 30 == 0:
-			idx = _act(sim, strat, idx, built)
+			idx = _policy().act(sim, strat, idx, built)
 		sim.step()
 		for t in st.towers:
 			if t.lit:
@@ -318,38 +310,6 @@ func _policy() -> Strategies:
 	_strategy.flare = _flare
 	_strategy.branch_override = _branch_override
 	return _strategy
-
-
-func _order(strat: String, i: int, sim: Simulation, built: Dictionary) -> String:
-	return _policy().order(strat, i, sim, built)
-
-
-func _cap_allows(sim: Simulation, strat: String, delta: float) -> bool:
-	return _policy().cap_allows(sim, strat, delta)
-
-
-func _act(sim: Simulation, strat: String, idx: int, built: Dictionary) -> int:
-	return _policy().act(sim, strat, idx, built)
-
-
-func _lighthouse_next(sim: Simulation, strat: String) -> bool:
-	return _policy().lighthouse_next(sim, strat)
-
-
-func _next_upgrade(sim: Simulation, strat: String) -> Array:
-	return _policy().next_upgrade(sim, strat)
-
-
-func _best_cell(sim: Simulation, id: String) -> Vector2i:
-	return Placement.best_cell(_cfg, sim, id, _score_cache)
-
-
-func _cast_term(sim: Simulation, id: String, cell: Vector2i) -> int:
-	return Placement.cast_term(_cfg, sim, id, cell)
-
-
-func _in_shadow_radius(sim: Simulation, cell: Vector2i) -> bool:
-	return Placement.in_shadow_radius(sim, cell)
 
 
 ## LT-70 §6: `lit_shots` keeps its meaning (lighthouse beam / flare value): a lit shooter that
