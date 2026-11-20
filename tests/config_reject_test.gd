@@ -21,7 +21,7 @@ func test_missing_file_each_of_five() -> void:
 
 
 func test_missing_dir_rejects_all_files() -> void:
-	var r := ConfigLoader.load_dir("user://config_tests/does_not_exist")
+	var r := ConfigLoader.load_dir(ROOT.path_join("does_not_exist"))
 	assert_bool(r.ok).is_false()
 	assert_object(r.config).is_null()
 	for f: String in FILES:
