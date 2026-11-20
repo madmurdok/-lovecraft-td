@@ -42,3 +42,9 @@ without regenerating), and never edit the file by hand.
   compares; a full-text difference names the first differing line.
 - Regenerate it only together with the digests, with `scripts/golden-regen.sh` (it rewrites
   both and deletes stale `.jsonl` files); never edit it by hand.
+
+## Probe trait (LT-106)
+
+- `probe_trait.gd` (`ProbeTrait`): a test-only enemy trait that records every hook call.
+  `tests/trait_hooks_test.gd` injects it into `TraitCatalog` where a line in `_rows()` would
+  put it, so it doubles as the "one file + one catalog line" proof for a new trait.
