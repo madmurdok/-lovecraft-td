@@ -103,8 +103,12 @@ func _enter(def: EnemyDef, is_fake: bool, pack_of: int) -> int:
 	e.is_fake = is_fake
 	e.pack_of = pack_of
 	e.spawn_tick = _state.tick
-	# One rounding: units_per_tick of the scaled speed (LT-111 §3).
-	e.base_units_per_tick = SimTime.units_per_tick(def.speed * m[1])
+	# One rounding: units_per_tick of the scaled speed (LT-111 §3). A tiny speed_mult must
+	# not round a moving enemy down to 0 (it would never arrive and the wave never clear):
+	# floor at 1 unit/tick when the unscaled speed moves. At x1.0 scaled == unscaled, so
+	# the floor changes nothing there.
+	var units := SimTime.units_per_tick(def.speed * m[1])
+	e.base_units_per_tick = maxi(units, mini(SimTime.units_per_tick(def.speed), 1))
 	# Flyers start at S too (owner decision, §7 Q3) and fly straight to L.
 	e.route = _ground_route
 	if def.flying:
