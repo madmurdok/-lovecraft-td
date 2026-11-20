@@ -107,6 +107,20 @@ static func is_modified(fx: Dictionary) -> bool:
 		or fx.get("disabled", false)
 
 
+## LT-105 (Q3): the tower's channel `fx` is exactly what light alone writes for the net state
+## `lit` / `shadowed` (TowerRules.light_effect, never disabled): the panel keeps the lit /
+## shadowed wording then, else (another writer contributed, alone or with light) it shows
+## the generic NOW_MODIFIED wording.
+static func light_only(def: TowerDef, cfg: GameConfig, lit: bool, shadowed: bool,
+		fx: Dictionary) -> bool:
+	var light := TowerRules.light_effect(def, cfg, lit, shadowed)
+	return fx.get("power_mult", 1.0) == light["power_mult"] \
+		and fx.get("interval_mult", 1.0) == light["interval_mult"] \
+		and fx.get("miss_add", 0.0) == light["miss_add"] \
+		and fx.get("ignore_miss", false) == light["ignore_miss"] \
+		and not fx.get("disabled", false)
+
+
 ## LT-30 beam effect as a percent: mundane fire rate (1 / fire_interval_mult - 1), occult
 ## power (power_mult - 1); 0 for a mundane support tower (it never fires), a neutral
 ## multiplier or an absent block. LT-70: `shadow` reads the shadow block. LT-105: `fx`, when

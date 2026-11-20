@@ -257,14 +257,20 @@ static func lit_values(def: TowerDef, s: TowerDef.Level, cfg: GameConfig,
 ## LT-70 §5: with `shadow`, a shadowed tower's line: NOW_SHADOW + "fire −20%, +10% misses"
 ## (mundane shooter) or "+15% power" (occult). LT-105 D7: `fx`, when given, is the tower's
 ## modifier channel; `head`, when given, replaces the NOW_LIT / NOW_SHADOW head (the panel
-## passes NOW_MODIFIED for a tower changed by neither light nor shadow, Q3). A mundane line
-## ends ", no misses" with ignore_miss, else ", +N% misses" with miss_add > 0.
+## passes NOW_MODIFIED when another writer contributed, Q3). A mundane line ends
+## ", no misses" with ignore_miss, else ", +N% misses" with miss_add > 0. With the generic
+## NOW_MODIFIED head only: a disabled tower reads NOW_MODIFIED + "disabled"; a channel whose
+## fire / power percent is 0 still gets a line (mundane: "no misses" / "±N% misses"), or
+## the bare head "* Modified now" when nothing else is nameable. The light heads keep "" there.
 static func lit_line(def: TowerDef, s: TowerDef.Level, cfg: GameConfig, shadow := false,
 		fx := {}, head := "") -> String:
 	fx = TowerStatsModel.effect_of(def, cfg, shadow, fx)
+	var generic := head == NOW_MODIFIED
+	if generic and fx.get("disabled", false):
+		return head + "disabled"
 	var pct := TowerStatsModel.beam_percent(def, s, cfg, shadow, fx)
 	if pct == 0.0:
-		return ""
+		return _modified_misses(def, fx, head) if generic else ""
 	if head.is_empty():
 		head = NOW_SHADOW if shadow else NOW_LIT
 	var signed := "%s%s%%" % [MINUS if pct < 0.0 else "+", num(roundf(absf(pct)))]
@@ -275,6 +281,17 @@ static func lit_line(def: TowerDef, s: TowerDef.Level, cfg: GameConfig, shadow :
 		var add: float = fx["miss_add"]
 		return t + (", +%s%% misses" % num(add * 100.0) if add > 0.0 else "")
 	return head + signed + " power"
+
+
+## LT-105 (Q3): the generic status line of a channel with no fire / power change: a mundane
+## tower's miss change ("no misses", "+N% misses", "−N% misses"), else the bare head.
+static func _modified_misses(def: TowerDef, fx: Dictionary, head: String) -> String:
+	var add: float = fx.get("miss_add", 0.0)
+	if def.kind == "mundane" and fx.get("ignore_miss", false):
+		return head + "no misses"
+	if def.kind == "mundane" and add != 0.0:
+		return head + "%s%s%% misses" % [MINUS if add < 0.0 else "+", num(absf(add) * 100.0)]
+	return head.trim_suffix(": ")
 
 
 ## LT-43 Q3: the panel line under a sanity-scaled tower's table.
