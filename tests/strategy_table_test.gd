@@ -19,7 +19,7 @@ const SIGN := "elder_sign"
 const SHIPPED_NAMES := ["mundane", "occult", "mixed", "madness", "demolition", "battery",
 	"resonator", "gate", "circle", "light"]
 const TUNABLES := {"build_first": 5, "flare_min_live": 4}
-const WAVES3_DIR := "user://lt101_waves3"
+static var WAVES3_DIR := TestUserDir.path("lt101_waves3")  # LT-93: per-worktree
 
 var _saved_default: Table
 var _objs: Array[Object] = []
@@ -211,7 +211,8 @@ func test_names_are_read_only_on_every_table_and_a_copy_is_writable() -> void:
 
 
 func test_load_file_reads_a_file_and_reports_a_missing_one() -> void:
-	var path := "user://lt101_strategies_test.json"
+	var path := TestUserDir.path("lt101_strategies_test.json")
+	DirAccess.make_dir_recursive_absolute(path.get_base_dir())
 	var f := FileAccess.open(path, FileAccess.WRITE)
 	f.store_string(_text([{"name": "b", "cycle": [HARP]}, {"name": "a", "cycle": [RIFLE]}]))
 	f.close()

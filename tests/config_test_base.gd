@@ -5,7 +5,9 @@ extends GdUnitTestSuite
 
 const FILES := ["towers.json", "enemies.json", "waves.json", "economy.json", "sanity.json",
 	"map.json"]
-const ROOT := "user://config_tests"
+## Under this checkout's own test root (LT-93), so after() deletes only this worktree's
+## fixtures, never those of a concurrent run in another worktree (LT-114).
+static var ROOT := TestUserDir.path("config_tests")
 
 var _counter := 0
 
