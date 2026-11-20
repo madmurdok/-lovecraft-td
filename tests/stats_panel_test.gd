@@ -467,6 +467,57 @@ func test_the_flare_lights_a_tower_and_the_panel_marks_it() -> void:
 	assert_bool(_game.tower_panel.lit_label.visible).is_true()
 
 
+# --- LT-105: the panel reads the modifier channel (D7, Q3) -----------------------------------
+
+## The channel has no sim event: flush() rebuilds the table (G_TABLE, one refresh_count) when
+## the selected tower's channel changed since the last build, and not again while it holds.
+func test_flush_rebuilds_the_table_on_a_channel_change_with_no_event() -> void:
+	await _start_game()
+	var t := await _tower(RIFLE)
+	var panel := _game.tower_panel
+	var n := panel.refresh_count
+	panel.flush()
+	assert_int(panel.refresh_count).override_failure_message("unchanged channel").is_equal(n)
+	assert_bool(panel.lit_label.visible).is_false()
+	t.add_modifiers(1.0, 1.0, 0.0, false, true)  # a non-light writer: no event at all
+	panel.flush()
+	assert_int(panel.refresh_count).override_failure_message("changed channel").is_equal(n + 1)
+	assert_str(panel.lit_label.text).is_equal(TowerText.NOW_MODIFIED + "disabled")
+	panel.flush()
+	panel.flush()
+	assert_int(panel.refresh_count).override_failure_message("held channel").is_equal(n + 1)
+	t.reset_modifiers()  # the writer stopped: one more rebuild, the line goes
+	panel.flush()
+	assert_int(panel.refresh_count).is_equal(n + 2)
+	assert_bool(panel.lit_label.visible).is_false()
+
+
+## Q3: light alone keeps the beam head; light plus another writer, or another writer alone,
+## reads NOW_MODIFIED over the composed channel numbers.
+func test_another_writer_turns_the_status_line_into_modified_now() -> void:
+	await _start_game()
+	var s: TowerDef.Level = _config.towers[RIFLE].levels[0]
+	var m := _config.economy.beam.mundane_fire_interval_mult
+	var fire := "fire +%s%%, no misses" % TowerText.num(roundf((1.0 / m - 1.0) * 100.0))
+	var t := await _tower(RIFLE)
+	var panel := _game.tower_panel
+	_set_lit(t, true)
+	panel.refresh()
+	assert_str(panel.lit_label.text).is_equal(TowerText.NOW_LIT + fire)
+	t.add_modifiers(1.5, 1.0, 0.0)  # light, then a x1.5 power writer
+	panel.refresh()
+	assert_str(panel.lit_label.text).is_equal(TowerText.NOW_MODIFIED + fire)
+	assert_str(_table().text_at("damage", 0)).is_equal(TowerText.num(s.damage * 1.5) + STAR)
+	assert_str(panel.kind_label.text).is_equal(TowerText.NO_MISSES_LIT)
+	_set_lit(t, false)
+	t.add_modifiers(1.0, 2.0, 0.0)  # dark, another writer only
+	panel.refresh()
+	assert_bool(panel.lit_label.visible).is_true()
+	assert_str(panel.lit_label.text).is_equal(
+		TowerText.NOW_MODIFIED + "fire " + TowerText.MINUS + "50%")
+	assert_str(_table().text_at("every", 0)).is_equal(TowerText.num(s.fire_interval * 2.0) + STAR)
+
+
 # --- §4: nothing cut at 1280x720 ------------------------------------------------------------
 
 ## LT-53/S8 probe as a test: at 1280x720 (base 1200x675 stretched, as canvas_items does) no
