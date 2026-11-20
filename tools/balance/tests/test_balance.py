@@ -3,7 +3,7 @@
   python3 -m unittest discover -s tools/balance/tests -v
 
 Godot is never started: main()'s Godot work goes through run_job and godot_bin, which these
-tests replace; run_job itself is tested with subprocess.run replaced.
+tests replace; run_job itself is tested with subprocess.Popen replaced.
 """
 import contextlib
 import copy
@@ -318,13 +318,14 @@ class ReportTest(unittest.TestCase):
 # --- 13: run_job ---------------------------------------------------------------------------
 
 def fake_proc(stdout_lines, rc=0, real=4.0, user=2.0, calls=None):
-    def run(cmd, stdout=None, stderr=None, **kw):
+    """Stands in for subprocess.Popen: writes the output at once, wait() returns `rc`."""
+    def popen(cmd, stdout=None, stderr=None, **kw):
         if calls is not None:
             calls.append(cmd)
         stdout.write("".join(l + "\n" for l in stdout_lines))
         stderr.write(f"some godot noise\nreal {real:.2f}\nuser {user:.2f}\nsys 0.10\n")
-        return mock.Mock(returncode=rc)
-    return run
+        return mock.Mock(returncode=rc, pid=0, wait=mock.Mock(return_value=rc))
+    return popen
 
 
 class RunJobTest(unittest.TestCase):
@@ -334,7 +335,7 @@ class RunJobTest(unittest.TestCase):
         self.job = {"variant": "v", "strategy": "occult", "data": "/x/data_v", "flags": ["--flare=0"]}
 
     def run_job(self, lines, rc=0, seeds=2, calls=None):
-        with mock.patch.object(balance.subprocess, "run", fake_proc(lines, rc, calls=calls)):
+        with mock.patch.object(balance.subprocess, "Popen", fake_proc(lines, rc, calls=calls)):
             return balance.run_job("/g/godot", self.job, seeds, self._tmp.name)
 
     def test_ok_job_parses_runs_and_times_and_plays_one_strategy(self):

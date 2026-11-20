@@ -19,6 +19,7 @@ import math
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -33,6 +34,12 @@ STRATEGIES_FILE = os.path.join(REPO, "tools", "bot", "strategies.json")
 ## Flags the runner sets itself; a variant may not pass them.
 RESERVED_FLAGS = ("--seeds=", "--data=", "--out=", "--strategies=")
 VARIANT_KEYS = {"description", "patch", "flags"}
+## A job (one Godot process) is killed after JOB_TIMEOUT_BASE + JOB_TIMEOUT_PER_SEED * seeds
+## real seconds and reported as failed (LT-101: a bot that never quits must not block the lab).
+## Measured at LT-101/S2: 20-seed baseline jobs took 101-224 s real (occult slowest, 11.2 s per
+## run, three jobs at a time, load 10-23), so 60 s per run is ~5x the slowest; 20 seeds -> 1320 s.
+JOB_TIMEOUT_BASE = 120
+JOB_TIMEOUT_PER_SEED = 60
 
 
 class PatchError(Exception):
@@ -186,14 +193,27 @@ def run_job(godot, job, seeds, logdir):
     cmd = ["/usr/bin/time", "-p", godot, "--headless", "--path", REPO, "-s", BOT, "--",
            f"--seeds={seeds}", f"--data={job['data']}", f"--strategies={job['strategy']}"] \
         + job["flags"]
+    limit = JOB_TIMEOUT_BASE + JOB_TIMEOUT_PER_SEED * seeds
     with open(out_p, "w") as o, open(err_p, "w") as e:
-        rc = subprocess.run(cmd, stdout=o, stderr=e).returncode
+        # Own process group, so a timeout kills Godot too, not only /usr/bin/time.
+        proc = subprocess.Popen(cmd, stdout=o, stderr=e, start_new_session=True)
+        try:
+            rc = proc.wait(timeout=limit)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except OSError:
+                pass
+            proc.wait()
+            rc = None
     err = _read(err_p)
     times = {k: float(v) for k, v in re.findall(r"^(real|user|sys) ([\d.]+)$", err, re.M)}
     runs = [json.loads(l[4:]) for l in _read(out_p).splitlines()
             if l.startswith("RUN ")]
     problem = None
-    if rc != 0:
+    if rc is None:
+        problem = f"timeout after {limit} s"
+    elif rc != 0:
         problem = f"exit {rc}"
     elif len(runs) != seeds:
         problem = f"{len(runs)} RUN lines, expected {seeds}"

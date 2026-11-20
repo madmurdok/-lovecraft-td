@@ -32,7 +32,8 @@ Options:
 Requires only `python3` and Godot (`$GODOT`, else `godot` on `PATH`, else
 `/Applications/Godot.app`). In a fresh checkout or worktree run `godot --headless --import --path .`
 once first: without `.godot/` the bot fails to parse (`Could not find type "GameConfig"`) and every
-job reports 0 RUN lines. Exit code 0 ok, 1 a Godot run failed (its `.err` log is named),
+job reports 0 RUN lines. A Godot process still running after 120 + 60 x seeds seconds is killed
+and its job fails (`timeout after N s`). Exit code 0 ok, 1 a Godot run failed (its `.err` log is named),
 2 a bad variant, patch or option (nothing is run).
 
 20 seeds x 6 strategies is about 8-15 minutes of CPU per variant (LT-30 S13: 499-996 s real per

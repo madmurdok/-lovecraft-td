@@ -13,10 +13,13 @@ const ROW_KEYS := ["name", "about", "prefix", "cycle", "branches", "cap_floor", 
 	"fallback", "fallback_max", "buy_sanity"]
 const TUNABLE_KEYS := ["build_first", "flare_min_live"]
 const ON_BLOCKED := ["skip", "fallback"]
+## A strategy name: lower-case letters, digits and "_", starting with a letter (it is a
+## --strategies= item, a balance.py log file name part and the golden key bot/<name>/<seed>).
+const NAME_PATTERN := "^[a-z][a-z0-9_]*$"
 
 static var _default: Self = null  ## default() cache
 
-var names: Array[String] = []  ## play order
+var names: Array[String] = []  ## play order; read-only once parsed
 var rows := {}  ## name -> normalized read-only row
 var errors: Array[String] = []
 ## Towers on the board before the bot starts upgrading (and topping the oil up).
@@ -26,29 +29,11 @@ var flare_min_live := 0
 
 
 ## Parses and validates `text` (validation 1-5 of the design); `errors` lists every problem.
+## `names` is read-only afterwards (the shared default() table hands it out).
 static func parse_text(text: String) -> Self:
 	var t := Self.new()
-	var json := JSON.new()
-	if json.parse(text) != OK:
-		t.errors.append("invalid JSON at line %d: %s" % [json.get_error_line() + 1,
-			json.get_error_message()])
-		return t
-	if typeof(json.data) != TYPE_DICTIONARY:
-		t.errors.append("root must be an object")
-		return t
-	for dup_path in GameConfig.find_duplicate_keys(text):
-		t.errors.append("%s: duplicate key" % dup_path)
-	var root: Dictionary = json.data
-	for k in root:
-		if k not in ["strategies", "tunables"]:
-			t.errors.append("unknown key \"%s\"" % k)
-	t._read_tunables(root.get("tunables"))
-	var list: Variant = root.get("strategies")
-	if typeof(list) != TYPE_ARRAY:
-		t.errors.append("strategies: must be an array")
-		return t
-	for i in list.size():
-		t._read_row(i, list[i])
+	t._parse(text)
+	t.names.make_read_only()
 	return t
 
 
@@ -57,15 +42,16 @@ static func load_file(path := DEFAULT_PATH) -> Self:
 	if not FileAccess.file_exists(path):
 		var t := Self.new()
 		t.errors.append("file not found (%s)" % path)
+		t.names.make_read_only()
 		return t
 	return parse_text(FileAccess.get_file_as_string(path))
 
 
-## The shipped table, loaded once per process.
+## The shipped table, loaded once per process. Never asserts: a bad file gives a table with
+## `errors` set (its valid rows kept), which tools/bot_runs.gd prints before quitting 1.
 static func default() -> Self:
 	if _default == null:
 		_default = load_file()
-		assert(_default.errors.is_empty(), "strategies.json: %s" % [_default.errors])
 	return _default
 
 
@@ -98,6 +84,32 @@ func row(name: String) -> Dictionary:
 	return rows.get(name, {})
 
 
+func _parse(text: String) -> void:
+	var json := JSON.new()
+	if json.parse(text) != OK:
+		errors.append("invalid JSON at line %d: %s" % [json.get_error_line() + 1,
+			json.get_error_message()])
+		return
+	if typeof(json.data) != TYPE_DICTIONARY:
+		errors.append("root must be an object")
+		return
+	for dup_path in GameConfig.find_duplicate_keys(text):
+		errors.append("%s: duplicate key" % dup_path)
+	var root: Dictionary = json.data
+	for k in root:
+		if k not in ["strategies", "tunables"]:
+			errors.append("unknown key \"%s\"" % k)
+	_read_tunables(root.get("tunables"))
+	var list: Variant = root.get("strategies")
+	if typeof(list) != TYPE_ARRAY:
+		errors.append("strategies: must be an array")
+		return
+	if list.is_empty():
+		errors.append("strategies: must name at least one strategy")
+	for i in list.size():
+		_read_row(i, list[i])
+
+
 func _read_tunables(v: Variant) -> void:
 	if typeof(v) != TYPE_DICTIONARY:
 		errors.append("tunables: must be an object")
@@ -126,8 +138,8 @@ func _read_row(i: int, v: Variant) -> void:
 			errors.append("%s: unknown key \"%s\"" % [at, k])
 			ok = false
 	var name: Variant = src.get("name")
-	if typeof(name) != TYPE_STRING or name == "":
-		errors.append("%s.name: must be a non-empty string" % at)
+	if typeof(name) != TYPE_STRING or not _name_ok(name):
+		errors.append("%s.name: must match %s (lower-case letters, digits, _)" % [at, NAME_PATTERN])
 		ok = false
 	elif rows.has(name):
 		errors.append("%s.name: duplicate name \"%s\"" % [at, name])
@@ -198,6 +210,11 @@ func _read_row(i: int, v: Variant) -> void:
 	r.make_read_only()
 	rows[name] = r
 	names.append(name)
+
+
+static func _name_ok(name: String) -> bool:
+	var m := RegEx.create_from_string(NAME_PATTERN).search(name)
+	return m != null and m.get_string() == name  # "$" also matches before a final "\n"
 
 
 static func _is_id_list(v: Variant) -> bool:
