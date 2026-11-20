@@ -214,3 +214,10 @@ check (cheap, tells the arms apart): `$GODOT --headless -s` a 3-line probe print
   fake debuffs towers for real; that task decides whether harass skips fakes.
 - Hooks never run for fakes. Benefit: fakes cannot affect towers. Risk: a fake pack would no
   longer be a pack (today it is), so pack needs an exception.
+
+## Owner decisions (2026-11-20)
+
+- Q1: "Оставить не реализованными (Recommended)" — tower_harass/tower_lift/regen stay pending; schema files only.
+- Q2: "Файл + строка в каталоге (Recommended)".
+- Q3: "Да, сейчас (Recommended)" — trait_host.gd with modify_tower added to G12 now.
+- Q4: "Все кроме on_leak, RNG на SANITY (Recommended)".
