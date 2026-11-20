@@ -176,3 +176,13 @@ into them, read `t.power_mult` the same way). `tools/bot_runs.gd` and `entity_la
   regen, digests prove identity. Risk: the dump does not show the channel (it is derived from
   the dumped `lit` / `shadowed`). Alternative: dump the channel and regenerate (loses the
   byte-identical proof).
+
+## Owner decisions (2026-11-20)
+
+- Q1: "Пятое поле ignore_miss (Recommended)".
+- Q2: "Кулдаун тикает, ауры off (Recommended)".
+- Q3: "Метка при любом модификаторе", refined: "Свет по-старому + общая (Recommended)" — the `*` mark
+  appears whenever the channel is non-neutral; when light/shadow is the cause, today's lit/shadowed wording
+  stays; otherwise a generic "modified" wording is shown. Overrides the note's Q3 recommendation; the panel
+  and its UI tests change accordingly.
+- Q4+Q5: "Оба как рекомендовано (Recommended)" — no interval_mult on gate/circle cooldowns; golden keeps `{}`.
