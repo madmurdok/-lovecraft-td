@@ -46,6 +46,13 @@ const SIM_FORBIDDEN_WITH_STRINGS := [
 	"\\bload\\s*\\(\\s*\"res://(scenes|ui|shaders|assets|tools)",
 	"\"res://(scenes|ui|shaders|assets)/",
 ]
+## LT-102 (§3, B6): sim code draws only through the SimRng API (`_ctx.randf(stream)`,
+## `_ctx.randi_range(stream, a, b)`, `rng.randi_range(...)` on a SimRng). Outside the RNG's
+## homes no code line may reach a generator (`.rng(` / `.stream(`, the inspection accessors)
+## or name RandomNumberGenerator. Matched on code with comments and strings blanked.
+const SIM_RNG_HOMES := ["res://sim/core/sim_rng.gd", "res://sim/core/systems/sim_context.gd",
+	"res://sim/core/simulation.gd"]
+const SIM_DRAW_BYPASS := ["\\.(?:rng|stream)\\s*\\(", "\\bRandomNumberGenerator\\b"]
 ## A member or index step of an access chain: `.x` or `[...]`.
 const CHAIN := "(?:\\.\\w+|\\[[^\\]]*\\])"
 ## An assignment operator (not ==, <=, >=, !=).
@@ -622,6 +629,37 @@ func test_the_scanner_blanks_comments_and_strings_and_flags_engine_types() -> vo
 	assert_array(_find("f.gd", _code_lines("g.config.sanity.max = 1"), WRITE_PATTERNS[1])).has_size(1)
 
 
+func _draw_bypass_hits(line: String) -> Array[String]:
+	var hits: Array[String] = []
+	for p: String in SIM_DRAW_BYPASS:
+		hits.append_array(_find("f.gd", _code_lines(line), p))
+	return hits
+
+
+func test_the_draw_bypass_scan_hits_generator_access_and_misses_the_api() -> void:
+	for line: String in [
+		"var x := _ctx.rng(SimRng.Stream.COMBAT).randf()",
+		"var g := _ctx.rng(s)",
+		"var n := sim.rng(s).randi_range(0, 1)",
+		"var g := _rng.stream(s)",
+		"var n := _ctx.sim_rng().stream (s).randi()",
+		"var g: RandomNumberGenerator",
+		"var g := RandomNumberGenerator.new()",
+	]:
+		assert_array(_draw_bypass_hits(line)).override_failure_message(
+			"draw bypass not flagged: %s" % line).is_not_empty()
+	for line: String in [
+		"var x := _ctx.randf(SimRng.Stream.COMBAT)",
+		"var n := rng.randi_range(s, 0, 1)",
+		"var r := _ctx.sim_rng()",
+		"var n := 1  # _ctx.rng(s)",
+		"var t := \"sim.rng(\"",
+		"## One RandomNumberGenerator per stream",
+	]:
+		assert_array(_draw_bypass_hits(line)).override_failure_message(
+			"API use flagged as a draw bypass: %s" % line).is_empty()
+
+
 func test_the_caps_scan_flags_all_caps_engine_names_but_not_constants() -> void:
 	var text := "var a := OS.get_name()\nvar b := JSON.new()\nvar c := IP.get_singleton()\n" \
 		+ "const SIGN := 1\nvar t := TYPE_INT\nvar m := S.MADNESS\nvar d: AABB\n" \
@@ -805,6 +843,28 @@ func test_sim_uses_no_forbidden_tokens() -> void:
 			bad.append_array(_find(f, with_strings, p))
 	assert_array(bad).override_failure_message(
 		"sim/ uses presentation or engine-runtime constructs:\n" + "\n".join(bad)).is_empty()
+
+
+## LT-102 B6: a draw through a generator (`_ctx.rng(SimRng.Stream.COMBAT).randf()`) passes the
+## global-RNG token guard above (`.randf(` is a method call), so it is looked for here.
+func test_sim_draws_only_through_the_sim_rng_api() -> void:
+	for home: String in SIM_RNG_HOMES:
+		assert_bool(FileAccess.file_exists(home)).override_failure_message(
+			"RNG home %s is gone: update SIM_RNG_HOMES" % home).is_true()
+	var bad: Array[String] = []
+	var scanned := 0
+	for f in _gd_files(SIM_DIR):
+		if f in SIM_RNG_HOMES:
+			continue
+		scanned += 1
+		var code := _code_lines(FileAccess.get_file_as_string(f))
+		for p: String in SIM_DRAW_BYPASS:
+			bad.append_array(_find(f, code, p))
+	assert_int(scanned).is_greater(10)
+	assert_array(bad).override_failure_message(
+		"sim/ reaches a RandomNumberGenerator outside SimRng's API (draw with " \
+		+ "_ctx.randf / _ctx.randi_range or a SimRng's randf / randi_range):\n" \
+		+ "\n".join(bad)).is_empty()
 
 
 # --- 2: what scenes/, ui/ and tools/ may touch -------------------------------------------

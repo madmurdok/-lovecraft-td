@@ -115,6 +115,34 @@ func test_non_object_enemy_entry_still_resolves_for_waves() -> void:
 	assert_bool(has_error(r, E, "enemies.cultist")).is_true()
 
 
+# --- LT-102 F3: a roots / read_errors key with no registry row ---------------------------
+
+func test_a_key_naming_no_registry_file_is_an_error_after_the_section_errors() -> void:
+	var roots := parsed_roots()
+	roots[T]["towers"]["rifleman"]["cost"] = -1
+	roots[E]["enemies"]["cultist"]["drops"]["gem"] = 1  # a cross-check error
+	roots["unknown.json"] = {}
+	var r := GameConfig.from_dicts(roots, {"bogus.json": [["", "file not found (x)"]]})
+	assert_bool(r.ok).is_false()
+	assert_object(r.config).is_null()
+	assert_array(_file_order(r)).override_failure_message("\n".join(r.errors)) \
+		.contains_exactly([T, "unknown.json", "bogus.json", E])
+	assert_str(r.errors[1]).is_equal("unknown.json: not a config file (no registry row)")
+	assert_str(r.errors[2]).is_equal("bogus.json: not a config file (no registry row)")
+	assert_bool(r.errors[3].contains("unknown relic kind")).is_true()
+
+
+func test_a_stray_key_is_reported_once_and_alone_on_valid_data() -> void:
+	var roots := parsed_roots()
+	roots["Towers.json"] = {}
+	var r := GameConfig.from_dicts(roots, {"Towers.json": [["", "x"]]})
+	assert_bool(r.ok).is_false()
+	assert_array(r.errors).contains_exactly(
+		["Towers.json: not a config file (no registry row)"])
+	var r2 := GameConfig.from_dicts(parsed_roots().merged({7: {}}))
+	assert_array(r2.errors).contains_exactly(["7: not a config file (no registry row)"])
+
+
 # --- optional rows (injected through load_dir's `sections`) -------------------------
 
 const CREW := "crew.json"

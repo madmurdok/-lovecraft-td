@@ -587,6 +587,18 @@ func test_duplicate_key_in_flat_files() -> void:
 		"100, \"start\": 50"), S, "start", "duplicate key")
 
 
+## LT-102 B3: ConfigLoader records the duplicate as a read error and from_dicts replays it
+## before the file's parse errors (the order load_from_dir had).
+func test_a_duplicate_key_leads_the_parse_errors_of_its_file() -> void:
+	var r := load_raw_edit(T, func(d: Dictionary) -> void:
+		d["towers"]["rifleman"]["cost"] = RAW_SLOT, "-1, \"cost\": -1")
+	assert_bool(r.ok).is_false()
+	assert_int(r.errors.size()).override_failure_message("\n".join(r.errors)).is_equal(2)
+	assert_str(r.errors[0]).is_equal("towers.json: towers.rifleman.cost: duplicate key")
+	assert_bool(r.errors[1].begins_with("towers.json: towers.rifleman.cost: ")).is_true()
+	assert_bool(r.errors[1].contains("duplicate key")).is_false()
+
+
 func test_repeated_keys_in_different_objects_are_not_duplicates() -> void:
 	# the real data repeats range/damage/upgrade_cost/name across levels, branches, towers
 	var r := ConfigLoader.load_dir("res://data")

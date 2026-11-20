@@ -81,6 +81,18 @@ func load_raw_edit(file: String, fn: Callable, raw: String) -> ConfigLoadResult:
 		replace_text(dir, file, "\"%s\"" % RAW_SLOT, raw))
 
 
+## LT-102: the registry files of `dir` parsed in memory (no ConfigLoader), as
+## GameConfig.from_dicts takes them: file name -> parsed root.
+func parsed_roots(dir := "res://data") -> Dictionary:
+	var roots := {}
+	for entry: Array in GameConfig.section_files():
+		var text := FileAccess.get_file_as_string(dir.path_join(entry[0]))
+		assert_str(text).override_failure_message("cannot read %s/%s" % [dir, entry[0]]) \
+			.is_not_empty()
+		roots[entry[0]] = JSON.parse_string(text)
+	return roots
+
+
 ## True if some error starts with "<file>: <path>: " (or "<file>: " when path is empty)
 ## and contains `fragment`.
 func has_error(result: ConfigLoadResult, file: String, path: String, fragment := "") -> bool:
