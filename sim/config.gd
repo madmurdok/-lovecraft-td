@@ -30,12 +30,14 @@ var map: MapDef
 
 ## Loads and validates every config file in `dir`. Never returns a partial config:
 ## on any error `result.ok` is false, `result.config` is null and `result.errors`
-## lists every problem found across all files.
-static func load_from_dir(dir: String = DEFAULT_DIR) -> ConfigLoadResult:
+## lists every problem found across all files. `sections` replaces the registry (tests
+## only: they inject an optional row no shipped file uses); empty means `_sections()`.
+static func load_from_dir(dir: String = DEFAULT_DIR, sections: Array[Array] = []) \
+		-> ConfigLoadResult:
 	var result := ConfigLoadResult.new()
 	var c := GameConfig.new()
 	var ctx := {}  # values a later section's parser reads from an earlier one (enemy_ids)
-	for row: Array in _sections():
+	for row: Array in (sections if not sections.is_empty() else _sections()):
 		var file: String = row[0]
 		var parse: Callable = row[1]
 		var required: bool = row[2]
