@@ -3,8 +3,8 @@ extends ConfigTestBase
 ## that run after it. Pins the load = error order, the drops check running after every
 ## section, the required-file rule and the enemies -> waves dependency.
 ##
-## Optional rows (required = false) are not tested here: no shipped row is optional and
-## _sections() is a static list with no way to inject a row from a test.
+## Optional rows (required = false): no shipped row is optional, so those tests inject one
+## through load_from_dir's `sections` argument.
 
 const E := "enemies.json"
 const T := "towers.json"
