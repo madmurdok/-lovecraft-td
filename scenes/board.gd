@@ -142,25 +142,25 @@ func on_event(ev: SimEvent) -> void:
 ## "aura" ("searchlight" with reveal_fakes, LT-49), banish_cells -> "banish" (LT-51),
 ## summon_max -> "summon" (LT-52: no SHOT, its units are drawn by _draw_allies),
 ## otherwise "tracer".
+## LT-103 §2.2: one `match` on Level.mode plus its two modifiers (reveal_fakes, min_range).
 static func shot_kind(t: SimTower) -> String:
 	var s := t.stats()
-	if not s.acts():
-		return "searchlight" if s.effects.get("reveal_fakes", 0.0) > 0.0 else "aura"
-	if s.is_banish():
-		return "banish"
-	if s.is_summon():
-		return "summon"
-	if s.is_beam():
-		return "beam"
-	if s.effects.get("pierce", 0.0) > 0.0:
-		return "harpoon"
-	if s.effects.get("fuse_seconds", 0.0) > 0.0:
-		return "dynamite"
-	if s.min_range > 0.0:
-		return "shell"
-	if s.effects.get("aoe_radius", 0.0) > 0.0:
-		return "wave"
-	return "tracer"
+	match s.mode():
+		EffectCatalog.Mode.AURA:
+			return "searchlight" if s.effects.get("reveal_fakes", 0.0) > 0.0 else "aura"
+		EffectCatalog.Mode.BANISH:
+			return "banish"
+		EffectCatalog.Mode.SUMMON:
+			return "summon"
+		EffectCatalog.Mode.BEAM:
+			return "beam"
+		EffectCatalog.Mode.LINE:
+			return "harpoon"
+		EffectCatalog.Mode.FUSE:
+			return "dynamite"
+		EffectCatalog.Mode.BLAST:
+			return "shell" if s.min_range > 0.0 else "wave"
+	return "shell" if s.min_range > 0.0 else "tracer"  # BURST, SINGLE
 
 
 ## LT-70 §5: what a level casts at night: "light", "shadow" or "" (SelectionModel.cast).

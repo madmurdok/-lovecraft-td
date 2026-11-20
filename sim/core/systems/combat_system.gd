@@ -211,17 +211,20 @@ func fire_towers() -> void:
 			if t.cooldown_ticks > 0:
 				continue
 		var s := t.stats()
-		if not s.acts():
+		var mode := s.mode()  # LT-103 §2.2: one precedence (EffectCatalog.Mode)
+		if mode == EffectCatalog.Mode.AURA:
 			continue
-		if s.is_banish():
+		if mode == EffectCatalog.Mode.BANISH:
 			_cast_banish(t, s)  # LT-51: its own cast; no miss, crit or shot shape
 			continue
-		if s.is_summon():
+		if mode == EffectCatalog.Mode.SUMMON:
 			_summon(t, s)  # LT-52: allied units do the damage (slot 5 _ally_combat)
 			continue
 		var in_range := _candidates(t, s)
 		var target: SimEnemy = null
-		var burst := int(s.effects.get("burst_targets", 0.0))
+		# A burst below 1 target (0 < n < 1) aims like a single shot.
+		var burst := int(s.effects.get("burst_targets", 0.0)) if mode == EffectCatalog.Mode.BURST \
+			else 0
 		if burst > 0:
 			# LT-29 §1.2: round robin over the top `burst` by target_priority; a miss moves on
 			# too. The ranked set may shrink between shots: nothing is locked.
@@ -230,7 +233,7 @@ func fire_towers() -> void:
 				var m := ranked.size()
 				target = ranked[t.burst_index % m]
 				t.burst_index = (t.burst_index % m + 1) % m
-		elif s.is_beam():
+		elif mode == EffectCatalog.Mode.BEAM:
 			target = _beam_target(t, in_range)
 		else:
 			target = _pick_target(t, in_range)
@@ -263,7 +266,7 @@ func fire_towers() -> void:
 		var pierce: float = s.effects.get("pierce", 0.0)
 		var aoe: float = s.effects.get("aoe_radius", 0.0)
 		var fuse_ticks := 0
-		if s.effects.get("fuse_seconds", 0.0) > 0.0:
+		if mode == EffectCatalog.Mode.FUSE:
 			fuse_ticks = maxi(1, SimTime.ticks(float(s.effects["fuse_seconds"])))
 		var hits: Array[SimEnemy] = [target]
 		var to := target.route.position_at(target.distance)
@@ -272,10 +275,10 @@ func fire_towers() -> void:
 			# this tick; who is hit is decided when it explodes (settle_blasts).
 			to = _lead_point(target, fuse_ticks)
 			hits = []
-		elif pierce > 0.0:
+		elif mode == EffectCatalog.Mode.LINE:
 			to = _line_end(t.centre(), to, s.range_cells)
 			hits = _ground_filter(t, _line_hits(t.centre(), to, pierce * 0.5, target))
-		elif aoe > 0.0:
+		elif mode == EffectCatalog.Mode.BLAST:
 			hits = _ground_filter(t, enemies_near(to, aoe))
 		# LT-12 §4: a mundane shot may miss as a whole (Q3: occult towers never miss).
 		# LT-30: a lit mundane tower with ignore_miss never misses (no COMBAT draw).
@@ -303,7 +306,7 @@ func fire_towers() -> void:
 			shot["astray"] = true
 		if crit:
 			shot["crit"] = true
-		if s.is_beam():
+		if mode == EffectCatalog.Mode.BEAM:
 			shot["beam"] = true  # LT-50: the board holds one beam per tower
 			shot["sanity_factor"] = factor
 		if fuse_ticks > 0:
@@ -376,7 +379,8 @@ func _cast_banish(t: SimTower, s: TowerDef.Level) -> void:
 
 
 ## LT-52 (§2.2): a Summoning Circle with fewer than summon_max live units summons one at
-## its centre (spawn_ally: leash = range + 1, lifetime summon_lifetime) and spends the
+## its centre (spawn_ally: leash Level.summon_leash, default range + 1; hold distance
+## Level.summon_contact, LT-103 Q2; lifetime summon_lifetime) and spends the
 ## cooldown. At its maximum it does not summon and stays ready, so a unit gone frees a
 ## slot at once. A circle lit (or, LT-70, shadowed) at summon time gives the unit
 ## summon_dps x _power_mult for its whole life (§3 "lit at summon time"); madness is
@@ -388,18 +392,20 @@ func _summon(t: SimTower, s: TowerDef.Level) -> void:
 	var dps := TowerRules.unit_dps(s, _light.power_mult(t))
 	var id: int = _spawn_ally.call(t.id, t.def.id, t.centre(),
 		s.effects.get("summon_hp", 0.0), dps, s.effects.get("summon_speed", 0.0), s.summon_flying(),
-		SimTime.ticks(float(s.effects.get("summon_lifetime", 0.0))), s.range_cells + 1.0)
+		SimTime.ticks(float(s.effects.get("summon_lifetime", 0.0))), s.summon_leash(),
+		s.summon_contact())
 	if id != 0:
 		t.cooldown_ticks = TowerRules.cooldown_ticks(s.fire_interval)
 
 
 ## LT-51 (Q4 "HP cap per level"): those of `enemies` a gate with stats `s` may banish:
-## max_hp <= banish_max_hp (Dagon's is above every cap) and no banish immunity.
+## base_max_hp <= banish_max_hp (Dagon's is above every cap; LT-111: base HP, before the
+## wave's hp_mult) and no banish immunity.
 func _banishable(s: TowerDef.Level, enemies: Array[SimEnemy]) -> Array[SimEnemy]:
 	var cap: float = s.effects.get("banish_max_hp", 0.0)
 	var out: Array[SimEnemy] = []
 	for e in enemies:
-		if e.max_hp <= cap and int(e.status.get("banish_immune_ticks", 0)) <= 0:
+		if e.base_max_hp <= cap and int(e.status.get("banish_immune_ticks", 0)) <= 0:
 			out.append(e)
 	return out
 
@@ -597,8 +603,8 @@ func _line_hits(origin: Vector2, end: Vector2, half_width: float,
 
 
 ## Slot 5, after a shot's damage (LT-29 §1.3-1.4): bleed on every hit still live; the chain
-## pull on the shot's primary target only (Q4), if it was hit, is still live, has max_hp <=
-## pull_max_hp (0 = no cap) and no pull immunity. SHOT was emitted before the damage (the
+## pull on the shot's primary target only (Q4), if it was hit, is still live, has base_max_hp
+## <= pull_max_hp (0 = no cap; LT-111: base HP, before the wave's hp_mult) and no pull immunity. SHOT was emitted before the damage (the
 ## pinned SHOT -> DIED order), so `pulled` is written into the same `shot` Dictionary
 ## already passed to _emit: events are drained only after step(), and SimEvent keeps the
 ## Dictionary by reference.
@@ -616,7 +622,7 @@ func _on_hit_effects(t: SimTower, s: TowerDef.Level, target: SimEnemy, hits: Arr
 		return
 	var pulled: Array[int] = []
 	var cap: float = s.effects.get("pull_max_hp", 0.0)
-	if hits.has(target) and target.is_live() and (cap <= 0.0 or target.max_hp <= cap) \
+	if hits.has(target) and target.is_live() and (cap <= 0.0 or target.base_max_hp <= cap) \
 			and int(target.status.get("pull_immune_ticks", 0)) <= 0:
 		_spawn.push_back(target, pull)
 		var immune := SimTime.ticks(float(s.effects.get("pull_immune_seconds", 0.0)))

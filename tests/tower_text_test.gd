@@ -200,9 +200,9 @@ func test_effect_lines_follow_effect_groups_order_and_pairs_share_a_line() -> vo
 
 ## LT-29: every schema effect key is wired, so none carries the suffix.
 func test_non_pending_effects_have_no_suffix() -> void:
-	assert_array(Array(TowerDef.Level.PENDING)).is_empty()
-	for key: String in TowerDef.Level.EFFECTS:
-		assert_bool(TowerDef.Level.PENDING.has(key)).is_false()
+	assert_array(EffectCatalog.pending_keys()).is_empty()
+	for key: String in EffectCatalog.keys():
+		assert_bool(EffectCatalog.is_pending(key)).is_false()
 		var got := TowerText.effect_lines({key: 1.5})
 		assert_int(got.size()).is_equal(1)
 		assert_bool(got[0].ends_with(CS)).override_failure_message(got[0]).is_false()
@@ -449,7 +449,7 @@ func test_a_removed_effect_prints_loses_and_its_old_line() -> void:
 ## once. LT-29: no key is pending any more (crit was the pending example).
 func test_a_removed_effect_pair_shows_once_without_coming_soon() -> void:
 	var from := _level({"crit_chance": 0.5, "crit_multiplier": 3.0})
-	for key: String in TowerDef.Level.EFFECTS:
+	for key: String in EffectCatalog.keys():
 		assert_bool(TowerStatsModel.is_pending(key)).override_failure_message(key).is_false()
 	assert_array(Array(TowerText.special_delta_lines(from, _level({})))) \
 		.is_equal([TowerText.REMOVED + "50% crit, x3 damage"])

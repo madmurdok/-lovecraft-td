@@ -101,6 +101,61 @@ class PatchErrorTest(unittest.TestCase):
         self.assertIn("t.0.c", msg)
 
 
+# --- LT-111: optional keys a patch may add -------------------------------------------------
+
+class OptionalKeysTest(unittest.TestCase):
+    WAVES = {"build_phase_seconds": 40,
+             "waves": [{"groups": [{"type": "cultist", "count": 8}]},
+                       {"groups": [{"type": "hybrid", "count": 2}]}]}
+
+    def apply(self, patch):
+        doc = copy.deepcopy(self.WAVES)
+        balance.apply_patch(doc, patch, optional=balance.OPTIONAL_KEYS["waves.json"])
+        return doc
+
+    def err(self, patch):
+        with self.assertRaises(PatchError) as cm:
+            self.apply(patch)
+        return str(cm.exception)
+
+    def test_wave_multipliers_may_be_added_to_the_addressed_waves_only(self):
+        doc = self.apply({"waves": {"1": {"hp_mult": 2, "speed_mult": 0.5}}})
+        self.assertEqual(doc["waves"][1], {"groups": [{"type": "hybrid", "count": 2}],
+                                           "hp_mult": 2, "speed_mult": 0.5})
+        self.assertEqual(doc["waves"][0], self.WAVES["waves"][0])
+        doc = self.apply({"waves": {"*": {"speed_mult": 1.25}}})
+        self.assertEqual([w["speed_mult"] for w in doc["waves"]], [1.25, 1.25])
+
+    def test_an_added_multiplier_can_be_patched_again(self):
+        doc = self.apply({"waves": {"0": {"hp_mult": 2}}})
+        balance.apply_patch(doc, {"waves": {"0": {"hp_mult": 3}}},
+                            optional=balance.OPTIONAL_KEYS["waves.json"])
+        self.assertEqual(doc["waves"][0]["hp_mult"], 3)
+
+    def test_other_unknown_keys_and_misplaced_multipliers_are_still_errors(self):
+        cases = {
+            "typo in a wave": ({"waves": {"0": {"hp_mul": 2}}}, "waves.0.hp_mul"),
+            "multiplier on a group": ({"waves": {"0": {"groups": {"0": {"hp_mult": 2}}}}},
+                                      "waves.0.groups.0.hp_mult"),
+            "multiplier at the root": ({"hp_mult": 2}, "hp_mult"),
+        }
+        for name, (patch, path) in cases.items():
+            with self.subTest(name):
+                msg = self.err(patch)
+                self.assertIn(path, msg)
+                self.assertIn("no such key", msg)
+
+    def test_an_added_multiplier_must_be_a_number(self):
+        for name, value in {"string": "2", "bool": True, "null": None, "list": [2]}.items():
+            with self.subTest(name):
+                self.assertIn("waves.0.hp_mult", self.err({"waves": {"0": {"hp_mult": value}}}))
+
+    def test_without_optional_keys_adding_one_is_an_error(self):
+        with self.assertRaises(PatchError) as cm:
+            balance.apply_patch(copy.deepcopy(self.WAVES), {"waves": {"0": {"hp_mult": 2}}})
+        self.assertIn("no such key", str(cm.exception))
+
+
 # --- 7-8: materialize, load_variant --------------------------------------------------------
 
 class TempDirs(unittest.TestCase):
@@ -159,6 +214,22 @@ class MaterializeTest(TempDirs):
         self.assertTrue(msg.startswith("variant myvar"), msg)
         self.assertIn("a.json", msg)
         self.assertIn("z", msg)
+
+
+    def test_waves_json_may_add_multipliers_and_other_files_may_not(self):
+        waves = OptionalKeysTest.WAVES
+        self.write(self.data, "waves.json", waves)
+        self.write(self.data, "other.json", waves)
+        dest = os.path.join(self.tmp, "out")
+        balance.materialize({"name": "v", "patch": {"waves.json": {"waves": {"1": {"hp_mult": 2}}}},
+                             "flags": []}, dest)
+        out = json.loads(self.read(os.path.join(dest, "waves.json")))
+        self.assertEqual(out["waves"][1]["hp_mult"], 2)
+        self.assertNotIn("hp_mult", out["waves"][0])
+        with self.assertRaises(PatchError) as cm:
+            balance.materialize({"name": "v", "patch": {"other.json": {"waves": {"1": {"hp_mult": 2}}}},
+                                 "flags": []}, os.path.join(self.tmp, "out2"))
+        self.assertIn("no such key", str(cm.exception))
 
 
 class LoadVariantTest(TempDirs):

@@ -6,9 +6,10 @@ extends RefCounted
 ## Pure and static (no nodes).
 
 
-## The value of an effect key that means "no effect": 1 for a multiplier, 0 otherwise.
+## The value of an effect key that means "no effect" (EffectCatalog.neutral): 1 for a
+## multiplier, 0 otherwise.
 static func neutral(key: String) -> float:
-	return 1.0 if key.ends_with("_multiplier") else 0.0
+	return EffectCatalog.neutral(key)
 
 
 ## LT-28: an effect key with a value other than its neutral one (a x1 multiplier does nothing).
@@ -16,9 +17,9 @@ static func is_active(effects: Dictionary, key: String) -> bool:
 	return effects.has(key) and effects[key] != neutral(key)
 
 
-## An effect key the sim does not apply yet (TowerDef.Level.PENDING).
+## An effect key the sim does not apply yet (EffectCatalog.is_pending).
 static func is_pending(key: String) -> bool:
-	return TowerDef.Level.PENDING.has(key)
+	return EffectCatalog.is_pending(key)
 
 
 ## The numbers of the table rows for `s` (a level or branch of `def`), keyed like

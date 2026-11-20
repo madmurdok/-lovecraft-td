@@ -333,8 +333,8 @@ func test_a_circle_summons_through_the_spawn_hook_and_spends_its_cooldown() -> v
 	var asked := []
 	_combat.set_ally_hooks(
 		func(tower: int, source: String, at: Vector2, hp: float, dps: float, speed: float,
-				flying: bool, lifetime: int, leash: float) -> int:
-			calls.append([tower, source, at, hp, dps, speed, flying, lifetime, leash])
+				flying: bool, lifetime: int, leash: float, contact: float) -> int:
+			calls.append([tower, source, at, hp, dps, speed, flying, lifetime, leash, contact])
 			return 42,
 		func(tower_id: int) -> Array[SimAlly]:
 			asked.append(tower_id)
@@ -344,7 +344,8 @@ func test_a_circle_summons_through_the_spawn_hook_and_spends_its_cooldown() -> v
 	assert_array(calls).has_size(1)
 	assert_array(calls[0]).is_equal([t.id, SC, t.centre(), float(s.effects["summon_hp"]),
 		TowerRules.unit_dps(s, _light.power_mult(t)), float(s.effects["summon_speed"]),
-		s.summon_flying(), SimTime.ticks(float(s.effects["summon_lifetime"])), s.range_cells + 1.0])
+		s.summon_flying(), SimTime.ticks(float(s.effects["summon_lifetime"])), s.range_cells + 1.0,
+		AllySystem.ALLY_CONTACT])
 	assert_int(t.cooldown_ticks).is_equal(TowerRules.cooldown_ticks(s.fire_interval))
 
 
