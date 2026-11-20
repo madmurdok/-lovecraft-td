@@ -266,7 +266,7 @@ P5c 5 -> 1. Depends: S13; start only after LT-64 picks a projection.
 `waves_config.gd`, `spawn_system.gd`, 1 test. What: optional per-wave `hp_mult`/`speed_mult`;
 fakes use the same multiplier (LT-12). Changes behaviour only when data uses it. Risk:
 `units_per_tick` rounding; whether `pull_max_hp`/`banish_max_hp` caps compare base or scaled HP.
-Probes: P3 with scaling: avoids cloned enemy ids. Depends: none. Only if D7 wants scaling.
+Probes: P3 with scaling: avoids cloned enemy ids. Depends: none. Only if D11 wants scaling.
 
 **S17. Tower kind table** (A-X12 only; B says leave). M, ~10 files. What: a `kinds` config block
 (misses, kill regen, reserves sanity, light/shadow multipliers) instead of ~41 string sites.
@@ -421,6 +421,26 @@ Decides whether tier 2 runs before features, and whether S12 runs at all.
 - **Hand-authored only for now; no new wave fields (B stance) (Recommended).** Benefit: no new balance dimension. Risk: 10+ waves may need cloned enemy ids for difficulty.
 - Add per-wave `hp_mult`/`speed_mult` (S16). Benefit: cheap difficulty curve. Risk: a new lab dimension; HP cap semantics to decide.
 
+### Owner decisions (2026-11-20)
+
+The owner's chosen option labels, quoted verbatim (the questions were asked in Russian):
+
+| # | Owner answer (verbatim) | Effect on the blocks |
+|---|---|---|
+| D1 | "1-2 башни, S7-S10 без S12 (Recommended)" | Tier 2 (S7-S10) runs before new content; S12 is dropped. |
+| D2 | "Пометить pending, принять boss (Recommended)" | S1: `PENDING_TRAITS`, data kept, `boss` accepted. |
+| D3 | "Инварианты + снимок состава (A) (Recommended)" | S2 takes A's shape: invariants plus one roster snapshot test. |
+| D4 | "По режиму атаки + data/looks.json (Recommended)" | S8: look derived from attack mode, optional override in presentation-only `data/looks.json`, enemies included. |
+| D5 | "В файле в data/" | S7: effect display text lives in a `data/` text file (not A's or B's shape); S7 needs a formatter (percent, plural, "x of") and a guard that ties every catalog key to a text entry. S7 grows toward L. |
+| D6 | "Башня с модификатором, канал S9 (Recommended)" | S9 is its own block; harass/lift use it; a crew post is a tower with a modifier. S17 is dropped. |
+| D7 | "Да, без блока экипаж выключен (Recommended)" | S4: optional-block rule, absent = off. |
+| D8 | "Минимум A + трасса, B по поводу (Recommended)" | S6: IO out of `sim/`, `SimRng` API, float contract, plus A's engine-neutral trace; B's event schema, snapshot and PCG32 only on a concrete trigger. |
+| D9 | "Сначала гексы, потом пути (Recommended)" | S13 (hex on the fixed path) before S14 (per-wave paths). |
+| D10 | "Раздельно: S3 сейчас, S11 в LT-32 (Recommended)" | S3 in tier 1; S11 is the first slice of LT-32. |
+| D11 | "Множители hp_mult/speed_mult на волну (S16)" | S16 is in, ahead of LT-72; the HP-cap semantics (base vs scaled for `pull_max_hp`/`banish_max_hp`) are decided in its design. |
+
+Dropped by these decisions: S12 (D1), S17 (D6).
+
 ## 7. Not verified
 
 - No test, bot run or game launch; no block prototyped. All probe counts are estimates from both reviews.
@@ -429,3 +449,13 @@ Decides whether tier 2 runs before features, and whether S12 runs at all.
 - Godot 4.7 C# and GDExtension web export status.
 - Lab run time and where it is spent.
 - LT-72 and LT-64 tracker text (B notes neither is in `docs/`).
+
+## 8. Follow-up tasks
+
+Created from the owner decisions in §6, in the backlog (no release yet):
+LT-97 (S1), LT-98 (S2), LT-99 (S3), LT-100 (S4), LT-101 (S5), LT-102 (S6), LT-103 (S7),
+LT-104 (S8), LT-105 (S9), LT-106 (S10), LT-107 (S11), LT-108 (S13), LT-109 (S14), LT-110 (S15),
+LT-111 (S16). S12 and S17 are dropped.
+Dependencies: LT-106 <- LT-97, LT-105; LT-104 <- LT-103; LT-109 <- LT-99, LT-108, LT-18;
+LT-110 <- LT-108, LT-64; LT-32 <- LT-99, LT-100, LT-105, LT-107; LT-72 <- LT-98, LT-111.
+LT-108 overlaps LT-91 (cell_polygon drawing); the two are reconciled when LT-108 is sliced.
