@@ -23,7 +23,7 @@ var game: Game
 func _ready() -> void:
 	_fit_window()
 	var dir := _config_dir()
-	var result := GameConfig.load_from_dir(dir)
+	var result := ConfigLoader.load_dir(dir)
 	if not result.ok:
 		_refuse_to_start(dir, result.errors)
 		return
@@ -110,7 +110,7 @@ func _config_dir() -> String:
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with(CONFIG_DIR_ARG):
 			return arg.trim_prefix(CONFIG_DIR_ARG)
-	return GameConfig.DEFAULT_DIR
+	return ConfigLoader.DEFAULT_DIR
 
 
 func _refuse_to_start(dir: String, errors: Array[String]) -> void:

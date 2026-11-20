@@ -24,7 +24,7 @@ func _row(l: TowerDef.Level) -> Array:
 
 
 func test_shipped_resonator_matches_the_design_table() -> void:
-	var r := GameConfig.load_from_dir("res://data")
+	var r := ConfigLoader.load_dir("res://data")
 	_ok(r)
 	var rs: TowerDef = r.config.towers["resonator"]
 	assert_str(rs.name).is_equal("Tillinghast Resonator")
@@ -76,7 +76,7 @@ func test_reveal_fakes_on_a_damage_level_loads_and_with_a_fuse_is_rejected() -> 
 
 
 func test_sanity_factor_reads_the_full_bar_clamped_and_is_one_without_scaling() -> void:
-	var r := GameConfig.load_from_dir("res://data")
+	var r := ConfigLoader.load_dir("res://data")
 	_ok(r)
 	var max_s := r.config.sanity.max_sanity
 	assert_float(max_s).is_equal(100.0)

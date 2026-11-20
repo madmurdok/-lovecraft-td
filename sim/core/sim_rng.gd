@@ -2,6 +2,8 @@ class_name SimRng
 extends RefCounted
 ## One RandomNumberGenerator per stream, all seeded from the run seed (design note LT-4 §4).
 ## Streams keep features independent: a new roll on COMBAT does not reshuffle SPAWN.
+## Sim code draws only through randf / randi_range (LT-102); the numeric contract a port
+## must reproduce (PCG32 per stream, binary32 randf) is in the sim/core/sim_time.gd header.
 
 ## New streams are appended so existing ones keep their seeds. LOOT rolls real relic drops,
 ## GHOST_LOOT the tokens of fakes (LT-27 §1.2), so hallucinations never shift real loot.
@@ -20,5 +22,16 @@ func _init(run_seed: int) -> void:
 		_streams.append(g)
 
 
+## Inspection only (seed, state); draws go through randf / randi_range.
 func stream(s: Stream) -> RandomNumberGenerator:
 	return _streams[s]
+
+
+## One draw on stream `s`: RandomNumberGenerator.randf().
+func randf(s: Stream) -> float:
+	return _streams[s].randf()
+
+
+## RandomNumberGenerator.randi_range(from, to) on stream `s`; from == to draws nothing.
+func randi_range(s: Stream, from: int, to: int) -> int:
+	return _streams[s].randi_range(from, to)

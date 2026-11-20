@@ -57,6 +57,7 @@ func set_spawner(s: SimSpawner) -> void:
 	_spawner.attach(self)
 
 
+## Inspection only (seed, state); draws go through SimContext.randf / randi_range.
 func rng(stream: SimRng.Stream) -> RandomNumberGenerator:
 	return _ctx.rng(stream)
 
@@ -107,7 +108,7 @@ func step() -> void:
 	_spawn.release_pack_members(false)
 	if _spawner != null:
 		_spawner.tick(self)
-		_hallucinations.tick(self, _spawner)
+		_hallucinations.tick(self, _spawner, _ctx.sim_rng())
 	# 8. Remove dead and leaked enemies and gone allies (LT-52); then the wave system settles
 	# a cleared wave (its bonus is paid before the outcome check, so the last wave's bonus
 	# lands too).

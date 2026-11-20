@@ -52,7 +52,7 @@ func test_lighthouse_coverage_percent_is_the_light_rules_share() -> void:
 
 
 func test_lighthouse_panel_text_shows_the_light_rules_coverage() -> void:
-	var r := GameConfig.load_from_dir("res://data")
+	var r := ConfigLoader.load_dir("res://data")
 	assert_bool(r.ok).override_failure_message("\n".join(r.errors)).is_true()
 	var vp := GameFixture.make_viewport(self)
 	var game := GameFixture.make_game(vp, r.config, 7)

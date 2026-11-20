@@ -86,7 +86,7 @@ func _oil_topup() -> int:
 
 ## A fresh res://data config the test may edit (real_config() is shared by the suite).
 func _fresh() -> GameConfig:
-	var r := GameConfig.load_from_dir("res://data")
+	var r := ConfigLoader.load_dir("res://data")
 	assert_bool(r.ok).override_failure_message("\n".join(r.errors)).is_true()
 	return r.config
 

@@ -127,7 +127,7 @@ func test_pending_traits_load_and_are_flagged() -> void:
 
 ## Over the live roster: an enemy is flagged exactly when it carries a pending trait.
 func test_has_pending_traits_matches_the_pending_list_for_every_enemy() -> void:
-	var result := GameConfig.load_from_dir("res://data")
+	var result := ConfigLoader.load_dir("res://data")
 	assert_bool(result.ok).is_true()
 	for id: String in result.config.enemies:
 		var e: EnemyDef = result.config.enemies[id]

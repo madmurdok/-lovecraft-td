@@ -139,7 +139,7 @@ func _roll_drop(def: EnemyDef, stream: SimRng.Stream) -> String:
 			w *= _state.night_luck
 		weights.append(w)
 		total += w
-	var r := _ctx.rng(stream).randf() * total
+	var r := _ctx.randf(stream) * total
 	var i := 0
 	var last := cheapest
 	for kind: String in def.drops:

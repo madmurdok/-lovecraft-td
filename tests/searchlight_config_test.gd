@@ -23,7 +23,7 @@ func _row(l: TowerDef.Level) -> Array:
 
 
 func test_shipped_searchlight_matches_the_design_table() -> void:
-	var r := GameConfig.load_from_dir("res://data")
+	var r := ConfigLoader.load_dir("res://data")
 	_ok(r)
 	var sl: TowerDef = r.config.towers["searchlight"]
 	assert_str(sl.name).is_equal("Searchlight")

@@ -14,7 +14,7 @@ const TOUGHEST_ENEMY := "shoggoth"  ## LT-23 S15: the boss has the most hp of al
 
 
 func test_shipped_roster_matches_the_snapshot() -> void:
-	var r := GameConfig.load_from_dir("res://data")
+	var r := ConfigLoader.load_dir("res://data")
 	assert_bool(r.ok).override_failure_message("\n".join(r.errors)).is_true()
 	assert_array(r.config.towers.keys()).contains_exactly_in_any_order(TOWER_IDS)
 	assert_array(r.config.enemies.keys()).contains_exactly_in_any_order(ENEMY_IDS)

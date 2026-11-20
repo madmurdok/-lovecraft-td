@@ -1,6 +1,7 @@
 class_name ConfigLoadResult
 extends RefCounted
-## Outcome of GameConfig.load_from_dir: either a fully valid config or the list of errors.
+## Outcome of GameConfig.from_dicts (and ConfigLoader.load_dir): either a fully valid config
+## or the list of errors.
 
 ## Null unless `ok`.
 var config: GameConfig

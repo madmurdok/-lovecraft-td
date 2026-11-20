@@ -13,7 +13,7 @@ func _dyn(fn: Callable) -> ConfigLoadResult:
 
 
 func test_shipped_crew_is_ground_only_with_glyph_d_and_others_default() -> void:
-	var r := GameConfig.load_from_dir("res://data")
+	var r := ConfigLoader.load_dir("res://data")
 	assert_bool(r.ok).override_failure_message("\n".join(r.errors)).is_true()
 	var dyn: TowerDef = r.config.towers["dynamite_crew"]
 	assert_str(dyn.glyph).is_equal("D")

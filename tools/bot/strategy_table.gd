@@ -93,7 +93,7 @@ func _parse(text: String) -> void:
 	if typeof(json.data) != TYPE_DICTIONARY:
 		errors.append("root must be an object")
 		return
-	for dup_path in GameConfig.find_duplicate_keys(text):
+	for dup_path in ConfigLoader.find_duplicate_keys(text):
 		errors.append("%s: duplicate key" % dup_path)
 	var root: Dictionary = json.data
 	for k in root:

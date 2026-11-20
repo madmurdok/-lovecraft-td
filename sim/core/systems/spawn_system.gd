@@ -51,7 +51,7 @@ func spawn_enemy(def_id: String, is_fake := false) -> int:
 		return _enter(def, is_fake, 0)
 	var pack: Dictionary = def.traits["pack"]
 	var stream := SimRng.Stream.SANITY if is_fake else SimRng.Stream.SPAWN
-	var count := _ctx.rng(stream).randi_range(int(pack["min"]), int(pack["max"]))
+	var count := _ctx.randi_range(stream, int(pack["min"]), int(pack["max"]))
 	var spacing := SimTime.ticks(pack["spacing_s"])
 	var first_id := _enter(def, is_fake, _state.next_id)
 	for k in range(1, count):
