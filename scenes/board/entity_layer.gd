@@ -104,30 +104,10 @@ func ward_alpha(t: SimTower) -> float:
 	return WARD_IDLE_ALPHA
 
 
-## The colour that links a tower to its attack look (LT-25 §1).
+## The colour that links a tower to its attack look (LT-25 §1): LookCatalog.color
+## (Color.BLACK for an unknown id).
 static func attack_color(kind: String) -> Color:
-	match kind:
-		"tracer":
-			return Board.TRACER_COLOR
-		"harpoon":
-			return Board.HARPOON_COLOR
-		"wave":
-			return Board.WAVE_RIM
-		"aura":
-			return WARD_COLOR
-		"searchlight":
-			return SEARCHLIGHT_COLOR
-		"dynamite":
-			return Board.DYNAMITE_COLOR
-		"shell":
-			return Board.SHELL_COLOR
-		"beam":
-			return Board.BEAM_COLOR
-		"banish":
-			return Board.BANISH_COLOR
-		"summon":
-			return SUMMON_COLOR
-	return Color.BLACK
+	return LookCatalog.color(kind)
 
 
 ## LT-70 §5: the tower plate colour from the net sim flags: amber when lit, violet when
@@ -194,47 +174,52 @@ func _draw_tower(t: SimTower) -> void:
 ## Elder Sign wards (LT-25 §1.3): a faint ring at the aura radius with 5 slowly turning
 ## dashes; brighter and pulsing while a drawn enemy is inside. LT-70 §5: a sign that casts
 ## shadow gets a faint dark fill, the opposite of the Searchlight's lit disc.
+## LT-104: dispatched on the look row's `area`; the colour is the row's.
 func _draw_auras(s: SimState) -> void:
 	for t in s.towers:
-		var kind := Board.shot_kind(t)
-		if kind == "searchlight":
-			_draw_searchlight(t)
+		var look := LookCatalog.row(Board.shot_kind(t))
+		var area: String = look["area"]
+		if area == "searchlight":
+			_draw_searchlight(t, look["color"])
 			continue
-		if kind != "aura":
+		if area != "ward":
 			continue
+		var wc: Color = look["color"]
 		var c := view.cell_to_world(t.centre())
 		var r := view.cells_to_px(t.stats().range_cells)
 		var a := ward_alpha(t)
 		var bright := a > WARD_IDLE_ALPHA
 		if t.stats().casts_shadow():
 			draw_circle(c, r, WARD_SHADOW_FILL)
-		draw_arc(c, r, 0, TAU, 64, Color(WARD_COLOR, a), 4.0 if bright else 2.0)
+		draw_arc(c, r, 0, TAU, 64, Color(wc, a), 4.0 if bright else 2.0)
 		var rot := board.time * TAU / WARD_TURN_SECONDS
 		for i in 5:
 			var st := rot + i * TAU / 5.0
-			draw_arc(c, r, st, st + 0.22, 6, Color(WARD_COLOR, minf(1.0, a + 0.15)), 4.0)
+			draw_arc(c, r, st, st + 0.22, 6, Color(wc, minf(1.0, a + 0.15)), 4.0)
 
 
 ## LT-49: the Searchlight's aura: a faint disc and rim at the radius, and a beam wedge
 ## from the tower to the rim turning once per SEARCH_SWEEP_SECONDS (decoration: what is
-## revealed is the whole disc, sim state).
-func _draw_searchlight(t: SimTower) -> void:
+## revealed is the whole disc, sim state). `sc`: the look's colour (LT-104).
+func _draw_searchlight(t: SimTower, sc: Color) -> void:
 	var c := view.cell_to_world(t.centre())
 	var r := view.cells_to_px(t.stats().range_cells)
 	var a := ward_alpha(t)
-	draw_circle(c, r, Color(SEARCHLIGHT_COLOR, SEARCH_DISC_ALPHA * (1.0 + a)))
-	draw_arc(c, r, 0, TAU, 64, Color(SEARCHLIGHT_COLOR, a * 0.8), 2.0)
+	draw_circle(c, r, Color(sc, SEARCH_DISC_ALPHA * (1.0 + a)))
+	draw_arc(c, r, 0, TAU, 64, Color(sc, a * 0.8), 2.0)
 	var dir := board.time * TAU / SEARCH_SWEEP_SECONDS
 	var pts := PackedVector2Array([c])
-	var cols := PackedColorArray([Color(SEARCHLIGHT_COLOR, 0.35 + 0.25 * a)])
+	var cols := PackedColorArray([Color(sc, 0.35 + 0.25 * a)])
 	var steps := 8
 	for i in steps + 1:
 		var ang := dir - SEARCH_CONE + 2.0 * SEARCH_CONE * i / steps
 		pts.append(c + Vector2(cos(ang), sin(ang)) * r)
-		cols.append(Color(SEARCHLIGHT_COLOR, 0.04))
+		cols.append(Color(sc, 0.04))
 	draw_polygon(pts, cols)
 
 
+## LT-104: body colour, radius and rim from the enemy's look row (LookCatalog.enemy_look);
+## every marker radius and the HP bar move out by the radius above the built-in 0.25 cell.
 func _draw_enemies(s: SimState) -> void:
 	board.last_pos.clear()
 	var fl := board.flicker_strength()
@@ -246,7 +231,11 @@ func _draw_enemies(s: SimState) -> void:
 		var p := game.sim.enemy_position(e, alpha)
 		board.last_pos[e.id] = p
 		var px := view.cell_to_world(p)
-		var color := COLOR_ENEMY.lerp(COLOR_ENEMY_MAD, mad)
+		var look := LookCatalog.enemy_row(LookCatalog.enemy_look(e))
+		var body: float = look["radius"]
+		var dr := body - LookCatalog.ENEMY_RADIUS  # 0 for the built-in look
+		var base_color: Color = look["color"]
+		var color := base_color.lerp(COLOR_ENEMY_MAD, mad)
 		if e.revealed:
 			color = Color(REVEALED_BODY, REVEALED_ALPHA)
 		var dip := fl * board.flicker_dip(e.id) if fl > 0.0 else 0.0
@@ -254,36 +243,38 @@ func _draw_enemies(s: SimState) -> void:
 		if dip > 0.5:  # a torn frame: a faint double a few pixels off
 			var ghost := color
 			ghost.a = 0.35
-			draw_circle(px + Vector2(view.cells_to_px(0.15), 0), view.cells_to_px(0.25), ghost)
+			draw_circle(px + Vector2(view.cells_to_px(0.15), 0), view.cells_to_px(body), ghost)
 		var marks := enemy_markers(e)
 		if marks.has("slow"):  # ground ring under the body
 			var sc := Color(WARD_COLOR, color.a)
 			for i in 6:
 				var st := i * TAU / 6.0
-				draw_arc(px, view.cells_to_px(MARK_SLOW_CELLS), st, st + TAU / 12.0, 4, sc, 2.0)
-		draw_circle(px, view.cells_to_px(0.25), color)
+				draw_arc(px, view.cells_to_px(MARK_SLOW_CELLS + dr), st, st + TAU / 12.0, 4, sc, 2.0)
+		draw_circle(px, view.cells_to_px(body), color)
+		if look["ring"]:  # LT-104: a dark rim (an enemy look's `ring`)
+			draw_arc(px, view.cells_to_px(body), 0, TAU, 24, Color(COLOR_ENEMY_OUTLINE, color.a), 2.0)
 		if marks.has("bleed"):  # two red drops dripping below the body
 			for i in 2:
 				var ph := fposmod(board.time / BLEED_DROP_SECONDS + i * 0.5, 1.0)
 				var dc := Color(MARK_BLEED, color.a * (1.0 - ph * 0.7))
-				draw_circle(px + Vector2(view.cells_to_px(i - 0.5) * 0.22, view.cells_to_px(0.3 + 0.2 * ph)),
+				draw_circle(px + Vector2(view.cells_to_px(i - 0.5) * 0.22, view.cells_to_px(0.3 + dr + 0.2 * ph)),
 					view.cells_to_px(0.09), dc)
 		if mad > 0.0:
-			draw_arc(px, view.cells_to_px(0.25), 0, TAU, 24, Color(COLOR_ENEMY_OUTLINE, color.a * mad), 3.0)
+			draw_arc(px, view.cells_to_px(body), 0, TAU, 24, Color(COLOR_ENEMY_OUTLINE, color.a * mad), 3.0)
 		if marks.has("sealed"):  # LT-51: a silver lid over the body while banish-immune
-			draw_arc(px, view.cells_to_px(BANISH_LID_CELLS), PI * 1.15, PI * 1.85, 10,
+			draw_arc(px, view.cells_to_px(BANISH_LID_CELLS + dr), PI * 1.15, PI * 1.85, 10,
 				Color(Board.BANISH_COLOR, 0.85 * color.a), 2.0)
 		if marks.has("vuln"):  # body outline
-			draw_arc(px, view.cells_to_px(0.25), 0, TAU, 24, Color(MARK_VULN, color.a), 2.0)
+			draw_arc(px, view.cells_to_px(body), 0, TAU, 24, Color(MARK_VULN, color.a), 2.0)
 		if e.revealed:  # LT-49: amber ring outside the dashed slow mark, slash across the body
 			var mc := Color(REVEALED_MARK, 1.0 - dip)
-			draw_arc(px, view.cells_to_px(REVEALED_RING_CELLS), 0, TAU, 24, mc, 3.0)
+			draw_arc(px, view.cells_to_px(REVEALED_RING_CELLS + dr), 0, TAU, 24, mc, 3.0)
 			var d := view.cell_to_world(Vector2(1, -1).normalized()) * REVEALED_SLASH_CELLS
 			draw_line(px - d, px + d, mc, 3.0)
 		if game.sim.debug_is_fake(e):
-			draw_arc(px, view.cells_to_px(0.3), 0, TAU, 24, COLOR_DEBUG_FAKE, 2.0)
+			draw_arc(px, view.cells_to_px(0.3 + dr), 0, TAU, 24, COLOR_DEBUG_FAKE, 2.0)
 		var w := view.cells_to_px(0.6)
-		var bar := Rect2(px + Vector2(-w * 0.5, -view.cells_to_px(0.4)), Vector2(w, 4))
+		var bar := Rect2(px + Vector2(-w * 0.5, -view.cells_to_px(0.4 + dr)), Vector2(w, 4))
 		draw_rect(bar, Color(COLOR_HP_BACK, 1.0 - dip))
 		bar.size.x = w * clampf(e.hp / e.max_hp, 0.0, 1.0)
 		draw_rect(bar, Color(COLOR_HP, 1.0 - dip))
@@ -292,24 +283,29 @@ func _draw_enemies(s: SimState) -> void:
 ## LT-52 (P10): each circle's leash ring (faint), then every live ally at its interpolated
 ## position over the enemies: a claw line to its held enemy, the body (wing strokes when it
 ## flies) and its HP bar below the body.
+## LT-104: the ring where the tower's look row has area "summon_ring", in that row's colour;
+## a unit's colour is its tower def's SUMMON look (LookCatalog.ally_color, survives a sale).
 func _draw_allies(s: SimState) -> void:
 	for t in s.towers:
-		if Board.shot_kind(t) == "summon":
+		var look := LookCatalog.row(Board.shot_kind(t))
+		if look["area"] == "summon_ring":
+			var rc: Color = look["color"]
 			draw_arc(view.cell_to_world(t.centre()), view.cells_to_px(t.stats().summon_leash()), 0,
-				TAU, 64, Color(SUMMON_COLOR, SUMMON_RING_ALPHA), 1.0)
+				TAU, 64, Color(rc, SUMMON_RING_ALPHA), 1.0)
 	for a in s.allies:
 		if not a.is_live():
 			continue
 		var px := view.cell_to_world(game.sim.ally_position(a, alpha))
+		var ac := LookCatalog.ally_color(a.source)
 		if a.held_id >= 0 and board.last_pos.has(a.held_id):
-			draw_line(px, view.cell_to_world(board.last_pos[a.held_id]), Color(SUMMON_COLOR, 0.9), 2.0)
+			draw_line(px, view.cell_to_world(board.last_pos[a.held_id]), Color(ac, 0.9), 2.0)
 		var r := view.cells_to_px(ALLY_RADIUS_CELLS)
 		if a.flying:
 			for side: float in [-1.0, 1.0]:
 				draw_line(px + Vector2(side * r * 0.6, 0), px + Vector2(side * r * 1.9, -r * 0.9),
-					SUMMON_COLOR, 2.0)
+					ac, 2.0)
 		draw_circle(px, r, ALLY_BODY)
-		draw_arc(px, r, 0, TAU, 20, SUMMON_COLOR, 2.0)
+		draw_arc(px, r, 0, TAU, 20, ac, 2.0)
 		var w := view.cells_to_px(0.5)
 		var bar := Rect2(px + Vector2(-w * 0.5, r + 3.0), Vector2(w, 3))
 		draw_rect(bar, COLOR_HP_BACK)
