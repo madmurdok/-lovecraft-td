@@ -12,7 +12,9 @@ extends Node2D
 ## hit spark on a crit and a dashed chain for a pull. LT-47: the Dynamite crew's lobbed
 ## charge (an arc, then a sputtering fuse on the ground until the BLAST event, sim time) and
 ## its blast ring. Nothing here tells a fake from a real enemy: every look depends only on
-## SHOT / BLAST fields and aura state. LT-49: the Searchlight's aura is a lit disc with a
+## SHOT / BLAST fields and aura state. LT-104: the looks themselves (colour, effect, area,
+## cap; enemy body) are rows of LookCatalog, derived from the attack mode or overridden per
+## tower / enemy def id by data/looks.json. LT-49: the Searchlight's aura is a lit disc with a
 ## sweeping beam; a fake its aura revealed (`SimEnemy.revealed`, sim state)
 ## is drawn as a ghost-grey body with an amber ring and slash.
 ## LT-70 §5: a lit tower's plate is tinted warm, a shadowed one cold violet (plate_color),
@@ -137,30 +139,10 @@ func on_event(ev: SimEvent) -> void:
 
 
 ## LT-25 §1: the attack look from the tower's current stats (so upgrades and branches
-## change it): sanity_scaling -> "beam" (LT-50), pierce -> "harpoon", fuse_seconds ->
-## "dynamite" (LT-47), min_range -> "shell" (LT-48), aoe_radius -> "wave", support level ->
-## "aura" ("searchlight" with reveal_fakes, LT-49), banish_cells -> "banish" (LT-51),
-## summon_max -> "summon" (LT-52: no SHOT, its units are drawn by _draw_allies),
-## otherwise "tracer".
-## LT-103 §2.2: one `match` on Level.mode plus its two modifiers (reveal_fakes, min_range).
+## change it). LT-104: LookCatalog.tower_look (a data/looks.json override, else the mode
+## ladder, LookCatalog.derived_tower_look).
 static func shot_kind(t: SimTower) -> String:
-	var s := t.stats()
-	match s.mode():
-		EffectCatalog.Mode.AURA:
-			return "searchlight" if s.effects.get("reveal_fakes", 0.0) > 0.0 else "aura"
-		EffectCatalog.Mode.BANISH:
-			return "banish"
-		EffectCatalog.Mode.SUMMON:
-			return "summon"
-		EffectCatalog.Mode.BEAM:
-			return "beam"
-		EffectCatalog.Mode.LINE:
-			return "harpoon"
-		EffectCatalog.Mode.FUSE:
-			return "dynamite"
-		EffectCatalog.Mode.BLAST:
-			return "shell" if s.min_range > 0.0 else "wave"
-	return "shell" if s.min_range > 0.0 else "tracer"  # BURST, SINGLE
+	return LookCatalog.tower_look(t)
 
 
 ## LT-70 §5: what a level casts at night: "light", "shadow" or "" (SelectionModel.cast).

@@ -124,16 +124,6 @@ static func _slot(def: TowerDef, slot: Array) -> TowerDef.Level:
 	return def.levels[slot[0]] if slot[0] < TowerDef.LEVEL_COUNT else def.branches[slot[1]]
 
 
-static func _tower_of(l: TowerDef.Level) -> SimTower:
-	var def := TowerDef.new()
-	def.id = "probe"
-	def.kind = "occult"
-	def.levels = [l, l]
-	var t := SimTower.new()
-	t.def = def
-	return t
-
-
 ## Every level and branch of the shipped and golden towers: [label, level].
 func _all_levels() -> Array:
 	var out := []
@@ -159,7 +149,8 @@ static func _parse(effects: Dictionary, damage: float, min_range: float) -> Arra
 
 
 func _assert_same(at: String, l: TowerDef.Level) -> void:
-	assert_str(Board.shot_kind(_tower_of(l))).override_failure_message("%s board" % at) \
+	# LT-104: the mode ladder itself (Board.shot_kind may return a looks.json override).
+	assert_str(LookCatalog.derived_tower_look(l)).override_failure_message("%s board" % at) \
 		.is_equal(old_board(l))
 	assert_str(TowerText.attack_text(l)).override_failure_message("%s text" % at) \
 		.is_equal(old_text(l))

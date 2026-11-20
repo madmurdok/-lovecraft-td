@@ -1,0 +1,20 @@
+{
+  "looks": {
+    "pale_tracer": { "base": "tracer", "color": [1.2, 2.0, 2.4], "cap": 3 },
+    "green_fuse": { "base": "dynamite", "color": [0.5, 2.0, 0.5] },
+    "violet_pack": { "base": "summon", "color": [1.5, 0.4, 2.0, 0.9] },
+    "wide_gate": { "base": "banish", "cap": 5 },
+    "big_body": { "base": "enemy", "color": [0.4, 0.7, 0.9], "radius": 0.4, "ring": true }
+  },
+  "towers": {
+    "rifleman": "pale_tracer",
+    "coast_battery": "tracer",
+    "dynamite_crew": "green_fuse",
+    "summoning_circle": "violet_pack",
+    "silver_key": "wide_gate"
+  },
+  "enemies": {
+    "shoggoth": "big_body",
+    "deep_one": "enemy"
+  }
+}
