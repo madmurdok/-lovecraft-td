@@ -34,6 +34,12 @@ STRATEGIES_FILE = os.path.join(REPO, "tools", "bot", "strategies.json")
 ## Flags the runner sets itself; a variant may not pass them.
 RESERVED_FLAGS = ("--seeds=", "--data=", "--out=", "--strategies=")
 VARIANT_KEYS = {"description", "patch", "flags"}
+## Optional config keys a patch may add although data/ omits them (absent = the default given
+## here, which also fixes the value's type), per data file and place; "*" is any array item.
+## Every other unknown key stays an error, so a typo cannot slip through (LT-111).
+OPTIONAL_KEYS = {
+    "waves.json": {("waves", "*"): {"hp_mult": 1.0, "speed_mult": 1.0}},
+}
 ## A job (one Godot process) is killed after JOB_TIMEOUT_BASE + JOB_TIMEOUT_PER_SEED * seeds
 ## real seconds and reported as failed (LT-101: a bot that never quits must not block the lab).
 ## Measured at LT-101/S2: 20-seed baseline jobs took 101-224 s real (occult slowest, 11.2 s per
@@ -90,16 +96,23 @@ def _select(lst, key, path):
                      "(use an index, '*' or field=value)")
 
 
-def apply_patch(target, patch, path=()):
+def apply_patch(target, patch, path=(), optional=None, _shape=()):
     """Deep-merges patch into target in place. An object patch on an object merges key by key,
     on an array addresses items (see _select); any other value replaces the existing one. Every
-    key must already exist: a patch only changes values, never adds keys."""
+    key must already exist: a patch only changes values, never adds keys, except the optional
+    keys `optional` names for that place (see OPTIONAL_KEYS), which may be added with a value
+    of their default's type."""
+    optional = optional or {}
     if isinstance(target, dict):
         for k, v in patch.items():
             if k not in target:
-                raise PatchError(f"{_fmt(path + (k,))}: no such key (have: {', '.join(target)})")
-            if isinstance(v, dict) and isinstance(target[k], (dict, list)):
-                apply_patch(target[k], v, path + (k,))
+                allowed = optional.get(_shape, {})
+                if k not in allowed:
+                    raise PatchError(f"{_fmt(path + (k,))}: no such key (have: {', '.join(target)})")
+                _check_type(allowed[k], v, path + (k,))
+                target[k] = v
+            elif isinstance(v, dict) and isinstance(target[k], (dict, list)):
+                apply_patch(target[k], v, path + (k,), optional, _shape + (k,))
             else:
                 _check_type(target[k], v, path + (k,))
                 target[k] = v
@@ -108,7 +121,7 @@ def apply_patch(target, patch, path=()):
             for i in _select(target, k, path):
                 p = path + (str(i),)
                 if isinstance(v, dict) and isinstance(target[i], (dict, list)):
-                    apply_patch(target[i], v, p)
+                    apply_patch(target[i], v, p, optional, _shape + ("*",))
                 else:
                     _check_type(target[i], v, p)
                     target[i] = v
@@ -163,7 +176,7 @@ def materialize(variant, dest):
             raise PatchError(f"variant {variant['name']}: no data file data/{f}")
         doc = json.loads(_read(src))
         try:
-            apply_patch(doc, p)
+            apply_patch(doc, p, optional=OPTIONAL_KEYS.get(f))
         except PatchError as e:
             raise PatchError(f"variant {variant['name']}: data/{f}: {e}")
         with open(os.path.join(dest, f), "w", encoding="utf-8") as out:

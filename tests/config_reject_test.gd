@@ -197,6 +197,15 @@ func test_upper_bounds() -> void:
 		assert_rejected(load_json_edit(c[0], c[2]), c[0], c[1], "must be <=")
 
 
+## LT-111 (owner Q2): a wave's hp_mult / speed_mult must be a number in (0, 10].
+func test_wave_multipliers_must_be_numbers_in_zero_to_ten() -> void:
+	for key: String in ["hp_mult", "speed_mult"]:
+		for c: Array in [[0, "must be > 0"], [-1, "must be > 0"], [11, "must be <= 10"],
+				[10.001, "must be <= 10"], ["x", "expected number"]]:
+			var r := load_json_edit(W, func(d: Dictionary) -> void: d["waves"][1][key] = c[0])
+			assert_rejected(r, W, "waves[1].%s" % key, c[1])
+
+
 func test_enum_values() -> void:
 	var r := load_json_edit(T, func(d: Dictionary) -> void:
 		d["towers"]["rifleman"]["kind"] = "magic")

@@ -29,13 +29,19 @@ static func parse(r: ConfigReader, root: Dictionary, enemy_ids: Variant) -> Wave
 class Wave:
 	extends RefCounted
 
-	const WAVE_FIELDS := ["groups"]
+	const WAVE_FIELDS := ["groups", "hp_mult", "speed_mult"]
 
 	var groups: Array[SpawnGroup] = []
+	## LT-111: optional per-wave multipliers on every enemy's spawn HP and base speed
+	## (absent = 1.0, range (0, 10]). Not SimEnemy.speed_mult (the runtime slow factor).
+	var hp_mult := 1.0
+	var speed_mult := 1.0
 
 	static func parse(r: ConfigReader, obj: Dictionary, path: String, enemy_ids: Variant) -> Wave:
 		r.check_keys(obj, WAVE_FIELDS, path)
 		var w := Wave.new()
+		w.hp_mult = r.opt_number(obj, "hp_mult", path, 1.0, 0.0, 10.0, true)
+		w.speed_mult = r.opt_number(obj, "speed_mult", path, 1.0, 0.0, 10.0, true)
 		var groups: Variant = r.req_array(obj, "groups", path)
 		if groups != null:
 			var gp := ConfigReader.join(path, "groups")
