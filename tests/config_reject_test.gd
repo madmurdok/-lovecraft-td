@@ -15,13 +15,13 @@ func test_missing_file_each_of_five() -> void:
 	for f: String in FILES:
 		var dir := make_dir()
 		DirAccess.remove_absolute(dir.path_join(f))
-		var r := GameConfig.load_from_dir(dir)
+		var r := ConfigLoader.load_dir(dir)
 		assert_rejected(r, f, "", "not found")
 		assert_int(r.errors.size()).is_equal(1)
 
 
 func test_missing_dir_rejects_all_files() -> void:
-	var r := GameConfig.load_from_dir("user://config_tests/does_not_exist")
+	var r := ConfigLoader.load_dir("user://config_tests/does_not_exist")
 	assert_bool(r.ok).is_false()
 	assert_object(r.config).is_null()
 	for f: String in FILES:
@@ -121,11 +121,14 @@ func test_non_integer_where_integer_expected() -> void:
 func test_integer_beyond_2_pow_53_is_rejected_not_wrapped() -> void:
 	# F2: 1e20 and 9.3e18 exceed int64 / 2^53; a plain int() cast would wrap or clamp.
 	for literal in ["1e20", "9.3e18", "9007199254740993000"]:
-		var r := load_text_edit(EC, "\"starting_gold\": 300", "\"starting_gold\": " + literal)
+		var r := load_raw_edit(EC, func(d: Dictionary) -> void: d["starting_gold"] = RAW_SLOT,
+			literal)
 		assert_rejected(r, EC, "starting_gold", "must be <=")
-	var r2 := load_text_edit(E, "\"bone\": 999,", "\"bone\": 1e20,")
+	var r2 := load_raw_edit(E, func(d: Dictionary) -> void:
+		d["enemies"]["cultist"]["drops"]["bone"] = RAW_SLOT, "1e20")
 	assert_rejected(r2, E, "enemies.cultist.drops.bone")
-	var r3 := load_text_edit(W, "\"count\": 8, \"interval\": 1.2", "\"count\": 1e20, \"interval\": 1.2")
+	var r3 := load_raw_edit(W, func(d: Dictionary) -> void:
+		d["waves"][0]["groups"][0]["count"] = RAW_SLOT, "1e20")
 	assert_rejected(r3, W, "waves[0].groups[0].count")
 
 
@@ -309,7 +312,7 @@ func test_tower_structure_errors() -> void:
 
 func test_support_tower_needs_no_fire_interval() -> void:
 	# elder_sign has damage 0 and no fire_interval: valid
-	var r := GameConfig.load_from_dir("res://data")
+	var r := ConfigLoader.load_dir("res://data")
 	assert_bool(r.ok).is_true()
 	assert_float(r.config.towers["elder_sign"].levels[0].damage).is_equal(0.0)
 
@@ -390,7 +393,8 @@ func test_pack_spacing_must_be_present_positive_and_at_least_one_tick() -> void:
 			d["enemies"]["deep_one"]["traits"]["pack"]["spacing_s"] = sub)
 		assert_rejected(rs, E, path, "at least one tick")
 	# Exactly one tick as JSON writes it (1/30 s is serialized as 0.03333333333333).
-	var ok := load_text_edit(E, '"spacing_s": 0.5', '"spacing_s": 0.03333333333333')
+	var ok := load_raw_edit(E, func(d: Dictionary) -> void:
+		d["enemies"]["deep_one"]["traits"]["pack"]["spacing_s"] = RAW_SLOT, "0.03333333333333")
 	assert_bool(ok.ok).override_failure_message("\n".join(ok.errors)).is_true()
 
 
@@ -517,7 +521,7 @@ func test_errors_from_all_files_are_collected_in_file_order() -> void:
 	edit(dir, W, func(d: Dictionary) -> void: d["build_phase_seconds"] = 0)
 	edit(dir, EC, func(d: Dictionary) -> void: d.erase("starting_gold"))
 	edit(dir, S, func(d: Dictionary) -> void: d["max"] = 0)
-	var r := GameConfig.load_from_dir(dir)
+	var r := ConfigLoader.load_dir(dir)
 	assert_bool(r.ok).is_false()
 	assert_object(r.config).is_null()
 	assert_int(r.errors.size()).is_equal(5)
@@ -544,7 +548,7 @@ func test_bad_file_does_not_stop_other_files_being_checked() -> void:
 	var dir := make_dir()
 	write_file(dir, T, "not json")
 	edit(dir, S, func(d: Dictionary) -> void: d["max"] = 0)
-	var r := GameConfig.load_from_dir(dir)
+	var r := ConfigLoader.load_dir(dir)
 	assert_bool(has_error(r, T, "", "invalid JSON")).is_true()
 	assert_bool(has_error(r, S, "max")).is_true()
 
@@ -552,7 +556,8 @@ func test_bad_file_does_not_stop_other_files_being_checked() -> void:
 # --- F1: duplicate keys through the loader ----------------------------------
 
 func test_duplicate_field_in_tower() -> void:
-	var r := load_text_edit(T, "\"cost\": 50,", "\"cost\": 50, \"cost\": 60,")
+	var r := load_raw_edit(T, func(d: Dictionary) -> void:
+		d["towers"]["rifleman"]["cost"] = RAW_SLOT, "50, \"cost\": 60")
 	assert_rejected(r, T, "towers.rifleman.cost", "duplicate key")
 
 
@@ -570,21 +575,33 @@ func test_duplicate_tower_id() -> void:
 
 
 func test_duplicate_key_inside_array_element() -> void:
-	var r := load_text_edit(W, "{ \"type\": \"hybrid\", \"count\": 6, \"interval\": 1.8 }",
-		"{ \"type\": \"hybrid\", \"count\": 6, \"count\": 7, \"interval\": 1.8 }")
-	assert_rejected(r, W, "waves[3].groups[0].count", "duplicate key")
+	var r := load_raw_edit(W, func(d: Dictionary) -> void:
+		d["waves"][0]["groups"][0]["count"] = RAW_SLOT, "6, \"count\": 7")
+	assert_rejected(r, W, "waves[0].groups[0].count", "duplicate key")
 
 
 func test_duplicate_key_in_flat_files() -> void:
-	assert_rejected(load_text_edit(EC, "\"starting_gold\": 300,",
-		"\"starting_gold\": 300, \"starting_gold\": 300,"), EC, "starting_gold", "duplicate key")
-	assert_rejected(load_text_edit(S, "\"start\": 100,", "\"start\": 100, \"start\": 50,"),
-		S, "start", "duplicate key")
+	assert_rejected(load_raw_edit(EC, func(d: Dictionary) -> void: d["starting_gold"] = RAW_SLOT,
+		"300, \"starting_gold\": 300"), EC, "starting_gold", "duplicate key")
+	assert_rejected(load_raw_edit(S, func(d: Dictionary) -> void: d["start"] = RAW_SLOT,
+		"100, \"start\": 50"), S, "start", "duplicate key")
+
+
+## LT-102 B3: ConfigLoader records the duplicate as a read error and from_dicts replays it
+## before the file's parse errors (the order load_from_dir had).
+func test_a_duplicate_key_leads_the_parse_errors_of_its_file() -> void:
+	var r := load_raw_edit(T, func(d: Dictionary) -> void:
+		d["towers"]["rifleman"]["cost"] = RAW_SLOT, "-1, \"cost\": -1")
+	assert_bool(r.ok).is_false()
+	assert_int(r.errors.size()).override_failure_message("\n".join(r.errors)).is_equal(2)
+	assert_str(r.errors[0]).is_equal("towers.json: towers.rifleman.cost: duplicate key")
+	assert_bool(r.errors[1].begins_with("towers.json: towers.rifleman.cost: ")).is_true()
+	assert_bool(r.errors[1].contains("duplicate key")).is_false()
 
 
 func test_repeated_keys_in_different_objects_are_not_duplicates() -> void:
 	# the real data repeats range/damage/upgrade_cost/name across levels, branches, towers
-	var r := GameConfig.load_from_dir("res://data")
+	var r := ConfigLoader.load_dir("res://data")
 	assert_bool(r.ok).is_true()
 	for e in r.errors:
 		assert_bool(e.contains("duplicate")).is_false()

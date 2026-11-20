@@ -22,7 +22,7 @@ Options:
 | option | default | meaning |
 |---|---|---|
 | `--seeds=N` | 20 | runs per strategy (seeds 1000 .. 1000+N-1, as in `tools/bot_runs.gd`) |
-| `--strategies=a,b` | all | strategies to play; the list is read from `STRATEGIES` in `tools/bot_runs.gd` |
+| `--strategies=a,b` | all | strategies to play; the list is read from `tools/bot/strategies.json` (row order) |
 | `--jobs=N` | 3 | Godot processes at a time (one process = one variant x one strategy) |
 | `--target=F` | 0.5 | a strategy meets the target when it loses at least `ceil(F * seeds)` runs |
 | `--out=FILE` | `<work>/report.md` | where to write the markdown table (it is also printed) |
@@ -32,7 +32,8 @@ Options:
 Requires only `python3` and Godot (`$GODOT`, else `godot` on `PATH`, else
 `/Applications/Godot.app`). In a fresh checkout or worktree run `godot --headless --import --path .`
 once first: without `.godot/` the bot fails to parse (`Could not find type "GameConfig"`) and every
-job reports 0 RUN lines. Exit code 0 ok, 1 a Godot run failed (its `.err` log is named),
+job reports 0 RUN lines. A Godot process still running after 120 + 60 x seeds seconds is killed
+and its job fails (`timeout after N s`). Exit code 0 ok, 1 a Godot run failed (its `.err` log is named),
 2 a bad variant, patch or option (nothing is run).
 
 20 seeds x 6 strategies is about 8-15 minutes of CPU per variant (LT-30 S13: 499-996 s real per
@@ -82,8 +83,8 @@ Shipped examples reproduce LT-30 S13 arms: `baseline` (A), `beam_off` (B), `flar
 ```
 
 - A cell is `wins/losses` out of `--seeds`, then **yes** when the strategy meets the target
-  (loses at least `ceil(target * seeds)`), else `no`. `(k t/o)` counts runs that hit the 30
-  simulated minute cap (neither won nor lost).
+  (loses at least `ceil(target * seeds)`), else `no`. `(k t/o)` counts runs that hit the bot's
+  cap of 6 simulated minutes per wave (30 for 5 waves; neither won nor lost).
 - LT-68 two-part target: with the flare on, a strategy meets the target when it loses at least
   `ceil(target * seeds)` runs AND survives waves 1..3 (the first half of the waves) in at least
   `ceil(0.75 * seeds)` runs (15 of 20); the cell then carries `eN`, the runs that survived them.
@@ -105,9 +106,29 @@ Shipped examples reproduce LT-30 S13 arms: `baseline` (A), `beam_off` (B), `flar
 Wins vary with seeds (loot is random): 2 seeds tell whether a variant runs, not whether it is
 balanced. Compare variants at 20 seeds.
 
+## Add a strategy
+
+The bot's strategies are rows of `tools/bot/strategies.json` (LT-101), played in row order.
+To add one, append a row; no code changes, and the lab picks it up (`--strategies=<name>` or
+all):
+
+```json
+{"name": "probe", "about": "rifleman, harpooner repeated",
+ "cycle": ["rifleman", "harpooner"], "branches": {"rifleman": "a", "harpooner": "a"}}
+```
+
+Fields: `prefix` (built once, first), `cycle` (then repeated), `branches` (tower -> L3 branch
+`a`/`b`; a tower not listed stays at L2), `cap_floor` with `on_blocked` (`"skip"`, or
+`"fallback"` with `fallback` and `fallback_max`), `buy_sanity`. The shared `tunables`
+(`build_first`, `flare_min_live`) sit at the top of the file. The schema and the validation
+rules are in `docs/design/LT-101-bot-strategies-data.md` §3; a bad file stops the bot before
+any run (exit 1). Adding a row adds a strategy to the golden replay too
+(`tests/golden_runs.gd`), so regenerate the golden digests (`tools/golden/regen.gd`).
+
 ## Tests
 
 ```sh
 python3 -m unittest discover -s tools/balance/tests -v   # balance.py, no Godot (stdlib only)
 scripts/test.sh tests/bot_upgrade_test.gd                 # the bot's --strategies= flag (gdUnit)
+scripts/test.sh tests/strategy_table_test.gd              # tools/bot/strategies.json loader, interpreter, run cap (gdUnit)
 ```

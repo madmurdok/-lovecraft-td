@@ -3,7 +3,7 @@
   python3 -m unittest discover -s tools/balance/tests -v
 
 Godot is never started: main()'s Godot work goes through run_job and godot_bin, which these
-tests replace; run_job itself is tested with subprocess.run replaced.
+tests replace; run_job itself is tested with subprocess.Popen replaced.
 """
 import contextlib
 import copy
@@ -197,19 +197,47 @@ class LoadVariantTest(TempDirs):
 # --- 11: strategies from the bot ----------------------------------------------------------
 
 class BotStrategiesTest(unittest.TestCase):
-    def test_reads_the_strategies_const_of_the_bot_file(self):
+    def test_reads_the_names_of_the_strategies_file_in_order(self):
         with tempfile.TemporaryDirectory() as d:
-            f = os.path.join(d, "bot.gd")
+            f = os.path.join(d, "strategies.json")
             with open(f, "w") as out:
-                out.write('extends SceneTree\nconst OTHER := ["x"]\n'
-                          'const STRATEGIES := ["alpha", "beta", "gamma"]\n')
-            with mock.patch.object(balance, "BOT_FILE", f):
-                self.assertEqual(balance.bot_strategies(), ["alpha", "beta", "gamma"])
+                json.dump({"tunables": {"build_first": 5, "flare_min_live": 4},
+                           "strategies": [{"name": "gamma", "cycle": ["x"]},
+                                          {"name": "alpha", "cycle": ["x"]},
+                                          {"name": "beta", "cycle": ["x"]}]}, out)
+            with mock.patch.object(balance, "STRATEGIES_FILE", f):
+                self.assertEqual(balance.bot_strategies(), ["gamma", "alpha", "beta"])
 
     def test_real_bot_file(self):
         s = balance.bot_strategies()
         self.assertIn("mundane", s)
         self.assertEqual(len(s), len(set(s)))
+
+    def test_real_bot_file_is_the_shipped_order(self):
+        self.assertEqual(balance.STRATEGIES_FILE,
+                         os.path.join(balance.REPO, "tools", "bot", "strategies.json"))
+        self.assertEqual(balance.bot_strategies(),
+                         ["mundane", "occult", "mixed", "madness", "demolition", "battery",
+                          "resonator", "gate", "circle", "light"])
+
+    def test_missing_or_bad_file_exits_naming_the_file(self):
+        with tempfile.TemporaryDirectory() as d:
+            f = os.path.join(d, "strategies.json")
+            cases = {"missing": None, "bad json": "{", "no strategies": '{"tunables": {}}',
+                     "row without name": '{"strategies": [{"cycle": ["x"]}]}',
+                     "not an object": "[1]"}
+            for what, text in cases.items():
+                with self.subTest(what):
+                    if text is None:
+                        if os.path.exists(f):
+                            os.remove(f)
+                    else:
+                        with open(f, "w") as out:
+                            out.write(text)
+                    with mock.patch.object(balance, "STRATEGIES_FILE", f):
+                        with self.assertRaises(SystemExit) as cm:
+                            balance.bot_strategies()
+                    self.assertIn(f, str(cm.exception.code))
 
 
 # --- 12: cell / report --------------------------------------------------------------------
@@ -316,13 +344,14 @@ class ReportTest(unittest.TestCase):
 # --- 13: run_job ---------------------------------------------------------------------------
 
 def fake_proc(stdout_lines, rc=0, real=4.0, user=2.0, calls=None):
-    def run(cmd, stdout=None, stderr=None, **kw):
+    """Stands in for subprocess.Popen: writes the output at once, wait() returns `rc`."""
+    def popen(cmd, stdout=None, stderr=None, **kw):
         if calls is not None:
             calls.append(cmd)
         stdout.write("".join(l + "\n" for l in stdout_lines))
         stderr.write(f"some godot noise\nreal {real:.2f}\nuser {user:.2f}\nsys 0.10\n")
-        return mock.Mock(returncode=rc)
-    return run
+        return mock.Mock(returncode=rc, pid=0, wait=mock.Mock(return_value=rc))
+    return popen
 
 
 class RunJobTest(unittest.TestCase):
@@ -332,7 +361,7 @@ class RunJobTest(unittest.TestCase):
         self.job = {"variant": "v", "strategy": "occult", "data": "/x/data_v", "flags": ["--flare=0"]}
 
     def run_job(self, lines, rc=0, seeds=2, calls=None):
-        with mock.patch.object(balance.subprocess, "run", fake_proc(lines, rc, calls=calls)):
+        with mock.patch.object(balance.subprocess, "Popen", fake_proc(lines, rc, calls=calls)):
             return balance.run_job("/g/godot", self.job, seeds, self._tmp.name)
 
     def test_ok_job_parses_runs_and_times_and_plays_one_strategy(self):
@@ -357,6 +386,62 @@ class RunJobTest(unittest.TestCase):
                       ['RUN {"outcome": "won"}'] * 3):
             with self.subTest(len(lines)):
                 self.assertIsNotNone(self.run_job(lines)["problem"])
+
+
+# --- 13b: run_job timeout (LT-101), a real process ---------------------------------------
+
+class RunJobTimeoutTest(unittest.TestCase):
+    """A job still running at the limit is killed with its whole process group and fails.
+    "godot" is a shell script that starts a grandchild `sleep`, records its pid and waits, so
+    the job never ends by itself; the limit is patched to 1 s."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.pidfile = os.path.join(self._tmp.name, "child.pid")
+        self.godot = os.path.join(self._tmp.name, "godot")
+        with open(self.godot, "w") as f:
+            f.write("#!/bin/sh\nsleep 60 &\necho $! > '%s'\nwait\n" % self.pidfile)
+        os.chmod(self.godot, 0o755)
+        self.job = {"variant": "v", "strategy": "mundane", "data": "/x/data_v", "flags": []}
+
+    def _alive(self, pid):
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        return True
+
+    def test_hung_job_is_killed_with_its_children_and_reported(self):
+        with mock.patch.object(balance, "JOB_TIMEOUT_BASE", 1), \
+                mock.patch.object(balance, "JOB_TIMEOUT_PER_SEED", 0):
+            t0 = time.monotonic()
+            r = balance.run_job(self.godot, self.job, 2, self._tmp.name)
+            elapsed = time.monotonic() - t0
+        self.assertEqual(r["problem"], "timeout after 1 s")
+        self.assertEqual(r["runs"], [])
+        self.assertLess(elapsed, 30)  # the grandchild sleeps 60 s: run_job did not wait for it
+        with open(self.pidfile) as f:
+            child = int(f.read())
+        # The grandchild (Godot's stand-in under /usr/bin/time) is gone too; an orphan is
+        # reaped by launchd/init shortly after the kill, so allow a moment.
+        deadline = time.monotonic() + 5
+        while self._alive(child) and time.monotonic() < deadline:
+            time.sleep(0.05)
+        alive = self._alive(child)
+        if alive:
+            os.kill(child, 9)
+        self.assertFalse(alive, "the grandchild of the timed-out job is still running")
+
+    def test_limit_scales_with_seeds(self):
+        self.assertEqual(balance.JOB_TIMEOUT_BASE + balance.JOB_TIMEOUT_PER_SEED * 20, 1320)
+        # A quick job under the limit is not a timeout.
+        with open(self.godot, "w") as f:
+            f.write("#!/bin/sh\nexit 0\n")
+        with mock.patch.object(balance, "JOB_TIMEOUT_BASE", 5), \
+                mock.patch.object(balance, "JOB_TIMEOUT_PER_SEED", 0):
+            r = balance.run_job(self.godot, self.job, 0, self._tmp.name)
+        self.assertIsNone(r["problem"])
 
 
 # --- 9, 10, 13, 14: main -------------------------------------------------------------------

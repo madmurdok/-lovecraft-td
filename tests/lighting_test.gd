@@ -8,7 +8,7 @@ var _game: Game
 
 
 func before_test() -> void:
-	var r := GameConfig.load_from_dir("res://data")
+	var r := ConfigLoader.load_dir("res://data")
 	assert_bool(r.ok).override_failure_message("\n".join(r.errors)).is_true()
 	_vp = GameFixture.make_viewport(self)
 	_game = GameFixture.make_game(_vp, r.config, 7)

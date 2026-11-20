@@ -19,7 +19,7 @@ var _config: GameConfig
 
 
 func before_test() -> void:
-	var r := GameConfig.load_from_dir("res://data")
+	var r := ConfigLoader.load_dir("res://data")
 	assert_bool(r.ok).override_failure_message("\n".join(r.errors)).is_true()
 	_config = r.config
 	_vp = GameFixture.make_viewport(self)
@@ -498,14 +498,14 @@ func test_resonator_dps_is_a_range_in_the_picker_and_live_in_the_panel() -> void
 
 # --- nothing cut at 1280x720 -----------------------------------------------------------------
 
-## At 1280x720 (base 1200x675 stretched) by day and at night: every cell of the 10 shipped
+## At 1280x720 (base 1200x675 stretched) by day and at night: every cell of the shipped
 ## rows is at least as wide as its text, and the list is inside the side panel.
 func test_no_picker_text_is_cut_at_1280x720() -> void:
 	_vp.size = Vector2i(1280, 720)
 	_vp.size_2d_override = Vector2i(1200, 675)
 	_vp.size_2d_override_stretch = true
 	await _start_game()
-	assert_int(_config.towers.size()).is_equal(10)
+	assert_dict(_config.towers).is_not_empty()
 	var cuts := []
 	for night: bool in [false, true]:
 		_game.sim.state.gold = 10000

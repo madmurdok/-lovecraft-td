@@ -13,7 +13,7 @@ extends RefCounted
 ## The fake mimics one of the spawner's candidates (the current wave's unfired spawn
 ## events), picked on rng(SANITY); a pack enemy expands into a full pack, also on SANITY,
 ## whose members enter one by one like a real pack's (Simulation.spawn_enemy, LT-63). Enemies with a `boss` trait are never mimicked (owner
-## decision Q6; no such trait exists yet, the check is the hook for the boss content task).
+## decision Q6; the config accepts `"boss": {}` since LT-97, no shipped enemy carries it yet).
 
 const BOSS_TRAIT := "boss"
 
@@ -21,7 +21,7 @@ var _elapsed := 0
 var _wave_seen := 0  ## wave_index the counter belongs to
 
 
-func tick(sim: Simulation, spawner: SimSpawner) -> void:
+func tick(sim: Simulation, spawner: SimSpawner, rng: SimRng) -> void:
 	var s := sim.state
 	if s.phase != SimState.Phase.WAVE:
 		return
@@ -39,7 +39,7 @@ func tick(sim: Simulation, spawner: SimSpawner) -> void:
 	if candidates.is_empty():
 		return
 	_elapsed = 0
-	var pick := candidates[sim.rng(SimRng.Stream.SANITY).randi_range(0, candidates.size() - 1)]
+	var pick := candidates[rng.randi_range(SimRng.Stream.SANITY, 0, candidates.size() - 1)]
 	spawn_fake(sim, pick)
 
 

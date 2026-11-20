@@ -1,9 +1,18 @@
 class_name GameConfig
 extends RefCounted
-## All balance data (GDD §10), loaded from JSON files in one directory.
+## All balance data (GDD §10), built from parsed JSON roots (one per config file;
+## ConfigLoader reads them from a directory).
 ## Pure data: no scene or Node dependencies, so the sim and tests can use it headless.
+##
+## Sections (LT-100): every config file is one row of `_sections()`; checks that span
+## files are in `_cross_checks()` and run after all sections.
+## Rule: a new mechanic's config is an OPTIONAL block (an optional key inside an existing
+## file, as economy.json lighthouse.oil / lighthouse.flare; or a new file in a
+## `required = false` row), and an absent block means the mechanic is OFF. Existing
+## configs and fixtures then load unchanged, so suites that do not use the mechanic stay
+## green. Adding a new optional file takes exactly one registry row (plus its field and
+## parser).
 
-const DEFAULT_DIR := "res://data"
 const TOWERS_FILE := "towers.json"
 const ENEMIES_FILE := "enemies.json"
 const WAVES_FILE := "waves.json"
@@ -19,76 +28,145 @@ var sanity: SanityConfig
 var map: MapDef
 
 
-## Loads and validates every config file in `dir`. Never returns a partial config:
-## on any error `result.ok` is false, `result.config` is null and `result.errors`
-## lists every problem found across all files.
-static func load_from_dir(dir: String = DEFAULT_DIR) -> ConfigLoadResult:
+## Builds and validates a config from already-parsed file roots (LT-102: the file IO is
+## ConfigLoader's, outside sim/). Never returns a partial config: on any error `result.ok`
+## is false, `result.config` is null and `result.errors` lists every problem found across
+## all files. `roots`: file name ("towers.json") -> parsed root, any Variant (a Dictionary
+## to be valid); a file absent from `roots` was not read. `read_errors`: file name -> Array
+## of [path, message] recorded while reading that file (not found, unreadable, bad JSON,
+## duplicate keys); they lead that file's errors, so the per-file error order is the one a
+## read-then-parse load produces. A required section with no root and no read error gets
+## "<file>: missing"; an optional one is off, no error. A key of `roots` or `read_errors`
+## that names no registry file is an error ("<key>: not a config file (no registry row)"),
+## reported after the sections' errors. The config may keep references to
+## sub-dictionaries of `roots` (e.g. pack traits): the caller hands them over. `sections`
+## replaces the registry (tests only: they inject an optional row no shipped file uses);
+## empty means `_sections()`.
+static func from_dicts(roots: Dictionary, read_errors: Dictionary = {},
+		sections: Array[Array] = []) -> ConfigLoadResult:
 	var result := ConfigLoadResult.new()
 	var c := GameConfig.new()
-	var r: ConfigReader
-
-	r = ConfigReader.new(ENEMIES_FILE)
-	var enemy_ids: Variant = null  # null = enemies.json unreadable; skip cross-references
-	var enemies_root: Variant = _read_json(dir, r)
-	if enemies_root != null:
-		var map: Variant = _read_id_map(r, enemies_root, "enemies")
-		if map != null:
-			enemy_ids = map.keys()
-			for id: String in map:
-				var eo: Variant = r.as_object(map[id], ConfigReader.join("enemies", id))
-				if eo != null:
-					c.enemies[id] = EnemyDef.parse(r, id, eo, ConfigReader.join("enemies", id))
-	result.errors.append_array(r.errors)
-
-	r = ConfigReader.new(TOWERS_FILE)
-	var towers_root: Variant = _read_json(dir, r)
-	if towers_root != null:
-		var map: Variant = _read_id_map(r, towers_root, "towers")
-		if map != null:
-			for id: String in map:
-				var to: Variant = r.as_object(map[id], ConfigReader.join("towers", id))
-				if to != null:
-					c.towers[id] = TowerDef.parse(r, id, to, ConfigReader.join("towers", id))
-			# LT-47 (P11): the board tells towers apart by their glyph.
-			var glyph_of: Dictionary[String, String] = {}
-			for id: String in c.towers:
-				var g: String = c.towers[id].glyph
-				if glyph_of.has(g):
-					r.error(ConfigReader.join("towers", id),
-						"glyph \"%s\" is already used by tower \"%s\"" % [g, glyph_of[g]])
-				else:
-					glyph_of[g] = id
-	result.errors.append_array(r.errors)
-
-	r = ConfigReader.new(WAVES_FILE)
-	var waves_root: Variant = _read_json(dir, r)
-	if waves_root != null:
-		c.waves = WavesConfig.parse(r, waves_root, enemy_ids)
-	result.errors.append_array(r.errors)
-
-	r = ConfigReader.new(ECONOMY_FILE)
-	var economy_root: Variant = _read_json(dir, r)
-	if economy_root != null:
-		c.economy = EconomyConfig.parse(r, economy_root)
-	result.errors.append_array(r.errors)
-	if c.economy != null and not c.economy.relics.is_empty():
-		result.errors.append_array(_check_drops(c))
-
-	r = ConfigReader.new(SANITY_FILE)
-	var sanity_root: Variant = _read_json(dir, r)
-	if sanity_root != null:
-		c.sanity = SanityConfig.parse(r, sanity_root)
-	result.errors.append_array(r.errors)
-
-	r = ConfigReader.new(MAP_FILE)
-	var map_root: Variant = _read_json(dir, r)
-	if map_root != null:
-		c.map = MapDef.parse(r, map_root)
-	result.errors.append_array(r.errors)
-
+	var ctx := {}  # values a later section's parser reads from an earlier one (enemy_ids)
+	var known := {}
+	for row: Array in (sections if not sections.is_empty() else _sections()):
+		var file: String = row[0]
+		known[file] = true
+		var parse: Callable = row[1]
+		var required: bool = row[2]
+		var r := ConfigReader.new(file)
+		var read: Array = read_errors.get(file, [])
+		for e: Array in read:
+			r.error(e[0], e[1])
+		if roots.has(file):
+			var root: Variant = roots[file]
+			if typeof(root) != TYPE_DICTIONARY:
+				r.error("", "root must be an object, got %s" % ConfigReader.type_name(root))
+			else:
+				# Parse step: pure, from the parsed root only.
+				parse.call(r, root, c, ctx)
+		elif required and read.is_empty():
+			r.error("", "missing")
+		result.errors.append_array(r.errors)
+	# A caller mistake (a misspelt or stray file name) is an error too, after every section's
+	# own errors, so valid input keeps its per-file order.
+	var stray := {}
+	for k: Variant in roots.keys() + read_errors.keys():
+		if not (k is String and known.has(k)) and not stray.has(k):
+			stray[k] = true
+			result.errors.append("%s: not a config file (no registry row)" % str(k))
+	for check: Callable in _cross_checks():
+		result.errors.append_array(check.call(c))
 	if result.ok:
 		result.config = c
 	return result
+
+
+## The files a loader reads, as [file, required] pairs in registry order: from `sections`
+## (the same test seam as from_dicts) or, when empty, `_sections()`. One table: a loader
+## never keeps its own file list.
+static func section_files(sections: Array[Array] = []) -> Array[Array]:
+	var files: Array[Array] = []
+	for row: Array in (sections if not sections.is_empty() else _sections()):
+		files.append([row[0], row[2]])
+	return files
+
+
+## The section registry: one [file, parser, required] row per config file, loaded in this
+## order (which is also the order of their errors). A parser is
+## `func(r: ConfigReader, root: Dictionary, c: GameConfig, ctx: Dictionary) -> void`: it
+## reports into `r` and fills its part of `c`; it may read what an earlier row put in `ctx`.
+## A required row whose file is missing is an error ("file not found"); an optional row
+## (required = false) whose file is missing leaves its part of `c` at the default (off).
+static func _sections() -> Array[Array]:
+	return [
+		[ENEMIES_FILE, _parse_enemies, true],
+		[TOWERS_FILE, _parse_towers, true],
+		[WAVES_FILE, _parse_waves, true],
+		[ECONOMY_FILE, _parse_economy, true],
+		[SANITY_FILE, _parse_sanity, true],
+		[MAP_FILE, _parse_map, true],
+	]
+
+
+## Checks that span sections, run after every section is loaded, in this order. Each is
+## `func(c: GameConfig) -> Array[String]` (formatted errors) and must cope with a section
+## that is null (missing or broken).
+static func _cross_checks() -> Array[Callable]:
+	return [_check_drops]
+
+
+static func _parse_enemies(r: ConfigReader, root: Dictionary, c: GameConfig,
+		ctx: Dictionary) -> void:
+	var map: Variant = _read_id_map(r, root, "enemies")
+	if map == null:
+		return
+	# Waves resolve enemy references against every listed id, valid or not; absent
+	# (enemies.json unreadable) means waves skip the cross-references.
+	ctx["enemy_ids"] = map.keys()
+	for id: String in map:
+		var eo: Variant = r.as_object(map[id], ConfigReader.join("enemies", id))
+		if eo != null:
+			c.enemies[id] = EnemyDef.parse(r, id, eo, ConfigReader.join("enemies", id))
+
+
+static func _parse_towers(r: ConfigReader, root: Dictionary, c: GameConfig,
+		_ctx: Dictionary) -> void:
+	var map: Variant = _read_id_map(r, root, "towers")
+	if map == null:
+		return
+	for id: String in map:
+		var to: Variant = r.as_object(map[id], ConfigReader.join("towers", id))
+		if to != null:
+			c.towers[id] = TowerDef.parse(r, id, to, ConfigReader.join("towers", id))
+	# LT-47 (P11): the board tells towers apart by their glyph.
+	var glyph_of: Dictionary[String, String] = {}
+	for id: String in c.towers:
+		var g: String = c.towers[id].glyph
+		if glyph_of.has(g):
+			r.error(ConfigReader.join("towers", id),
+				"glyph \"%s\" is already used by tower \"%s\"" % [g, glyph_of[g]])
+		else:
+			glyph_of[g] = id
+
+
+static func _parse_waves(r: ConfigReader, root: Dictionary, c: GameConfig,
+		ctx: Dictionary) -> void:
+	c.waves = WavesConfig.parse(r, root, ctx.get("enemy_ids"))
+
+
+static func _parse_economy(r: ConfigReader, root: Dictionary, c: GameConfig,
+		_ctx: Dictionary) -> void:
+	c.economy = EconomyConfig.parse(r, root)
+
+
+static func _parse_sanity(r: ConfigReader, root: Dictionary, c: GameConfig,
+		_ctx: Dictionary) -> void:
+	c.sanity = SanityConfig.parse(r, root)
+
+
+static func _parse_map(r: ConfigReader, root: Dictionary, c: GameConfig,
+		_ctx: Dictionary) -> void:
+	c.map = MapDef.parse(r, root)
 
 
 ## LT-67 (debug `--sandbox`, set by scenes/game.gd): a copy of this config whose
@@ -114,9 +192,12 @@ static func _shallow_copy(from: RefCounted, to: RefCounted) -> RefCounted:
 
 ## LT-27 §1.1 cross-file check: every enemy's `drops` key is a relic kind of economy.json
 ## (reported in enemies.json). Also reorders each enemy's drops into economy.relics order
-## (the roll walks that order). Returns the errors.
+## (the roll walks that order). Skipped when economy.json failed or lists no relics.
+## Returns the errors.
 static func _check_drops(c: GameConfig) -> Array[String]:
 	var r := ConfigReader.new(ENEMIES_FILE)
+	if c.economy == null or c.economy.relics.is_empty():
+		return r.errors
 	var kinds := c.economy.relic_ids()
 	for id: String in c.enemies:
 		var def := c.enemies[id]
@@ -130,85 +211,6 @@ static func _check_drops(c: GameConfig) -> Array[String]:
 					"drops"), kind), "unknown relic kind \"%s\"" % kind)
 		def.drops = ordered
 	return r.errors
-
-
-## Reads `<dir>/<r.file>` and returns its root object, or null after recording why not.
-static func _read_json(dir: String, r: ConfigReader) -> Variant:
-	var full := dir.path_join(r.file)
-	if not FileAccess.file_exists(full):
-		r.error("", "file not found (%s)" % full)
-		return null
-	var text := FileAccess.get_file_as_string(full)
-	var open_error := FileAccess.get_open_error()
-	if open_error != OK:
-		r.error("", "cannot read (%s): %s" % [full, error_string(open_error)])
-		return null
-	var json := JSON.new()
-	if json.parse(text) != OK:
-		r.error("", "invalid JSON at line %d: %s" % [json.get_error_line() + 1,
-			json.get_error_message()])
-		return null
-	if typeof(json.data) != TYPE_DICTIONARY:
-		r.error("", "root must be an object, got %s" % ConfigReader.type_name(json.data))
-		return null
-	# JSON.parse keeps the last of duplicate keys, so a duplicate id or field
-	# would silently win; find them in the text instead.
-	for dup_path in find_duplicate_keys(text):
-		r.error(dup_path, "duplicate key")
-	return json.data
-
-
-## Field paths (e.g. "towers.rifleman.cost") of keys that repeat inside one JSON
-## object. Expects text that JSON.parse accepted. Keys are compared as written
-## (escape sequences are not decoded).
-static func find_duplicate_keys(text: String) -> Array[String]:
-	var dups: Array[String] = []
-	# One frame per open object/array: {"obj": bool, "keys": {}, "label": String}.
-	var stack: Array[Dictionary] = []
-	var i := 0
-	var n := text.length()
-	while i < n:
-		var ch := text[i]
-		if ch == "\"":
-			var start := i + 1
-			i += 1
-			while i < n and text[i] != "\"":
-				i += 2 if text[i] == "\\" else 1
-			var s := text.substr(start, i - start)
-			i += 1
-			if not stack.is_empty() and stack[-1]["obj"]:
-				var j := i
-				while j < n and text[j] in " \t\r\n":
-					j += 1
-				if j < n and text[j] == ":":
-					var frame: Dictionary = stack[-1]
-					frame["label"] = s
-					if frame["keys"].has(s):
-						dups.append(_frame_path(stack))
-					frame["keys"][s] = true
-			continue
-		match ch:
-			"{":
-				stack.append({"obj": true, "keys": {}, "label": ""})
-			"[":
-				stack.append({"obj": false, "keys": {}, "label": "0"})
-			"}", "]":
-				stack.pop_back()
-			",":
-				if not stack.is_empty() and not stack[-1]["obj"]:
-					stack[-1]["label"] = str(int(stack[-1]["label"]) + 1)
-		i += 1
-	return dups
-
-
-static func _frame_path(stack: Array[Dictionary]) -> String:
-	var path := ""
-	for frame in stack:
-		if frame["obj"]:
-			path = ConfigReader.join(path, frame["label"])
-		else:
-			path = ConfigReader.index(path, int(frame["label"]))
-	return path
 
 
 ## Root of towers/enemies.json: {"<key>": {"<id>": {...}, ...}}. Returns the id map

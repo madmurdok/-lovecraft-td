@@ -1,7 +1,7 @@
 class_name BotUpgradeTest
 extends SimTestBase
-## LT-24 §5 bot "wide then deep" (Decision 6): build BUILD_FIRST towers first, then the
-## cheapest upgrade (ties -> lower id), L3 from BRANCH_PICK (or `--branch=`, LT-29), pending
+## LT-24 §5 bot "wide then deep" (Decision 6): build build_first towers first, then the
+## cheapest upgrade (ties -> lower id), L3 from the row's branches (or `--branch=`, LT-29), pending
 ## branches skipped (none since LT-29), the occult sanity guard, no upgrade during a wave, and
 ## `--upgrades=0`.
 ## tools/bot_runs.gd is a SceneTree script whose _init plays every run and quits, so the
@@ -12,6 +12,7 @@ extends SimTestBase
 const BOT_PATH := "res://tools/bot_runs.gd"
 const Strategies := preload("res://tools/bot/bot_strategies.gd")
 const Placement := preload("res://tools/bot/bot_placement.gd")
+const Table := preload("res://tools/bot/strategy_table.gd")  ## LT-101: tools/bot/strategies.json
 const R := SimCommand.CommandResult
 const RIFLE := "rifleman"
 const HARP := "harpooner"
@@ -68,13 +69,15 @@ func _strat(upgrades := true, lighthouse := true, flare := true, cfg: GameConfig
 	return st
 
 
-## STRATEGIES of the harness (the literal balance.py reads).
+## The strategy names in play order (LT-101: the table's, the list balance.py reads).
 func _strategy_names() -> Array:
-	return _bot().get_script().get_script_constant_map()["STRATEGIES"]
+	var names: Array = []
+	names.assign(Table.default().names)
+	return names
 
 
 ## LT-30: money the bot spends by day topping the lamp oil up from oil.start to
-## one flare's cost_oil (LT-57 §5), once it has BUILD_FIRST towers, before any upgrade.
+## one flare's cost_oil (LT-57 §5), once it has build_first towers, before any upgrade.
 func _oil_topup() -> int:
 	var target: int = real_config().economy.flare.cost_oil
 	var oil := real_config().economy.oil
@@ -83,7 +86,7 @@ func _oil_topup() -> int:
 
 ## A fresh res://data config the test may edit (real_config() is shared by the suite).
 func _fresh() -> GameConfig:
-	var r := GameConfig.load_from_dir("res://data")
+	var r := ConfigLoader.load_dir("res://data")
 	assert_bool(r.ok).override_failure_message("\n".join(r.errors)).is_true()
 	return r.config
 
@@ -230,7 +233,7 @@ func test_circle_builds_the_summoning_circle_and_buys_branch_a() -> void:
 	assert_array(_next(sim, "circle")).is_equal([circle.id, "a"])
 
 
-## LT-29 §4.3: `--branch=<tower>:<a|b>` wins over BRANCH_PICK for that tower (in every
+## LT-29 §4.3: `--branch=<tower>:<a|b>` wins over the row's branches for that tower (in every
 ## strategy, even one without a pick for it); other towers keep the strategy's pick.
 func test_branch_override_wins_over_branch_pick() -> void:
 	var sim := _sim()
@@ -246,8 +249,8 @@ func test_branch_override_wins_over_branch_pick() -> void:
 	# madness has no harpooner pick: the override alone makes it buyable.
 	assert_array(b.next_upgrade(sim, "madness")).is_equal([harp.id, "b"])
 	# The strategy table itself is untouched.
-	var picks: Dictionary = Strategies.BRANCH_PICK
-	assert_str(picks["mundane"][HARP]).is_equal("a")
+	var picks: Dictionary = Table.default().row("mundane").branches
+	assert_str(picks[HARP]).is_equal("a")
 
 
 func test_a_tower_missing_from_branch_pick_stays_at_l2() -> void:
@@ -291,10 +294,13 @@ func test_equal_costs_go_to_the_lower_tower_id_whatever_the_list_order() -> void
 
 
 ## LT-23 pin 20: the occult cap guard skips an upgrade whose reserve delta would leave the
-## cap below CAP_FLOOR (30), exactly 30 passes; other candidates are still bought.
+## cap below the row's cap_floor (30), exactly 30 passes; other candidates are still bought.
 func test_occult_cap_guard_skips_an_upgrade_leaving_the_cap_below_30() -> void:
 	var cfg := _fresh()
-	var floors: Dictionary = Strategies.CAP_FLOOR
+	var floors := {}
+	for n in Table.default().names:
+		if Table.default().row(n).cap_floor != null:
+			floors[n] = Table.default().row(n).cap_floor
 	assert_dict(floors).is_equal({"occult": 30.0, "mixed": 60.0})
 	var top := cfg.sanity.max_sanity
 	var sim := _sim(0, cfg)
@@ -336,7 +342,7 @@ func _levels(sim: Simulation) -> Array:
 
 
 func test_no_upgrade_before_five_towers() -> void:
-	var first := Strategies.BUILD_FIRST
+	var first := Table.default().build_first
 	assert_int(first).is_equal(5)
 	# Gold for 4 builds + one rifleman L2: the bot builds 4 and saves for the 5th.
 	var sim := _sim(_mundane_builds(4) + real_config().towers[RIFLE].levels[1].upgrade_cost)
@@ -438,7 +444,7 @@ func test_occult_order_falls_back_to_riflemen_below_three_then_saves() -> void:
 	var cfg := _fresh()
 	var sim := _sim(0, cfg)
 	var b := _bot_on(cfg)
-	assert_int(Strategies.OCCULT_MAX_RIFLEMEN).is_equal(3)
+	assert_int(Table.default().row("occult").fallback_max).is_equal(3)
 	assert_str(b.order("occult", 0, sim, {})).is_equal(RIFLE)
 	# Item 1 is an Elder Sign: allowed while the cap stays >= 30.
 	cfg.towers[SIGN].levels[0].sanity_reserve = sim.state.sanity_cap - 30.0
@@ -455,14 +461,14 @@ func test_blocked_occult_bot_out_of_riflemen_upgrades_below_build_first() -> voi
 	var necro := _place(sim, NECRO)
 	cfg.towers[SIGN].levels[0].sanity_reserve = sim.state.sanity_cap  # blocks every Sign
 	var up := cfg.towers[NECRO].levels[1].upgrade_cost
-	sim.state.gold = up  # LT-57: below BUILD_FIRST towers no oil top-up
+	sim.state.gold = up  # LT-57: below build_first towers no oil top-up
 	var log_size := sim.state.command_log.size()
 	var idx: int = _bot_on(cfg).act(sim, "occult", 1, {RIFLE: 3})
 	assert_int(idx).is_equal(1)
 	assert_int(sim.state.towers.size()).is_equal(1)
 	assert_int(necro.level).is_equal(1)
 	# One upgrade (all the gold), then the round's call_wave (its bonus is the only gold);
-	# LT-57: no oil top-up below BUILD_FIRST towers.
+	# LT-57: no oil top-up below build_first towers.
 	var cmds := sim.state.command_log.slice(log_size).map(func(c: Array) -> String: return c[1])
 	assert_array(cmds).is_equal(["upgrade", "call_wave"])
 
@@ -475,14 +481,14 @@ func test_blocked_occult_bot_with_nothing_to_upgrade_saves_its_gold() -> void:
 	var idx: int = _bot_on(cfg).act(sim, "occult", 1, {RIFLE: 3})
 	assert_int(idx).is_equal(1)
 	assert_int(sim.state.towers.size()).is_equal(0)
-	# Only the call_wave of the round: no build, no upgrade, no oil (LT-57: below BUILD_FIRST).
+	# Only the call_wave of the round: no build, no upgrade, no oil (LT-57: below build_first).
 	var cmds := sim.state.command_log.slice(log_size).map(func(c: Array) -> String: return c[1])
 	assert_array(cmds).is_equal(["call_wave"])
 
 
 func test_mixed_skips_a_blocked_occult_item_and_builds_the_next() -> void:
 	var cfg := _fresh()
-	var order: Array = Strategies.MIXED_ORDER
+	var order: Array = Table.default().row("mixed").cycle
 	assert_str(order[2]).is_equal(SIGN)
 	assert_str(order[3]).is_equal(RIFLE)
 	var sim := _sim(cfg.towers[RIFLE].cost, cfg)
@@ -554,11 +560,11 @@ func test_bots_never_set_target_priority() -> void:
 # --- LT-30: the lighthouse, lamp oil and the flare -----------------------------------------
 
 ## LT-57 S2 decision: towers first, then the oil reserve. The top-up runs right after the
-## BUILD_FIRST-th tower, before any upgrade.
+## build_first-th tower, before any upgrade.
 func test_day_tops_the_oil_up_after_the_first_towers() -> void:
 	var target: int = real_config().economy.flare.cost_oil  # LT-57: one flare's oil
 	assert_int(target).is_equal(12)  # LT-71: 8 -> 12
-	var first := Strategies.BUILD_FIRST
+	var first := Table.default().build_first
 	var sim := _sim(1000)
 	var start := sim.state.oil
 	_strat().act(sim, "mundane", 0, {})
@@ -579,17 +585,17 @@ func test_day_tops_the_oil_up_after_the_first_towers() -> void:
 	poor.state.gold = real_config().economy.oil.price + 5
 	_strat().act(poor, "mundane", first, {})
 	assert_int(poor.state.oil).is_equal(start + 1)
-	# Below BUILD_FIRST towers: no oil.
+	# Below build_first towers: no oil.
 	var few := _sim(real_config().towers[RIFLE].cost)
 	_strat().act(few, "mundane", 0, {})
 	assert_int(few.state.oil).is_equal(start)
 
 
-## LT-57 (orchestrator rule): no oil while the board has fewer than BUILD_FIRST towers, even
+## LT-57 (orchestrator rule): no oil while the board has fewer than build_first towers, even
 ## with money left over after the builds; with them the bot tops up to one flare's oil and
 ## keeps that reserve (buys nothing when it already holds it).
 func test_no_oil_below_five_towers_and_one_flare_reserve_after() -> void:
-	var first := Strategies.BUILD_FIRST
+	var first := Table.default().build_first
 	var cost: int = real_config().economy.flare.cost_oil
 	var price: int = real_config().economy.oil.price
 	var rifle: int = real_config().towers[RIFLE].cost
@@ -607,7 +613,7 @@ func test_no_oil_below_five_towers_and_one_flare_reserve_after() -> void:
 	four.state.gold = rifle - 1
 	_strat().act(four, "mundane", first - 1, {})
 	assert_int(four.state.oil).is_equal(0)
-	# BUILD_FIRST towers and the reserve held: no buy_oil.
+	# build_first towers and the reserve held: no buy_oil.
 	var full := _sim(0)
 	for i in first:
 		_place(full, RIFLE)
@@ -657,7 +663,7 @@ func _night_with_live(live: int) -> Simulation:
 
 
 func test_night_fires_the_flare_at_four_live_enemies() -> void:
-	var min_live: int = Strategies.FLARE_MIN_LIVE
+	var min_live: int = Table.default().flare_min_live
 	assert_int(min_live).is_equal(4)
 	var cost := real_config().economy.flare.cost_oil
 	var sim := _night_with_live(min_live)
@@ -718,7 +724,7 @@ func test_lighthouse_waits_for_cheaper_tower_upgrades() -> void:
 func test_battery_builds_the_coast_battery_and_buys_branch_a() -> void:
 	var b := _strat()
 	assert_array(_strategy_names()).contains(["battery"])
-	assert_dict(Strategies.BRANCH_PICK["battery"]) \
+	assert_dict(Table.default().row("battery").branches) \
 		.contains_key_value("coast_battery", "a")
 	var sim := _sim()
 	var order: Array = []
@@ -849,7 +855,7 @@ func test_the_lighthouse_is_tried_again_the_next_day() -> void:
 func test_resonator_builds_the_resonator_and_buys_branch_a() -> void:
 	var b := _strat()
 	assert_array(_strategy_names()).contains(["resonator"])
-	assert_dict(Strategies.BRANCH_PICK["resonator"]).contains_key_value("resonator", "a")
+	assert_dict(Table.default().row("resonator").branches).contains_key_value("resonator", "a")
 	var sim := _sim()
 	var order: Array = []
 	for i in 6:
@@ -923,7 +929,7 @@ func test_strategies_flag_plays_only_those_strategies_in_strategies_order() -> v
 
 func test_without_strategies_flag_every_strategy_is_played() -> void:
 	var b := _run_main(["--seeds=1"])
-	var strategies: Array = _main_script.get_script_constant_map()["STRATEGIES"]
+	var strategies := _strategy_names()
 	assert_int(b.get("_test_exit")).is_equal(0)
 	assert_array(strategies).contains(["mundane", "occult", "battery"])
 	assert_array(b.get("_test_played")).is_equal(strategies)
@@ -1002,7 +1008,7 @@ func test_light_is_the_last_strategy_and_builds_a_searchlight_third() -> void:
 
 
 func test_light_buys_rifleman_a_harpooner_a_and_searchlight_b() -> void:
-	var picks: Dictionary = Strategies.BRANCH_PICK["light"]
+	var picks: Dictionary = Table.default().row("light").branches
 	assert_dict(picks).is_equal({RIFLE: "a", HARP: "a", SL: "b"})
 
 
@@ -1112,14 +1118,14 @@ func test_shadow_radius_and_beam_lit_helpers() -> void:
 # --- LT-86: direct pins of the split ----------------------------------------------------------
 
 func test_night_flare_fires_at_the_threshold_only_and_not_with_flare_off() -> void:
-	var sim := _night_with_live(Strategies.FLARE_MIN_LIVE)
+	var sim := _night_with_live(Table.default().flare_min_live)
 	_strat().night_flare(sim)
 	assert_array(sim.state.command_log.back()).is_equal([sim.state.tick, "fire_flare"])
-	var few := _night_with_live(Strategies.FLARE_MIN_LIVE - 1)
+	var few := _night_with_live(Table.default().flare_min_live - 1)
 	var n := few.state.command_log.size()
 	_strat().night_flare(few)
 	assert_int(few.state.command_log.size()).is_equal(n)
-	var off := _night_with_live(Strategies.FLARE_MIN_LIVE)
+	var off := _night_with_live(Table.default().flare_min_live)
 	n = off.state.command_log.size()
 	_strat(true, true, false).night_flare(off)
 	assert_int(off.state.command_log.size()).is_equal(n)

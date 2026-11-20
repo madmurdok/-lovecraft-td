@@ -55,7 +55,7 @@ func replace_text(dir: String, file: String, old: String, new: String) -> void:
 func load_edited(fn: Callable) -> ConfigLoadResult:
 	var dir := make_dir()
 	fn.call(dir)
-	return GameConfig.load_from_dir(dir)
+	return ConfigLoader.load_dir(dir)
 
 
 ## Load with one JSON file edited through `fn(root)`.
@@ -66,6 +66,31 @@ func load_json_edit(file: String, fn: Callable) -> ConfigLoadResult:
 ## Load with one text replacement in `file`.
 func load_text_edit(file: String, old: String, new: String) -> ConfigLoadResult:
 	return load_edited(func(dir: String) -> void: replace_text(dir, file, old, new))
+
+
+## LT-98: the raw-text edits (duplicate keys, number literals JSON cannot hold) without
+## searching live text. `fn(root)` puts RAW_SLOT at the value to replace; the file is
+## re-serialized and that one string becomes `raw` verbatim, so the edit reaches exactly the
+## targeted def whatever other defs' text repeats.
+const RAW_SLOT := "__lt98_raw_slot__"
+
+
+func load_raw_edit(file: String, fn: Callable, raw: String) -> ConfigLoadResult:
+	return load_edited(func(dir: String) -> void:
+		edit(dir, file, fn)
+		replace_text(dir, file, "\"%s\"" % RAW_SLOT, raw))
+
+
+## LT-102: the registry files of `dir` parsed in memory (no ConfigLoader), as
+## GameConfig.from_dicts takes them: file name -> parsed root.
+func parsed_roots(dir := "res://data") -> Dictionary:
+	var roots := {}
+	for entry: Array in GameConfig.section_files():
+		var text := FileAccess.get_file_as_string(dir.path_join(entry[0]))
+		assert_str(text).override_failure_message("cannot read %s/%s" % [dir, entry[0]]) \
+			.is_not_empty()
+		roots[entry[0]] = JSON.parse_string(text)
+	return roots
 
 
 ## True if some error starts with "<file>: <path>: " (or "<file>: " when path is empty)

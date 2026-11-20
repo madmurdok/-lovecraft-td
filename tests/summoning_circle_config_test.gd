@@ -30,7 +30,7 @@ func _fx(n: float, hp: float, dps: float, speed := 1.5) -> Dictionary:
 
 
 func test_shipped_summoning_circle_matches_the_design_table() -> void:
-	var r := GameConfig.load_from_dir("res://data")
+	var r := ConfigLoader.load_dir("res://data")
 	_ok(r)
 	var sc: TowerDef = r.config.towers["summoning_circle"]
 	assert_str(sc.name).is_equal("Summoning Circle")
@@ -55,7 +55,7 @@ func test_shipped_summoning_circle_matches_the_design_table() -> void:
 
 
 func test_every_circle_level_summons_and_only_byakhee_flies() -> void:
-	var r := GameConfig.load_from_dir("res://data")
+	var r := ConfigLoader.load_dir("res://data")
 	_ok(r)
 	var sc: TowerDef = r.config.towers["summoning_circle"]
 	var levels: Array[TowerDef.Level] = [sc.levels[0], sc.levels[1], sc.branches["a"],
@@ -76,7 +76,7 @@ func test_every_circle_level_summons_and_only_byakhee_flies() -> void:
 # --- contact_dps (Q3) ----------------------------------------------------------------------
 
 func test_contact_dps_defaults_to_ten_times_leak_damage() -> void:
-	var r := GameConfig.load_from_dir("res://data")
+	var r := ConfigLoader.load_dir("res://data")
 	_ok(r)
 	assert_float(r.config.enemies["cultist"].contact_dps).is_equal(10.0)
 	assert_float(r.config.enemies["shoggoth"].contact_dps).is_equal(50.0)

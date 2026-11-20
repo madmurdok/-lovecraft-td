@@ -1,10 +1,10 @@
 class_name ConfigDuplicateKeysTest
 extends GdUnitTestSuite
-## LT-3/F1: GameConfig.find_duplicate_keys, a text scan (JSON.parse keeps the last duplicate).
+## LT-3/F1: ConfigLoader.find_duplicate_keys, a text scan (JSON.parse keeps the last duplicate).
 
 
 func _dups(text: String) -> Array[String]:
-	return GameConfig.find_duplicate_keys(text)
+	return ConfigLoader.find_duplicate_keys(text)
 
 
 # --- true positives ---------------------------------------------------------

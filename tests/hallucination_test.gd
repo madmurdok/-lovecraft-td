@@ -56,7 +56,7 @@ class Rec:
 
 ## A scheduler that never spawns: the "without the system" arm.
 class NoFakes extends HallucinationSystem:
-	func tick(_sim: Simulation, _spawner: SimSpawner) -> void:
+	func tick(_sim: Simulation, _spawner: SimSpawner, _rng: SimRng) -> void:
 		pass
 
 

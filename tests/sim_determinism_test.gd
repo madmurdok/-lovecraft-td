@@ -140,7 +140,9 @@ func test_rolls_on_another_stream_do_not_change_pack_sizes() -> void:
 
 # --- purity (behaviour 16) --------------------------------------------------
 
-var FORBIDDEN := RegEx.create_from_string("(^|[^.\\w])(Time\\.|OS\\.|randomize\\(|randi\\(|randf\\()")
+## LT-102: `(?<!func )` lets SimRng / SimContext declare their randf / randi_range draws.
+var FORBIDDEN := RegEx.create_from_string(
+	"(^|[^.\\w])(?<!func )(Time\\.|OS\\.|randomize\\(|randi\\(|randf\\()")
 
 
 func test_no_sim_script_extends_node_or_uses_scene_tree() -> void:

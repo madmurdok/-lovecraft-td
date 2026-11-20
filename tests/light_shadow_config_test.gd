@@ -24,7 +24,7 @@ func _mentions(r: ConfigLoadResult, key: String) -> void:
 
 
 func test_the_shipped_shadow_block_loads_with_the_design_numbers() -> void:
-	var r := GameConfig.load_from_dir("res://data")
+	var r := ConfigLoader.load_dir("res://data")
 	assert_bool(r.ok).is_true()
 	var s := r.config.economy.shadow
 	assert_float(s.mundane_fire_interval_mult).is_equal(1.25)

@@ -5,7 +5,7 @@ extends GdUnitTestSuite
 
 
 func test_make_game_passes_the_seed_to_the_simulation() -> void:
-	var r := GameConfig.load_from_dir("res://data")
+	var r := ConfigLoader.load_dir("res://data")
 	assert_bool(r.ok).is_true()
 	for seed in [7, 42]:
 		var game := GameFixture.make_game(null, r.config, seed)

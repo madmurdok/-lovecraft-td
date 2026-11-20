@@ -11,7 +11,7 @@ var _cfg: GameConfig
 
 
 func before() -> void:
-	var r := GameConfig.load_from_dir("res://data")
+	var r := ConfigLoader.load_dir("res://data")
 	assert_bool(r.ok).override_failure_message("\n".join(r.errors)).is_true()
 	_cfg = r.config
 
@@ -156,7 +156,7 @@ func test_dps_is_damage_over_interval_only_for_gangsters_and_marksman() -> void:
 
 
 func test_a_config_edit_changes_the_text() -> void:
-	var r := GameConfig.load_from_dir("res://data")
+	var r := ConfigLoader.load_dir("res://data")
 	var def: TowerDef = r.config.towers["rifleman"]
 	var l := def.levels[0]
 	l.damage = 33.0
@@ -540,23 +540,31 @@ func test_resonator_reads_its_scaling_and_the_factor_at_current_sanity() -> void
 
 ## trait_text for each shipped tower's L1, the numbers read from config: an occult reserve
 ## "Res N" first, then Ground, Blind N (min_range), Line (pierce), Reveal, else the dash.
+## LT-98: every def is checked, none is required (the roster lives in roster_snapshot_test):
+## an occult L1 with a reserve shows "Res N"; the mundane towers below pin their cell; any
+## other def has a non-empty cell.
 func test_trait_text_of_every_shipped_tower() -> void:
-	var want := {
-		"rifleman": TowerText.CELL_DASH,
-		"harpooner": "Line",
-		"elder_sign": "Res " + _n(_def("elder_sign").levels[0].sanity_reserve),
-		"necronomicon_reader": "Res " + _n(_def("necronomicon_reader").levels[0].sanity_reserve),
-		"dynamite_crew": "Ground",
-		"coast_battery": "Blind " + _n(_def("coast_battery").levels[0].min_range),
-		"searchlight": "Reveal",
-		"resonator": "Res " + _n(_def("resonator").levels[0].sanity_reserve),
-		"silver_key": "Res " + _n(_def("silver_key").levels[0].sanity_reserve),
-		"summoning_circle": "Res " + _n(_def("summoning_circle").levels[0].sanity_reserve),
+	var mundane := {
+		"rifleman": func() -> String: return TowerText.CELL_DASH,
+		"harpooner": func() -> String: return "Line",
+		"dynamite_crew": func() -> String: return "Ground",
+		"coast_battery": func() -> String:
+			return "Blind " + _n(_def("coast_battery").levels[0].min_range),
+		"searchlight": func() -> String: return "Reveal",
 	}
-	assert_array(_cfg.towers.keys()).contains_exactly_in_any_order(want.keys())
-	for id: String in want:
-		assert_str(TowerText.trait_text(_def(id), _def(id).levels[0])).override_failure_message(id) \
-			.is_equal(want[id])
+	var res_seen := 0
+	for id: String in _cfg.towers:
+		var td := _def(id)
+		var got := TowerText.trait_text(td, td.levels[0])
+		var reserve := td.levels[0].sanity_reserve
+		if td.kind == "occult" and reserve > 0.0:
+			assert_str(got).override_failure_message(id).is_equal("Res " + _n(reserve))
+			res_seen += 1
+		elif mundane.has(id):
+			assert_str(got).override_failure_message(id).is_equal(mundane[id].call())
+		else:
+			assert_str(got).override_failure_message(id).is_not_empty()
+	assert_int(res_seen).is_greater(0)  # the "Res" arm is hit by live data
 
 
 ## The rule order on synthetic levels: a reserve beats Ground beats Blind beats Line beats

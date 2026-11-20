@@ -5,60 +5,44 @@ extends SceneTree
 ##   [--upgrades=0] (never upgrade: the pre-LT-24 baseline; RUN lines then carry no
 ##   "upgrades"/"upgrade_gold" keys. Since LT-27 the economy differs, so no run compares
 ##   byte for byte with a pre-LT-27 harness; only the key set does)
-##   [--branch=<tower>:<a|b>[,<tower>:<a|b>...]] (LT-29: override BRANCH_PICK for these
+##   [--branch=<tower>:<a|b>[,<tower>:<a|b>...]] (LT-29: override the rows' branches for these
 ##   tower def ids in every strategy, e.g. --branch=rifleman:b,harpooner:b; other towers keep
 ##   the strategy's pick; a branch other than a or b is an error)
-##   [--strategies=<name>[,<name>...]] (LT-56: play only these strategies, in STRATEGIES
+##   [--strategies=<name>[,<name>...]] (LT-56: play only these strategies, in the table's
 ##   order; an unknown name is an error. tools/balance/ runs one strategy per process)
 ## For each strategy x seed it plays one full run on data/ with a fresh Simulation +
 ## WaveDirector and prints one "RUN {json}" line per run, then a "SUMMARY {json}" line.
 ##
-## Strategies (build orders; the bot builds the next item as soon as it can pay for it):
-##   mundane  : rifleman, rifleman, harpooner repeated. Never builds occult.
-##   occult   : rifleman, then elder_sign / necronomicon_reader alternating. Cap guard
-##              (LT-23 §4): an occult build or upgrade only while sanity_cap - its reserve
-##              delta >= CAP_FLOOR (30); a blocked occult build is replaced by a rifleman
-##              while the run has fewer than OCCULT_MAX_RIFLEMEN (3), otherwise the bot tries
-##              an upgrade that passes the guard and else saves its gold. Tries buy_sanity()
-##              in madness (refused under the "permanent" exit rule).
-##   mixed    : rifleman, rifleman, elder_sign, rifleman, harpooner, necronomicon_reader
-##              repeated; the same cap guard with CAP_FLOOR 60, a blocked occult item is
-##              skipped (the order moves on to the next item). Tries buy_sanity() too.
-##   madness  : necronomicon_reader / elder_sign alternating, no guard, never buys sanity:
-##              it keeps building past cap 0 (MADNESS).
-##   demolition: rifleman, rifleman, dynamite_crew repeated (LT-47): "mundane" with the
-##              Dynamite crew in the harpooner's slot, for a with/without comparison.
-##   battery  : rifleman, rifleman, coast_battery repeated (LT-48): the same with the
-##              Coast battery in that slot.
-##   resonator: rifleman, rifleman, resonator repeated (LT-50): the same with the
-##              Tillinghast Resonator in that slot; no cap guard (its reserves lower the
-##              cap, and lower sanity is what it feeds on).
-##   gate     : rifleman, rifleman, silver_key repeated (LT-51): the same with the Silver
-##              Key Gate in that slot; no cap guard.
-##   circle   : rifleman, rifleman, summoning_circle repeated (LT-52): the same with the
-##              Summoning Circle in that slot; no cap guard.
+## Strategies (LT-101): one row each in tools/bot/strategies.json, in play order, with its
+## description (`about`); the bot builds the next item of its order (`prefix`, then `cycle`
+## repeated) as soon as it can pay for it. Cap guard (LT-23 §4, rows with `cap_floor`): an
+## occult build or upgrade only while sanity_cap - its reserve delta >= the row's cap_floor;
+## a blocked occult build is skipped (`on_blocked: "skip"`, mixed) or replaced by the row's
+## `fallback` tower while the run has fewer than `fallback_max` of them, otherwise the bot
+## tries an upgrade that passes the guard and else saves its gold (`"fallback"`, occult).
+## Rows with `buy_sanity` try buy_sanity() in madness (refused under the "permanent" exit rule).
 ## Placement (greedy): the free buildable cell with the most path cells whose centre is
 ## within the tower's L1 range (and not inside its L1 min_range, LT-48); ties go to the
 ## lowest row-major cell. No sells.
-## Upgrades (LT-24 §5, "wide then deep"): while the board has fewer than BUILD_FIRST towers
+## Upgrades (LT-24 §5, "wide then deep"): while the board has fewer than build_first towers
 ## the next purchase is the next build; after that it is the cheapest upgrade (gold; ties
-## -> lower tower id) among the towers, L3 branch from BRANCH_PICK. A tower whose picked
-## branch is missing or has_pending() (none since LT-29) stays at L2; the cap guard (occult, mixed) skips an
-## upgrade whose reserve delta would leave the cap below CAP_FLOOR. With no upgrade left the next purchase is a build. The
+## -> lower tower id) among the towers, L3 branch from the row's branches. A tower whose picked
+## branch is missing or has_pending() (none since LT-29) stays at L2; the cap guard skips an
+## upgrade whose reserve delta would leave the cap below the row's cap_floor. With no upgrade left the next purchase is a build. The
 ## bot buys the next purchase or stops for the round (it saves, never skips to something
 ## cheaper).
 ## Day/night (LT-27 §5): in BUILD (day), sell_relics() first, spend what the next purchase
 ## allows, then call_wave() at once (lighting the lamp at once gives the night its maximum
 ## luck). During a wave (night) building, upgrades and sales are refused, so the bot only
-## tries buy_sanity() (occult, mixed), re-checking every second.
-## Lighthouse (LT-30 §3.2/§3.4, LT-57 §5): by day, once the board has BUILD_FIRST towers
+## tries buy_sanity() (rows with buy_sanity), re-checking every second.
+## Lighthouse (LT-30 §3.2/§3.4, LT-57 §5): by day, once the board has build_first towers
 ## (towers first, then the oil reserve; LT-57 S2 decision), the bot tops the lamp oil up to
 ## one flare's flare.cost_oil (buy_oil() until the stock is there or a call is refused),
 ## before any upgrade, and in the
 ## purchase loop buys the next lighthouse level when its cost is at most the cheapest tower
 ## upgrade's (or no tower upgrade is left); a refused level is not retried that day and the
 ## loop falls through to tower upgrades and builds (LT-30 S10); at night it fires the flare when at least
-## FLARE_MIN_LIVE live enemies are on the map (LT-69: the flare lights the whole map).
+## flare_min_live live enemies are on the map (LT-69: the flare lights the whole map).
 ## [--lighthouse=0] never upgrades the lighthouse,
 ## [--flare=0] never buys oil and never fires. A beam-off arm is a --data=<dir> variant.
 ## RUN lines add "lighthouse_level", "flares", "oil_bought", "oil_gold" and "lit_shots"
@@ -71,26 +55,27 @@ extends SceneTree
 ## Loot is random (seeded LOOT stream): compare strategies over the default 10 seeds.
 ## RUN lines add "relics_sold" ($ from sales), "drops" (real relics credited per kind, config
 ## order), "star_stones" and "wage" ($ of dawn wages).
-## A run is capped at 30 simulated minutes (outcome "timeout").
-
-const STRATEGIES := ["mundane", "occult", "mixed", "madness", "demolition", "battery",
-	"resonator", "gate", "circle", "light"]
+## A run is capped at 6 simulated minutes per wave of the config (LT-101 §7; 30 minutes for
+## 5 waves; outcome "timeout").
 
 ## LT-86: the harness (this file: CLI args, seed loop, RUN lines) plays the strategies of
-## tools/bot/bot_strategies.gd, which place towers with tools/bot/bot_placement.gd. The
-## tunables (BUILD_FIRST, BRANCH_PICK, CAP_FLOOR, ...) live there.
+## tools/bot/bot_strategies.gd, which place towers with tools/bot/bot_placement.gd. LT-101:
+## the strategy rows and tunables (build_first, flare_min_live) live in
+## tools/bot/strategies.json (tools/bot/strategy_table.gd).
 const Strategies := preload("res://tools/bot/bot_strategies.gd")
 const Placement := preload("res://tools/bot/bot_placement.gd")
+const StrategyTable := preload("res://tools/bot/strategy_table.gd")
 
-const MAX_TICKS := 30 * 60 * 30
+const TICKS_PER_WAVE := 6 * 60 * 30
 
 var _cfg: GameConfig
 var _score_cache := {}  ## def id -> Array of [score, cell] sorted best first
 var _upgrades := true  ## false with --upgrades=0
 var _lighthouse := true  ## false with --lighthouse=0
 var _flare := true  ## false with --flare=0
-var _branch_override := {}  ## tower def id -> branch from --branch=, wins over BRANCH_PICK
-var _strategies: Array = STRATEGIES  ## strategies to play, narrowed by --strategies=
+var _branch_override := {}  ## tower def id -> branch from --branch=, wins over the row's branches
+var _strategies: Array = []  ## strategies to play (the table's names), narrowed by --strategies=
+var _max_ticks := 0  ## run cap in ticks; 0: TICKS_PER_WAVE x the config's wave count
 ## LT-73 golden replay (tests/golden_runs.gd): when valid, _play calls it with (sim, events)
 ## after every drain; it only reads them, so the runs and RUN lines do not change.
 var _event_sink := Callable()
@@ -101,6 +86,12 @@ func _init() -> void:
 	var seeds := 10
 	var out := ""
 	var data_dir := ""
+	var table := StrategyTable.default()
+	if not table.errors.is_empty():
+		printerr("strategies.json errors: ", table.errors)
+		quit(1)
+		return
+	_strategies = table.names.duplicate()
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--seeds="):
 			seeds = int(a.substr(8))
@@ -125,21 +116,26 @@ func _init() -> void:
 		elif a.begins_with("--strategies="):
 			var picked := a.substr(13).split(",", false)
 			for name in picked:
-				if name not in STRATEGIES:
-					printerr("unknown strategy in --strategies: ", name, " (known: ", STRATEGIES, ")")
+				if name not in table.names:
+					printerr("unknown strategy in --strategies: ", name, " (known: ", table.names, ")")
 					quit(1)
 					return
-			_strategies = STRATEGIES.filter(func(x): return x in picked)
+			_strategies = table.names.filter(func(x): return x in picked)
 			if _strategies.is_empty():
 				printerr("--strategies names no strategy")
 				quit(1)
 				return
-	var res := GameConfig.load_from_dir(data_dir) if data_dir != "" else GameConfig.load_from_dir()
+	var res := ConfigLoader.load_dir(data_dir) if data_dir != "" else ConfigLoader.load_dir()
 	if not res.ok:
 		printerr("config errors: ", res.errors)
 		quit(1)
 		return
 	_cfg = res.config
+	var tower_errors := table.check_towers(_cfg)
+	if not tower_errors.is_empty():
+		printerr("strategies.json errors: ", tower_errors)
+		quit(1)
+		return
 	var runs: Array = []
 	for strat in _strategies:
 		for s in seeds:
@@ -195,7 +191,8 @@ func _play(strat: String, run_seed: int) -> Dictionary:
 	_policy().shadowed_builds = 0
 	for kind in _cfg.economy.relic_ids():
 		drops[kind] = 0
-	while st.outcome == SimState.Outcome.NONE and st.tick < MAX_TICKS:
+	var tick_cap := _tick_cap()
+	while st.outcome == SimState.Outcome.NONE and st.tick < tick_cap:
 		if st.tick % 30 == 0:
 			idx = _policy().act(sim, strat, idx, built)
 		sim.step()
@@ -295,8 +292,10 @@ func _play(strat: String, run_seed: int) -> Dictionary:
 	return run
 
 
-## The next build of `strat` at order index `i`, or "" when the occult bot must save (its
-## cap guard blocks the occult item and its riflemen are used up). Mixed returns its item
+## The run cap in ticks: `_max_ticks` when set (golden cuts), else TICKS_PER_WAVE per wave.
+func _tick_cap() -> int:
+	return _max_ticks if _max_ticks > 0 else TICKS_PER_WAVE * _cfg.waves.waves.size()
+
 
 ## The strategies object, its fields synced from the harness's (a test sets those after
 ## construction, so they are copied on every call).

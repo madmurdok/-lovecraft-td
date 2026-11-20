@@ -33,7 +33,7 @@ func _all_levels(t: TowerDef) -> Array[TowerDef.Level]:
 
 
 func test_shipped_silver_key_matches_the_design_table() -> void:
-	var r := GameConfig.load_from_dir("res://data")
+	var r := ConfigLoader.load_dir("res://data")
 	_ok(r)
 	var sk: TowerDef = r.config.towers["silver_key"]
 	assert_str(sk.name).is_equal("Silver Key Gate")
@@ -60,7 +60,7 @@ func test_shipped_silver_key_matches_the_design_table() -> void:
 
 
 func test_every_gate_level_acts_and_no_aura_level_does() -> void:
-	var r := GameConfig.load_from_dir("res://data")
+	var r := ConfigLoader.load_dir("res://data")
 	_ok(r)
 	for l in _all_levels(r.config.towers["silver_key"]):
 		assert_bool(l.acts()).is_true()
