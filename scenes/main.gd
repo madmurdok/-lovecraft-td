@@ -1,7 +1,7 @@
 extends Node2D
 ## Boot: loads every balance config before anything else starts.
-## A bad config refuses to start: each error goes to push_error, the screen
-## lists them, and a headless run exits with code 1.
+## A bad config (or data/effect_text.json, LT-103) refuses to start: each error goes to
+## push_error, the screen lists them, and a headless run exits with code 1.
 ## Override the config directory with `-- --config-dir=<path>` (dev/CI) and the run seed
 ## with `-- --seed=<int>` (random otherwise). A loaded config starts a Game (LT-7);
 ## its restart button replaces it with a fresh run.
@@ -26,6 +26,12 @@ func _ready() -> void:
 	var result := ConfigLoader.load_dir(dir)
 	if not result.ok:
 		_refuse_to_start(dir, result.errors)
+		return
+	# LT-103 §2.4: the effect text file (presentation, not GameConfig) is checked here too,
+	# so a missing or broken entry refuses to start instead of showing `key: value` lines.
+	var text_errors := EffectText.errors()
+	if not text_errors.is_empty():
+		_refuse_to_start(EffectText.PATH, text_errors)
 		return
 	config = result.config
 	print("Config loaded from %s: %d towers, %d enemies, %d waves"

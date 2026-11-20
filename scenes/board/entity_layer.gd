@@ -55,7 +55,7 @@ const REVEALED_BODY := Color(0.62, 0.62, 0.72)
 const REVEALED_MARK := Color(2.6, 1.3, 0.3)
 const REVEALED_RING_CELLS := 0.44
 const REVEALED_SLASH_CELLS := 0.3  ## half length of the slash
-## LT-52 Summoning Circle: the tower's rim and letter, a faint leash ring (range + 1) and
+## LT-52 Summoning Circle: the tower's rim and letter, a faint leash ring (summon_leash) and
 ## its units: a bone body with a violet rim (a Byakhee also gets two wing strokes), a teal
 ## HP bar under the body (enemy bars are red, above), a claw line to the enemy it holds.
 const SUMMON_COLOR := Color(2.2, 0.8, 1.7)
@@ -295,7 +295,7 @@ func _draw_enemies(s: SimState) -> void:
 func _draw_allies(s: SimState) -> void:
 	for t in s.towers:
 		if Board.shot_kind(t) == "summon":
-			draw_arc(view.cell_to_world(t.centre()), view.cells_to_px(t.stats().range_cells + 1.0), 0,
+			draw_arc(view.cell_to_world(t.centre()), view.cells_to_px(t.stats().summon_leash()), 0,
 				TAU, 64, Color(SUMMON_COLOR, SUMMON_RING_ALPHA), 1.0)
 	for a in s.allies:
 		if not a.is_live():

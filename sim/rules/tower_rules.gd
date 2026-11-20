@@ -146,25 +146,21 @@ static func effective(def: TowerDef, s: TowerDef.Level, cfg: GameConfig, lit := 
 	}
 
 
-## LT-30 §2 / LT-70 §2.3: the effects a power mult scales on an occult aura, gate or circle
-## (Simulation._apply_auras, _cast_banish, _summon); damage_taken_multiplier scales by
-## powered_taken_mult. A shooter's power scales its damage only.
-const POWER_SCALED_EFFECTS: PackedStringArray = ["slow", "strip_armor", "banish_cells",
-	"summon_dps"]
-
-
-## The effects of level `s` at power mult `power`: a copy of s.effects with
-## POWER_SCALED_EFFECTS x power and damage_taken_multiplier by powered_taken_mult; for a
-## shooter (acts, neither banish nor summon) an unchanged copy.
+## LT-30 §2 / LT-70 §2.3: the effects of level `s` at power mult `power` on an occult aura,
+## gate or circle (Simulation._apply_auras, _cast_banish, _summon): a copy of s.effects with
+## the EffectCatalog rows of power "mult" x power and those of power "taken" by
+## powered_taken_mult; for a shooter (acts, neither banish nor summon) an unchanged copy
+## (a shooter's power scales its damage only).
 static func powered_effects(s: TowerDef.Level, power: float) -> Dictionary:
 	var e := s.effects.duplicate()
 	if s.acts() and not s.is_banish() and not s.is_summon():
 		return e
-	for key: String in POWER_SCALED_EFFECTS:
+	for key: String in EffectCatalog.power_keys("mult"):
 		if e.has(key):
 			e[key] = e[key] * power
-	if e.has("damage_taken_multiplier"):
-		e["damage_taken_multiplier"] = powered_taken_mult(e["damage_taken_multiplier"], power)
+	for key: String in EffectCatalog.power_keys("taken"):
+		if e.has(key):
+			e[key] = powered_taken_mult(e[key], power)
 	return e
 
 

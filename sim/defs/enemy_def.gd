@@ -32,7 +32,7 @@ const TRAITS := {
 	"boss": [],
 }
 
-## LT-97 (LT-96 D2, mirror of TowerDef.Level.PENDING): traits that parse but the sim does
+## LT-97 (LT-96 D2, mirror of EffectCatalog pending rows): traits that parse but the sim does
 ## not apply yet. Their data stays in enemies.json; the task that wires a trait removes it
 ## from here. Every other TRAITS entry is read by the sim.
 const PENDING_TRAITS: PackedStringArray = ["tower_harass", "tower_lift", "regen"]

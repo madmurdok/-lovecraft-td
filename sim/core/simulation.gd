@@ -624,8 +624,9 @@ func enemy_position(e: SimEnemy, alpha: float) -> Vector2:
 
 
 func spawn_ally(tower: int, source: String, at: Vector2, hp: float, dps: float, speed: float,
-		flying: bool, lifetime_ticks: int, leash: float) -> int:
-	return _ally.spawn(tower, source, at, hp, dps, speed, flying, lifetime_ticks, leash)
+		flying: bool, lifetime_ticks: int, leash: float,
+		contact := AllySystem.ALLY_CONTACT) -> int:
+	return _ally.spawn(tower, source, at, hp, dps, speed, flying, lifetime_ticks, leash, contact)
 
 
 func ally_by_id(id: int) -> SimAlly:
