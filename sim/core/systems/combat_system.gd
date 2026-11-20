@@ -259,7 +259,7 @@ func fire_towers() -> void:
 			if pool.is_empty():
 				astray = "empty"
 			else:
-				target = pool[_ctx.rng(SimRng.Stream.MADNESS).randi_range(0, pool.size() - 1)]
+				target = pool[_ctx.randi_range(SimRng.Stream.MADNESS, 0, pool.size() - 1)]
 		var pierce: float = s.effects.get("pierce", 0.0)
 		var aoe: float = s.effects.get("aoe_radius", 0.0)
 		var fuse_ticks := 0
@@ -355,9 +355,8 @@ func _cast_banish(t: SimTower, s: TowerDef.Level) -> void:
 			pool = _ground_filter(t, live_fakes_in_range(t.cell, s.range_cells))
 		pool = _banishable(s, pool)
 		picks = []
-		var stream := _ctx.rng(SimRng.Stream.MADNESS)
 		while picks.size() < n and not pool.is_empty():
-			picks.append(pool.pop_at(stream.randi_range(0, pool.size() - 1)))
+			picks.append(pool.pop_at(_ctx.randi_range(SimRng.Stream.MADNESS, 0, pool.size() - 1)))
 	var cells: float = s.effects.get("banish_cells", 0.0) * power
 	var immune := SimTime.ticks(float(s.effects.get("banish_immune_seconds", 0.0)))
 	for e in picks:
@@ -683,20 +682,20 @@ func _roll_miss(extra := 0.0) -> bool:
 	var chance := minf(1.0, _sanity.threshold().miss_chance + extra)
 	if chance <= 0.0:
 		return false
-	return _ctx.rng(SimRng.Stream.COMBAT).randf() < chance
+	return _ctx.randf(SimRng.Stream.COMBAT) < chance
 
 
 ## LT-29 §1.1 crit hook: one roll on CRIT against `chance`; no roll (no CRIT draw) at 0.
 func _roll_crit(chance: float) -> bool:
 	if chance <= 0.0:
 		return false
-	return _ctx.rng(SimRng.Stream.CRIT).randf() < chance
+	return _ctx.randf(SimRng.Stream.CRIT) < chance
 
 
 ## LT-13 shot_split: one MADNESS roll per astray shot -> "real" | "fake" | "empty".
 func _roll_astray() -> String:
 	var m := _config.sanity.madness
-	var r := _ctx.rng(SimRng.Stream.MADNESS).randf()
+	var r := _ctx.randf(SimRng.Stream.MADNESS)
 	if r < m.shot_real:
 		return "real"
 	if r < m.shot_real + m.shot_fake:

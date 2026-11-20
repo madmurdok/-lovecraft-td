@@ -20,10 +20,11 @@ const PRESENTATION_DIRS := ["res://scenes", "res://ui", "res://tools"]
 const SIMULATION := "res://sim/core/simulation.gd"
 ## Engine types sim/ may name today (computed from the code once and pinned, LT-34/S2).
 ## LT-82: Callable for the Combat -> Ally summon hooks (owner decision, no RefCounted cycle).
+## LT-102: FileAccess, JSON, RegEx dropped (IO lives in io/config_loader.gd).
 const ENGINE_ALLOWLIST := [
-	"Array", "Callable", "Dictionary", "FileAccess", "JSON", "PackedByteArray", "PackedInt64Array",
+	"Array", "Callable", "Dictionary", "PackedByteArray", "PackedInt64Array",
 	"PackedStringArray", "PackedVector2Array", "RandomNumberGenerator", "Rect2",
-	"RefCounted", "RegEx", "String", "Variant", "Vector2", "Vector2i",
+	"RefCounted", "String", "Variant", "Vector2", "Vector2i",
 ]
 ## Matched on the code of a sim file with comments and string literals blanked.
 const SIM_FORBIDDEN_CODE := [
@@ -37,7 +38,8 @@ const SIM_FORBIDDEN_CODE := [
 	"\\bqueue_free\\b",
 	"\\$[A-Za-z_]",
 	"func\\s+_(process|physics_process|input|unhandled_input|unhandled_key_input|ready|draw|enter_tree|exit_tree|notification)\\b",
-	"(?<![.\\w])(randf|randi|randf_range|randi_range|randfn|randomize|seed|rand_from_seed)\\s*\\(",
+	# LT-102: `(?<!func )` lets SimRng / SimContext declare their randf / randi_range draws.
+	"(?<![.\\w])(?<!func )(randf|randi|randf_range|randi_range|randfn|randomize|seed|rand_from_seed)\\s*\\(",
 ]
 ## Matched on the code with comments removed but string literals kept.
 const SIM_FORBIDDEN_WITH_STRINGS := [

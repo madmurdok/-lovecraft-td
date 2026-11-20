@@ -17,8 +17,21 @@ func _init(p_config: GameConfig, run_seed: int) -> void:
 	state = SimState.new()
 
 
+## Inspection only (seed, state); draws go through randf / randi_range.
 func rng(stream: SimRng.Stream) -> RandomNumberGenerator:
 	return _rng.stream(stream)
+
+
+func randf(stream: SimRng.Stream) -> float:
+	return _rng.randf(stream)
+
+
+func randi_range(stream: SimRng.Stream, from: int, to: int) -> int:
+	return _rng.randi_range(stream, from, to)
+
+
+func sim_rng() -> SimRng:
+	return _rng
 
 
 func emit(type: SimEvent.Type, id: int, data: Dictionary) -> void:
