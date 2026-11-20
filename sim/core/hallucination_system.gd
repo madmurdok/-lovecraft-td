@@ -13,7 +13,7 @@ extends RefCounted
 ## The fake mimics one of the spawner's candidates (the current wave's unfired spawn
 ## events), picked on rng(SANITY); a pack enemy expands into a full pack, also on SANITY,
 ## whose members enter one by one like a real pack's (Simulation.spawn_enemy, LT-63). Enemies with a `boss` trait are never mimicked (owner
-## decision Q6; no such trait exists yet, the check is the hook for the boss content task).
+## decision Q6; the config accepts `"boss": {}` since LT-97, no shipped enemy carries it yet).
 
 const BOSS_TRAIT := "boss"
 

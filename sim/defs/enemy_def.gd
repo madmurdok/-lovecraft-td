@@ -27,11 +27,27 @@ const TRAITS := {
 	"tower_harass": ["stop_seconds", "fire_rate_multiplier", "debuff_seconds"],
 	"tower_lift": ["from_wave", "drop_cells", "disable_seconds"],
 	"regen": ["hp_percent_per_second"],
+	# LT-97 (D2): a flag trait, no parameters (`"boss": {}`); bosses are never mimicked
+	# (HallucinationSystem.BOSS_TRAIT).
+	"boss": [],
 }
+
+## LT-97 (LT-96 D2, mirror of TowerDef.Level.PENDING): traits that parse but the sim does
+## not apply yet. Their data stays in enemies.json; the task that wires a trait removes it
+## from here. Every other TRAITS entry is read by the sim.
+const PENDING_TRAITS: PackedStringArray = ["tower_harass", "tower_lift", "regen"]
 
 ## Trait id (from TRAITS) -> parameters (String -> float), e.g.
 ## "pack": {"min": 4, "max": 6, "spacing_s": 0.5}.
 var traits: Dictionary = {}
+
+
+## True when this enemy carries any PENDING_TRAITS entry (data the sim does not apply yet).
+func has_pending_traits() -> bool:
+	for trait_id in PENDING_TRAITS:
+		if traits.has(trait_id):
+			return true
+	return false
 
 
 static func parse(r: ConfigReader, id: String, obj: Dictionary, path: String) -> EnemyDef:
