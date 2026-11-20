@@ -351,3 +351,9 @@ stringify without `full_precision` (B9); skip `neutral` for Vector2 (B10).
   calls, no draw risk, 2-function port surface. Risk: call sites keep the idiom, no named intent.
 - B: `chance` / `pick` helpers. Benefit: intent named at the call site. Risk: covers 5 of 8 sites,
   still needs the primitives; each helper needs an equivalence test.
+
+### Owner decisions (2026-11-20)
+
+- Design: "Утверждаю (Recommended)".
+- Q1 trace coverage: "2 коротких полностью + sha всех 12 (Recommended)".
+- Q2 SimRng API: "A: randf / randi_range (Recommended)".
