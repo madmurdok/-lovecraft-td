@@ -65,13 +65,17 @@ class Recorder:
 	var _trace_bytes := 0
 	var _keep_text := false
 	var _trace_text := PackedStringArray()
+	var _run_name := ""
+	var _trace_errors: Array[String] = []  ## untraceable values (GoldenRuns.neutral); must stay empty
+	var _line_errors: Array[String] = []  ## the current line's, moved to _trace_errors
 
 	func _init(run_name: String) -> void:
 		_all.start(HashingContext.HASH_SHA256)
 		_bucket.start(HashingContext.HASH_SHA256)
 		_trace.start(HashingContext.HASH_SHA256)
+		_run_name = run_name
 		_keep_text = run_name in GoldenRuns.TRACE_FULL_RUNS
-		_trace_line(GoldenRuns.trace_header(run_name))
+		_trace_line(GoldenRuns.trace_header(run_name, _line_errors), "header")
 
 	func sink(p_sim: Simulation, events: Array[SimEvent]) -> void:
 		sim = p_sim
@@ -83,9 +87,13 @@ class Recorder:
 			_all.update(line)
 			_bucket.update(line)
 			count += 1
-			_trace_line(GoldenRuns.trace_event_line(ev))
+			_trace_line(GoldenRuns.trace_event_line(ev, _line_errors), "event %d" % count)
 
-	func _trace_line(text: String) -> void:
+	## Hashes one line; names `where` in front of the errors that line added.
+	func _trace_line(text: String, where: String) -> void:
+		for e in _line_errors:
+			_trace_errors.append("%s %s%s" % [_run_name, where, e])
+		_line_errors.clear()
 		var bytes := (text + "\n").to_utf8_buffer()
 		_trace.update(bytes)
 		_trace_lines += 1
@@ -102,12 +110,13 @@ class Recorder:
 	func result(extra := "") -> Dictionary:
 		_close_bucket()
 		var state := GoldenRuns.state_text(sim) + extra
-		_trace_line(GoldenRuns.trace_final(sim))
+		_trace_line(GoldenRuns.trace_final(sim, _line_errors), "final")
 		return {"events": count, "events_sha": _all.finish().hex_encode(),
 			"buckets": buckets, "final": SimNoTreeLoop.digest(sim),
 			"final_sha": GoldenRuns.sha(state),
 			"trace": {"lines": _trace_lines, "sha256": _trace.finish().hex_encode(),
-				"bytes": _trace_bytes, "text": "".join(_trace_text) if _keep_text else null}}
+				"bytes": _trace_bytes, "text": "".join(_trace_text) if _keep_text else null,
+				"errors": _trace_errors}}
 
 
 static func golden_config() -> GameConfig:
@@ -167,64 +176,73 @@ static func canon(v: Variant) -> String:
 # --- the trace (LT-102, docs/design/LT-102-portability-core.md §5) --------------------------
 
 ## `v` as plain JSON values a non-Godot reader parses the same: Vector2 / Vector2i -> [x, y],
-## packed arrays -> arrays, StringName -> String. Asserts what JSON cannot carry exactly:
-## non-String keys, NaN / INF, ints beyond 2^53, other types (each then becomes a "!..." string,
-## which test_trace_lines_are_engine_neutral rejects even where asserts are off).
-static func neutral(v: Variant) -> Variant:
+## packed arrays -> arrays, StringName values -> String. What JSON cannot carry exactly
+## (a non-String key, NaN / INF, an int beyond 2^53, any other type) is never encoded: it is
+## appended to `errors` (the value becomes null, a bad key is left out) and the run fails,
+## Recorder.result() carries the errors, regen.gd refuses to write and the replay test fails.
+static func neutral(v: Variant, errors: Array[String], path := "") -> Variant:
 	match typeof(v):
 		TYPE_DICTIONARY:
 			var out := {}
 			for k: Variant in v:
-				assert(typeof(k) == TYPE_STRING, "trace: non-String key %s" % var_to_str(k))
 				if typeof(k) != TYPE_STRING:
-					return "!key:%s" % var_to_str(k)
-				out[k] = neutral(v[k])
+					errors.append("%s: non-String key %s (%s)" % [path, var_to_str(k),
+						type_string(typeof(k))])
+					continue
+				out[k] = neutral(v[k], errors, "%s.%s" % [path, k])
 			return out
 		TYPE_ARRAY, TYPE_PACKED_INT32_ARRAY, TYPE_PACKED_INT64_ARRAY, \
 				TYPE_PACKED_FLOAT32_ARRAY, TYPE_PACKED_FLOAT64_ARRAY, \
 				TYPE_PACKED_STRING_ARRAY, TYPE_PACKED_VECTOR2_ARRAY:
 			var out: Array = []
+			var i := 0
 			for x: Variant in v:
-				out.append(neutral(x))
+				out.append(neutral(x, errors, "%s[%d]" % [path, i]))
+				i += 1
 			return out
 		TYPE_FLOAT:
 			var f: float = v
-			assert(is_finite(f), "trace: non-finite float %s" % f)
-			return f if is_finite(f) else "!float:%s" % f
+			if is_finite(f):
+				return f
+			errors.append("%s: non-finite float %s" % [path, f])
+			return null
 		TYPE_INT:
-			var i: int = v
-			assert(absi(i) <= MAX_EXACT_INT, "trace: int beyond 2^53: %d" % i)
-			return i if absi(i) <= MAX_EXACT_INT else "!int:%d" % i
+			var n: int = v
+			if absi(n) <= MAX_EXACT_INT:
+				return n
+			errors.append("%s: int beyond 2^53: %d" % [path, n])
+			return null
 		TYPE_VECTOR2:
-			return [neutral(float(v.x)), neutral(float(v.y))]
+			return [neutral(float(v.x), errors, path + "[0]"),
+				neutral(float(v.y), errors, path + "[1]")]
 		TYPE_VECTOR2I:
-			return [neutral(v.x), neutral(v.y)]
+			return [neutral(v.x, errors, path + "[0]"), neutral(v.y, errors, path + "[1]")]
 		TYPE_BOOL, TYPE_NIL:
 			return v
 		TYPE_STRING, TYPE_STRING_NAME:
 			return String(v)
-	assert(false, "trace: no neutral form for %s" % type_string(typeof(v)))
-	return "!%s:%s" % [type_string(typeof(v)), var_to_str(v)]
+	errors.append("%s: no neutral form for %s" % [path, type_string(typeof(v))])
+	return null
 
 
 ## One trace line: `v` neutral, keys sorted, floats as shortest round-trip binary64.
-static func trace_json(v: Variant) -> String:
-	return JSON.stringify(neutral(v), "", true, true)
+static func trace_json(v: Variant, errors: Array[String]) -> String:
+	return JSON.stringify(neutral(v, errors), "", true, true)
 
 
-static func trace_header(run_name: String) -> String:
+static func trace_header(run_name: String, errors: Array[String]) -> String:
 	return trace_json({"data_dir": GOLDEN_DATA, "format": TRACE_FORMAT, "run": run_name,
-		"version": TRACE_VERSION})
+		"version": TRACE_VERSION}, errors)
 
 
-static func trace_event_line(ev: SimEvent) -> String:
+static func trace_event_line(ev: SimEvent, errors: Array[String]) -> String:
 	return trace_json({"data": ev.data, "id": ev.id, "tick": ev.tick,
-		"type": SimEvent.Type.keys()[ev.type]})
+		"type": SimEvent.Type.keys()[ev.type]}, errors)
 
 
 ## The SimNoTreeLoop digest scalars plus every stream state (Godot's signed int64 as a decimal
 ## string, SimRng.Stream order).
-static func trace_final(sim: Simulation) -> String:
+static func trace_final(sim: Simulation, errors: Array[String]) -> String:
 	var s := sim.state
 	var rng: Array[String] = []
 	for stream in SimRng.Stream.values():
@@ -232,7 +250,7 @@ static func trace_final(sim: Simulation) -> String:
 	return trace_json({"final": {"command_log": s.command_log.size(), "gold": s.gold,
 		"lighthouse_hp": s.lighthouse_hp, "next_id": s.next_id, "outcome": s.outcome,
 		"rng": rng, "sanity": s.sanity, "tick": s.tick, "towers": s.towers.size(),
-		"wave": s.wave_index}})
+		"wave": s.wave_index}}, errors)
 
 
 ## The full-text file of a run in TRACE_DIR: "no_tree_loop/5" -> "no_tree_loop_5.jsonl".

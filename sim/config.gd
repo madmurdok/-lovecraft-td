@@ -36,7 +36,9 @@ var map: MapDef
 ## of [path, message] recorded while reading that file (not found, unreadable, bad JSON,
 ## duplicate keys); they lead that file's errors, so the per-file error order is the one a
 ## read-then-parse load produces. A required section with no root and no read error gets
-## "<file>: missing"; an optional one is off, no error. The config may keep references to
+## "<file>: missing"; an optional one is off, no error. A key of `roots` or `read_errors`
+## that names no registry file is an error ("<key>: not a config file (no registry row)"),
+## reported after the sections' errors. The config may keep references to
 ## sub-dictionaries of `roots` (e.g. pack traits): the caller hands them over. `sections`
 ## replaces the registry (tests only: they inject an optional row no shipped file uses);
 ## empty means `_sections()`.
@@ -45,8 +47,10 @@ static func from_dicts(roots: Dictionary, read_errors: Dictionary = {},
 	var result := ConfigLoadResult.new()
 	var c := GameConfig.new()
 	var ctx := {}  # values a later section's parser reads from an earlier one (enemy_ids)
+	var known := {}
 	for row: Array in (sections if not sections.is_empty() else _sections()):
 		var file: String = row[0]
+		known[file] = true
 		var parse: Callable = row[1]
 		var required: bool = row[2]
 		var r := ConfigReader.new(file)
@@ -63,6 +67,13 @@ static func from_dicts(roots: Dictionary, read_errors: Dictionary = {},
 		elif required and read.is_empty():
 			r.error("", "missing")
 		result.errors.append_array(r.errors)
+	# A caller mistake (a misspelt or stray file name) is an error too, after every section's
+	# own errors, so valid input keeps its per-file order.
+	var stray := {}
+	for k: Variant in roots.keys() + read_errors.keys():
+		if not (k is String and known.has(k)) and not stray.has(k):
+			stray[k] = true
+			result.errors.append("%s: not a config file (no registry row)" % str(k))
 	for check: Callable in _cross_checks():
 		result.errors.append_array(check.call(c))
 	if result.ok:

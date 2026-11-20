@@ -23,6 +23,14 @@ func _main() -> void:
 		traces[n] = runs[n]["trace"]
 		runs[n].erase("trace")
 		ordered[n] = runs[n]
+	# A value the trace cannot carry exactly fails the regen before any file is written.
+	var untraceable: Array[String] = []
+	for n in names:
+		untraceable.append_array(traces[n]["errors"])
+	if not untraceable.is_empty():
+		printerr("golden trace: untraceable values, nothing written:\n", "\n".join(untraceable))
+		quit(1)
+		return
 	var doc := {
 		"_generated_by": "scripts/golden-regen.sh (tools/golden/regen.gd); do not edit by hand",
 		"data_dir": GoldenRuns.GOLDEN_DATA,

@@ -57,6 +57,8 @@ func _trace_diff(traces: Dictionary) -> String:
 		if not traces.has(n):
 			lines.append("%s: not computed any more" % n)
 	for n: String in traces:
+		for e: String in traces[n]["errors"]:
+			lines.append("untraceable value: %s" % e)
 		if not runs.has(n):
 			lines.append("%s: not in the manifest" % n)
 			continue
