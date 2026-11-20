@@ -6,6 +6,9 @@ var id: int
 var def: EnemyDef
 var hp: float
 var max_hp: float
+## LT-111: max HP before the wave's hp_mult (= def.hp at spawn). The size class the
+## pull/banish HP caps compare, so a wave multiplier never switches tower roles.
+var base_max_hp: float
 var route: SimRoute
 var distance: int = 0  ## along `route`, in SimTime.UNITS_PER_CELL units
 var prev_distance: int = 0  ## distance before this tick's movement (render interpolation)

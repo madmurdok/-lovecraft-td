@@ -300,7 +300,7 @@ Current favourite: 1 (or 4). Not a decision; the style test decides.
 data/
   towers.json     # per tower: kind, cost, levels[1..2] (sanity_reserve), branches{a,b}
   enemies.json    # per enemy: hp, speed, armor, leak_damage, drops (relic weights), traits
-  waves.json      # per wave: spawn groups with type, count, interval, delay
+  waves.json      # per wave: spawn groups with type, count, interval, delay; optional hp_mult / speed_mult (LT-111)
   sanity.json     # thresholds, drains, regen, hallucination rates, madness.exit_rule
   economy.json    # starting money, dawn wage, sell ratio, relics, token timings, night luck
   map.json        # grid rows (. buildable, # path, ~ water, S start, L lighthouse); path derived S -> L

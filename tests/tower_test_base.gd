@@ -23,7 +23,8 @@ func tsim(enemy_edits := {}, hp := -1) -> Simulation:
 
 
 ## Spawns `def_id` parked `cells` cells along the route (cell centre of path cell
-## `cells` when whole), speed 0, with `hp` hit points.
+## `cells` when whole), speed 0, with `hp` hit points (also base_max_hp, so the
+## pull/banish HP caps see `hp`; LT-111).
 func put(sim: Simulation, def_id: String, cells: float, hp := HUGE_HP,
 		fake := false) -> SimEnemy:
 	var id := sim.spawn_enemy(def_id, fake)
@@ -33,6 +34,7 @@ func put(sim: Simulation, def_id: String, cells: float, hp := HUGE_HP,
 	e.base_units_per_tick = 0
 	e.hp = hp
 	e.max_hp = hp
+	e.base_max_hp = hp
 	return e
 
 

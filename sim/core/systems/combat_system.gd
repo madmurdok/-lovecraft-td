@@ -394,12 +394,13 @@ func _summon(t: SimTower, s: TowerDef.Level) -> void:
 
 
 ## LT-51 (Q4 "HP cap per level"): those of `enemies` a gate with stats `s` may banish:
-## max_hp <= banish_max_hp (Dagon's is above every cap) and no banish immunity.
+## base_max_hp <= banish_max_hp (Dagon's is above every cap; LT-111: base HP, before the
+## wave's hp_mult) and no banish immunity.
 func _banishable(s: TowerDef.Level, enemies: Array[SimEnemy]) -> Array[SimEnemy]:
 	var cap: float = s.effects.get("banish_max_hp", 0.0)
 	var out: Array[SimEnemy] = []
 	for e in enemies:
-		if e.max_hp <= cap and int(e.status.get("banish_immune_ticks", 0)) <= 0:
+		if e.base_max_hp <= cap and int(e.status.get("banish_immune_ticks", 0)) <= 0:
 			out.append(e)
 	return out
 
@@ -597,8 +598,8 @@ func _line_hits(origin: Vector2, end: Vector2, half_width: float,
 
 
 ## Slot 5, after a shot's damage (LT-29 §1.3-1.4): bleed on every hit still live; the chain
-## pull on the shot's primary target only (Q4), if it was hit, is still live, has max_hp <=
-## pull_max_hp (0 = no cap) and no pull immunity. SHOT was emitted before the damage (the
+## pull on the shot's primary target only (Q4), if it was hit, is still live, has base_max_hp
+## <= pull_max_hp (0 = no cap; LT-111: base HP, before the wave's hp_mult) and no pull immunity. SHOT was emitted before the damage (the
 ## pinned SHOT -> DIED order), so `pulled` is written into the same `shot` Dictionary
 ## already passed to _emit: events are drained only after step(), and SimEvent keeps the
 ## Dictionary by reference.
@@ -616,7 +617,7 @@ func _on_hit_effects(t: SimTower, s: TowerDef.Level, target: SimEnemy, hits: Arr
 		return
 	var pulled: Array[int] = []
 	var cap: float = s.effects.get("pull_max_hp", 0.0)
-	if hits.has(target) and target.is_live() and (cap <= 0.0 or target.max_hp <= cap) \
+	if hits.has(target) and target.is_live() and (cap <= 0.0 or target.base_max_hp <= cap) \
 			and int(target.status.get("pull_immune_ticks", 0)) <= 0:
 		_spawn.push_back(target, pull)
 		var immune := SimTime.ticks(float(s.effects.get("pull_immune_seconds", 0.0)))

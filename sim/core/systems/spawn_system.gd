@@ -88,17 +88,23 @@ func clear_pack_queue() -> void:
 
 
 ## One enemy of `def` enters at the start of its route on this tick, with a new id and
-## SPAWNED {def}; returns that id.
+## SPAWNED {def}; returns that id. LT-111: HP and base speed are scaled by the current
+## wave's hp_mult / speed_mult (fakes and queued pack members alike); base_max_hp keeps
+## def.hp for the HP caps. Unconditional multiply: x 1.0 is exact, so absent fields
+## change nothing.
 func _enter(def: EnemyDef, is_fake: bool, pack_of: int) -> int:
+	var m := _wave_mults()
 	var e := SimEnemy.new()
 	e.id = _ctx.next_id()
 	e.def = def
-	e.hp = def.hp
-	e.max_hp = def.hp
+	e.hp = def.hp * m[0]
+	e.max_hp = e.hp
+	e.base_max_hp = def.hp
 	e.is_fake = is_fake
 	e.pack_of = pack_of
 	e.spawn_tick = _state.tick
-	e.base_units_per_tick = SimTime.units_per_tick(def.speed)
+	# One rounding: units_per_tick of the scaled speed (LT-111 §3).
+	e.base_units_per_tick = SimTime.units_per_tick(def.speed * m[1])
 	# Flyers start at S too (owner decision, §7 Q3) and fly straight to L.
 	e.route = _ground_route
 	if def.flying:
@@ -106,6 +112,17 @@ func _enter(def: EnemyDef, is_fake: bool, pack_of: int) -> int:
 	_state.enemies.append(e)
 	_ctx.emit(SimEvent.Type.SPAWNED, e.id, {"def": def.id})
 	return e.id
+
+
+## LT-111: [hp_mult, speed_mult] of the current (or last started) wave; [1.0, 1.0] before
+## wave 1, past the last wave, or with no waves config (ScriptedSpawner, test spawns).
+func _wave_mults() -> Array[float]:
+	var waves := _config.waves
+	var i := _state.wave_index
+	if waves == null or i < 1 or i > waves.waves.size():
+		return [1.0, 1.0]
+	var w: WavesConfig.Wave = waves.waves[i - 1]
+	return [w.hp_mult, w.speed_mult]
 
 
 ## Slot 3: every live enemy walks one tick along its route.
