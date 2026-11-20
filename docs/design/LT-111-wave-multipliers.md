@@ -130,3 +130,9 @@ drop the range in `opt_number` (7 fails); multiply speed after rounding is not a
   the 1.0 path beyond the exact multiply; golden certainly identical. Risk: an HP readout
   could show 68.99999 where text formats raw floats (bars use the ratio, unaffected).
   *Yes, `roundf`*: clean numbers; risk: changes enemies with a fractional base `hp`.
+
+## Owner decisions (2026-11-20)
+
+- Q1: "Базовое, новое base_max_hp (Recommended)".
+- Q2: "(0, 10] (Recommended)".
+- Q3: "Не округлять (Recommended)".
