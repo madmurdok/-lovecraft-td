@@ -235,6 +235,12 @@ line number and both lines. A new fast test, `test_trace_lines_are_engine_neutra
 `no_tree_run` only and checks every line parses as a JSON object, no string value looks like
 Godot vector text (`^\(.*, .*\)$`), each float parses back equal, and `rng` holds strings.
 
+**Port note (found in LT-102/S8):** the trace writes floats as shortest round-trip decimals,
+which is correct (checked against Python `repr`). Godot's `JSON.parse_string` reads some of them
+back one ulp off (e.g. "7.8466668128967285"). A reader that re-parses the trace with Godot's JSON
+must compare floats to within 1 ulp; the byte-exact check is the text comparison in
+golden_replay_test. A port should parse with a correctly rounding parser.
+
 ## 6. Edit map
 
 ### S2: IO out, SimRng, allowlist (starts after LT-100 merges; re-outline `config.gd` first)
