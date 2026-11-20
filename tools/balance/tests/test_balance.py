@@ -213,6 +213,32 @@ class BotStrategiesTest(unittest.TestCase):
         self.assertIn("mundane", s)
         self.assertEqual(len(s), len(set(s)))
 
+    def test_real_bot_file_is_the_shipped_order(self):
+        self.assertEqual(balance.STRATEGIES_FILE,
+                         os.path.join(balance.REPO, "tools", "bot", "strategies.json"))
+        self.assertEqual(balance.bot_strategies(),
+                         ["mundane", "occult", "mixed", "madness", "demolition", "battery",
+                          "resonator", "gate", "circle", "light"])
+
+    def test_missing_or_bad_file_exits_naming_the_file(self):
+        with tempfile.TemporaryDirectory() as d:
+            f = os.path.join(d, "strategies.json")
+            cases = {"missing": None, "bad json": "{", "no strategies": '{"tunables": {}}',
+                     "row without name": '{"strategies": [{"cycle": ["x"]}]}',
+                     "not an object": "[1]"}
+            for what, text in cases.items():
+                with self.subTest(what):
+                    if text is None:
+                        if os.path.exists(f):
+                            os.remove(f)
+                    else:
+                        with open(f, "w") as out:
+                            out.write(text)
+                    with mock.patch.object(balance, "STRATEGIES_FILE", f):
+                        with self.assertRaises(SystemExit) as cm:
+                            balance.bot_strategies()
+                    self.assertIn(f, str(cm.exception.code))
+
 
 # --- 12: cell / report --------------------------------------------------------------------
 
@@ -360,6 +386,62 @@ class RunJobTest(unittest.TestCase):
                       ['RUN {"outcome": "won"}'] * 3):
             with self.subTest(len(lines)):
                 self.assertIsNotNone(self.run_job(lines)["problem"])
+
+
+# --- 13b: run_job timeout (LT-101), a real process ---------------------------------------
+
+class RunJobTimeoutTest(unittest.TestCase):
+    """A job still running at the limit is killed with its whole process group and fails.
+    "godot" is a shell script that starts a grandchild `sleep`, records its pid and waits, so
+    the job never ends by itself; the limit is patched to 1 s."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.pidfile = os.path.join(self._tmp.name, "child.pid")
+        self.godot = os.path.join(self._tmp.name, "godot")
+        with open(self.godot, "w") as f:
+            f.write("#!/bin/sh\nsleep 60 &\necho $! > '%s'\nwait\n" % self.pidfile)
+        os.chmod(self.godot, 0o755)
+        self.job = {"variant": "v", "strategy": "mundane", "data": "/x/data_v", "flags": []}
+
+    def _alive(self, pid):
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        return True
+
+    def test_hung_job_is_killed_with_its_children_and_reported(self):
+        with mock.patch.object(balance, "JOB_TIMEOUT_BASE", 1), \
+                mock.patch.object(balance, "JOB_TIMEOUT_PER_SEED", 0):
+            t0 = time.monotonic()
+            r = balance.run_job(self.godot, self.job, 2, self._tmp.name)
+            elapsed = time.monotonic() - t0
+        self.assertEqual(r["problem"], "timeout after 1 s")
+        self.assertEqual(r["runs"], [])
+        self.assertLess(elapsed, 30)  # the grandchild sleeps 60 s: run_job did not wait for it
+        with open(self.pidfile) as f:
+            child = int(f.read())
+        # The grandchild (Godot's stand-in under /usr/bin/time) is gone too; an orphan is
+        # reaped by launchd/init shortly after the kill, so allow a moment.
+        deadline = time.monotonic() + 5
+        while self._alive(child) and time.monotonic() < deadline:
+            time.sleep(0.05)
+        alive = self._alive(child)
+        if alive:
+            os.kill(child, 9)
+        self.assertFalse(alive, "the grandchild of the timed-out job is still running")
+
+    def test_limit_scales_with_seeds(self):
+        self.assertEqual(balance.JOB_TIMEOUT_BASE + balance.JOB_TIMEOUT_PER_SEED * 20, 1320)
+        # A quick job under the limit is not a timeout.
+        with open(self.godot, "w") as f:
+            f.write("#!/bin/sh\nexit 0\n")
+        with mock.patch.object(balance, "JOB_TIMEOUT_BASE", 5), \
+                mock.patch.object(balance, "JOB_TIMEOUT_PER_SEED", 0):
+            r = balance.run_job(self.godot, self.job, 0, self._tmp.name)
+        self.assertIsNone(r["problem"])
 
 
 # --- 9, 10, 13, 14: main -------------------------------------------------------------------

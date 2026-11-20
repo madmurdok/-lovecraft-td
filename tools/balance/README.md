@@ -130,4 +130,5 @@ any run (exit 1). Adding a row adds a strategy to the golden replay too
 ```sh
 python3 -m unittest discover -s tools/balance/tests -v   # balance.py, no Godot (stdlib only)
 scripts/test.sh tests/bot_upgrade_test.gd                 # the bot's --strategies= flag (gdUnit)
+scripts/test.sh tests/strategy_table_test.gd              # tools/bot/strategies.json loader, interpreter, run cap (gdUnit)
 ```
