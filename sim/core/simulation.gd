@@ -70,7 +70,12 @@ func step() -> void:
 	state.tick += 1
 	for e in state.enemies:
 		e.reset_modifiers()
+	# LT-105 D2: the tower modifier channel starts neutral; slot-2 writers compose into it.
+	for t in state.towers:
+		t.reset_modifiers()
 	# 2. Effect systems: the lighthouse beam first (LT-30: turn, `lit` of towers and enemies),
+	# LT-105 D2: tower channel writers in this fixed order, all before apply_auras (the first
+	# reader): light (update_beam), [LT-106 enemy traits], [LT-32 crew posts].
 	# then Elder Sign auras (LT-11; Corrupted Seal's armor strip, LT-29), the madness buff
 	# (LT-23 §3) and the flare's slow; then enemy status timers (LT-29 P6: bleed pulses see
 	# this tick's auras and buff; pull immunity counts down); later slows/stuns add theirs
@@ -585,13 +590,14 @@ func sanity_state_for(s: float) -> SimState.SanityState:
 	return _sanity.sanity_state_for(s)
 
 
-## LT-76 (LT-65 §3.2) read-only: TowerRules.light_effect of tower `tower_id` in its net light
-## state now ({power_mult, interval_mult, ignore_miss, miss_add}); {} for no such tower.
+## LT-76 (LT-65 §3.2), LT-105 D7 read-only: the modifier channel of tower `tower_id` as the
+## sim fires with it (SimTower.modifiers: {power_mult, interval_mult, miss_add, ignore_miss,
+## disabled}; the last tick's values between ticks); {} for no such tower.
 func tower_mults(tower_id: int) -> Dictionary:
 	var t := tower_by_id(tower_id)
 	if t == null:
 		return {}
-	return TowerRules.light_effect(t.def, config, t.lit, t.shadowed)
+	return t.modifiers()
 
 
 ## LT-76 (LT-65 §3.2): the tower standing on `cell` (built or building), or null.

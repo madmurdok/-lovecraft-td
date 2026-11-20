@@ -16,6 +16,9 @@ const LIT_MARK := "*"  ## LT-43 §5 (Q4): after a value the lighthouse beam chan
 const NO_MISSES_LIT := "No misses while lit"  ## LT-43 §5: the Fraying line of a lit tower
 const NOW_LIT := "* In the beam now: "  ## LT-43 §5: the status line of a lit tower
 const NOW_SHADOW := "* In shadow now: "  ## LT-70 §5: the status line of a shadowed tower
+## LT-105 (Q3): the status line of a tower whose modifier channel is changed by something
+## other than light / shadow (neither lit nor shadowed).
+const NOW_MODIFIED := "* Modified now: "
 
 ## Player-facing names of SimTower.TARGET_PRIORITIES (LT-31).
 const PRIORITY_NAMES := {
@@ -236,11 +239,12 @@ static func hits_text(def: TowerDef, s: TowerDef.Level) -> String:
 ## LT-43 §5 (Q4): the cells the beam changes on a lit tower (TowerStatsModel.lit_numbers),
 ## value + LIT_MARK, keyed like row_values: mundane Every and DPS; occult Damage and DPS (a
 ## circle: its unit DPS and DPS). Empty when nothing changes. LT-70: `shadow` takes the
-## shadow multipliers (a shadowed tower), with the same mark.
+## shadow multipliers (a shadowed tower), with the same mark. LT-105 D7: `fx`, when given,
+## is the tower's modifier channel (TowerStatsModel.lit_numbers).
 static func lit_values(def: TowerDef, s: TowerDef.Level, cfg: GameConfig,
-		sanity_now := -1.0, shadow := false) -> Dictionary:
+		sanity_now := -1.0, shadow := false, fx := {}) -> Dictionary:
 	var out := {}
-	var n := TowerStatsModel.lit_numbers(def, s, cfg, sanity_now, shadow)
+	var n := TowerStatsModel.lit_numbers(def, s, cfg, sanity_now, shadow, fx)
 	for key: String in n:
 		var v: float = n[key]
 		# a circle's unit DPS reads "12.6*", no "/s": "12.6/s*" is cut in a 3-column panel
@@ -251,21 +255,43 @@ static func lit_values(def: TowerDef, s: TowerDef.Level, cfg: GameConfig,
 
 ## LT-43 §5: the status line under the role of a lit tower; "" when the beam changes nothing.
 ## LT-70 §5: with `shadow`, a shadowed tower's line: NOW_SHADOW + "fire −20%, +10% misses"
-## (mundane shooter) or "+15% power" (occult).
-static func lit_line(def: TowerDef, s: TowerDef.Level, cfg: GameConfig, shadow := false) -> String:
-	var pct := TowerStatsModel.beam_percent(def, s, cfg, shadow)
+## (mundane shooter) or "+15% power" (occult). LT-105 D7: `fx`, when given, is the tower's
+## modifier channel; `head`, when given, replaces the NOW_LIT / NOW_SHADOW head (the panel
+## passes NOW_MODIFIED when another writer contributed, Q3). A mundane line ends
+## ", no misses" with ignore_miss, else ", +N% misses" with miss_add > 0. With the generic
+## NOW_MODIFIED head only: a disabled tower reads NOW_MODIFIED + "disabled"; a channel whose
+## fire / power percent is 0 still gets a line (mundane: "no misses" / "±N% misses"), or
+## the bare head "* Modified now" when nothing else is nameable. The light heads keep "" there.
+static func lit_line(def: TowerDef, s: TowerDef.Level, cfg: GameConfig, shadow := false,
+		fx := {}, head := "") -> String:
+	fx = TowerStatsModel.effect_of(def, cfg, shadow, fx)
+	var generic := head == NOW_MODIFIED
+	if generic and fx.get("disabled", false):
+		return head + "disabled"
+	var pct := TowerStatsModel.beam_percent(def, s, cfg, shadow, fx)
 	if pct == 0.0:
-		return ""
-	var head := NOW_SHADOW if shadow else NOW_LIT
+		return _modified_misses(def, fx, head) if generic else ""
+	if head.is_empty():
+		head = NOW_SHADOW if shadow else NOW_LIT
 	var signed := "%s%s%%" % [MINUS if pct < 0.0 else "+", num(roundf(absf(pct)))]
 	if def.kind == "mundane":
 		var t := head + "fire " + signed
-		var fx := TowerStatsModel.state_effect(def, cfg, shadow)
-		if shadow:
-			var add: float = fx["miss_add"]
-			return t + (", +%s%% misses" % num(add * 100.0) if add > 0.0 else "")
-		return t + (", no misses" if fx["ignore_miss"] else "")
+		if fx["ignore_miss"]:
+			return t + ", no misses"
+		var add: float = fx["miss_add"]
+		return t + (", +%s%% misses" % num(add * 100.0) if add > 0.0 else "")
 	return head + signed + " power"
+
+
+## LT-105 (Q3): the generic status line of a channel with no fire / power change: a mundane
+## tower's miss change ("no misses", "+N% misses", "−N% misses"), else the bare head.
+static func _modified_misses(def: TowerDef, fx: Dictionary, head: String) -> String:
+	var add: float = fx.get("miss_add", 0.0)
+	if def.kind == "mundane" and fx.get("ignore_miss", false):
+		return head + "no misses"
+	if def.kind == "mundane" and add != 0.0:
+		return head + "%s%s%% misses" % [MINUS if add < 0.0 else "+", num(absf(add) * 100.0)]
+	return head.trim_suffix(": ")
 
 
 ## LT-43 Q3: the panel line under a sanity-scaled tower's table.

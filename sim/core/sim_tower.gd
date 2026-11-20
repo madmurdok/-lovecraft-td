@@ -37,14 +37,58 @@ var lit := false
 ## radius (centre test) and not lit by the beam, the flare or a casts_light tower.
 var shadowed := false
 
-## Disable/harass timers (tower_harass, tower_lift, ...) added by later tasks.
-var status: Dictionary = {}
+## LT-105 (LT-96 S9): the tower modifier channel, what the tower fires with this tick.
+## Reset to neutral in slot 1 (Simulation.step, reset_modifiers); slot-2 writers compose
+## into it through add_modifiers only, in a fixed order (light first, LightSystem.
+## update_beam); slot-2 apply_auras and slot-5 fire_towers / _cast_banish / _summon read it.
+## Between ticks it holds the last tick's values (the UI reads it there, Simulation.
+## tower_mults). No timers here: a timed effect keeps its timer with its owner and rewrites
+## the channel every tick while active.
+var power_mult := 1.0  ## damage / aura / banish / summon multiplier (composed by *)
+var interval_mult := 1.0  ## fire interval multiplier, shooters only (composed by *)
+var miss_add := 0.0  ## added to a mundane shot's miss chance (composed by +)
+var ignore_miss := false  ## no miss roll at all, wins over miss_add (composed by OR)
+var disabled := false  ## no shot, cast or aura; the cooldown keeps counting (OR)
 
 
 func stats() -> TowerDef.Level:
 	if level >= TowerDef.LEVEL_COUNT:
 		return def.branches[branch]
 	return def.levels[level]
+
+
+## LT-105 D2: slot 1 of every tick, before any writer. The literals are the neutral values
+## the golden replay relies on (1.0 * x == x, 0.0 + x == x exactly).
+func reset_modifiers() -> void:
+	power_mult = 1.0
+	interval_mult = 1.0
+	miss_add = 0.0
+	ignore_miss = false
+	disabled = false
+
+
+## LT-105 D1/D4: the only write path into the channel. Multipliers multiply in call order
+## (float * is not associative: writer order is part of determinism), miss_add sums, the
+## bools OR.
+func add_modifiers(power: float, interval: float, miss: float, no_miss := false,
+		off := false) -> void:
+	power_mult *= power
+	interval_mult *= interval
+	miss_add += miss
+	ignore_miss = ignore_miss or no_miss
+	disabled = disabled or off
+
+
+## LT-105 D7: the channel as {power_mult, interval_mult, miss_add, ignore_miss, disabled}.
+func modifiers() -> Dictionary:
+	return {
+		"power_mult": power_mult,
+		"interval_mult": interval_mult,
+		"miss_add": miss_add,
+		"ignore_miss": ignore_miss,
+		"disabled": disabled,
+	}
+
 
 
 ## Cell centre in cell units (same frame as SimRoute.position_at).

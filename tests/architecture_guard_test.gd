@@ -910,3 +910,121 @@ func test_g4b_a_planted_next_id_or_lighthouse_hp_write_makes_the_guard_fail() ->
 		same.sort()
 		assert_array(same).is_equal(G4B_OWNERS["lighthouse_hp"])
 	scan.free()
+
+
+# --- G12 (LT-105 D8, G4b-style): the tower modifier channel is written only by SimTower ------
+
+const G12_DIRS := ["res://sim", "res://ui", "res://scenes", "res://tools"]
+const G12_HOME := "res://sim/core/sim_tower.gd"
+const G12_WRITE_OP := "\\s*[-+*/%|&^]?=(?!=)"
+## Four channel names no engine class has: any write to them, through any receiver or bare.
+const G12_FIELDS := "\\b(power_mult|interval_mult|miss_add|ignore_miss)" + G12_WRITE_OP
+## `disabled` is also Button.disabled: under res://sim every write counts; elsewhere only
+## a write through a tower (a SimTower alias of the file, or a tower lookup chain).
+const G12_DISABLED := "\\bdisabled" + G12_WRITE_OP
+const G12_TOWER_CHAIN := "(?:\\b(?:tower_by_id|tower_at_cell)\\([^()]*\\)|\\btowers\\[[^\\]]*\\])" \
+	+ "\\.disabled" + G12_WRITE_OP
+## Names that hold a SimTower: typed `: SimTower`, `var x := ...tower_by_id(..)` /
+## `tower_at_cell(..)`, `for x in ...towers`.
+const G12_ALIAS := "\\b(\\w+)\\s*:\\s*SimTower\\b" \
+	+ "|\\bvar\\s+(\\w+)\\s*:?=\\s*[\\w.]*\\b(?:tower_by_id|tower_at_cell)\\(" \
+	+ "|\\bfor\\s+(\\w+)\\s+in\\s+[\\w.]*\\btowers\\b"
+## The files that call add_modifiers (the only write path), relative to res://. LT-106 / LT-32
+## add their writer files here.
+const G12_WRITERS := ["sim/core/systems/light_system.gd"]
+
+
+## `file:line: match` for every channel write in `text` of `file` (the home is not exempt
+## here; the caller skips it).
+func _g12_hits(scan: SimBoundaryTest, file: String, text: String) -> Array[String]:
+	var hits := _find_joined(scan, file, text, G12_FIELDS)
+	if file.begins_with("res://sim/"):
+		hits.append_array(_find_joined(scan, file, text, G12_DISABLED))
+		return hits
+	hits.append_array(_find_joined(scan, file, text, G12_TOWER_CHAIN))
+	var alias_re := RegEx.create_from_string(G12_ALIAS)
+	var aliases: Array[String] = []
+	for st: Array in _statements(scan, text):
+		for m in alias_re.search_all(st[1]):
+			for g in range(1, 4):
+				var n := m.get_string(g)
+				if not n.is_empty() and not aliases.has(n):
+					aliases.append(n)
+	if not aliases.is_empty():
+		hits.append_array(_find_joined(scan, file, text,
+			"\\b(?:" + "|".join(aliases) + ")\\.disabled" + G12_WRITE_OP))
+	return hits
+
+
+func test_g12_tower_channel_fields_are_written_only_in_sim_tower() -> void:
+	var scan := SimBoundaryTest.new()
+	var hits: Array[String] = []
+	var home_hits: Array[String] = []
+	var callers: Array[String] = []
+	var call_re := "(?<!func )\\badd_modifiers\\("
+	for dir: String in G12_DIRS:
+		for f in scan._gd_files(dir):
+			var text := FileAccess.get_file_as_string(f)
+			if not scan._find(f, scan._code_lines(text), call_re).is_empty():
+				callers.append(f.trim_prefix("res://"))
+			if f == G12_HOME:
+				home_hits = _g12_hits(scan, f, text)
+				continue
+			hits.append_array(_g12_hits(scan, f, text))
+	scan.free()
+	# The scan sees the home's own writes (reset_modifiers, add_modifiers): it is not blind.
+	assert_int(home_hits.size()).is_greater_equal(10)
+	assert_array(hits).override_failure_message(
+		"tower channel written outside SimTower: " + ", ".join(hits)).is_empty()
+	callers.sort()
+	assert_array(callers).override_failure_message("add_modifiers callers %s" % [callers]) \
+		.is_equal(G12_WRITERS)
+
+
+func test_g12_catches_planted_writes_and_passes_reads_and_buttons() -> void:
+	var scan := SimBoundaryTest.new()
+	var planted := {
+		"res://ui/probe.gd": [
+			"var t := game.sim.tower_by_id(id)\nt.power_mult = 2.0",
+			"t.interval_mult *= 0.5",
+			"tower.miss_add += 0.1",
+			"x.ignore_miss = true",
+			"game.sim.tower_by_id(id).disabled = true",
+			"game.sim.state.towers[0].disabled = true",
+			"var t := game.sim.tower_by_id(id)\nt.disabled = true",
+			"func f(tw: SimTower) -> void:\n\ttw.disabled = true",
+			"for t in game.sim.state.towers:\n\tt.disabled = true",
+			"var t := game.sim.tower_by_id(id)\nt.power_mult \\\n\t= 2.0",
+		],
+		"res://sim/core/systems/probe.gd": [
+			"t.disabled = true",
+			"func f() -> void:\n\tfor t in _state.towers:\n\t\tt.disabled = t.disabled or x",
+			"t.power_mult *= 1.2",
+		],
+		"res://scenes/probe.gd": [
+			"var t: SimTower = sim.tower_by_id(id)\nt.disabled = true",
+		],
+	}
+	var missed: Array[String] = []
+	for file: String in planted:
+		for text: String in planted[file]:
+			if _g12_hits(scan, file, text).is_empty():
+				missed.append("%s: %s" % [file, text.replace("\n", " | ")])
+	var reads := [
+		"var pm := t.power_mult\nif t.interval_mult != 1.0 and t.miss_add == 0.0:\n\tpass",
+		"x = t.disabled == false\nif not t.ignore_miss:\n\tpass",
+		"sell_button.disabled = r != OK\nb.disabled = true\nupgrade_button.disabled = x",
+		"var power_mult := 1.0\nvar fx := {\"power_mult\": 1.0}",
+		"# t.power_mult = 2.0\nvar s := \"t.disabled = true\"",
+		"t.add_modifiers(1.0, 1.0, 0.0, false, true)",
+	]
+	var false_hits: Array[String] = []
+	for text: String in reads:
+		var got := _g12_hits(scan, "res://ui/probe.gd", text)
+		if not got.is_empty():
+			false_hits.append("%s -> %s" % [text.replace("\n", " | "), got])
+	scan.free()
+	assert_array(missed).override_failure_message(
+		"G12 did not fire on: " + ", ".join(missed)).is_empty()
+	assert_array(false_hits).override_failure_message(
+		"G12 fired on a read: " + ", ".join(false_hits)).is_empty()
