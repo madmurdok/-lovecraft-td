@@ -526,6 +526,18 @@ func sell_relics(kind := "") -> SimCommand.CommandResult:
 	return _economy.sell_relics(kind)
 
 
+## LT-99 dawn phase hook: the wave director calls it when wave `n` is cleared, before it emits
+## WAVE_CLEARED and resets night_luck. The actions run in this order (golden replay pins it);
+## a new dawn action is one line here, no director edit. Returns the wave bonus paid.
+func on_dawn(n: int) -> int:
+	dissolve_fakes("wave_end")  # LT-12 §5: before the bonus, so BUILD starts with none
+	settle_all_tokens()  # LT-27 §1.3: dawn credits real tokens, ghosts vanish
+	var bonus := award_wave_bonus(n)
+	award_wave_sanity()  # LT-10: regen.between_waves, also for the last wave
+	auto_restore_sanity()  # LT-13: exit rule auto_restore; regen above is 0 in madness
+	return bonus
+
+
 ## 1.0 without a WaveDirector (the director is the facade's, so it is passed in).
 func early_night_luck() -> float:
 	return _economy.early_night_luck(_spawner is WaveDirector)
