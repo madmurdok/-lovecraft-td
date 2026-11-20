@@ -19,20 +19,24 @@ func test_shipped_crew_is_ground_only_with_glyph_d_and_others_default() -> void:
 	assert_str(dyn.glyph).is_equal("D")
 	assert_str(dyn.targets).is_equal("ground")
 	assert_bool(dyn.ground_only()).is_true()
+	# Every other tower: an explicit "glyph"/"targets" key wins (the shipped letters are
+	# pinned in each tower's own config test); without one the defaults apply. LT-98: no
+	# per-id list here, so a new tower does not touch this test.
+	var raw: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://data/" + T))["towers"]
+	var defaulted_glyphs := 0
 	for id: String in r.config.towers:
 		if id == "dynamite_crew":
 			continue
 		var t: TowerDef = r.config.towers[id]
-		if id == "coast_battery":  # LT-48 sets glyph "B" on purpose (name "Coast battery")
-			assert_str(t.glyph).override_failure_message(id).is_equal("B")
-		elif id == "silver_key":  # LT-51 sets glyph "K" ("S" is the Searchlight's)
-			assert_str(t.glyph).override_failure_message(id).is_equal("K")
-		elif id == "summoning_circle":  # LT-52 sets glyph "C" ("S" is the Searchlight's)
-			assert_str(t.glyph).override_failure_message(id).is_equal("C")
+		var obj: Dictionary = raw[id]
+		if obj.has("glyph"):
+			assert_str(t.glyph).override_failure_message(id).is_equal(obj["glyph"])
 		else:
 			assert_str(t.glyph).override_failure_message(id).is_equal(t.name.left(1))
-		assert_str(t.targets).override_failure_message(id).is_equal("all")
-		assert_bool(t.ground_only()).override_failure_message(id).is_false()
+			defaulted_glyphs += 1
+		assert_str(t.targets).override_failure_message(id).is_equal(obj.get("targets", "all"))
+		assert_bool(t.ground_only()).override_failure_message(id).is_equal(t.targets == "ground")
+	assert_int(defaulted_glyphs).is_greater(0)  # the default arm is hit
 
 
 func test_a_visible_non_ascii_glyph_is_accepted() -> void:

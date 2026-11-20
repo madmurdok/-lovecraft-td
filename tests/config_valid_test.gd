@@ -11,22 +11,22 @@ func _real() -> GameConfig:
 	return result.config
 
 
-func test_real_data_loads_with_expected_counts() -> void:
+## LT-98: the shipped roster (ids, wave count) is pinned in roster_snapshot_test.gd only;
+## here the real data loads and every def in it obeys the invariants below.
+func test_real_data_loads_and_is_not_empty() -> void:
 	var c := _real()
-	assert_int(c.towers.size()).is_equal(10)
-	assert_int(c.enemies.size()).is_equal(5)
-	assert_int(c.waves.waves.size()).is_equal(5)
-	assert_array(c.towers.keys()).contains_exactly_in_any_order(
-		["rifleman", "harpooner", "elder_sign", "necronomicon_reader", "dynamite_crew",
-		"coast_battery", "searchlight", "resonator", "silver_key", "summoning_circle"])
-	assert_array(c.enemies.keys()).contains_exactly_in_any_order(
-		["cultist", "hybrid", "deep_one", "night_gaunt", "shoggoth"])
+	assert_dict(c.towers).is_not_empty()
+	assert_dict(c.enemies).is_not_empty()
+	assert_array(c.waves.waves).is_not_empty()
 
 
 func test_default_dir_is_res_data() -> void:
 	var result := GameConfig.load_from_dir()
 	assert_bool(result.ok).is_true()
-	assert_int(result.config.towers.size()).is_equal(10)
+	var c := _real()
+	assert_array(result.config.towers.keys()).contains_exactly_in_any_order(c.towers.keys())
+	assert_array(result.config.enemies.keys()).contains_exactly_in_any_order(c.enemies.keys())
+	assert_int(result.config.waves.waves.size()).is_equal(c.waves.waves.size())
 
 
 func test_economy_fields() -> void:
@@ -78,12 +78,10 @@ func test_enemy_defaults_and_traits() -> void:
 	assert_float(en["shoggoth"].horror_drain).is_equal(2.5)  # LT-45 difficulty pass (was 0.5)
 	for id in ["cultist", "hybrid", "deep_one", "night_gaunt"]:
 		assert_float(en[id].horror_drain).is_equal(0.0)
-	assert_array(en["deep_one"].traits.keys()).contains_exactly(["pack"])
+	assert_dict(en["deep_one"].traits).contains_keys(["pack"])
 	assert_float(en["deep_one"].traits["pack"]["min"]).is_equal(4.0)
 	assert_float(en["deep_one"].traits["pack"]["max"]).is_equal(6.0)
 	assert_dict(en["hybrid"].traits).is_empty()
-	for trait_id: String in en["cultist"].traits:
-		assert_bool(EnemyDef.TRAITS.has(trait_id)).is_true()
 
 
 func test_tower_structure() -> void:
@@ -95,12 +93,7 @@ func test_tower_structure() -> void:
 		var td: TowerDef = t[id]
 		assert_str(td.kind).is_equal(kinds[id])
 		assert_int(td.cost).is_equal(costs[id])
-		assert_int(td.levels.size()).is_equal(2)
-		assert_array(td.branches.keys()).contains_exactly_in_any_order(["a", "b"])
-		assert_int(td.levels[0].upgrade_cost).is_equal(0)
-		assert_int(td.levels[1].upgrade_cost).is_greater(0)
-		for b in ["a", "b"]:
-			assert_int(td.branches[b].upgrade_cost).is_greater(0)
+	# Level/branch structure of every tower: test_every_tower_def_is_well_formed.
 
 
 ## LT-61 §4: `short` is the build list's name; a tower without it shows its full name, and
@@ -242,7 +235,6 @@ func test_occult_tower_may_opt_out_of_madness() -> void:
 func test_waves() -> void:
 	var w := _real().waves
 	assert_float(w.build_phase_seconds).is_equal(40.0)
-	assert_int(w.waves.size()).is_equal(5)
 	var g0: WavesConfig.SpawnGroup = w.waves[0].groups[0]
 	assert_str(g0.enemy_id).is_equal("cultist")
 	assert_int(g0.count).is_equal(8)
@@ -251,8 +243,7 @@ func test_waves() -> void:
 	var g1: WavesConfig.SpawnGroup = w.waves[1].groups[1]
 	assert_str(g1.enemy_id).is_equal("deep_one")
 	assert_float(g1.delay).is_equal(8.0)
-	for wave: WavesConfig.Wave in w.waves:
-		assert_array(wave.groups).is_not_empty()
+	# Every wave's groups: test_every_wave_is_well_formed.
 
 
 func test_sanity() -> void:
@@ -302,3 +293,110 @@ func test_custom_dir_is_read_via_user_and_absolute_paths() -> void:
 	assert_int(abs_r.config.economy.starting_gold).is_equal(999)
 	# the real data is untouched
 	assert_int(_real().economy.starting_gold).is_equal(300)
+
+
+# --- LT-98: invariants over every def (adding content must not break these; extend here) ---
+
+func test_every_tower_def_is_well_formed() -> void:
+	var t := _real().towers
+	for id: String in t:
+		var td: TowerDef = t[id]
+		assert_str(td.id).override_failure_message(id).is_equal(id)
+		assert_str(td.name.strip_edges()).override_failure_message(id).is_not_empty()
+		assert_str(td.short_name).override_failure_message(id).is_not_empty()
+		assert_int(td.role.length()).override_failure_message(id) \
+			.is_less_equal(TowerDef.ROLE_MAX_CHARS)
+		assert_bool(TowerDef.KINDS.has(td.kind)).override_failure_message(id).is_true()
+		assert_bool(TowerDef.TARGETS.has(td.targets)).override_failure_message(id).is_true()
+		assert_int(td.glyph.length()).override_failure_message(id).is_equal(1)
+		assert_int(td.cost).override_failure_message(id + ": every tower costs gold").is_greater(0)
+		assert_int(td.levels.size()).override_failure_message(id).is_equal(TowerDef.LEVEL_COUNT)
+		assert_array(td.branches.keys()).override_failure_message(id) \
+			.contains_exactly_in_any_order(Array(TowerDef.BRANCH_IDS))
+		assert_int(td.levels[0].upgrade_cost).override_failure_message(id).is_equal(0)
+		for i in range(1, td.levels.size()):
+			assert_int(td.levels[i].upgrade_cost).override_failure_message(id).is_greater(0)
+		for b: String in td.branches:
+			assert_int(td.branches[b].upgrade_cost).override_failure_message(id + "." + b) \
+				.is_greater(0)
+			assert_str(td.branches[b].name.strip_edges()).override_failure_message(id + "." + b) \
+				.is_not_empty()
+
+
+func test_every_tower_level_is_well_formed() -> void:
+	var t := _real().towers
+	for id: String in t:
+		var td: TowerDef = t[id]
+		var named := {}
+		for i in td.levels.size():
+			named["%s.levels[%d]" % [id, i]] = td.levels[i]
+		for b: String in td.branches:
+			named["%s.branches.%s" % [id, b]] = td.branches[b]
+		for where: String in named:
+			var lv: TowerDef.Level = named[where]
+			assert_float(lv.range_cells).override_failure_message(where).is_greater(0.0)
+			assert_float(lv.damage).override_failure_message(where).is_greater_equal(0.0)
+			if lv.damage > 0.0:
+				assert_float(lv.fire_interval).override_failure_message(where).is_greater(0.0)
+			assert_float(lv.sanity_reserve).override_failure_message(where).is_greater_equal(0.0)
+			if td.kind == "mundane":  # LT-23 §2: mundane towers reserve nothing, never go mad
+				assert_float(lv.sanity_reserve).override_failure_message(where).is_equal(0.0)
+				assert_bool(lv.madness_affected).override_failure_message(where).is_false()
+			for key: String in lv.effects:
+				var at := where + ".effects." + key
+				assert_bool(TowerDef.Level.EFFECTS.has(key)).override_failure_message(at).is_true()
+				assert_bool(TowerDef.Level.PENDING.has(key)).override_failure_message(at).is_false()
+				var v: float = lv.effects[key]
+				assert_float(v).override_failure_message(at).is_greater_equal(0.0)
+				assert_float(v).override_failure_message(at) \
+					.is_less_equal(TowerDef.Level.EFFECTS.get(key, -1.0))
+
+
+func test_tower_glyphs_are_unique() -> void:
+	var seen := {}
+	var t := _real().towers
+	for id: String in t:
+		var g: String = t[id].glyph
+		assert_bool(seen.has(g)).override_failure_message(
+			"%s and %s share glyph %s" % [id, seen.get(g, ""), g]).is_false()
+		seen[g] = id
+
+
+func test_every_enemy_def_is_well_formed() -> void:
+	var c := _real()
+	var relics := Array(c.economy.relic_ids())
+	for id: String in c.enemies:
+		var e: EnemyDef = c.enemies[id]
+		assert_str(e.id).override_failure_message(id).is_equal(id)
+		assert_str(e.name.strip_edges()).override_failure_message(id).is_not_empty()
+		assert_float(e.hp).override_failure_message(id).is_greater(0.0)
+		assert_float(e.speed).override_failure_message(id).is_greater(0.0)
+		assert_float(e.armor).override_failure_message(id).is_greater_equal(0.0)
+		assert_int(e.leak_damage).override_failure_message(id).is_greater_equal(0)
+		assert_float(e.horror_drain).override_failure_message(id).is_greater_equal(0.0)
+		assert_array(e.drops.keys()).override_failure_message(id).is_equal(relics)
+		var total := 0
+		for kind: String in e.drops:
+			assert_int(e.drops[kind]).override_failure_message(id + "." + kind) \
+				.is_greater_equal(0)
+			total += e.drops[kind]
+		assert_int(total).override_failure_message(id + ": drops sum to 0").is_greater(0)
+		for trait_id: String in e.traits:
+			assert_bool(EnemyDef.TRAITS.has(trait_id)).override_failure_message(
+				id + ".traits." + trait_id).is_true()
+
+
+func test_every_wave_is_well_formed() -> void:
+	var c := _real()
+	assert_float(c.waves.build_phase_seconds).is_greater(0.0)
+	for i in c.waves.waves.size():
+		var wave: WavesConfig.Wave = c.waves.waves[i]
+		assert_array(wave.groups).override_failure_message("waves[%d]" % i).is_not_empty()
+		for j in wave.groups.size():
+			var g: WavesConfig.SpawnGroup = wave.groups[j]
+			var at := "waves[%d].groups[%d]" % [i, j]
+			assert_bool(c.enemies.has(g.enemy_id)).override_failure_message(
+				at + ": unknown enemy " + g.enemy_id).is_true()
+			assert_int(g.count).override_failure_message(at).is_greater_equal(1)
+			assert_float(g.interval).override_failure_message(at).is_greater_equal(0.0)
+			assert_float(g.delay).override_failure_message(at).is_greater_equal(0.0)
