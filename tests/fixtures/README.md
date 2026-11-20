@@ -24,3 +24,21 @@ mechanic, a rule change, a new event field), or when `golden_data/` itself is de
 replaced. Commit the regenerated file in the same commit as the change and say why in the
 message. Never during a refactor (the refactor plan's steps must keep the golden test green
 without regenerating), and never edit the file by hand.
+
+## Golden trace (LT-102, `docs/design/LT-102-portability-core.md` §5)
+
+- `golden_trace/manifest.json`: for every golden run, the line count and sha256 of its
+  engine-neutral trace; `golden_trace/<run>.jsonl` (`/` -> `_`): the full text of the runs in
+  `GoldenRuns.TRACE_FULL_RUNS` (`no_tree_loop/5`, `frame_path/1234`).
+- Format: JSON Lines, LF, keys sorted. A header `{"data_dir", "format": "lovecraft-td-trace",
+  "run", "version": 1}`, one `{"data", "id", "tick", "type"}` line per drained event in drain
+  order (`type` is the `SimEvent.Type` name), and a `{"final": {...}}` line (the
+  `SimNoTreeLoop.digest` scalars plus the 7 `SimRng` stream states as decimal strings of
+  Godot's signed int64). Values are plain JSON (`GoldenRuns.neutral`): Vector2 / Vector2i ->
+  `[x, y]`, floats as shortest round-trip binary64, ints within 2^53.
+- Comparison rule for a port: compare parsed values (numbers as binary64), not text; Godot
+  writes `1.0` for a float and `1` for an int, a port need not.
+- `tests/golden_replay_test.gd` recomputes the trace in the same pass as the digests and
+  compares; a full-text difference names the first differing line.
+- Regenerate it only together with the digests, with `scripts/golden-regen.sh` (it rewrites
+  both and deletes stale `.jsonl` files); never edit it by hand.

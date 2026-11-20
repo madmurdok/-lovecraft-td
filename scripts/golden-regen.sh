@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # LT-73: rewrites tests/fixtures/golden_digests.json from the golden runs (tools/golden/regen.gd)
-# on the frozen config in tests/fixtures/golden_data/. Only for an approved behaviour change:
-# see tests/fixtures/README.md.
+# on the frozen config in tests/fixtures/golden_data/, and (LT-102) the engine-neutral trace in
+# tests/fixtures/golden_trace/ (manifest.json for every run, full .jsonl text for
+# GoldenRuns.TRACE_FULL_RUNS). Only for an approved behaviour change: see tests/fixtures/README.md.
 #
 # Env: GODOT  Godot binary, default /Applications/Godot.app/Contents/MacOS/Godot.
 set -euo pipefail

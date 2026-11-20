@@ -11,9 +11,22 @@ extends RefCounted
 ## the LT-34 frame-driven Game run (its PLAN and frame pattern mirror sim_boundary_test; the
 ## Game consumes its own events, so the digest is its command log, the bare replay of that
 ## log, events included, and the final state of both).
+##
+## LT-102 trace: the same pass also writes every run as engine-neutral JSON Lines (a header,
+## one line per drained event, a final line; docs/design/LT-102-portability-core.md §5) and
+## hashes it; regen.gd writes the manifest of all runs to TRACE_DIR, plus the full text of
+## TRACE_FULL_RUNS. golden_digests.json does not carry the trace.
 
 const GOLDEN_DATA := "res://tests/fixtures/golden_data"
 const PINNED := "res://tests/fixtures/golden_digests.json"
+const TRACE_DIR := "res://tests/fixtures/golden_trace"
+const TRACE_MANIFEST := "manifest.json"
+const TRACE_FORMAT := "lovecraft-td-trace"
+const TRACE_VERSION := 1
+## Runs whose trace text is pinned in full (no_tree_loop/NO_TREE_SEED, frame_path/FRAME_SEED);
+## the others are pinned by line count and sha256 only (owner decision Q1 on LT-102).
+const TRACE_FULL_RUNS := ["no_tree_loop/5", "frame_path/1234"]
+const MAX_EXACT_INT := 9007199254740992  ## 2^53: larger ints do not survive a binary64 reader
 const BOT_PATH := "res://tools/bot_runs.gd"
 ## Bot seed -> tick cap of its runs (0: the bot's own cap, 6 minutes per wave, i.e. the whole game).
 ## Seed 1000 plays every strategy's whole game (late waves, madness, lighthouse levels,
@@ -38,7 +51,8 @@ const PLAN := [
 ]
 
 
-## Accumulates one run's events: a running SHA-256 of all of them, one per BUCKET_TICKS.
+## Accumulates one run's events: a running SHA-256 of all of them, one per BUCKET_TICKS,
+## and the run's trace (a SHA-256 of its JSON Lines; the text too for TRACE_FULL_RUNS).
 class Recorder:
 	var sim: Simulation
 	var count := 0
@@ -46,10 +60,18 @@ class Recorder:
 	var _bucket := HashingContext.new()
 	var _bucket_index := 0
 	var buckets: Array[String] = []
+	var _trace := HashingContext.new()
+	var _trace_lines := 0
+	var _trace_bytes := 0
+	var _keep_text := false
+	var _trace_text := PackedStringArray()
 
-	func _init() -> void:
+	func _init(run_name: String) -> void:
 		_all.start(HashingContext.HASH_SHA256)
 		_bucket.start(HashingContext.HASH_SHA256)
+		_trace.start(HashingContext.HASH_SHA256)
+		_keep_text = run_name in GoldenRuns.TRACE_FULL_RUNS
+		_trace_line(GoldenRuns.trace_header(run_name))
 
 	func sink(p_sim: Simulation, events: Array[SimEvent]) -> void:
 		sim = p_sim
@@ -61,6 +83,15 @@ class Recorder:
 			_all.update(line)
 			_bucket.update(line)
 			count += 1
+			_trace_line(GoldenRuns.trace_event_line(ev))
+
+	func _trace_line(text: String) -> void:
+		var bytes := (text + "\n").to_utf8_buffer()
+		_trace.update(bytes)
+		_trace_lines += 1
+		_trace_bytes += bytes.size()
+		if _keep_text:
+			_trace_text.append(text + "\n")
 
 	func _close_bucket() -> void:
 		buckets.append(_bucket.finish().hex_encode().substr(0, 16))
@@ -71,9 +102,12 @@ class Recorder:
 	func result(extra := "") -> Dictionary:
 		_close_bucket()
 		var state := GoldenRuns.state_text(sim) + extra
+		_trace_line(GoldenRuns.trace_final(sim))
 		return {"events": count, "events_sha": _all.finish().hex_encode(),
 			"buckets": buckets, "final": SimNoTreeLoop.digest(sim),
-			"final_sha": GoldenRuns.sha(state)}
+			"final_sha": GoldenRuns.sha(state),
+			"trace": {"lines": _trace_lines, "sha256": _trace.finish().hex_encode(),
+				"bytes": _trace_bytes, "text": "".join(_trace_text) if _keep_text else null}}
 
 
 static func golden_config() -> GameConfig:
@@ -130,6 +164,82 @@ static func canon(v: Variant) -> String:
 	return "%s:%s" % [type_string(typeof(v)), var_to_str(v)]
 
 
+# --- the trace (LT-102, docs/design/LT-102-portability-core.md §5) --------------------------
+
+## `v` as plain JSON values a non-Godot reader parses the same: Vector2 / Vector2i -> [x, y],
+## packed arrays -> arrays, StringName -> String. Asserts what JSON cannot carry exactly:
+## non-String keys, NaN / INF, ints beyond 2^53, other types (each then becomes a "!..." string,
+## which test_trace_lines_are_engine_neutral rejects even where asserts are off).
+static func neutral(v: Variant) -> Variant:
+	match typeof(v):
+		TYPE_DICTIONARY:
+			var out := {}
+			for k: Variant in v:
+				assert(typeof(k) == TYPE_STRING, "trace: non-String key %s" % var_to_str(k))
+				if typeof(k) != TYPE_STRING:
+					return "!key:%s" % var_to_str(k)
+				out[k] = neutral(v[k])
+			return out
+		TYPE_ARRAY, TYPE_PACKED_INT32_ARRAY, TYPE_PACKED_INT64_ARRAY, \
+				TYPE_PACKED_FLOAT32_ARRAY, TYPE_PACKED_FLOAT64_ARRAY, \
+				TYPE_PACKED_STRING_ARRAY, TYPE_PACKED_VECTOR2_ARRAY:
+			var out: Array = []
+			for x: Variant in v:
+				out.append(neutral(x))
+			return out
+		TYPE_FLOAT:
+			var f: float = v
+			assert(is_finite(f), "trace: non-finite float %s" % f)
+			return f if is_finite(f) else "!float:%s" % f
+		TYPE_INT:
+			var i: int = v
+			assert(absi(i) <= MAX_EXACT_INT, "trace: int beyond 2^53: %d" % i)
+			return i if absi(i) <= MAX_EXACT_INT else "!int:%d" % i
+		TYPE_VECTOR2:
+			return [neutral(float(v.x)), neutral(float(v.y))]
+		TYPE_VECTOR2I:
+			return [neutral(v.x), neutral(v.y)]
+		TYPE_BOOL, TYPE_NIL:
+			return v
+		TYPE_STRING, TYPE_STRING_NAME:
+			return String(v)
+	assert(false, "trace: no neutral form for %s" % type_string(typeof(v)))
+	return "!%s:%s" % [type_string(typeof(v)), var_to_str(v)]
+
+
+## One trace line: `v` neutral, keys sorted, floats as shortest round-trip binary64.
+static func trace_json(v: Variant) -> String:
+	return JSON.stringify(neutral(v), "", true, true)
+
+
+static func trace_header(run_name: String) -> String:
+	return trace_json({"data_dir": GOLDEN_DATA, "format": TRACE_FORMAT, "run": run_name,
+		"version": TRACE_VERSION})
+
+
+static func trace_event_line(ev: SimEvent) -> String:
+	return trace_json({"data": ev.data, "id": ev.id, "tick": ev.tick,
+		"type": SimEvent.Type.keys()[ev.type]})
+
+
+## The SimNoTreeLoop digest scalars plus every stream state (Godot's signed int64 as a decimal
+## string, SimRng.Stream order).
+static func trace_final(sim: Simulation) -> String:
+	var s := sim.state
+	var rng: Array[String] = []
+	for stream in SimRng.Stream.values():
+		rng.append(str(sim.rng(stream).state))
+	return trace_json({"final": {"command_log": s.command_log.size(), "gold": s.gold,
+		"lighthouse_hp": s.lighthouse_hp, "next_id": s.next_id, "outcome": s.outcome,
+		"rng": rng, "sanity": s.sanity, "tick": s.tick, "towers": s.towers.size(),
+		"wave": s.wave_index}})
+
+
+## The full-text file of a run in TRACE_DIR: "no_tree_loop/5" -> "no_tree_loop_5.jsonl".
+static func trace_file_name(run_name: String) -> String:
+	return run_name.replace("/", "_") + ".jsonl"
+
+
 ## The final state as text: the SimNoTreeLoop digest plus every entity and RNG stream.
 static func state_text(sim: Simulation) -> String:
 	var s := sim.state
@@ -179,22 +289,22 @@ static func strategies() -> Array:
 
 
 ## One bot run, digested; "run" is its RUN dictionary (not pinned, for messages).
-static func bot_run(bot: Object, strat: String, run_seed: int) -> Dictionary:
-	var rec := Recorder.new()
+static func bot_run(bot: Object, strat: String, run_seed: int, run_name: String) -> Dictionary:
+	var rec := Recorder.new(run_name)
 	bot.set("_event_sink", rec.sink)
 	var _run: Dictionary = bot.call("_play", strat, run_seed)
 	return rec.result()
 
 
-static func no_tree_run(config: GameConfig) -> Dictionary:
-	var rec := Recorder.new()
+static func no_tree_run(config: GameConfig, run_name: String) -> Dictionary:
+	var rec := Recorder.new(run_name)
 	SimNoTreeLoop.play(config, NO_TREE_SEED, rec.sink)
 	return rec.result()
 
 
 ## The LT-34 frame-driven run under `parent` (a node in the tree), then the bare replay of its
 ## command log with the events recorded. Frees what it adds.
-static func frame_run(parent: Node, config: GameConfig) -> Dictionary:
+static func frame_run(parent: Node, config: GameConfig, run_name: String) -> Dictionary:
 	var vp := GameFixture.make_viewport(parent, Vector2i(1200, 675))
 	# make_game adds the Game to vp with _process off: advance() below is its body.
 	var game := GameFixture.make_game(vp, config, SIM_SEED)
@@ -225,7 +335,7 @@ static func frame_run(parent: Node, config: GameConfig) -> Dictionary:
 				or game.sim.state.outcome != SimState.Outcome.NONE:
 			break
 	var game_state := state_text(game.sim)
-	var rec := Recorder.new()
+	var rec := Recorder.new(run_name)
 	var bare := Simulation.new(config, SIM_SEED)
 	bare.set_spawner(WaveDirector.new(config.waves))
 	for entry: Array in game.sim.state.command_log:
@@ -272,13 +382,16 @@ static func compute_all(parent: Node, verbose := false) -> Dictionary:
 	for strat: String in strategies():
 		for s: int in SEEDS:
 			var t0 := Time.get_ticks_msec()
-			runs["bot/%s/%d" % [strat, s]] = bot_run(bots[SEEDS[s]], strat, s)
+			var bot_name := "bot/%s/%d" % [strat, s]
+			runs[bot_name] = bot_run(bots[SEEDS[s]], strat, s, bot_name)
 			if verbose:
 				print("golden %s/%d: %d ms" % [strat, s, Time.get_ticks_msec() - t0])
 	for b: Object in bots.values():
 		b.free()
-	runs["no_tree_loop/%d" % NO_TREE_SEED] = no_tree_run(config)
-	runs["frame_path/%d" % FRAME_SEED] = await frame_run(parent, config)
+	var no_tree_name := "no_tree_loop/%d" % NO_TREE_SEED
+	runs[no_tree_name] = no_tree_run(config, no_tree_name)
+	var frame_name := "frame_path/%d" % FRAME_SEED
+	runs[frame_name] = await frame_run(parent, config, frame_name)
 	return runs
 
 
