@@ -57,6 +57,15 @@ func _tower(def_id: String, path: Array = [], cell := Vector2i(-1, -1)) -> SimTo
 	return t
 
 
+## Lights (or unlights) a placed tower by hand, as LightSystem.update_beam would this tick:
+## the flag and the LT-105 modifier channel the panel reads (Simulation.tower_mults).
+func _set_lit(t: SimTower, lit: bool) -> void:
+	t.lit = lit
+	t.reset_modifiers()
+	var fx := TowerRules.light_effect(t.def, _game.sim.config, lit, t.shadowed)
+	t.add_modifiers(fx["power_mult"], fx["interval_mult"], fx["miss_add"], fx["ignore_miss"])
+
+
 func _table() -> StatsTable:
 	return _game.tower_panel.stats_table
 
@@ -320,7 +329,7 @@ func test_lit_mundane_tower_shows_live_values_the_line_and_no_misses() -> void:
 	for key: String in _rows(false):
 		for l: Label in _table().cells[key]:
 			assert_str(l.text).override_failure_message(key).not_contains(STAR)
-	t.lit = true
+	_set_lit(t, true)
 	_game.tower_panel.refresh()
 	var lit := {"every": TowerText.num(s.fire_interval * m) + STAR,
 		"dps": TowerText.num(roundf(s.damage / s.fire_interval / m * 10.0) / 10.0) + STAR}
@@ -330,7 +339,7 @@ func test_lit_mundane_tower_shows_live_values_the_line_and_no_misses() -> void:
 	assert_str(_game.tower_panel.lit_label.text).is_equal("* In the beam now: fire +%s%%, no misses"
 		% TowerText.num(roundf((1.0 / m - 1.0) * 100.0)))
 	assert_str(_game.tower_panel.kind_label.text).is_equal(TowerText.NO_MISSES_LIT)
-	t.lit = false
+	_set_lit(t, false)
 	_game.tower_panel.refresh()
 	assert_bool(_game.tower_panel.lit_label.visible).is_false()
 	assert_str(_table().text_at("every", 0)).is_equal(TowerText.num(s.fire_interval))
@@ -345,7 +354,7 @@ func test_lit_occult_shooter_and_circle_show_power_mult_values() -> void:
 	var necro: TowerDef = _config.towers["necronomicon_reader"]
 	var n1 := necro.levels[0]
 	var t := await _tower("necronomicon_reader")
-	t.lit = true
+	_set_lit(t, true)
 	_game.tower_panel.refresh()
 	_assert_compare("lit necro", ["Now", "L2"], [_values(t, n1), _values(t, necro.levels[1])],
 		{"damage": TowerText.num(n1.damage * pm) + STAR,
@@ -357,7 +366,7 @@ func test_lit_occult_shooter_and_circle_show_power_mult_values() -> void:
 	var c2 := circle.levels[1]
 	var unit: float = c2.effects["summon_dps"] * pm
 	var c := await _tower("summoning_circle", [""])
-	c.lit = true
+	_set_lit(c, true)
 	_game.tower_panel.refresh()
 	_assert_compare("lit circle L2", ["Now", "A", "B"], [_values(c, c2),
 		_values(c, circle.branches["a"]), _values(c, circle.branches["b"])],
@@ -374,7 +383,7 @@ func test_lit_mark_only_on_the_special_lines_the_beam_changes() -> void:
 	var key: TowerDef = _config.towers["silver_key"]
 	var k1 := key.levels[0]
 	var t := await _tower("silver_key")
-	t.lit = true
+	_set_lit(t, true)
 	_game.tower_panel.refresh()
 	var lines := Array(_special_lines())
 	assert_array(lines).contains(["Now: Banish %s cells back*"
@@ -387,7 +396,7 @@ func test_lit_mark_only_on_the_special_lines_the_beam_changes() -> void:
 	var sign: TowerDef = _config.towers["elder_sign"]
 	var s1 := sign.levels[0]
 	var e := await _tower("elder_sign")
-	e.lit = true
+	_set_lit(e, true)
 	_game.tower_panel.refresh()
 	lines = Array(_special_lines())
 	assert_array(lines).contains([
@@ -400,7 +409,7 @@ func test_lit_mark_only_on_the_special_lines_the_beam_changes() -> void:
 	var circle: TowerDef = _config.towers["summoning_circle"]
 	var c2 := circle.levels[1]
 	var c := await _tower("summoning_circle", [""])
-	c.lit = true
+	_set_lit(c, true)
 	_game.tower_panel.refresh()
 	lines = Array(_special_lines())
 	var starred := lines.filter(func(l: String) -> bool: return l.ends_with(STAR))
@@ -458,6 +467,57 @@ func test_the_flare_lights_a_tower_and_the_panel_marks_it() -> void:
 	assert_bool(_game.tower_panel.lit_label.visible).is_true()
 
 
+# --- LT-105: the panel reads the modifier channel (D7, Q3) -----------------------------------
+
+## The channel has no sim event: flush() rebuilds the table (G_TABLE, one refresh_count) when
+## the selected tower's channel changed since the last build, and not again while it holds.
+func test_flush_rebuilds_the_table_on_a_channel_change_with_no_event() -> void:
+	await _start_game()
+	var t := await _tower(RIFLE)
+	var panel := _game.tower_panel
+	var n := panel.refresh_count
+	panel.flush()
+	assert_int(panel.refresh_count).override_failure_message("unchanged channel").is_equal(n)
+	assert_bool(panel.lit_label.visible).is_false()
+	t.add_modifiers(1.0, 1.0, 0.0, false, true)  # a non-light writer: no event at all
+	panel.flush()
+	assert_int(panel.refresh_count).override_failure_message("changed channel").is_equal(n + 1)
+	assert_str(panel.lit_label.text).is_equal(TowerText.NOW_MODIFIED + "disabled")
+	panel.flush()
+	panel.flush()
+	assert_int(panel.refresh_count).override_failure_message("held channel").is_equal(n + 1)
+	t.reset_modifiers()  # the writer stopped: one more rebuild, the line goes
+	panel.flush()
+	assert_int(panel.refresh_count).is_equal(n + 2)
+	assert_bool(panel.lit_label.visible).is_false()
+
+
+## Q3: light alone keeps the beam head; light plus another writer, or another writer alone,
+## reads NOW_MODIFIED over the composed channel numbers.
+func test_another_writer_turns_the_status_line_into_modified_now() -> void:
+	await _start_game()
+	var s: TowerDef.Level = _config.towers[RIFLE].levels[0]
+	var m := _config.economy.beam.mundane_fire_interval_mult
+	var fire := "fire +%s%%, no misses" % TowerText.num(roundf((1.0 / m - 1.0) * 100.0))
+	var t := await _tower(RIFLE)
+	var panel := _game.tower_panel
+	_set_lit(t, true)
+	panel.refresh()
+	assert_str(panel.lit_label.text).is_equal(TowerText.NOW_LIT + fire)
+	t.add_modifiers(1.5, 1.0, 0.0)  # light, then a x1.5 power writer
+	panel.refresh()
+	assert_str(panel.lit_label.text).is_equal(TowerText.NOW_MODIFIED + fire)
+	assert_str(_table().text_at("damage", 0)).is_equal(TowerText.num(s.damage * 1.5) + STAR)
+	assert_str(panel.kind_label.text).is_equal(TowerText.NO_MISSES_LIT)
+	_set_lit(t, false)
+	t.add_modifiers(1.0, 2.0, 0.0)  # dark, another writer only
+	panel.refresh()
+	assert_bool(panel.lit_label.visible).is_true()
+	assert_str(panel.lit_label.text).is_equal(
+		TowerText.NOW_MODIFIED + "fire " + TowerText.MINUS + "50%")
+	assert_str(_table().text_at("every", 0)).is_equal(TowerText.num(s.fire_interval * 2.0) + STAR)
+
+
 # --- §4: nothing cut at 1280x720 ------------------------------------------------------------
 
 ## LT-53/S8 probe as a test: at 1280x720 (base 1200x675 stretched, as canvas_items does) no
@@ -476,7 +536,7 @@ func test_no_table_value_is_cut_at_1280x720() -> void:
 				for sanity: float in ([80.0, 5.0] if id == "resonator" else [80.0]):
 					_game.sim.debug_set_sanity(sanity)
 					var t := await _tower(id, path)
-					t.lit = lit
+					_set_lit(t, lit)
 					_game.tower_panel.refresh()
 					await get_tree().process_frame
 					await get_tree().process_frame

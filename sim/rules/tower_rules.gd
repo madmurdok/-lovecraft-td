@@ -128,7 +128,14 @@ static func dps(s: TowerDef.Level, damage: float, interval_s: float, unit: float
 ## cooldown ticks (LT-33 #18 stays open: a lit Rifleman reads 43.8, the sim fires at 42).
 static func effective(def: TowerDef, s: TowerDef.Level, cfg: GameConfig, lit := false,
 		shadowed := false, sanity := -1.0) -> Dictionary:
-	var fx := light_effect(def, cfg, lit, shadowed)
+	return effective_with(s, cfg, light_effect(def, cfg, lit, shadowed), sanity)
+
+
+## LT-105 D7: effective() at the modifiers `fx` (power_mult, interval_mult read; a tower's
+## channel, SimTower.modifiers, or a light_effect), so the panel shows the numbers the sim
+## fires with. `disabled` is not shown here.
+static func effective_with(s: TowerDef.Level, cfg: GameConfig, fx: Dictionary,
+		sanity := -1.0) -> Dictionary:
 	var power: float = fx["power_mult"]
 	var factor := 1.0
 	if sanity >= 0.0 and cfg != null:

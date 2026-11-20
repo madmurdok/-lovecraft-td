@@ -619,3 +619,49 @@ func test_blast_banish_and_back_lines_count_cells_in_the_singular_at_one() -> vo
 	assert_str(TowerText.special_short(_level({"banish_cells": 1.0}))).contains("ack 1 cell")
 	assert_str(TowerText.special_short(_level({"banish_cells": 1.0}))).not_contains("cells")
 	assert_str(TowerText.special_short(_level({"banish_cells": 4.0}))).contains("ack 4 cells")
+
+
+# --- LT-105 Q3: the generic "* Modified now" status line ------------------------------------
+
+func _channel(power: float, interval: float, miss: float, no_miss := false,
+		off := false) -> Dictionary:
+	var t := SimTower.new()
+	t.add_modifiers(power, interval, miss, no_miss, off)
+	return t.modifiers()
+
+
+func test_lit_line_generic_head_names_disabled_misses_and_a_bare_occult_change() -> void:
+	var rifle := _def("rifleman")
+	var r1 := rifle.levels[0]
+	var necro := _def("necronomicon_reader")
+	var n1 := necro.levels[0]
+	var head := TowerText.NOW_MODIFIED
+	var cases := [
+		[rifle, r1, _channel(2.0, 0.5, 0.1, false, true), head + "disabled"],
+		[necro, n1, _channel(1.0, 1.0, 0.0, false, true), head + "disabled"],
+		[rifle, r1, _channel(1.0, 1.0, 0.0, true), head + "no misses"],
+		[rifle, r1, _channel(1.0, 1.0, 0.1), head + "+10% misses"],
+		[rifle, r1, _channel(1.0, 1.0, -0.1), head + TowerText.MINUS + "10% misses"],
+		[necro, n1, _channel(1.0, 1.0, 0.1), "* Modified now"],  # nothing nameable
+		[rifle, r1, _channel(1.0, 2.0, 0.0), head + "fire " + TowerText.MINUS + "50%"],
+		[rifle, r1, _channel(1.0, 0.5, 0.25), head + "fire +100%, +25% misses"],
+		[necro, n1, _channel(1.5, 1.0, 0.0), head + "+50% power"],
+	]
+	for c: Array in cases:
+		assert_str(TowerText.lit_line(c[0], c[1], _cfg, false, c[2], head)) \
+			.override_failure_message("%s %s" % [c[0].id, c[2]]).is_equal(c[3])
+
+
+func test_lit_line_light_heads_stay_empty_at_zero_percent() -> void:
+	var rifle := _def("rifleman")
+	var r1 := rifle.levels[0]
+	var necro := _def("necronomicon_reader")
+	# A channel with no fire / power change under the light heads (or the default head).
+	for head: String in ["", TowerText.NOW_LIT, TowerText.NOW_SHADOW]:
+		for fx: Dictionary in [_channel(1.0, 1.0, 0.0, true), _channel(1.0, 1.0, 0.1),
+				_channel(1.0, 1.0, 0.0, false, true)]:
+			assert_str(TowerText.lit_line(rifle, r1, _cfg, head == TowerText.NOW_SHADOW, fx,
+				head)).override_failure_message("rifle '%s' %s" % [head, fx]).is_empty()
+		assert_str(TowerText.lit_line(necro, necro.levels[0], _cfg, false,
+			_channel(1.0, 1.0, 0.1), head)).override_failure_message("necro '%s'" % head) \
+			.is_empty()

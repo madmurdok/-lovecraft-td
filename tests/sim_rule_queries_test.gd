@@ -195,13 +195,14 @@ func test_tower_mults_follow_the_tower_state() -> void:
 	sim.step()
 	assert_array([lit.lit, lit.shadowed]).is_equal([true, false])
 	assert_dict(sim.tower_mults(lit.id)).is_equal({"power_mult": 1.0, "interval_mult": 0.5,
-		"ignore_miss": true, "miss_add": 0.0})
+		"ignore_miss": true, "miss_add": 0.0, "disabled": false})
 	assert_array([dark.lit, dark.shadowed]).is_equal([false, true])
 	assert_dict(sim.tower_mults(dark.id)).is_equal({"power_mult": 1.0, "interval_mult": 2.0,
-		"ignore_miss": false, "miss_add": 0.25})
+		"ignore_miss": false, "miss_add": 0.25, "disabled": false})
 	# Whatever the flags are, the answer is the rule applied to them.
 	assert_dict(sim.tower_mults(occ.id)).is_equal(
-		TowerRules.light_effect(occ.def, sim.config, occ.lit, occ.shadowed))
+		TowerRules.light_effect(occ.def, sim.config, occ.lit, occ.shadowed).merged(
+			{"disabled": false}))
 
 
 # --- oil and flare ------------------------------------------------------------------------

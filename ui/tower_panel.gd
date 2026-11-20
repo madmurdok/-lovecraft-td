@@ -61,6 +61,9 @@ var priority_title: Label
 var priority_buttons: Dictionary[String, Button] = {}
 var refresh_count := 0  ## LT-78 §8 B1: field groups rebuilt so far (refresh and flush)
 var _dirty := 0  ## groups marked by on_event since the last flush
+## LT-105: the selected tower's modifier channel the table was last built from (flush
+## compares it: the channel has no sim event of its own).
+var _shown_mods: Dictionary = {}
 
 
 func _ready() -> void:
@@ -143,7 +146,13 @@ func on_event(ev: SimEvent) -> void:
 
 
 ## LT-78 §1: rebuilds the marked groups; a hidden view drops the marks (open_for syncs it).
+## LT-105: the modifier channel has no sim event (TOWER_LIT covers only light flips), so
+## each drain also marks G_TABLE when the selected tower's channel differs from the one the
+## table shows (a non-light writer: LT-106 traits, LT-32 crew). One dictionary compare; the
+## table is rebuilt only on a change.
 func flush() -> void:
+	if visible and not (_dirty & G_TABLE) and game.sim.tower_mults(tower_id) != _shown_mods:
+		_dirty |= G_TABLE
 	if _dirty == 0:
 		return
 	var mask := _dirty
@@ -241,19 +250,29 @@ func _refresh_table(t: SimTower, s: TowerDef.Level, branches: PackedStringArray)
 		cols.append(TowerText.row_values(t.def, target, cfg, sanity_now))
 		targets.append(target)
 	var shadow := t.shadowed  # LT-70 §5: never together with t.lit
-	var marked := t.lit or shadow
-	var lit := TowerText.lit_values(t.def, s, cfg, sanity_now, shadow) if marked else {}
+	# LT-105 D7: every number below comes from the modifier channel the sim fires with; Q3:
+	# marked whenever it is not neutral; the head names light / shadow when they are the
+	# cause, else NOW_MODIFIED.
+	var mods := game.sim.tower_mults(t.id)
+	var marked := TowerStatsModel.is_modified(mods)
+	var lit := TowerText.lit_values(t.def, s, cfg, sanity_now, shadow, mods) if marked else {}
 	var bar := game.side_panel.scroll.get_v_scroll_bar()
 	stats_table.max_width = int(game.side_panel.scroll.size.x - bar.get_combined_minimum_size().x)
 	stats_table.set_columns(heads, cols, lit, StatsTable.kind_color(t.def.kind), shadow)
-	lit_label.text = TowerText.lit_line(t.def, s, cfg, shadow) if marked else ""
+	# Q3: light-only channel -> today's lit / shadowed head; any other writer's contribution
+	# (alone or together with light) -> NOW_MODIFIED over the composed numbers.
+	var head := TowerText.NOW_MODIFIED
+	if TowerStatsModel.light_only(t.def, cfg, t.lit, shadow, mods):
+		head = TowerText.NOW_SHADOW if shadow else TowerText.NOW_LIT
+	_shown_mods = mods
+	lit_label.text = TowerText.lit_line(t.def, s, cfg, shadow, mods, head) if marked else ""
 	lit_label.add_theme_color_override("font_color",
 		StatsTable.COLOR_SHADOW if shadow else StatsTable.COLOR_LIT)
 	lit_label.visible = not lit_label.text.is_empty()
 	var lines := PackedStringArray()
 	if s.is_beam():
 		lines.append(TowerText.live_dps_text(sanity_now))
-	var lit_fx := TowerStatsModel.lit_effects(t.def, s, cfg, shadow) if marked else {}
+	var lit_fx := TowerStatsModel.lit_effects(t.def, s, cfg, shadow, mods) if marked else {}
 	var fx: Variant = null if lit_fx.is_empty() else lit_fx
 	var now := TowerText.special_lines(s, fx)
 	if not lit_fx.is_empty():  # LT-43 §5: "*" only on the lines the beam (or shadow) changes
@@ -269,9 +288,8 @@ func _refresh_table(t: SimTower, s: TowerDef.Level, branches: PackedStringArray)
 			lines.append("%s: %s" % [heads[i + 1], line])
 	special_label.text = "\n".join(lines)
 	special_label.visible = not lines.is_empty()
-	var light := game.sim.tower_mults(t.id)
-	kind_label.text = "\n".join(TowerText.kind_lines(t.def, s, cfg.sanity, light["ignore_miss"],
-		light["miss_add"]))
+	kind_label.text = "\n".join(TowerText.kind_lines(t.def, s, cfg.sanity, mods["ignore_miss"],
+		mods["miss_add"]))
 	kind_label.visible = not kind_label.text.is_empty()
 
 
