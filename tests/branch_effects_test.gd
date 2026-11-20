@@ -544,6 +544,24 @@ func test_pull_hp_cap_is_inclusive_and_bigger_foes_are_never_pulled() -> void:
 		assert_bool(e.status.has("pull_immune_ticks")).is_equal(pulled)
 
 
+## LT-111 (owner Q1 "base HP"): the pull cap compares base HP (def.hp), not the wave-scaled
+## max_hp: a 400-HP cultist at hp_mult 1.5 (600) is pulled, a 600-HP one at 0.5 (300) is not.
+func test_pull_hp_cap_compares_base_hp_not_the_wave_scaled_max_hp() -> void:
+	for c: Array in [[400, 1.5, true], [600, 0.5, false]]:
+		var sim := _sim({"cultist": {"hp": c[0]}})
+		_l3(sim, HARP, "b")
+		var e := put_in_wave(sim, "cultist", 10.0, c[1])
+		assert_float(e.max_hp).is_equal(float(c[0]) * c[1])
+		assert_float(e.base_max_hp).is_equal(float(c[0]))
+		var d0 := e.distance
+		var shot := _one_shot(sim)
+		var tag := "base %s x %s" % [c[0], c[1]]
+		assert_array(shot.data["pulled"]).override_failure_message(tag) \
+			.is_equal([e.id] if c[2] else [])
+		assert_int(e.distance).override_failure_message(tag) \
+			.is_equal(d0 - PULL_UNITS if c[2] else d0)
+
+
 func test_pull_immunity_refuses_any_chain_for_90_ticks() -> void:
 	var sim := _sim()
 	var t1 := _l3(sim, HARP, "b")

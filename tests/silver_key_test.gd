@@ -222,6 +222,28 @@ func test_corrupted_banishes_up_to_4000_max_hp_and_never_dagon() -> void:
 	assert_bool(_banishes(2, "b", "cultist", DAGON_HP)).is_false()
 
 
+## LT-111 (owner Q1 "base HP"): the cap compares base HP (def.hp), not the wave-scaled max_hp,
+## so a wave's hp_mult never switches the gate's role.
+func _banishes_in_wave(level: int, branch: String, def_id: String, hp_mult: float,
+		enemy_edits := {}) -> bool:
+	var sim := tsim(enemy_edits)
+	sim.state.gold = 1000000
+	_gate(sim, level, branch)
+	var e := put_in_wave(sim, def_id, 8.0, hp_mult)
+	assert_float(e.max_hp).is_equal(e.base_max_hp * hp_mult)
+	var d0 := e.distance
+	var n := _shots(run(sim, 1)).size()
+	assert_bool((n == 1) == (e.distance < d0)).is_true()
+	return n == 1
+
+
+func test_the_cap_compares_base_hp_not_the_wave_scaled_max_hp() -> void:
+	# Shoggoth 3600 base x 1.5 = 5400 scaled, above Corrupted's 4000: still banished.
+	assert_bool(_banishes_in_wave(2, "b", "shoggoth", 1.5)).is_true()
+	# A 600-HP cultist x 0.5 = 300 scaled, under L1's 500: still too big.
+	assert_bool(_banishes_in_wave(0, "", "cultist", 0.5, {"cultist": {"hp": 600}})).is_false()
+
+
 # --- immunity ---------------------------------------------------------------------------------
 
 func test_banish_immunity_holds_240_ticks_then_the_gate_banishes_again() -> void:

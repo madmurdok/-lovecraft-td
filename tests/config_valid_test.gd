@@ -239,6 +239,25 @@ func test_waves() -> void:
 	# Every wave's groups: test_every_wave_is_well_formed.
 
 
+## LT-111: the shipped waves carry no multipliers (absent = 1.0); 10 (the bound) and a
+## fraction load as given, on their own wave only.
+func test_wave_multipliers_default_to_one_and_load_up_to_ten() -> void:
+	for w: WavesConfig.Wave in _real().waves.waves:
+		assert_float(w.hp_mult).is_equal(1.0)
+		assert_float(w.speed_mult).is_equal(1.0)
+	var r := load_json_edit("waves.json", func(d: Dictionary) -> void:
+		d["waves"][1]["hp_mult"] = 10
+		d["waves"][1]["speed_mult"] = 0.25
+		d["waves"][2]["hp_mult"] = 1.0)
+	assert_array(r.errors).is_empty()
+	var waves := r.config.waves.waves
+	assert_float(waves[1].hp_mult).is_equal(10.0)
+	assert_float(waves[1].speed_mult).is_equal(0.25)
+	assert_float(waves[2].hp_mult).is_equal(1.0)
+	assert_float(waves[0].hp_mult).is_equal(1.0)
+	assert_float(waves[0].speed_mult).is_equal(1.0)
+
+
 func test_sanity() -> void:
 	var s := _real().sanity
 	assert_float(s.max_sanity).is_equal(100.0)

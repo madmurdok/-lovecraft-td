@@ -38,6 +38,19 @@ func put(sim: Simulation, def_id: String, cells: float, hp := HUGE_HP,
 	return e
 
 
+## LT-111: spawns `def_id` during wave 1 with that wave's hp_mult set to `hp_mult`, so its
+## HP is scaled by the spawn path (max_hp = def.hp x hp_mult, base_max_hp = def.hp), then
+## parks it `cells` cells along the route with speed 0.
+func put_in_wave(sim: Simulation, def_id: String, cells: float, hp_mult: float) -> SimEnemy:
+	sim.config.waves.waves[0].hp_mult = hp_mult
+	sim.state.wave_index = 1
+	var e := sim.enemy_by_id(sim.spawn_enemy(def_id))
+	e.distance = roundi(cells * SimTime.UNITS_PER_CELL)
+	e.prev_distance = e.distance
+	e.base_units_per_tick = 0
+	return e
+
+
 func build(sim: Simulation, def_id: String, cell := TOWER) -> SimTower:
 	var r := sim.build_tower(def_id, cell)
 	assert_int(r).override_failure_message("build %s at %s -> %d" % [def_id, cell, r]) \
