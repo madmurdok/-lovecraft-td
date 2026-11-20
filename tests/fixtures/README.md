@@ -48,3 +48,11 @@ without regenerating), and never edit the file by hand.
 - `probe_trait.gd` (`ProbeTrait`): a test-only enemy trait that records every hook call.
   `tests/trait_hooks_test.gd` injects it into `TraitCatalog` where a line in `_rows()` would
   put it, so it doubles as the "one file + one catalog line" proof for a new trait.
+
+## Look variants (LT-104, `docs/design/LT-104-look-catalog.md` §2.3)
+
+- `looks/variant_looks.json`: a `data/looks.json` that reuses built-in looks with no code
+  (variants of tracer, dynamite, summon, banish and enemy; a built-in `tracer` on the coast
+  battery, whose branch b falls back to `shell`). Read with `TextLoader.read_json` and injected
+  with `LookCatalog.use` by `tests/look_render_test.gd` and `tests/look_catalog_test.gd`; it
+  is never copied over `data/looks.json`. Edit it with the tests that pin its values.

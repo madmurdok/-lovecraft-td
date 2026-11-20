@@ -1,8 +1,9 @@
 class_name TextLoader
 extends RefCounted
-## LT-103 §2.4: the file IO of presentation-only data files (data/effect_text.json), outside
-## ui/ like ConfigLoader. These files are never part of GameConfig (golden_data/ does not
-## mirror them); the reader validates what it gets (EffectText.validate).
+## LT-103 §2.4: the file IO of presentation-only data files (data/effect_text.json and,
+## LT-104, data/looks.json), outside ui/ like ConfigLoader. These files are never part of
+## GameConfig (golden_data/ does not mirror them); the reader validates what it gets
+## (EffectText.validate, LookCatalog.validate).
 
 
 ## Reads and parses the JSON file at `path`: {"data": the parsed root (null on failure),
