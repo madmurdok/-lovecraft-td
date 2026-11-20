@@ -4,7 +4,7 @@ extends ConfigTestBase
 
 
 func _real() -> GameConfig:
-	var result := GameConfig.load_from_dir("res://data")
+	var result := ConfigLoader.load_dir("res://data")
 	assert_array(result.errors).is_empty()
 	assert_bool(result.ok).is_true()
 	assert_object(result.config).is_not_null()
@@ -21,7 +21,7 @@ func test_real_data_loads_and_is_not_empty() -> void:
 
 
 func test_default_dir_is_res_data() -> void:
-	var result := GameConfig.load_from_dir()
+	var result := ConfigLoader.load_dir()
 	assert_bool(result.ok).is_true()
 	var c := _real()
 	assert_array(result.config.towers.keys()).contains_exactly_in_any_order(c.towers.keys())
@@ -278,10 +278,10 @@ func test_madness_rules() -> void:
 func test_custom_dir_is_read_via_user_and_absolute_paths() -> void:
 	var dir := make_dir()
 	edit(dir, "economy.json", func(d: Dictionary) -> void: d["starting_gold"] = 999)
-	var r := GameConfig.load_from_dir(dir)
+	var r := ConfigLoader.load_dir(dir)
 	assert_array(r.errors).is_empty()
 	assert_int(r.config.economy.starting_gold).is_equal(999)
-	var abs_r := GameConfig.load_from_dir(ProjectSettings.globalize_path(dir))
+	var abs_r := ConfigLoader.load_dir(ProjectSettings.globalize_path(dir))
 	assert_array(abs_r.errors).is_empty()
 	assert_int(abs_r.config.economy.starting_gold).is_equal(999)
 	# the real data is untouched

@@ -16,7 +16,7 @@ var lit_beam := false
 ## The unedited res://data config (loaded once per suite).
 func real_config() -> GameConfig:
 	if _real == null:
-		var r := GameConfig.load_from_dir("res://data")
+		var r := ConfigLoader.load_dir("res://data")
 		assert_bool(r.ok).override_failure_message("res://data: %s" % "\n".join(r.errors)) \
 			.is_true()
 		_real = r.config

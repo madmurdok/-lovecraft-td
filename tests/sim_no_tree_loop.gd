@@ -12,7 +12,7 @@ const BUILDS := ["rifleman", "harpooner", "elder_sign", "rifleman", "necronomico
 
 ## One bot game, to its outcome or MAX_TICKS; returns a digest of the final state.
 static func run(run_seed := 5) -> String:
-	var r := GameConfig.load_from_dir("res://data")
+	var r := ConfigLoader.load_dir("res://data")
 	if not r.ok:
 		return "CONFIG ERROR: %s" % "\n".join(r.errors)
 	return digest(play(r.config, run_seed))

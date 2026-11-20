@@ -12,7 +12,7 @@ var speed: float  ## cells per second, > 0
 var armor: float  ## flat damage reduction per hit, >= 0
 var leak_damage: int  ## lighthouse HP lost when it leaks, >= 0
 ## LT-27 §1.1: relic kind -> integer weight (>= 0, sum > 0) of the one drop rolled per kill;
-## kinds are known economy relics, ordered as economy.relics (GameConfig.load_from_dir).
+## kinds are known economy relics, ordered as economy.relics (GameConfig.from_dicts).
 var drops: Dictionary[String, int] = {}
 var flying: bool  ## ignores the path, flies straight to the lighthouse
 var horror_drain: float  ## sanity per second near towers, >= 0 (GDD §5.3)

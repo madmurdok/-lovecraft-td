@@ -64,7 +64,7 @@ func _shipped_json() -> Dictionary:
 
 ## A fresh res://data config the test may edit.
 func _fresh() -> GameConfig:
-	var r := GameConfig.load_from_dir("res://data")
+	var r := ConfigLoader.load_dir("res://data")
 	assert_bool(r.ok).override_failure_message("\n".join(r.errors)).is_true()
 	return r.config
 
@@ -175,7 +175,7 @@ func test_shipped_file_loads_in_row_order_with_its_tunables() -> void:
 	assert_int(t.flare_min_live).is_equal(4)
 	assert_array(Table.default().names).is_equal(SHIPPED_NAMES)
 	assert_array(t.check_towers(real_config())).is_empty()
-	var golden := GameConfig.load_from_dir("res://tests/fixtures/golden_data")
+	var golden := ConfigLoader.load_dir("res://tests/fixtures/golden_data")
 	assert_bool(golden.ok).is_true()
 	assert_array(t.check_towers(golden.config)).is_empty()
 
@@ -582,7 +582,7 @@ func _waves3_config() -> GameConfig:
 		var f := FileAccess.open(WAVES3_DIR.path_join(file), FileAccess.WRITE)
 		f.store_string(text)
 		f.close()
-	var r := GameConfig.load_from_dir(WAVES3_DIR)
+	var r := ConfigLoader.load_dir(WAVES3_DIR)
 	for file in DirAccess.get_files_at(WAVES3_DIR):
 		DirAccess.remove_absolute(WAVES3_DIR.path_join(file))
 	DirAccess.remove_absolute(WAVES3_DIR)

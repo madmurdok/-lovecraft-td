@@ -11,7 +11,7 @@ var _cfg: GameConfig
 
 
 func before() -> void:
-	var r := GameConfig.load_from_dir("res://data")
+	var r := ConfigLoader.load_dir("res://data")
 	assert_bool(r.ok).override_failure_message("\n".join(r.errors)).is_true()
 	_cfg = r.config
 
@@ -156,7 +156,7 @@ func test_dps_is_damage_over_interval_only_for_gangsters_and_marksman() -> void:
 
 
 func test_a_config_edit_changes_the_text() -> void:
-	var r := GameConfig.load_from_dir("res://data")
+	var r := ConfigLoader.load_dir("res://data")
 	var def: TowerDef = r.config.towers["rifleman"]
 	var l := def.levels[0]
 	l.damage = 33.0

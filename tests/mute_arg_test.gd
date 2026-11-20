@@ -25,7 +25,7 @@ func test_no_mute_arg_leaves_the_bus_unmuted() -> void:
 
 
 func test_game_setup_applies_the_mute_arg() -> void:
-	var r := GameConfig.load_from_dir("res://data")
+	var r := ConfigLoader.load_dir("res://data")
 	assert_bool(r.ok).is_true()
 	var game := GameFixture.make_game(null, r.config, 1, PackedStringArray(["--mute"]))
 	assert_bool(AudioServer.is_bus_mute(_master)).is_true()

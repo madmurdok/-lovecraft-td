@@ -11,7 +11,6 @@ const MAX_SAFE_INT := 9007199254740992.0
 
 var file: String
 var errors: Array[String] = []
-var _id_regex := RegEx.create_from_string(ID_PATTERN)
 
 
 func _init(p_file: String) -> void:
@@ -64,9 +63,26 @@ func check_keys(obj: Dictionary, allowed: Array, path: String) -> void:
 
 ## Validates a map key used as an id (tower/enemy ids). Returns false on error.
 func check_id(id: String, path: String) -> bool:
-	if _id_regex.search(id) == null:
+	if not is_valid_id(id):
 		error(path, "invalid id \"%s\" (expected %s)" % [id, ID_PATTERN])
 		return false
+	return true
+
+
+## ID_PATTERN as a character loop (LT-102 D-3, no RegEx in sim/): non-empty, first char
+## a-z, the rest a-z, 0-9 or "_". Stricter than the PCRE pattern on one point: a trailing
+## "\n" is rejected ("$" matched before it).
+static func is_valid_id(id: String) -> bool:
+	if id.is_empty():
+		return false
+	for i in id.length():
+		var c := id.unicode_at(i)
+		var lower := c >= 0x61 and c <= 0x7A  # a-z
+		if i == 0:
+			if not lower:
+				return false
+		elif not (lower or (c >= 0x30 and c <= 0x39) or c == 0x5F):  # 0-9, _
+			return false
 	return true
 
 

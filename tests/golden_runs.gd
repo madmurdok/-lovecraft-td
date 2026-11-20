@@ -77,7 +77,7 @@ class Recorder:
 
 
 static func golden_config() -> GameConfig:
-	var r := GameConfig.load_from_dir(GOLDEN_DATA)
+	var r := ConfigLoader.load_dir(GOLDEN_DATA)
 	assert(r.ok, "golden data: %s" % "\n".join(r.errors))
 	return r.config if r.ok else null
 

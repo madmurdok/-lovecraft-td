@@ -229,7 +229,7 @@ func test_unknown_fields() -> void:
 
 
 func test_shipped_values_are_the_addendum_numbers() -> void:
-	var r := GameConfig.load_from_dir("res://data")
+	var r := ConfigLoader.load_dir("res://data")
 	assert_bool(r.ok).is_true()
 	var e := r.config.economy
 	assert_array(e.beam.levels.map(func(v: EconomyConfig.BeamLevel) -> int: return v.beams)) \

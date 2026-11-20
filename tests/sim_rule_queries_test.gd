@@ -320,7 +320,7 @@ func test_tower_info_occult_lit_damage_equals_the_sims_power_mult() -> void:
 
 
 func test_hud_and_game_flare_oil_equal_the_sims_oil_rules() -> void:
-	var r := GameConfig.load_from_dir("res://data")
+	var r := ConfigLoader.load_dir("res://data")
 	assert_bool(r.ok).override_failure_message("\n".join(r.errors)).is_true()
 	var vp := GameFixture.make_viewport(self)
 	var game := GameFixture.make_game(vp, r.config, 7)

@@ -125,7 +125,7 @@ func _init() -> void:
 				printerr("--strategies names no strategy")
 				quit(1)
 				return
-	var res := GameConfig.load_from_dir(data_dir) if data_dir != "" else GameConfig.load_from_dir()
+	var res := ConfigLoader.load_dir(data_dir) if data_dir != "" else ConfigLoader.load_dir()
 	if not res.ok:
 		printerr("config errors: ", res.errors)
 		quit(1)

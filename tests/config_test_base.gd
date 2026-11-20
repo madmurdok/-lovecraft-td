@@ -55,7 +55,7 @@ func replace_text(dir: String, file: String, old: String, new: String) -> void:
 func load_edited(fn: Callable) -> ConfigLoadResult:
 	var dir := make_dir()
 	fn.call(dir)
-	return GameConfig.load_from_dir(dir)
+	return ConfigLoader.load_dir(dir)
 
 
 ## Load with one JSON file edited through `fn(root)`.

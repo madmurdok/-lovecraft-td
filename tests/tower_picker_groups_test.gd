@@ -49,7 +49,7 @@ func after_test() -> void:
 
 
 func _data_config() -> GameConfig:
-	var r := GameConfig.load_from_dir("res://data")
+	var r := ConfigLoader.load_dir("res://data")
 	assert_bool(r.ok).override_failure_message("\n".join(r.errors)).is_true()
 	return r.config
 
@@ -95,7 +95,7 @@ func _ten_config() -> GameConfig:
 			ids[kind].append(e[0])
 	d["towers"] = out
 	write_file(dir, "towers.json", JSON.stringify(d, "  ", false))
-	var r := GameConfig.load_from_dir(dir)
+	var r := ConfigLoader.load_dir(dir)
 	assert_bool(r.ok).override_failure_message("\n".join(r.errors)).is_true()
 	assert_int(r.config.towers.size()).is_equal(2 * PER_KIND)
 	_ten_mundane = ids["mundane"]
@@ -377,7 +377,7 @@ func _total_config(total: int, min_extra := 0, keep := "") -> GameConfig:
 		towers["extra_gunner_%d" % n] = t
 	d["towers"] = towers
 	write_file(dir, "towers.json", JSON.stringify(d, "  ", false))
-	var r := GameConfig.load_from_dir(dir)
+	var r := ConfigLoader.load_dir(dir)
 	assert_bool(r.ok).override_failure_message("\n".join(r.errors)).is_true()
 	assert_int(r.config.towers.size()).is_equal(want)
 	if not keep.is_empty():

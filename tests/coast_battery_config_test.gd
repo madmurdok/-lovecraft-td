@@ -22,7 +22,7 @@ func _row(l: TowerDef.Level) -> Array:
 
 
 func test_shipped_battery_matches_the_design_table() -> void:
-	var r := GameConfig.load_from_dir("res://data")
+	var r := ConfigLoader.load_dir("res://data")
 	_ok(r)
 	var cb: TowerDef = r.config.towers["coast_battery"]
 	assert_str(cb.name).is_equal("Coast battery")
