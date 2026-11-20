@@ -357,6 +357,14 @@ the acceptance does not require it.
 - *Move to JSON*: benefit: all bot tunables in one file, lab-variant ready with Q1; risk: more
   test edits, no current need.
 
+### Owner decisions (2026-11-20)
+
+- Design: "Утверждаю (Recommended)".
+- Q1: "Отдельной задачей (Recommended)": lab variants varying strategies is a follow-up task, not LT-101.
+- Q2: "Перенести в JSON": `BUILD_FIRST` and `FLARE_MIN_LIVE` move to a top-level `"tunables"` object in
+  `tools/bot/strategies.json`, read by `strategy_table.gd`; the ~10 test sites that use the consts
+  read the loaded values instead. This overrides the "Kept consts" line in §4 and the §5 table.
+
 ## 11. EDIT MAP for the code slice
 
 Change:
