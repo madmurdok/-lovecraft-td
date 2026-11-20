@@ -265,3 +265,12 @@ cost within 5 %.
   maintain.
 - Godot translation CSV (key -> string, logic stays in code). Benefit: localisation-ready.
   Risk: variants and grouping stay in code, so a new key still edits `tower_text.gd`.
+
+## Owner decisions (2026-11-20)
+
+- Q1: "Отклонять спорные комбо (Recommended)" — reject burst/beam with a shot shape and beam with burst; one `Mode` enum.
+- Q2: "Да, опциональные ключи" — ALLY_CONTACT and the summon leash become optional effect keys
+  (`summon_contact` / `summon_leash`, absent = today's constants), each with a catalog row and a text entry.
+  This overrides the note's recommendation; the S2 edit map must add them.
+- Q3: "В data/effect_text.json (Recommended)".
+- Q4: "JSON с шаблонами (Recommended)".
