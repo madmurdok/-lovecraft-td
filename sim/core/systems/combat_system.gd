@@ -10,8 +10,9 @@ extends RefCounted
 ## keeps the object id, not a reference, so there is no RefCounted cycle.
 
 
-## SimEnemy.status timers that only count down to 0 and go (LT-29 pull, LT-51 banish).
-const IMMUNITY_KEYS: PackedStringArray = ["pull_immune_ticks", "banish_immune_ticks"]
+## SimEnemy.status timers that only count down to 0 and go (LT-29 pull, LT-51 banish);
+## LT-106: the StatusRules table owns them.
+const IMMUNITY_KEYS: PackedStringArray = StatusRules.COUNTDOWN_KEYS
 
 var _ctx: SimContext
 var _state: SimState
@@ -23,6 +24,8 @@ var _spawn: SpawnSystem
 ## AllySystem.spawn / AllySystem.allies_of, set by the facade after both systems exist.
 var _spawn_ally: Callable
 var _allies_of: Callable
+## LT-106: the trait API (on_damaged, on_death), set by the facade once (set_trait_host).
+var _host: TraitHost
 
 
 func _init(ctx: SimContext, light: LightSystem, sanity: SanitySystem,
@@ -41,6 +44,11 @@ func _init(ctx: SimContext, light: LightSystem, sanity: SanitySystem,
 func set_ally_hooks(spawn: Callable, allies_of: Callable) -> void:
 	_spawn_ally = spawn
 	_allies_of = allies_of
+
+
+## The facade wires the trait API once (LT-106).
+func set_trait_host(host: TraitHost) -> void:
+	_host = host
 
 
 ## The tower with this id, or null (also null once sold).
@@ -95,6 +103,9 @@ func live_fakes_in_range(cell: Vector2i, range_cells: float) -> Array[SimEnemy]:
 ## leaked enemy, or once the outcome is set (then nothing changes and no event is emitted).
 ## A killed enemy emits DIED and is removed at the end of the current/next tick.
 ## `ignore_armor` (LT-48 P7): the hit skips armor; damage_taken_mult still applies.
+## LT-106 T4: a survivor runs its on_damaged trait hooks, a killed enemy its on_death hooks
+## after the kill hook (token drop first); one int test per hit when it has none. A hook
+## must not damage its own enemy (no re-entry).
 func apply_damage(enemy_id: int, amount: float, source: String, ignore_armor := false) -> float:
 	if _state.outcome != SimState.Outcome.NONE:
 		return 0.0
@@ -106,10 +117,21 @@ func apply_damage(enemy_id: int, amount: float, source: String, ignore_armor := 
 	var taken := maxf(0.0, amount - armor) * e.damage_taken_mult
 	var removed := minf(taken, e.hp)
 	e.hp -= taken
+	var d := e.def
 	if e.hp <= 0.0:
 		e.dead = true
 		_ctx.emit(SimEvent.Type.DIED, e.id, {"source": source})
 		_on_enemy_killed(e, source)
+		if d.hooks & EnemyTrait.ON_DEATH:
+			for i in d.hook_traits.size():
+				var tr := d.hook_traits[i]
+				if tr.hooks() & EnemyTrait.ON_DEATH:
+					tr.on_death(_host, e, d.hook_params[i], source)
+	elif d.hooks & EnemyTrait.ON_DAMAGED:
+		for i in d.hook_traits.size():
+			var tr := d.hook_traits[i]
+			if tr.hooks() & EnemyTrait.ON_DAMAGED:
+				tr.on_damaged(_host, e, d.hook_params[i], taken, source)
 	return removed
 
 

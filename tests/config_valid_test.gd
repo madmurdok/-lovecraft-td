@@ -394,7 +394,7 @@ func test_every_enemy_def_is_well_formed() -> void:
 			total += e.drops[kind]
 		assert_int(total).override_failure_message(id + ": drops sum to 0").is_greater(0)
 		for trait_id: String in e.traits:
-			assert_bool(EnemyDef.TRAITS.has(trait_id)).override_failure_message(
+			assert_bool(TraitCatalog.has(trait_id)).override_failure_message(
 				id + ".traits." + trait_id).is_true()
 
 

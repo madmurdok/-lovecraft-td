@@ -494,6 +494,8 @@ func _statements(scan: SimBoundaryTest, text: String) -> Array:
 # --- G4 (LT-80, B5): systems are internal, one writer per state field ----------------------
 
 const G4_SYSTEMS_DIR := "res://sim/core/systems/"
+## LT-106 T5: enemy trait files see the sim only through TraitHost; G4a covers them too.
+const G4_TRAITS_DIR := "res://sim/core/traits/"
 const G4_CONTEXT := "res://sim/core/systems/sim_context.gd"
 const G4_FACADE := "res://sim/core/simulation.gd"
 const G4_STATE := "res://sim/core/sim_state.gd"
@@ -573,6 +575,8 @@ func _g4_new_pattern(scan: SimBoundaryTest) -> String:
 func test_g4a_systems_are_internal() -> void:
 	var scan := SimBoundaryTest.new()
 	var files := scan._gd_files(G4_SYSTEMS_DIR)
+	var trait_files := scan._gd_files(G4_TRAITS_DIR)
+	files.append_array(trait_files)
 	var hits: Array[String] = []
 	for f in files:
 		hits.append_array(_g4a_hits(scan, f, FileAccess.get_file_as_string(f)))
@@ -610,6 +614,7 @@ func test_g4a_systems_are_internal() -> void:
 		"a = Light.new()\nb = HallucinationSystem.new()\nvar s: LightSystem"), pattern)
 	scan.free()
 	assert_int(files.size()).is_greater_equal(4)
+	assert_int(trait_files.size()).is_greater_equal(4)
 	assert_int(scanned).is_greater(40)
 	assert_array(missed).override_failure_message("G4a misses: " + ", ".join(missed)).is_empty()
 	assert_array(false_hits).override_failure_message("G4a near-miss hit: " + ", ".join(false_hits)) \
@@ -929,9 +934,9 @@ const G12_TOWER_CHAIN := "(?:\\b(?:tower_by_id|tower_at_cell)\\([^()]*\\)|\\btow
 const G12_ALIAS := "\\b(\\w+)\\s*:\\s*SimTower\\b" \
 	+ "|\\bvar\\s+(\\w+)\\s*:?=\\s*[\\w.]*\\b(?:tower_by_id|tower_at_cell)\\(" \
 	+ "|\\bfor\\s+(\\w+)\\s+in\\s+[\\w.]*\\btowers\\b"
-## The files that call add_modifiers (the only write path), relative to res://. LT-106 / LT-32
-## add their writer files here.
-const G12_WRITERS := ["sim/core/systems/light_system.gd"]
+## The files that call add_modifiers (the only write path), relative to res://, sorted.
+## LT-106: enemy traits write through TraitHost.modify_tower. LT-32 adds its writer here.
+const G12_WRITERS := ["sim/core/systems/light_system.gd", "sim/core/traits/trait_host.gd"]
 
 
 ## `file:line: match` for every channel write in `text` of `file` (the home is not exempt
@@ -1028,3 +1033,30 @@ func test_g12_catches_planted_writes_and_passes_reads_and_buttons() -> void:
 		"G12 did not fire on: " + ", ".join(missed)).is_empty()
 	assert_array(false_hits).override_failure_message(
 		"G12 fired on a read: " + ", ".join(false_hits)).is_empty()
+
+
+# --- G14 (LT-106 T8): presentation reads enemy statuses only through SimEnemy.markers -------
+
+const G14_DIRS := ["res://scenes", "res://ui"]
+const G14_DENY := "\\.status\\b"
+
+
+func test_g14_no_enemy_status_read_in_presentation() -> void:
+	var scan := SimBoundaryTest.new()
+	var hits: Array[String] = []
+	var scanned := 0
+	for dir: String in G14_DIRS:
+		for f in scan._gd_files(dir):
+			scanned += 1
+			hits.append_array(scan._find(f, scan._code_lines(FileAccess.get_file_as_string(f)),
+				G14_DENY))
+	var planted := scan._find("ui/p.gd", scan._code_lines(
+		"var b = e.status.get(\"bleed_ticks\", 0)\nif x.status.has(k):"), G14_DENY)
+	var near := scan._find("ui/p.gd", scan._code_lines(
+		"var m := e.markers()\nvar t := status_text\nvar u := e.status_line\n# e.status\n"), G14_DENY)
+	scan.free()
+	assert_int(scanned).is_greater(20)
+	assert_int(planted.size()).is_equal(2)
+	assert_array(near).is_empty()
+	assert_array(hits).override_failure_message(
+		"enemy status read in presentation (use SimEnemy.markers): " + ", ".join(hits)).is_empty()

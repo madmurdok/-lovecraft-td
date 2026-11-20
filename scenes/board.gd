@@ -8,7 +8,7 @@ extends Node2D
 ## hits drawn off-target into an empty spot. Its randomness is presentation-only.
 ## LT-25: each attack kind has its own look, chosen from the tower's current stats
 ## (shot_kind): rifle tracer, piercing harpoon, Elder Sign ward aura, Necronomicon dark
-## wave; slow, damage-taken and (LT-29) bleed markers on enemies (enemy_markers), a longer
+## wave; slow, damage-taken and (LT-29) bleed markers on enemies (SimEnemy.markers), a longer
 ## hit spark on a crit and a dashed chain for a pull. LT-47: the Dynamite crew's lobbed
 ## charge (an arc, then a sputtering fuse on the ground until the BLAST event, sim time) and
 ## its blast ring. Nothing here tells a fake from a real enemy: every look depends only on

@@ -27,6 +27,7 @@ var _light: LightSystem
 var _combat: CombatSystem
 var _ally: AllySystem
 var _spawn: SpawnSystem
+var _traits: TraitSystem
 var _hallucinations := HallucinationSystem.new()
 
 
@@ -48,6 +49,11 @@ func _init(p_config: GameConfig, run_seed: int) -> void:
 	_ally = AllySystem.new(_ctx, _combat)
 	_combat.set_ally_hooks(_ally.spawn, _ally.allies_of)
 	_spawn.set_ally_compact(_ally.compact)
+	# LT-106 T5: the enemy traits' one API, after the systems it reaches (method Callables).
+	var host := TraitHost.new(_ctx, _spawn.queue_pack_member)
+	_spawn.set_trait_host(host)
+	_combat.set_trait_host(host)
+	_traits = TraitSystem.new(_ctx, host)
 
 
 ## Without a spawner the run never wins (nothing can be "exhausted"). A WaveDirector
@@ -75,16 +81,19 @@ func step() -> void:
 		t.reset_modifiers()
 	# 2. Effect systems: the lighthouse beam first (LT-30: turn, `lit` of towers and enemies),
 	# LT-105 D2: tower channel writers in this fixed order, all before apply_auras (the first
-	# reader): light (update_beam), [LT-106 enemy traits], [LT-32 crew posts].
+	# reader): light (update_beam), LT-106 enemy traits (near_tower, id order, then catalog
+	# order), [LT-32 crew posts].
 	# then Elder Sign auras (LT-11; Corrupted Seal's armor strip, LT-29), the madness buff
 	# (LT-23 §3) and the flare's slow; then enemy status timers (LT-29 P6: bleed pulses see
-	# this tick's auras and buff; pull immunity counts down); later slows/stuns add theirs
-	# here. The flare timers count down last.
+	# this tick's auras and buff; pull immunity counts down) and the LT-106 enemy trait ticks;
+	# later slows/stuns add theirs here. The flare timers count down last.
 	_light.update_beam()
+	_traits.near_tower()
 	_combat.apply_auras()
 	_sanity.apply_madness_buff()
 	_light.apply_flare_slow()
 	_combat.tick_statuses()
+	_traits.tick_traits()
 	# LT-52 (P10): allies past their lifetime are gone; the rest hold their enemy
 	# (speed_mult 0, after every other speed modifier).
 	_ally.tick_allies()

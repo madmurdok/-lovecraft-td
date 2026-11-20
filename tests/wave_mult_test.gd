@@ -17,6 +17,7 @@ func before_test() -> void:
 	_ctx.state.map = _ctx.config.map
 	_ctx.state.lighthouse_hp = _ctx.config.economy.lighthouse_hp
 	_spawn = SpawnSystem.new(_ctx)
+	_spawn.set_trait_host(TraitHost.new(_ctx, _spawn.queue_pack_member))  # LT-106, like the facade
 
 
 ## Sets every wave of the context's config to `hp` / `speed` (the real data has 5 waves).

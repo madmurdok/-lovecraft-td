@@ -77,20 +77,6 @@ func _draw() -> void:
 	_draw_allies(s)
 
 
-## LT-25 §2: the markers an enemy shows, from its per-tick aura state only.
-static func enemy_markers(e: SimEnemy) -> PackedStringArray:
-	var out := PackedStringArray()
-	if e.speed_mult < 0.999:
-		out.append("slow")
-	if e.damage_taken_mult > 1.001:
-		out.append("vuln")
-	if e.status.get("bleed_ticks", 0) > 0:  # LT-29: state, per tick
-		out.append("bleed")
-	if e.status.get("banish_immune_ticks", 0) > 0:  # LT-51: a gate cannot banish it now
-		out.append("sealed")
-	return out
-
-
 ## LT-25 §1.3: the ward ring's alpha: idle while no drawn enemy (`board.last_pos`, real or fake
 ## alike) is inside its radius, pulsing between WARD_PULSE_LOW and WARD_ACTIVE_ALPHA while
 ## one is.
@@ -255,7 +241,7 @@ func _draw_enemies(s: SimState) -> void:
 			var ghost := color
 			ghost.a = 0.35
 			draw_circle(px + Vector2(view.cells_to_px(0.15), 0), view.cells_to_px(0.25), ghost)
-		var marks := enemy_markers(e)
+		var marks := e.markers()
 		if marks.has("slow"):  # ground ring under the body
 			var sc := Color(WARD_COLOR, color.a)
 			for i in 6:

@@ -19,33 +19,21 @@ var horror_drain: float  ## sanity per second near towers, >= 0 (GDD §5.3)
 ## LT-52 (LT-46 §7 Q3): damage per second it deals to an allied unit holding it, >= 0;
 ## optional in enemies.json, default leak_damage x 10.
 var contact_dps: float
-## Known traits and their required parameters (schema, not balance).
-const TRAITS := {
-	# spawns min..max per spawn event (integers >= 1), one by one: member k enters
-	# k x spacing_s seconds after the first (LT-63; > 0 and at least one tick)
-	"pack": ["min", "max", "spacing_s"],
-	"tower_harass": ["stop_seconds", "fire_rate_multiplier", "debuff_seconds"],
-	"tower_lift": ["from_wave", "drop_cells", "disable_seconds"],
-	"regen": ["hp_percent_per_second"],
-	# LT-97 (D2): a flag trait, no parameters (`"boss": {}`); bosses are never mimicked
-	# (HallucinationSystem.BOSS_TRAIT).
-	"boss": [],
-}
-
-## LT-97 (LT-96 D2, mirror of EffectCatalog pending rows): traits that parse but the sim does
-## not apply yet. Their data stays in enemies.json; the task that wires a trait removes it
-## from here. Every other TRAITS entry is read by the sim.
-const PENDING_TRAITS: PackedStringArray = ["tower_harass", "tower_lift", "regen"]
-
-## Trait id (from TRAITS) -> parameters (String -> float), e.g.
-## "pack": {"min": 4, "max": 6, "spacing_s": 0.5}.
+## Trait id (TraitCatalog) -> parameters (String -> float), e.g.
+## "pack": {"min": 4, "max": 6, "spacing_s": 0.5}. JSON key order.
 var traits: Dictionary = {}
+## LT-106 T3: hook dispatch data, built once at parse from `traits` in TraitCatalog
+## order (never the JSON order); pending and hook-less traits are left out. `hooks` is the OR
+## of hook_traits' masks; hook_params[i] is the same Dictionary as traits[hook_traits[i].id()].
+var hooks := 0
+var hook_traits: Array[EnemyTrait] = []
+var hook_params: Array[Dictionary] = []
 
 
-## True when this enemy carries any PENDING_TRAITS entry (data the sim does not apply yet).
+## True when this enemy carries a pending trait (LT-97: data the sim does not apply yet).
 func has_pending_traits() -> bool:
-	for trait_id in PENDING_TRAITS:
-		if traits.has(trait_id):
+	for trait_id: String in traits:
+		if TraitCatalog.get_trait(trait_id).pending():
 			return true
 	return false
 
@@ -78,36 +66,33 @@ static func parse(r: ConfigReader, id: String, obj: Dictionary, path: String) ->
 	var traits: Variant = r.opt_object(obj, "traits", path)
 	if traits != null:
 		var tp := ConfigReader.join(path, "traits")
-		r.check_keys(traits, TRAITS.keys(), tp)
+		r.check_keys(traits, TraitCatalog.ids(), tp)
 		for trait_id: String in traits:
-			if not TRAITS.has(trait_id):
+			if not TraitCatalog.has(trait_id):
 				continue
 			var params: Variant = r.as_object(traits[trait_id], ConfigReader.join(tp, trait_id))
 			if params != null:
 				e.traits[trait_id] = _parse_trait(r, trait_id, params, ConfigReader.join(tp, trait_id))
+	e.build_hooks()
 	return e
 
 
 static func _parse_trait(r: ConfigReader, trait_id: String, params: Dictionary,
 		path: String) -> Dictionary:
-	var names: Array = TRAITS[trait_id]
-	r.check_keys(params, names, path)
-	var out := {}
-	if trait_id == "pack":
-		var n := r.errors.size()
-		var lo := r.req_int(params, "min", path, 1)
-		var hi := r.req_int(params, "max", path, 1)
-		if r.errors.size() == n and hi < lo:
-			r.error(ConfigReader.join(path, "max"), "must be >= min (%d), got %d" % [lo, hi])
-		out["min"] = float(lo)
-		out["max"] = float(hi)
-		n = r.errors.size()
-		var spacing := r.req_number(params, "spacing_s", path, 0.0, INF, true)
-		if r.errors.size() == n and spacing < SimTime.DT - 1e-9:  # 1e-9: DT written out in JSON (0.0333...) rounds just below DT
-			r.error(ConfigReader.join(path, "spacing_s"),
-				"must be at least one tick (%s s), got %s" % [SimTime.DT, spacing])
-		out["spacing_s"] = spacing
-		return out
-	for key: String in names:
-		out[key] = r.req_number(params, key, path, 0.0)
-	return out
+	var tr := TraitCatalog.get_trait(trait_id)
+	r.check_keys(params, Array(tr.params()), path)
+	return tr.parse_params(r, params, path)
+
+
+## LT-106 T3: (re)builds hook_traits / hook_params / hooks from `traits`, catalog order
+## (parse calls it; a test that edits `traits` by hand calls it again).
+func build_hooks() -> void:
+	hooks = 0
+	hook_traits.clear()
+	hook_params.clear()
+	for tr: EnemyTrait in TraitCatalog.all():
+		if tr.pending() or tr.hooks() == 0 or not traits.has(tr.id()):
+			continue
+		hooks |= tr.hooks()
+		hook_traits.append(tr)
+		hook_params.append(traits[tr.id()])
