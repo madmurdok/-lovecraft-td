@@ -139,11 +139,14 @@ func _on_enemy_killed(e: SimEnemy, source: String) -> void:
 ## LT-49 (LT-46 P8): a `reveal_fakes` aura (Searchlight) also sets `revealed` on every live
 ## fake inside, for good; _candidates then drops it, so no tower targets it again. A lit or
 ## shadowed mundane aura is unchanged (LT-30 / LT-70 modifiers apply to firing and to
-## occult auras only); a lit or shadowed occult aura works at _power_mult strength.
+## occult auras only); a lit or shadowed occult aura works at t.power_mult strength (the
+## LT-105 channel). LT-105 D6: a disabled aura applies nothing.
 func apply_auras() -> void:
 	var auras: Array[SimTower] = []
 	for t in _state.towers:
 		var s := t.stats()
+		if t.disabled:
+			continue  # LT-105 D6: a disabled aura applies nothing
 		if not s.acts() and (s.effects.has("slow") or s.effects.has("damage_taken_multiplier")
 				or s.effects.has("strip_armor") or s.effects.get("reveal_fakes", 0.0) > 0.0):
 			auras.append(t)
@@ -166,7 +169,7 @@ func apply_auras() -> void:
 			var t_slow: float = s.effects.get("slow", 0.0)
 			var t_mult: float = s.effects.get("damage_taken_multiplier", 1.0)
 			var t_strip: float = s.effects.get("strip_armor", 0.0)
-			var pm := _light.power_mult(t)
+			var pm := t.power_mult  # LT-105: the modifier channel (light wrote it in slot 2)
 			if pm != 1.0:
 				# LT-30 §2 / LT-70 §2.3: a lit (x0.7) or shadowed (x1.15) occult aura works at
 				# that strength (LT-29 §2: the armor strip too).
@@ -210,6 +213,10 @@ func fire_towers() -> void:
 			t.cooldown_ticks -= 1
 			if t.cooldown_ticks > 0:
 				continue
+		# LT-105 D6 (Q2): a disabled tower keeps counting its cooldown but does nothing else
+		# (no target, no RNG draw, no burst / beam lock change).
+		if t.disabled:
+			continue
 		var s := t.stats()
 		var mode := s.mode()  # LT-103 §2.2: one precedence (EffectCatalog.Mode)
 		if mode == EffectCatalog.Mode.AURA:
@@ -246,7 +253,7 @@ func fire_towers() -> void:
 		# before the lit x0.7 and the madness x2.
 		var factor := TowerRules.shot_factor(s, _config, _state.sanity)
 		# LT-30 §2 / LT-70 §2.3: lit x0.7 / shadowed x1.15 (occult), before the madness x2.
-		var damage := TowerRules.shot_damage(s, factor, _light.power_mult(t))
+		var damage := TowerRules.shot_damage(s, factor, t.power_mult)
 		var astray := ""
 		if s.madness_affected and _state.sanity_state == SimState.SanityState.MADNESS:
 			damage *= _config.sanity.madness.damage_multiplier
@@ -283,9 +290,8 @@ func fire_towers() -> void:
 		# LT-12 §4: a mundane shot may miss as a whole (Q3: occult towers never miss).
 		# LT-30: a lit mundane tower with ignore_miss never misses (no COMBAT draw).
 		# LT-70 §2.3: a shadowed one adds shadow.mundane.miss_chance_add to the chance.
-		var miss_add := TowerRules.miss_add(t.def.kind, _config, t.shadowed)
-		var miss := t.def.kind == "mundane" \
-			and not TowerRules.ignore_miss(t.def.kind, _config, t.lit) and _roll_miss(miss_add)
+		# LT-105: both from the modifier channel (ignore_miss wins: no COMBAT draw).
+		var miss := t.def.kind == "mundane" and not t.ignore_miss and _roll_miss(t.miss_add)
 		var dud := miss or astray == "empty"
 		if dud:
 			hits = []
@@ -322,16 +328,16 @@ func fire_towers() -> void:
 		if fuse_ticks == 0:
 			_on_hit_effects(t, s, target, hits, shot)
 		# LT-30 / LT-70 §2.3: lit x0.8 / shadowed x1.25 (mundane), decided at the shot.
-		var interval := TowerRules.fire_interval(s, _light.interval_mult(t))
+		var interval := TowerRules.fire_interval(s, t.interval_mult)
 		t.cooldown_ticks = TowerRules.cooldown_ticks(interval)
 
 
 ## LT-51 (§2.2, Q4): a Silver Key cast. Picks (by target_priority) up to banish_targets of
 ## the tower's candidates that may be banished (_banishable), moves each back banish_cells
-## along its own route (P5 push_back, the Chain pull's rewind; x _power_mult: lit x0.7,
+## along its own route (P5 push_back, the Chain pull's rewind; x t.power_mult: lit x0.7,
 ## LT-70 shadowed x1.15) and gives it banish_immune_seconds of banish immunity (its own status key:
 ## pull immunity does not block a banish, nor the reverse). A level with damage (Corrupted)
-## then hits each one (armor applies; x _power_mult, x the madness multiplier).
+## then hits each one (armor applies; x t.power_mult, x the madness multiplier).
 ## No candidate: no cast and no cooldown, the gate stays ready. In MADNESS a
 ## madness_affected gate goes astray (LT-13, one roll per cast): its picks are drawn at
 ## random from the banishable reals in range, or from the banishable fakes in range
@@ -343,7 +349,7 @@ func _cast_banish(t: SimTower, s: TowerDef.Level) -> void:
 	var picks := _ranked_targets(t, _banishable(s, _candidates(t, s)), n)
 	if picks.is_empty():
 		return
-	var power := _light.power_mult(t)
+	var power := t.power_mult  # LT-105: the modifier channel
 	var damage := TowerRules.shot_damage(s, 1.0, power)
 	var astray := ""
 	if s.madness_affected and _state.sanity_state == SimState.SanityState.MADNESS:
@@ -383,13 +389,13 @@ func _cast_banish(t: SimTower, s: TowerDef.Level) -> void:
 ## Level.summon_contact, LT-103 Q2; lifetime summon_lifetime) and spends the
 ## cooldown. At its maximum it does not summon and stays ready, so a unit gone frees a
 ## slot at once. A circle lit (or, LT-70, shadowed) at summon time gives the unit
-## summon_dps x _power_mult for its whole life (§3 "lit at summon time"); madness is
+## summon_dps x t.power_mult for its whole life (§3 "lit at summon time"); madness is
 ## applied live by _ally_combat.
 ## No miss, crit or astray (a unit bites what it holds).
 func _summon(t: SimTower, s: TowerDef.Level) -> void:
 	if _allies_of.call(t.id).size() >= s.summon_max():
 		return
-	var dps := TowerRules.unit_dps(s, _light.power_mult(t))
+	var dps := TowerRules.unit_dps(s, t.power_mult)  # LT-105: the modifier channel
 	var id: int = _spawn_ally.call(t.id, t.def.id, t.centre(),
 		s.effects.get("summon_hp", 0.0), dps, s.effects.get("summon_speed", 0.0), s.summon_flying(),
 		SimTime.ticks(float(s.effects.get("summon_lifetime", 0.0))), s.summon_leash(),

@@ -241,19 +241,25 @@ func _refresh_table(t: SimTower, s: TowerDef.Level, branches: PackedStringArray)
 		cols.append(TowerText.row_values(t.def, target, cfg, sanity_now))
 		targets.append(target)
 	var shadow := t.shadowed  # LT-70 §5: never together with t.lit
-	var marked := t.lit or shadow
-	var lit := TowerText.lit_values(t.def, s, cfg, sanity_now, shadow) if marked else {}
+	# LT-105 D7: every number below comes from the modifier channel the sim fires with; Q3:
+	# marked whenever it is not neutral; the head names light / shadow when they are the
+	# cause, else NOW_MODIFIED.
+	var mods := game.sim.tower_mults(t.id)
+	var marked := TowerStatsModel.is_modified(mods)
+	var lit := TowerText.lit_values(t.def, s, cfg, sanity_now, shadow, mods) if marked else {}
 	var bar := game.side_panel.scroll.get_v_scroll_bar()
 	stats_table.max_width = int(game.side_panel.scroll.size.x - bar.get_combined_minimum_size().x)
 	stats_table.set_columns(heads, cols, lit, StatsTable.kind_color(t.def.kind), shadow)
-	lit_label.text = TowerText.lit_line(t.def, s, cfg, shadow) if marked else ""
+	var head := TowerText.NOW_SHADOW if shadow \
+		else (TowerText.NOW_LIT if t.lit else TowerText.NOW_MODIFIED)
+	lit_label.text = TowerText.lit_line(t.def, s, cfg, shadow, mods, head) if marked else ""
 	lit_label.add_theme_color_override("font_color",
 		StatsTable.COLOR_SHADOW if shadow else StatsTable.COLOR_LIT)
 	lit_label.visible = not lit_label.text.is_empty()
 	var lines := PackedStringArray()
 	if s.is_beam():
 		lines.append(TowerText.live_dps_text(sanity_now))
-	var lit_fx := TowerStatsModel.lit_effects(t.def, s, cfg, shadow) if marked else {}
+	var lit_fx := TowerStatsModel.lit_effects(t.def, s, cfg, shadow, mods) if marked else {}
 	var fx: Variant = null if lit_fx.is_empty() else lit_fx
 	var now := TowerText.special_lines(s, fx)
 	if not lit_fx.is_empty():  # LT-43 §5: "*" only on the lines the beam (or shadow) changes
@@ -269,9 +275,8 @@ func _refresh_table(t: SimTower, s: TowerDef.Level, branches: PackedStringArray)
 			lines.append("%s: %s" % [heads[i + 1], line])
 	special_label.text = "\n".join(lines)
 	special_label.visible = not lines.is_empty()
-	var light := game.sim.tower_mults(t.id)
-	kind_label.text = "\n".join(TowerText.kind_lines(t.def, s, cfg.sanity, light["ignore_miss"],
-		light["miss_add"]))
+	kind_label.text = "\n".join(TowerText.kind_lines(t.def, s, cfg.sanity, mods["ignore_miss"],
+		mods["miss_add"]))
 	kind_label.visible = not kind_label.text.is_empty()
 
 
