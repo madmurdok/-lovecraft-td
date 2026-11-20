@@ -6,17 +6,16 @@ extends RefCounted
 ## final state. tools/golden/regen.gd writes the digests to PINNED; tests/golden_replay_test.gd
 ## recomputes them and compares. Not a test suite (no _test suffix). See tests/fixtures/README.md.
 ##
-## Runs: every tools/bot_runs.gd strategy x SEEDS (bot behaviour unchanged, events taken from
-## its drain through `_event_sink`), the SimNoTreeLoop game, and the LT-34 frame-driven Game
-## run (its PLAN and frame pattern mirror sim_boundary_test; the Game consumes its own
-## events, so the digest is its command log, the bare replay of that log, events included,
-## and the final state of both).
+## Runs: every bot strategy (tools/bot/strategies.json, play order) x SEEDS (bot behaviour
+## unchanged, events taken from its drain through `_event_sink`), the SimNoTreeLoop game, and
+## the LT-34 frame-driven Game run (its PLAN and frame pattern mirror sim_boundary_test; the
+## Game consumes its own events, so the digest is its command log, the bare replay of that
+## log, events included, and the final state of both).
 
 const GOLDEN_DATA := "res://tests/fixtures/golden_data"
 const PINNED := "res://tests/fixtures/golden_digests.json"
 const BOT_PATH := "res://tools/bot_runs.gd"
-const BOT_MAX_TICKS := "const MAX_TICKS := 30 * 60 * 30"
-## Bot seed -> tick cap of its runs (0: the bot's own 30-minute cap, i.e. the whole game).
+## Bot seed -> tick cap of its runs (0: the bot's own cap, 6 minutes per wave, i.e. the whole game).
 ## Seed 1000 plays every strategy's whole game (late waves, madness, lighthouse levels,
 ## flares). LT-73 verify: 900-tick cuts of seeds 1001/1002 gave the same event stream as
 ## seed 1000's first bucket for 9 of 10 strategies (wave 1 draws no seed-dependent RNG the
@@ -163,21 +162,20 @@ static func state_text(sim: Simulation) -> String:
 static func make_bot(config: GameConfig, max_ticks := 0) -> Object:
 	var src := FileAccess.get_file_as_string(BOT_PATH)
 	assert(src.contains("func _init() -> void:"), "bot_runs.gd has no _init to rename")
-	assert(src.contains(BOT_MAX_TICKS), "bot_runs.gd has no '%s' to cut" % BOT_MAX_TICKS)
 	src = src.replace("func _init() -> void:", "func _unused_init() -> void:")
-	if max_ticks > 0:
-		src = src.replace(BOT_MAX_TICKS, "const MAX_TICKS := %d" % max_ticks)
 	var script := GDScript.new()
 	script.source_code = src
 	var err := script.reload()
 	assert(err == OK, "bot_runs.gd copy does not compile: %d" % err)
 	var bot: Object = script.new()
 	bot.set("_cfg", config)
+	if max_ticks > 0:
+		bot.set("_max_ticks", max_ticks)
 	return bot
 
 
 static func strategies() -> Array:
-	return load(BOT_PATH).get_script_constant_map()["STRATEGIES"]
+	return (preload("res://tools/bot/strategy_table.gd").default().names as Array)
 
 
 ## One bot run, digested; "run" is its RUN dictionary (not pinned, for messages).

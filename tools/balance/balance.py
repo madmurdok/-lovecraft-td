@@ -29,7 +29,7 @@ REPO = os.path.dirname(os.path.dirname(HERE))
 DATA = os.path.join(REPO, "data")
 VARIANTS = os.path.join(HERE, "variants")
 BOT = "res://tools/bot_runs.gd"
-BOT_FILE = os.path.join(REPO, "tools", "bot_runs.gd")
+STRATEGIES_FILE = os.path.join(REPO, "tools", "bot", "strategies.json")
 ## Flags the runner sets itself; a variant may not pass them.
 RESERVED_FLAGS = ("--seeds=", "--data=", "--out=", "--strategies=")
 VARIANT_KEYS = {"description", "patch", "flags"}
@@ -46,12 +46,14 @@ def _read(path):
         return f.read()
 
 def bot_strategies():
-    """The STRATEGIES const of tools/bot_runs.gd, so the list never drifts from the bot."""
-    src = _read(BOT_FILE)
-    m = re.search(r"^const STRATEGIES := \[([^\]]*)\]", src, re.M)
-    if not m:
-        raise SystemExit("balance: cannot find 'const STRATEGIES := [...]' in " + BOT_FILE)
-    return re.findall(r'"([^"]+)"', m.group(1))
+    """The strategy names of tools/bot/strategies.json in play order (LT-101), the table the
+    bot plays, so the list never drifts from the bot."""
+    try:
+        rows = json.loads(_read(STRATEGIES_FILE))["strategies"]
+        return [r["name"] for r in rows]
+    except (OSError, ValueError, KeyError, TypeError) as e:
+        raise SystemExit("balance: cannot read the strategy names from %s: %s"
+                         % (STRATEGIES_FILE, e))
 
 
 def _fmt(path):

@@ -197,14 +197,16 @@ class LoadVariantTest(TempDirs):
 # --- 11: strategies from the bot ----------------------------------------------------------
 
 class BotStrategiesTest(unittest.TestCase):
-    def test_reads_the_strategies_const_of_the_bot_file(self):
+    def test_reads_the_names_of_the_strategies_file_in_order(self):
         with tempfile.TemporaryDirectory() as d:
-            f = os.path.join(d, "bot.gd")
+            f = os.path.join(d, "strategies.json")
             with open(f, "w") as out:
-                out.write('extends SceneTree\nconst OTHER := ["x"]\n'
-                          'const STRATEGIES := ["alpha", "beta", "gamma"]\n')
-            with mock.patch.object(balance, "BOT_FILE", f):
-                self.assertEqual(balance.bot_strategies(), ["alpha", "beta", "gamma"])
+                json.dump({"tunables": {"build_first": 5, "flare_min_live": 4},
+                           "strategies": [{"name": "gamma", "cycle": ["x"]},
+                                          {"name": "alpha", "cycle": ["x"]},
+                                          {"name": "beta", "cycle": ["x"]}]}, out)
+            with mock.patch.object(balance, "STRATEGIES_FILE", f):
+                self.assertEqual(balance.bot_strategies(), ["gamma", "alpha", "beta"])
 
     def test_real_bot_file(self):
         s = balance.bot_strategies()
