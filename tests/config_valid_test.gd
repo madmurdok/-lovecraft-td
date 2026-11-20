@@ -337,12 +337,12 @@ func test_every_tower_level_is_well_formed() -> void:
 				assert_bool(lv.madness_affected).override_failure_message(where).is_false()
 			for key: String in lv.effects:
 				var at := where + ".effects." + key
-				assert_bool(TowerDef.Level.EFFECTS.has(key)).override_failure_message(at).is_true()
-				assert_bool(TowerDef.Level.PENDING.has(key)).override_failure_message(at).is_false()
+				assert_bool(EffectCatalog.has(key)).override_failure_message(at).is_true()
+				assert_bool(EffectCatalog.is_pending(key)).override_failure_message(at).is_false()
 				var v: float = lv.effects[key]
 				assert_float(v).override_failure_message(at).is_greater_equal(0.0)
 				assert_float(v).override_failure_message(at) \
-					.is_less_equal(TowerDef.Level.EFFECTS.get(key, -1.0))
+					.is_less_equal(EffectCatalog.max_of(key) if EffectCatalog.has(key) else -1.0)
 
 
 func test_tower_glyphs_are_unique() -> void:

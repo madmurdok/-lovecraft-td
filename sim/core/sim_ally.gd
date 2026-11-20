@@ -11,6 +11,8 @@ var tower: int  ## the summoning tower's id; 0 = none (it may be sold: then the 
 var source: String  ## kill credit passed to apply_damage (the tower def id)
 var home: Vector2  ## leash centre, cell units (the spot it was summoned at)
 var leash: float  ## cells: engages only enemies whose position is within this of `home`
+## cells: holds an enemy within this (LT-103 Q2: summon_contact, default ALLY_CONTACT)
+var contact: float = AllySystem.ALLY_CONTACT
 var pos: Vector2  ## cell units
 var prev_pos: Vector2  ## pos before this tick's move (render interpolation)
 var hp: float
@@ -20,7 +22,7 @@ var speed: float  ## cells per second
 var flying: bool  ## engages flyers too; a ground unit (false) engages ground enemies only
 var summon_tick: int
 var expires_tick: int  ## gone at the start of this tick (slot 2); 0 = no lifetime
-## The enemy it holds (in contact, <= Simulation.ALLY_CONTACT cells): -1 = none. One unit
+## The enemy it holds (in contact, <= `contact` cells): -1 = none. One unit
 ## holds at most one enemy and an enemy is held by at most one unit.
 var held_id := -1
 var target_id := -1  ## the enemy it chases this tick (render); -1 = none (heading home)

@@ -7,7 +7,7 @@ extends RefCounted
 
 const CURRENCY := "$"  ## the money sign (LT-27 §2: "gold" internally, "$" on screen)
 const DASH := " — "  ## between a name and its cost: "Rifleman — $50"
-const COMING_SOON := " (coming soon)"  ## appended to lines whose key is in Level.PENDING
+const COMING_SOON := " (coming soon)"  ## appended to lines whose key is pending (EffectCatalog)
 const MINUS := "−"  ## U+2212, for sanity drains
 const MADNESS_WARNING := " (drives you mad!)"  ## LT-23 Q3: build/upgrade takes the cap to 0
 const REMOVED := "Loses: "  ## LT-28: before the old line of an effect an upgrade removes
@@ -194,24 +194,19 @@ static func row_values(def: TowerDef, s: TowerDef.Level, cfg: GameConfig,
 	}
 
 
-## LT-43 §1 (Q2 "attack shape"), first match: Summon, Banish, Aura (no damage), Beam
-## (sanity-scaled), Burst, Line (pierce), Blast (aoe), else Single.
+## LT-43 §1 (Q2 "attack shape") / LT-103 §2.2: the label of Level.mode (a fused charge
+## reads "Blast"). LT-103 S3 moves the labels to data/effect_text.json.
+const MODE_LABELS := {
+	EffectCatalog.Mode.AURA: "Aura", EffectCatalog.Mode.BANISH: "Banish",
+	EffectCatalog.Mode.SUMMON: "Summon", EffectCatalog.Mode.BEAM: "Beam",
+	EffectCatalog.Mode.BURST: "Burst", EffectCatalog.Mode.LINE: "Line",
+	EffectCatalog.Mode.FUSE: "Blast", EffectCatalog.Mode.BLAST: "Blast",
+	EffectCatalog.Mode.SINGLE: "Single",
+}
+
+
 static func attack_text(s: TowerDef.Level) -> String:
-	if s.is_summon():
-		return "Summon"
-	if s.is_banish():
-		return "Banish"
-	if s.damage <= 0.0:
-		return "Aura"
-	if s.is_beam():
-		return "Beam"
-	if TowerStatsModel.is_active(s.effects, "burst_targets"):
-		return "Burst"
-	if TowerStatsModel.is_active(s.effects, "pierce"):
-		return "Line"
-	if TowerStatsModel.is_active(s.effects, "aoe_radius"):
-		return "Blast"
-	return "Single"
+	return MODE_LABELS[s.mode()]
 
 
 ## A table number with one decimal at most: 12.5, 11.3, 18.
