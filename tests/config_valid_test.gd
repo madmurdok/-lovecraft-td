@@ -176,13 +176,6 @@ func test_madness_multipliers_are_a_buff_for_enemies() -> void:
 	assert_float(m.enemy_damage_taken_multiplier).is_less(1.0)
 
 
-func test_shoggoth_is_the_toughest_enemy() -> void:
-	var en := _real().enemies
-	for id: String in en:
-		if id != "shoggoth":
-			assert_float(en["shoggoth"].hp).is_greater(en[id].hp)
-
-
 func test_level_range_comes_from_json_range_key() -> void:
 	var t := _real().towers
 	assert_float(t["rifleman"].levels[0].range_cells).is_equal(3.0)

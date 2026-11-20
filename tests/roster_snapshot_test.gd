@@ -10,6 +10,7 @@ const TOWER_IDS := ["rifleman", "harpooner", "elder_sign", "necronomicon_reader"
 	"summoning_circle"]
 const ENEMY_IDS := ["cultist", "hybrid", "deep_one", "night_gaunt", "shoggoth"]
 const WAVE_COUNT := 5
+const TOUGHEST_ENEMY := "shoggoth"  ## LT-23 S15: the boss has the most hp of all enemies
 
 
 func test_shipped_roster_matches_the_snapshot() -> void:
@@ -18,3 +19,7 @@ func test_shipped_roster_matches_the_snapshot() -> void:
 	assert_array(r.config.towers.keys()).contains_exactly_in_any_order(TOWER_IDS)
 	assert_array(r.config.enemies.keys()).contains_exactly_in_any_order(ENEMY_IDS)
 	assert_int(r.config.waves.waves.size()).is_equal(WAVE_COUNT)
+	for id: String in r.config.enemies:
+		if id != TOUGHEST_ENEMY:
+			assert_float(r.config.enemies[TOUGHEST_ENEMY].hp).override_failure_message(
+				"%s must out-hp %s" % [TOUGHEST_ENEMY, id]).is_greater(r.config.enemies[id].hp)
