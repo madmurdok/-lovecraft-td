@@ -68,6 +68,19 @@ func load_text_edit(file: String, old: String, new: String) -> ConfigLoadResult:
 	return load_edited(func(dir: String) -> void: replace_text(dir, file, old, new))
 
 
+## LT-98: the raw-text edits (duplicate keys, number literals JSON cannot hold) without
+## searching live text. `fn(root)` puts RAW_SLOT at the value to replace; the file is
+## re-serialized and that one string becomes `raw` verbatim, so the edit reaches exactly the
+## targeted def whatever other defs' text repeats.
+const RAW_SLOT := "__lt98_raw_slot__"
+
+
+func load_raw_edit(file: String, fn: Callable, raw: String) -> ConfigLoadResult:
+	return load_edited(func(dir: String) -> void:
+		edit(dir, file, fn)
+		replace_text(dir, file, "\"%s\"" % RAW_SLOT, raw))
+
+
 ## True if some error starts with "<file>: <path>: " (or "<file>: " when path is empty)
 ## and contains `fragment`.
 func has_error(result: ConfigLoadResult, file: String, path: String, fragment := "") -> bool:

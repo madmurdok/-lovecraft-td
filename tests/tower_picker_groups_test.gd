@@ -341,8 +341,10 @@ func test_pressing_a_button_in_either_group_builds_it_and_closes_the_picker() ->
 # --- LT-61 §2, §5: columns, names, scrolling -----------------------------------------------
 
 ## res://data towers plus clones of the first mundane one (own id, long name, free glyph)
-## until the list has `total` towers.
-func _total_config(total: int) -> GameConfig:
+## until the list has `total` towers (0: no cap), and at least `min_extra` clones whatever data ships
+## (LT-98: a filler must not vanish when data grows). Past `total`, data towers are dropped
+## from the end, never `keep` (LT-98: a fixed-size fixture still holds that live def).
+func _total_config(total: int, min_extra := 0, keep := "") -> GameConfig:
 	var dir := make_dir()
 	var d: Dictionary = JSON.parse_string(read_file(dir, "towers.json"))
 	var towers: Dictionary = d["towers"]
@@ -352,12 +354,21 @@ func _total_config(total: int) -> GameConfig:
 		used[String(towers[id].get("glyph", String(towers[id]["name"]).left(1)))] = true
 		if template.is_empty() and towers[id]["kind"] == "mundane":
 			template = towers[id]
+	var budget := total - min_extra
+	var ids: Array = towers.keys()
+	ids.reverse()
+	for id: String in ids:
+		if total <= 0 or towers.size() <= budget:  # total 0: no cap
+			break
+		if id != keep:
+			towers.erase(id)
+	var want := maxi(total, towers.size() + min_extra)
 	var free := []
 	for c in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
 		if not used.has(c):
 			free.append(c)
 	var n := 0
-	while towers.size() < total:
+	while towers.size() < want:
 		n += 1
 		var t: Dictionary = template.duplicate(true)
 		t["name"] = "Extra Harbour Gunner %d" % n
@@ -368,7 +379,9 @@ func _total_config(total: int) -> GameConfig:
 	write_file(dir, "towers.json", JSON.stringify(d, "  ", false))
 	var r := GameConfig.load_from_dir(dir)
 	assert_bool(r.ok).override_failure_message("\n".join(r.errors)).is_true()
-	assert_int(r.config.towers.size()).is_equal(total)
+	assert_int(r.config.towers.size()).is_equal(want)
+	if not keep.is_empty():
+		assert_bool(r.config.towers.has(keep)).override_failure_message(keep).is_true()
 	return r.config
 
 
@@ -429,7 +442,7 @@ func test_shipped_names_fit_the_name_column_whole() -> void:
 ## A name wider than NAME_W shrinks 12 -> 10 until it fits, at 10 it ends in an ellipsis.
 ## The expectation is recomputed here from the font, not read from the picker.
 func test_a_long_name_shrinks_to_10_px_then_ends_in_an_ellipsis() -> void:
-	await _start_game(_total_config(11))
+	await _start_game(_total_config(0, 1))
 	await _open_picker()
 	var shrunk := 0
 	var ellipsis := 0
@@ -467,9 +480,32 @@ func test_ten_towers_need_no_scrolling_in_the_list() -> void:
 	assert_float(rows.size.y).is_equal(rows.custom_minimum_size.y)
 
 
-## Each shipped tower's card, shown below the list, fits the side panel without scrolling.
-func test_every_card_fits_below_the_list_without_scrolling() -> void:
+## The live def whose card is tallest (measured on res://data, no fixed id); leaves the
+## measuring game freed.
+func _tallest_card_id() -> String:
 	await _start_game(_data_config())
+	var sp := _game.side_panel
+	var best := ""
+	var best_h := -1.0
+	for id: String in _config.towers:
+		sp.show_card(id)
+		await get_tree().process_frame
+		var h := sp.card.get_combined_minimum_size().y
+		if h > best_h:
+			best_h = h
+			best = id
+	_game.queue_free()
+	await get_tree().process_frame
+	return best
+
+
+## LT-98: with a full list (LIST_MAX_ROWS rows) the tallest live card, shown below it, fits
+## the side panel without scrolling. Skipped: it does not fit today (the owner's decision on
+## LT-98, a backlog task fixes the layout).
+func test_every_card_fits_below_the_list_without_scrolling(do_skip := true,
+		skip_reason := "picker card does not fit at LIST_MAX_ROWS rows; backlog task 'Side panel: tower card fits below a full picker list'") -> void:
+	var tallest: String = await _tallest_card_id()
+	await _start_game(_total_config(TowerPicker.LIST_MAX_ROWS, 0, tallest))
 	_game.sim.state.gold = 10000
 	await _open_picker()
 	var sp := _game.side_panel
