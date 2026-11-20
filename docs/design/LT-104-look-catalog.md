@@ -197,3 +197,11 @@ Must stay green unchanged: `tower_attack_visuals_test`, `render_isolation_test`,
   (Recommended). Benefit: built-in colours stay where tests pin them. Risk: recolouring all
   tracers takes one variant plus one assignment per tower. (b) Allow `looks.tracer.color`.
   Benefit: one line recolours a whole look. Risk: shipped visuals drift from the pinned constants.
+
+## Owner decisions (2026-11-20)
+
+- Q1: "Не запускать игру (Recommended)" — invalid looks.json refuses to start, like effect_text.json.
+- Q2: "Нет, только через looks.json" — NO built-in `boss` look; a boss looks like an enemy until
+  looks.json names a look for it. Overrides the note's recommendation; drop the built-in boss from the edit map.
+- Q3: "На башню (Recommended)" — overrides per tower id.
+- Q4: "Только варианты (Recommended)" — built-ins are not recoloured in place.
