@@ -113,3 +113,65 @@ func test_non_object_enemy_entry_still_resolves_for_waves() -> void:
 	var r := load_json_edit(E, func(d: Dictionary) -> void: d["enemies"]["cultist"] = 1)
 	assert_array(r.errors).has_size(1)
 	assert_bool(has_error(r, E, "enemies.cultist")).is_true()
+
+
+# --- optional rows (injected through load_from_dir's `sections`) --------------------
+
+const CREW := "crew.json"
+
+
+## The shipped rows plus one optional crew.json row whose parser records each call in
+## `calls` and requires a "size" field.
+func _rows_with_crew(calls: Dictionary) -> Array[Array]:
+	var rows := GameConfig._sections()
+	var parse := func(r: ConfigReader, root: Dictionary, _c: GameConfig,
+			_ctx: Dictionary) -> void:
+		calls["n"] = int(calls.get("n", 0)) + 1
+		calls["root"] = root
+		if not root.has("size"):
+			r.error("size", "missing required field")
+	rows.append([CREW, parse, false])
+	return rows
+
+
+func test_optional_row_absent_is_off_without_error() -> void:
+	var calls := {}
+	var r := GameConfig.load_from_dir(make_dir(), _rows_with_crew(calls))
+	assert_array(r.errors).is_empty()
+	assert_bool(r.ok).is_true()
+	assert_object(r.config).is_not_null()
+	assert_bool(calls.has("n")).override_failure_message(
+		"optional parser was called with its file absent").is_false()
+
+
+func test_optional_row_present_is_parsed_with_no_other_change() -> void:
+	var calls := {}
+	var dir := make_dir()
+	write_file(dir, CREW, "{\"size\": 3}")
+	var r := GameConfig.load_from_dir(dir, _rows_with_crew(calls))
+	assert_array(r.errors).is_empty()
+	assert_bool(r.ok).is_true()
+	assert_int(calls.get("n", 0)).is_equal(1)
+	assert_int(int(calls["root"]["size"])).is_equal(3)
+
+
+func test_optional_row_present_but_invalid_json_reports_its_error() -> void:
+	var calls := {}
+	var dir := make_dir()
+	write_file(dir, CREW, "nope")
+	var r := GameConfig.load_from_dir(dir, _rows_with_crew(calls))
+	assert_bool(r.ok).is_false()
+	assert_object(r.config).is_null()
+	assert_int(r.errors.size()).is_equal(1)
+	assert_bool(has_error(r, CREW, "", "invalid JSON")).is_true()
+	assert_bool(calls.has("n")).is_false()
+
+
+func test_optional_row_present_but_bad_field_reports_its_error() -> void:
+	var calls := {}
+	var dir := make_dir()
+	write_file(dir, CREW, "{\"crew\": 1}")
+	var r := GameConfig.load_from_dir(dir, _rows_with_crew(calls))
+	assert_bool(r.ok).is_false()
+	assert_array(r.errors).contains_exactly(["crew.json: size: missing required field"])
+	assert_int(calls.get("n", 0)).is_equal(1)
