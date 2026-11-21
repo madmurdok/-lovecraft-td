@@ -400,3 +400,46 @@ one win, so it is a close-to-minimal fix: the two-part target for every strategy
 - Suggested middle value to measure next (not run): `lt72_b_early_07` with waves 6-10 `hp_mult` x0.8 (1.28/1.48/1.6/1.92/2.16), between
   `early_07` (1 win, mean 5.3 waves) and `early_d2_late_d2` (22 wins, 20 of them `light`, mean 7.5 waves): it should
   give a few wins for several strategies and reach waves 8-10 without handing `light` a free win. If the owner wants no further run, ship `early_07`.
+
+## More waves (LT-72), round 4: `lt72_b_early_07_late_08`
+
+Variant: `lt72_b_early_07` with waves 6-10 `hp_mult` x0.8 = 1.28/1.48/1.6/1.92/2.16 (waves 4-5 = 0.7).
+20 seeds, all 10 strategies, flare on, `--jobs=4`. Machine: `uptime` at start `20:34 load averages: 4.41 13.87
+19.89`, at end `20:50 load 17.50 32.60 40.08` (a GDScript suite ran meanwhile); `/usr/bin/time -p`: real 946.61,
+user 2479.64, sys 18.90 (user/real 2.6 over 4 processes, s/run 13.6, no timeouts, no incomplete cells).
+
+| strategy | wins/losses | early ok (e) | met | deaths by wave 1..10 (mean waves) |
+|---|---|---|---|---|
+| mundane | 0/20 | 20 | yes | 0.0.0.0.0.7.7.6.0.0 (6.0) |
+| occult | 0/20 | 20 | yes | 0.0.0.0.0.0.17.3.0.0 (6.2) |
+| mixed | 0/20 | 18 | yes | 0.0.0.0.2.10.6.2.0.0 (5.4) |
+| madness | 0/20 | 20 | yes | 0.0.0.0.0.2.18.0.0.0 (5.9) |
+| demolition | 0/20 | 20 | yes | 0.0.0.0.0.3.2.6.9.0 (7.0) |
+| battery | 0/20 | 20 | yes | 0.0.0.0.0.0.5.12.3.0 (6.9) |
+| resonator | 0/20 | 20 | yes | 0.0.0.0.0.7.13.0.0.0 (5.7) |
+| gate | 0/20 | 16 | yes | 0.0.0.1.3.16.0.0.0.0 (4.8) |
+| circle | 0/20 | 20 | yes | 0.0.0.0.0.14.5.1.0.0 (5.3) |
+| light | 6/14 | 20 | yes | 0.0.0.0.0.2.2.9.1.0 (7.7) |
+| all | 6/194 | 194/200 (97%) | 10/10 | 0.0.0.1.5.61.75.39.13.0 |
+
+Totals: 6 wins (all `light`) / 194 losses, mean waves survived 6.09 (mean of the 10 strategy means), early ok 97%,
+target met 10/10. Lighthouse HP left: 0.0 everywhere except `light` 2.6/0.0. Nobody reaches the wave-10 finale
+(no death in wave 10, no run beyond wave 9 except the 6 `light` wins).
+
+### Summary of rounds (20 seeds x 10 strategies, flare on)
+
+| arm | wins / 200 | mean waves | early ok | target met |
+|---|---|---|---|---|
+| baseline (today's 5 waves) | 18 | 3.41 | 9% | 0/10 |
+| lt72_b | 0 | 4.56 | 52% | 4/10 |
+| lt72_b_late_x2 | 0 | 4.41 | 50% | 4/10 |
+| lt72_b_late_d2 (round 1, cells completed) | 11 | 5.25 | 46% (before completion) | 4/10 |
+| lt72_b_early_x2 | 0 | 3.47 | 2% | 0/10 |
+| lt72_b_early_d2 | 0 | 5.49 | 100% | 10/10 |
+| lt72_b_early_07 | 1 | 5.32 | 97% | 10/10 |
+| lt72_b_early_d2_late_d2 | 22 | 7.54 | 100% | 9/10 |
+| **lt72_b_early_07_late_08** | 6 | 6.09 | 97% | 10/10 |
+
+Mean waves are as the lab reports them (over lost runs, round-1 rows) or per-strategy means averaged (rounds 2-4); compare
+within a round, not across. Proposal: `lt72_b_early_07_late_08` is the only arm that meets the two-part target for 10/10
+strategies, has wins (6, all `light`) and ends runs in waves 6-9; the owner picks the shipped numbers.
