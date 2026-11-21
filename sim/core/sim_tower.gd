@@ -12,7 +12,7 @@ const DEFAULT_TARGET_PRIORITY := "first"
 var id: int  ## shared entity id counter (SimState.next_id)
 var def: TowerDef
 var cell: Vector2i
-var pos: Vector2  ## the cell centre in cell units, set once when built (towers never move)
+var pos: Vector2  ## the cell centre in cell units; set when built and by a lift (LT-117)
 var level := 0  ## 0 = L1, 1 = L2 (indices into def.levels), 2 = L3 (def.branches[branch])
 var branch := ""  ## "" below L3; "a" or "b" at L3
 var spent := 0  ## total gold paid for this tower (build + upgrades); the sell refund base
@@ -49,6 +49,11 @@ var interval_mult := 1.0  ## fire interval multiplier, shooters only (composed b
 var miss_add := 0.0  ## added to a mundane shot's miss chance (composed by +)
 var ignore_miss := false  ## no miss roll at all, wins over miss_add (composed by OR)
 var disabled := false  ## no shot, cast or aura; the cooldown keeps counting (OR)
+
+## LT-117: ticks left of a night-gaunt lift's disable, the timer's owner (not part of the
+## channel): set by Simulation._lift_tower, rewritten into `disabled` and counted down by
+## TraitSystem.near_tower each tick while > 0. A tower with a running timer is not lifted.
+var lift_ticks_left := 0
 
 
 func stats() -> TowerDef.Level:

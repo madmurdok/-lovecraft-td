@@ -263,7 +263,9 @@ func test_hook_order_is_enemy_id_then_catalog_order() -> void:
 ## TraitSystem reads the defs' hook bits once, at construction: a pass whose bit no def had
 ## then is skipped whole (the event hooks, dispatched per enemy, still run).
 func test_trait_passes_skip_when_no_def_had_their_hook_at_construction() -> void:
-	var probe := _probe("probe", EnemyTrait.ON_TICK | EnemyTrait.NEAR_TOWER | EnemyTrait.ON_DAMAGED)
+	# LT-117: night_gaunt's tower_lift carries NEAR_TOWER in the data, so that pass always runs
+	# at construction now; only ON_TICK's skip is pinned here.
+	var probe := _probe("probe", EnemyTrait.ON_TICK | EnemyTrait.ON_DAMAGED)
 	var sim := tsim()
 	var d: EnemyDef = sim.config.enemies[CARRIER]
 	d.traits["probe"] = {"tag": 0.0}
@@ -281,7 +283,7 @@ func test_catalog_ids_and_pending_ids() -> void:
 	assert_array(TraitCatalog.ids()).is_equal(
 		["pack", "tower_harass", "tower_lift", "regen", "boss"])
 	assert_array(Array(TraitCatalog.pending_ids())).is_equal(
-		["tower_harass", "tower_lift", "regen"])
+		["tower_harass", "regen"])
 
 
 # --- behaviour 8 (T8): markers ----------------------------------------------------------------

@@ -8,7 +8,8 @@ extends RefCounted
 ## New streams are appended so existing ones keep their seeds. LOOT rolls real relic drops,
 ## GHOST_LOOT the tokens of fakes (LT-27 §1.2), so hallucinations never shift real loot.
 ## CRIT rolls tower crits (LT-29 §1.1), so crit towers never shift the COMBAT miss sequence.
-enum Stream {SPAWN, COMBAT, SANITY, MADNESS, LOOT, GHOST_LOOT, CRIT}
+## LIFT rolls the night-gaunt's drop cell (LT-117), so a lift never reshuffles SPAWN.
+enum Stream {SPAWN, COMBAT, SANITY, MADNESS, LOOT, GHOST_LOOT, CRIT, LIFT}
 
 const STREAM_SEED_STRIDE := 16
 

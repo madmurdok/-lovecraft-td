@@ -19,7 +19,9 @@ func _init(ctx: SimContext, host: TraitHost) -> void:
 		_any |= (ctx.config.enemies[id] as EnemyDef).hooks
 
 
-## Slot 2, after the light writer, before apply_auras (LT-105 §3 writer slot).
+## Slot 2, after the light writer, before apply_auras (LT-105 §3 writer slot). LT-117: after
+## the enemy loop, every tower with a running lift timer is disabled this tick and counts
+## down (the lift tick is tick 1, so it is off for exactly the timer's start value).
 func near_tower() -> void:
 	if (_any & EnemyTrait.NEAR_TOWER) == 0:
 		return
@@ -31,6 +33,10 @@ func near_tower() -> void:
 			var t := d.hook_traits[i]
 			if t.hooks() & EnemyTrait.NEAR_TOWER:
 				t.near_tower(_host, e, d.hook_params[i])
+	for t in _state.towers:
+		if t.lift_ticks_left > 0:
+			_host.modify_tower(t, 1.0, 1.0, 0.0, false, true)
+			t.lift_ticks_left -= 1
 
 
 ## Slot 2, right after the status timers.

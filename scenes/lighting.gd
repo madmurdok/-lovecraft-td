@@ -211,8 +211,10 @@ func _sync_tower_lights() -> void:
 				TOWER_LIGHT_ENERGY * night,
 				game.board.view.cells_to_px(TOWER_LIGHT_CELLS * 2.0) / 256.0)
 			l.visible = night > 0.0
-			l.position = game.board.view.cell_to_world(game.sim.state.map.grid.centre(t.cell))
 			_tower_lights[t.id] = l
+		# LT-117: placed on every sync, so a lifted tower's light follows it.
+		_tower_lights[t.id].position = \
+			game.board.view.cell_to_world(game.sim.state.map.grid.centre(t.cell))
 	for id in _tower_lights.keys():
 		if not seen.has(id):
 			_tower_lights[id].queue_free()
