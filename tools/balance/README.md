@@ -55,7 +55,7 @@ Create `tools/balance/variants/<name>.json`:
 }
 ```
 
-All three keys are optional (`baseline.json` has only a description).
+All keys are optional (`baseline.json` has only a description).
 
 - `patch` maps a file in `data/` to an object that is deep-merged into it. An object merges
   key by key; any other value (number, string, bool, a whole array) replaces the old value.
@@ -70,10 +70,44 @@ All three keys are optional (`baseline.json` has only a description).
   `balance.py`): per-wave `hp_mult` / `speed_mult` in `waves.json` (LT-111), e.g.
   `"waves.json": {"waves": {"4": {"hp_mult": 2}}}`. `"4"` is the 0-based index (wave 5).
 - `flags` are passed to `tools/bot_runs.gd` (see its header): `--flare=0`, `--lighthouse=0`,
-  `--upgrades=0`, `--branch=rifleman:b`. `--seeds`, `--data`, `--out` and `--strategies` belong
-  to the runner and are refused.
+  `--upgrades=0`, `--branch=rifleman:b`. `--seeds`, `--data`, `--out`, `--strategies` and
+  `--bot-strategies` belong to the runner and are refused.
 - The patched data still goes through the game's config validation; a value it rejects fails
   that variant's runs with `config errors: ...` in the `.err` log.
+
+### Vary the bot's strategies (`bot`, LT-112)
+
+The optional key `bot` patches a copy of `tools/bot/strategies.json` (see *Add a strategy*
+below) with the same rules as `patch`, so an A/B of a build order or a tunable needs no edit in
+the repo:
+
+```json
+{
+  "description": "mundane builds a harpooner every second tower; upgrades from tower 3",
+  "bot": {
+    "tunables": { "build_first": 3 },
+    "strategies": {
+      "name=mundane": { "cycle": ["rifleman", "harpooner"] },
+      "name=occult": { "cap_floor": 20, "branches": { "rifleman": "b" } }
+    }
+  }
+}
+```
+
+- Rows are addressed like any array: `"name=<strategy>"` (an unknown name is an error), an
+  index or `"*"`.
+- Arrays replace arrays: `cycle` / `prefix` are given whole, never merged item by item (an
+  object patch on an array still addresses items, e.g. `"cycle": {"0": "harpooner"}`).
+- Objects merge: `branches` keeps the towers it does not name. A row may also get the
+  optional fields it leaves out (`prefix`, `branches`, `cap_floor`, `on_blocked`, `fallback`,
+  `fallback_max`, `buy_sanity`, `about`), and `branches` any tower id (`BOT_OPTIONAL_KEYS`).
+- `--check` rejects an unknown row or key, a value of another type and a renamed strategy (the
+  lab plays the repo file's names). Rules across fields (`cap_floor` needs `on_blocked`) and
+  tower ids are checked by the bot's loader at run time: a bad table fails that variant's runs
+  with `strategies.json errors: ...` in the `.err` log.
+- The runner writes the copy to `<work>/bot_<variant>.json` and passes it to the bot as
+  `--bot-strategies=<path>` (reserved, like `--data=`). A variant without `bot` gets no such
+  flag, so its command line and RUN lines are the same as before LT-112.
 
 Shipped examples reproduce LT-30 S13 arms: `baseline` (A), `beam_off` (B), `flare_off` (D),
 `oil_price_1` (F), `lighthouse_half_cost` (H).

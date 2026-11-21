@@ -253,7 +253,7 @@ class LoadVariantTest(TempDirs):
         }
         for flag in balance.RESERVED_FLAGS:
             cases["reserved" + flag.strip("-=")] = {"flags": [flag + "x"]}
-        self.assertEqual(len([c for c in cases if c.startswith("reserved")]), 4)
+        self.assertEqual(len([c for c in cases if c.startswith("reserved")]), 5)
         for name, body in cases.items():
             self.write(self.variants, name + ".json", body)
             with self.subTest(name), self.assertRaises(PatchError):
