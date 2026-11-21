@@ -296,3 +296,67 @@ Reading:
   under lower load (unchanged waves 1..5 need no re-run for the 6 early-dying strategies).
 - Caveat: the "lighthouse HP left" table cannot separate arms (every run lost, 0.0), as LT-116 noted; the
   wave reached in "Where runs end" is the metric that moves.
+
+### Round 1, completed cells
+
+The 9 jobs that hit the lab's 1320 s per-process timeout were rerun (one `balance.py` call per
+variant with `--strategies=`, 20 seeds, `--jobs=4`; the lab has no per-process timeout flag, the limit
+is `120 + 60 x seeds` and was not raised, the rerun simply finished under a lower load: `uptime` 18:27
+load 8.95, 153 / 215 / 578 s real). All 9 cells now hold 20 runs (`eN` = survived waves 1..5; recomputed
+from the loss-wave columns where the lab's own `eN` counted waves 1..4 because the variant's last
+loss wave was 7):
+
+| cell | wins/losses | early ok | losses by wave 1..10 (mean waves) | meets two-part target |
+|---|---|---|---|---|
+| lt72_b / light | 0/20 | 11/20 | 0.0.0.0.9.9.0.1.0.1 (4.8) | no |
+| lt72_b_late_x2 / occult | 0/20 | 20/20 | 0.0.0.0.0.4.16 (5.8) | yes |
+| lt72_b_late_x2 / madness | 0/20 | 20/20 | 0.0.0.0.0.9.11 (5.5) | yes |
+| lt72_b_late_x2 / light | 0/20 | 11/20 | 0.0.0.0.9.11.0 (4.5) | no |
+| lt72_b_late_d2 / occult | 0/20 | 20/20 | 0.0.0.0.0.0.2.18.0.0 (6.9) | yes |
+| lt72_b_late_d2 / madness | 0/20 | 20/20 | 0.0.0.0.0.0.17.3.0.0 (6.2) | yes |
+| lt72_b_late_d2 / battery | 0/20 | 20/20 | 0.0.0.0.0.0.0.0.17.3 (8.2) | yes |
+| lt72_b_late_d2 / resonator | 0/20 | 18/20 | 0.0.0.0.2.0.3.4.11.0 (7.1) | yes |
+| lt72_b_late_d2 / light | 11/9 | 11/20 | 0.0.0.0.9.0.0.0.0.0 (7.3), HP left 4.3/1.0 | no (9 losses) |
+
+With these, round 1 meets the two-part target for 4/10 strategies in all three arms (occult, madness,
+battery, resonator; `/2` had 2/10 only because of the incomplete cells). `light` and the six early-dying
+strategies stay below it.
+
+## More waves (LT-72), round 2: waves 4-5 `hp_mult`
+
+Owner decision: "Ранние волны 4-5 ×2/÷2 (Recommended)". Variants: `lt72_b_early_x2` / `lt72_b_early_d2` =
+`lt72_b` with `hp_mult` of waves 4 and 5 (0-based 3, 4) set to 2.0 / 0.5 (they are 1.0, i.e. unset, in
+`lt72_b`); everything else identical. 20 seeds, all 10 strategies, flare on, `--jobs=4`, target >= 10/20
+losses and survive waves 1..5 in >= 15/20. Machine: `uptime` at start `18:03 load averages: 10.82 20.16
+27.12`, at end of the main run `18:27 load 8.95 47.53 72.68`; `/usr/bin/time -p` for the main run: real
+1407.36, user 3220.57, sys 32.40 (user/real 2.3 over 4 processes; s/run 10.2 and 15.2, no timeouts).
+
+Losses of 20 (wins/losses, `eN` = survived waves 1..5):
+
+| variant | mundane | occult | mixed | madness | demolition | battery | resonator | gate | circle | light | met |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| lt72_b (round 1) | 0/20 e3 | 0/20 e20 | 0/20 e2 | 0/20 e20 | 0/20 e4 | 0/20 e20 | 0/20 e18 | 0/20 e2 | 0/20 e3 | 0/20 e11 | 4/10 |
+| lt72_b_early_x2 | 0/20 e0 | 0/20 e1 | 0/20 e0 | 0/20 e2 | 0/20 e0 | 0/20 e0 | 0/20 e0 | 0/20 e0 | 0/20 e0 | 0/20 e0 | 0/10 |
+| lt72_b_early_d2 | 0/20 e20 | 0/20 e20 | 0/20 e20 | 0/20 e20 | 0/20 e20 | 0/20 e20 | 0/20 e20 | 0/20 e20 | 0/20 e20 | 0/20 e20 | 10/10 |
+
+Where runs end (losses in wave 1..10, mean waves survived in brackets):
+
+| variant | mundane | occult | mixed | madness | demolition | battery | resonator | gate | circle | light | all losses by wave | early ok |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| early_x2 | 0.0.0.17.3.0.0.0.0.0 (3.1) | 0.0.0.1.18.0.1.0.0.0 (4.0) | 0.0.0.19.1.0.0.0.0.0 (3.0) | 0.0.0.0.18.2.0.0.0.0 (4.1) | 0.0.0.18.2.0.0.0.0.0 (3.1) | 0.0.0.1.19.0.0.0.0.0 (4.0) | 0.0.0.16.4.0.0.0.0.0 (3.2) | 0.0.0.19.1.0.0.0.0.0 (3.0) | 0.0.0.18.2.0.0.0.0.0 (3.1) | 0.0.0.17.3.0.0.0.0.0 (3.1) | 0.0.0.126.71.2.1.0.0.0 | 3/200 (2%) |
+| early_d2 | 0.0.0.0.0.17.2.1.0.0 (5.2) | 0.0.0.0.0.0.18.2.0.0 (6.1) | 0.0.0.0.0.13.6.1.0.0 (5.4) | 0.0.0.0.0.8.12.0.0.0 (5.6) | 0.0.0.0.0.13.5.2.0.0 (5.5) | 0.0.0.0.0.13.5.2.0.0 (5.5) | 0.0.0.0.0.20.0.0.0.0 (5.0) | 0.0.0.0.0.20.0.0.0.0 (5.0) | 0.0.0.0.0.18.2.0.0.0 (5.1) | 0.0.0.0.0.15.1.3.0.1 (5.5) | 0.0.0.0.0.137.51.11.0.1 | 200/200 (100%) |
+
+Lighthouse HP left: 0.0/0.0 in every cell of both arms (every run lost; the metric does not separate
+arms, as in round 1). Waves reached is the metric that moves: mean waves survived over the 10 strategies
+3.47 (x2) vs 5.49 (/2) vs 4.56 (`lt72_b`, round 1).
+
+Reading:
+
+- `x2` is too strong: early ok 2% (3/200), 197 of 200 runs die in waves 4-5, mean 3.47 waves; target met by 0/10.
+- `/2` meets the two-part target for 10/10 strategies: 0 wins, 20 losses everywhere, early ok 200/200,
+  losses fall in waves 6-8 (137/51/11), one run dies in wave 10. It is
+  not "too weak" by the target (no wins), but waves 4-5 become a non-event, so the early game loses its
+  threat; the intended value is the largest `hp_mult` that still meets the target.
+- Waves 4-5 are the lever: 1.0 -> 0.5 moves early ok from 52% to 100% and adds 0.9 mean waves; 1.0 -> 2.0 drops it to 2%.
+- Proposed bisect (not run): `hp_mult` of waves 4-5 = 0.7 (between `/2` = meets 10/10 and `lt72_b` at 1.0 =
+  meets 4/10); if 0.7 still meets >= 8/10, try 0.85, else 0.6. The late waves 6-10 stay at the `lt72_b` values.
