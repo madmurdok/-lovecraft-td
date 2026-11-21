@@ -277,6 +277,16 @@ func test_flare_burn_total_never_below_left_and_follows_the_level() -> void:
 
 # --- one source: UI reads the sim's answers ------------------------------------------------
 
+## LT-89: the seconds between shots the sim fires at `interval_s`: whole 30 Hz ticks.
+func _period(interval_s: float) -> float:
+	return maxi(1, roundi(interval_s * SimTime.TICK_RATE)) / float(SimTime.TICK_RATE)
+
+
+## LT-89: a mundane fire-rate percent at multiplier `m`: base period / period at m - 1.
+func _rate(interval_s: float, m: float) -> float:
+	return (_period(interval_s) / _period(interval_s * m) - 1.0) * 100.0
+
+
 func test_tower_info_lit_text_equals_the_sims_tower_mults() -> void:
 	var sim := _beam_sim()
 	_distinct_mults(sim)
@@ -291,17 +301,19 @@ func test_tower_info_lit_text_equals_the_sims_tower_mults() -> void:
 	# Lit: every cell, the percent and the no-miss tail come from the same multipliers.
 	var v_lit := TowerText.lit_values(lit.def, lvl, cfg)
 	assert_str(v_lit["every"]).is_equal(
-		TowerText.num(lvl.fire_interval * m_lit["interval_mult"]) + TowerText.LIT_MARK)
+		TowerText.every_text(_period(lvl.fire_interval * m_lit["interval_mult"]))
+		+ TowerText.LIT_MARK)
 	assert_str(TowerText.lit_line(lit.def, lvl, cfg)).is_equal(
 		TowerText.NOW_LIT + "fire +%s%%, no misses" % TowerText.num(
-			roundf((1.0 / m_lit["interval_mult"] - 1.0) * 100.0)))
+			roundf(_rate(lvl.fire_interval, m_lit["interval_mult"]))))
 	# Shadowed: the same, with the sim's miss_add.
 	var v_dark := TowerText.lit_values(dark.def, dark.stats(), cfg, -1.0, true)
 	assert_str(v_dark["every"]).is_equal(
-		TowerText.num(dark.stats().fire_interval * m_dark["interval_mult"]) + TowerText.LIT_MARK)
+		TowerText.every_text(_period(dark.stats().fire_interval * m_dark["interval_mult"]))
+		+ TowerText.LIT_MARK)
 	assert_str(TowerText.lit_line(dark.def, dark.stats(), cfg, true)).is_equal(
 		TowerText.NOW_SHADOW + "fire %s%s%%, +%s%% misses" % [TowerText.MINUS,
-			TowerText.num(roundf(absf((1.0 / m_dark["interval_mult"] - 1.0) * 100.0))),
+			TowerText.num(roundf(absf(_rate(dark.stats().fire_interval, m_dark["interval_mult"])))),
 			TowerText.num(m_dark["miss_add"] * 100.0)])
 	assert_float(m_dark["miss_add"]).is_equal(0.25)
 

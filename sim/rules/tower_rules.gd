@@ -141,7 +141,8 @@ static func dps(s: TowerDef.Level, damage: float, interval_s: float, unit: float
 ## dps() over shot_period (whole cooldown ticks, so a lit Rifleman reads 42, not 43.8)
 ## x factor x power. A level whose interval is whole ticks gets the same bits as
 ## damage / fire_interval (n / 30.0 is the nearest double to the decimal interval).
-## `interval_ticks` is shot_ticks.
+## `interval` is shot_period and `interval_ticks` shot_ticks (LT-89: the sim's period, so
+## a lit 0.2 s Rifleman L3b reads 0.1667 s, 5 ticks, not 0.16).
 static func effective(def: TowerDef, s: TowerDef.Level, cfg: GameConfig, lit := false,
 		shadowed := false, sanity := -1.0) -> Dictionary:
 	return effective_with(s, cfg, light_effect(def, cfg, lit, shadowed), sanity)
@@ -160,7 +161,7 @@ static func effective_with(s: TowerDef.Level, cfg: GameConfig, fx: Dictionary,
 	var base := dps(s, s.damage, shot_period(s, im), s.effects.get("summon_dps", 0.0))
 	return {
 		"damage": shot_damage(s, factor, power),
-		"interval": fire_interval(s, im),
+		"interval": shot_period(s, im),
 		"interval_ticks": shot_ticks(s, im),
 		"dps": base * factor * power,
 		"unit_dps": unit_dps(s, power),

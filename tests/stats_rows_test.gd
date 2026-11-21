@@ -55,11 +55,25 @@ func _dps(s: TowerDef.Level) -> float:
 	return s.damage / s.fire_interval * maxf(1.0, _e(s, "banish_targets"))
 
 
-## LT-89: a shooter's DPS at fire interval multiplier `m` as the sim deals it: the cooldown
-## is whole ticks (the interval x TICK_RATE rounded, at least 1).
+## LT-89: the cooldown the sim sets for `interval_s` seconds: whole ticks (the interval x
+## TICK_RATE rounded, at least 1).
+func _ticks(interval_s: float) -> int:
+	return maxi(1, roundi(interval_s * SimTime.TICK_RATE))
+
+
+## LT-89: the Every cell for `interval_s`: its whole ticks in seconds.
+func _every(interval_s: float) -> String:
+	return TowerText.every_text(_ticks(interval_s) / float(SimTime.TICK_RATE))
+
+
+## LT-89: a mundane fire-rate percent at multiplier `m`: base ticks / ticks at m - 1.
+func _rate(interval_s: float, m: float) -> float:
+	return (float(_ticks(interval_s)) / _ticks(interval_s * m) - 1.0) * 100.0
+
+
+## LT-89: a shooter's DPS at fire interval multiplier `m` as the sim deals it.
 func _ticked_dps(s: TowerDef.Level, m: float) -> float:
-	var ticks := maxi(1, roundi(s.fire_interval * m * SimTime.TICK_RATE))
-	return s.damage / (ticks / float(SimTime.TICK_RATE))
+	return s.damage / (_ticks(s.fire_interval * m) / float(SimTime.TICK_RATE))
 
 
 # --- §1: the row set ------------------------------------------------------------------------
@@ -100,7 +114,7 @@ func test_dash_rule_for_every_tower_level_and_branch() -> void:
 				_eq(v["damage"], DASH, tag + " damage")
 			else:
 				assert_str(v["damage"]).override_failure_message(tag).is_not_equal(DASH)
-			_eq(v["every"], _n(s.fire_interval) if acts else DASH, tag + " every")
+			_eq(v["every"], _every(s.fire_interval) if acts else DASH, tag + " every")
 			if _dps(s) > 0.0:
 				assert_str(v["dps"]).override_failure_message(tag).is_not_equal(DASH)
 			else:
@@ -206,11 +220,11 @@ func test_range_shows_the_dead_zone_and_hits_follow_targets_or_flying_units() ->
 
 # --- §1 In beam, §5 lit ---------------------------------------------------------------------
 
-## "+25%" = 1 / fire_interval_mult - 1 for a mundane shooter, "−30%" = power_mult - 1 for
-## every occult tower (the circle included); a config edit changes it.
+## "+25%" = base ticks / ticks at fire_interval_mult - 1 for a mundane shooter (LT-89),
+## "−30%" = power_mult - 1 for every occult tower (the circle included); a config edit
+## changes it.
 func test_beam_row_comes_from_the_beam_config_and_follows_an_edit() -> void:
 	var b := _cfg.economy.beam
-	var up := "+%s%%" % _n(roundf((1.0 / b.mundane_fire_interval_mult - 1.0) * 100.0))
 	var down := MINUS + "%s%%" % _n(roundf((1.0 - b.occult_power_mult) * 100.0))
 	for id: String in _cfg.towers:
 		var def := _def(id)
@@ -219,7 +233,7 @@ func test_beam_row_comes_from_the_beam_config_and_follows_an_edit() -> void:
 		if def.kind == "occult":
 			want = down
 		elif s.damage > 0.0:
-			want = up
+			want = "+%s%%" % _n(roundf(_rate(s.fire_interval, b.mundane_fire_interval_mult)))
 		_eq(TowerText.row_values(def, s, _cfg)["beam"], want, id)
 	b.occult_power_mult = 0.5
 	b.mundane_fire_interval_mult = 0.5
@@ -229,8 +243,8 @@ func test_beam_row_comes_from_the_beam_config_and_follows_an_edit() -> void:
 		"+100%", "edited mundane")
 
 
-## §5: lit mundane Every x fire_interval_mult, DPS over its whole ticks (LT-89: "0.56*",
-## "24.7*" at Rifleman L2: 0.56 s fires every 17 ticks).
+## §5: lit mundane Every and DPS at fire_interval_mult over its whole ticks (LT-89: 0.56 s
+## fires every 17 ticks, "0.5666*" and "24.7*" at Rifleman L2).
 func test_lit_mundane_shooter_every_and_dps_carry_the_mark() -> void:
 	var m := _cfg.economy.beam.mundane_fire_interval_mult
 	for id: String in _cfg.towers:
@@ -246,11 +260,11 @@ func test_lit_mundane_shooter_every_and_dps_carry_the_mark() -> void:
 				continue
 			assert_array(lit.keys()).override_failure_message(tag) \
 				.contains_exactly_in_any_order(["every", "dps"])
-			_eq(lit["every"], _n(s.fire_interval * m) + STAR, tag + " every")
+			_eq(lit["every"], _every(s.fire_interval * m) + STAR, tag + " every")
 			_eq(lit["dps"], _d1(_ticked_dps(s, m)) + STAR, tag + " dps")
 	var r2 := _def("rifleman").levels[1]
 	assert_str(TowerText.lit_values(_def("rifleman"), r2, _cfg)["every"]) \
-		.is_equal(_n(r2.fire_interval * m) + STAR)
+		.is_equal(_every(r2.fire_interval * m) + STAR)
 
 
 ## §5: lit occult Damage and DPS x power_mult with "*"; an aura has neither; a circle's unit
@@ -328,8 +342,8 @@ func test_lit_effects_scale_the_aura_gate_and_circle_effects() -> void:
 ## circle too), "" for a mundane support tower.
 func test_lit_line_per_kind() -> void:
 	var b := _cfg.economy.beam
-	var fire := "* In the beam now: fire +%s%%" % _n(roundf((1.0 / b.mundane_fire_interval_mult
-		- 1.0) * 100.0))
+	var fire := "* In the beam now: fire +%s%%" % _n(roundf(_rate(
+		_def("rifleman").levels[0].fire_interval, b.mundane_fire_interval_mult)))
 	var power := "* In the beam now: %s%s%% power" % [MINUS, _n(roundf((1.0 - b.occult_power_mult)
 		* 100.0))]
 	assert_bool(b.mundane_ignore_miss).is_true()
@@ -382,7 +396,8 @@ func test_upgrade_path_names_the_l2_price_and_both_branches() -> void:
 func test_the_shadow_row_reads_the_shadow_block() -> void:
 	var sh := _cfg.economy.shadow
 	var rifle := _def("rifleman")
-	var fire := "%s%s%%" % [MINUS, _n(roundf((1.0 - 1.0 / sh.mundane_fire_interval_mult) * 100.0))]
+	var fire := "%s%s%%" % [MINUS, _n(roundf(absf(_rate(rifle.levels[0].fire_interval,
+		sh.mundane_fire_interval_mult))))]
 	var power := "+%s%%" % _n(roundf((sh.occult_power_mult - 1.0) * 100.0))
 	assert_str(TowerText.row_values(rifle, rifle.levels[0], _cfg)["shadow"]).is_equal(fire)
 	var necro := _def("necronomicon_reader")
@@ -402,7 +417,7 @@ func test_shadowed_values_use_the_shadow_multipliers_with_the_mark() -> void:
 	var rifle := _def("rifleman")
 	var s := rifle.levels[0]
 	var v := TowerText.lit_values(rifle, s, _cfg, -1.0, true)
-	_eq(v["every"], _n(s.fire_interval * sh.mundane_fire_interval_mult) + STAR, "every")
+	_eq(v["every"], _every(s.fire_interval * sh.mundane_fire_interval_mult) + STAR, "every")
 	_eq(v["dps"], _d1(_ticked_dps(s, sh.mundane_fire_interval_mult)) + STAR, "dps")
 	var necro := _def("necronomicon_reader")
 	var n := necro.levels[0]
