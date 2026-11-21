@@ -553,12 +553,12 @@ func test_a_new_row_is_played_by_strategies_flag_and_by_default() -> void:
 
 
 ## The run cap is TICKS_PER_WAVE per wave of the loaded config: a data dir with 3 waves gives
-## a different cap than the shipped 5; `_max_ticks` (golden cuts) wins.
+## a different cap than the shipped wave count; `_max_ticks` (golden cuts) wins.
 func test_run_cap_follows_the_wave_count_of_the_config() -> void:
 	var per_wave: int = _bot(real_config()).get_script().get_script_constant_map()["TICKS_PER_WAVE"]
 	assert_int(per_wave).is_equal(10800)
-	var five := real_config().waves.waves.size()
-	assert_int(_bot(real_config()).call("_tick_cap")).is_equal(per_wave * five)
+	var n_waves := real_config().waves.waves.size()
+	assert_int(_bot(real_config()).call("_tick_cap")).is_equal(per_wave * n_waves)
 	var cfg3 := _waves3_config()
 	assert_int(cfg3.waves.waves.size()).is_equal(3)
 	assert_int(_bot(cfg3).call("_tick_cap")).is_equal(per_wave * 3)
