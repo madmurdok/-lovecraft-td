@@ -34,6 +34,10 @@ const TEXT := {
 	SimCommand.CommandResult.OIL_FULL: "tank full",
 }
 
+## LT-107: per-command overrides of TEXT, {Simulation.COMMANDS[cmd].text: {CommandResult: text}}.
+## Empty for the existing commands (every shown string is TEXT's); LT-32 adds e.g. "deploy".
+const BY_COMMAND: Dictionary = {}
+
 ## Results the lighthouse panel names on its own button line (owner on LT-75: one table, the
 ## panel capitalises). Any other result shows no reason line there.
 const PANEL_RESULTS: Array[SimCommand.CommandResult] = [
@@ -44,8 +48,20 @@ const PANEL_RESULTS: Array[SimCommand.CommandResult] = [
 ]
 
 
-## The inline reason text for a refused command; GENERIC for an unmapped result.
-static func reason(r: SimCommand.CommandResult) -> String:
+## The inline reason text for a refused command; GENERIC for an unmapped result. With `cmd`
+## (a Simulation.COMMANDS name), its BY_COMMAND override wins when it maps `r`.
+static func reason(r: SimCommand.CommandResult, cmd := "") -> String:
+	var key: String = Simulation.COMMANDS[cmd].text if Simulation.COMMANDS.has(cmd) else ""
+	return _reason_in(r, key, BY_COMMAND)
+
+
+## reason() over a given override table (tests plant one; the const BY_COMMAND is read-only).
+## The override for text key `key` wins when it maps `r`; key "" has none.
+static func _reason_in(r: SimCommand.CommandResult, key: String, by_command: Dictionary) -> String:
+	if key != "":
+		var own: Dictionary = by_command.get(key, {})
+		if own.has(r):
+			return own[r]
 	return TEXT.get(r, GENERIC)
 
 
