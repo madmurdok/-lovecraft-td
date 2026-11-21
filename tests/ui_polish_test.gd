@@ -221,7 +221,7 @@ func test_tower_anchors_are_the_pre_lt108_square_offsets_from_the_cell_centre() 
 	var view := BoardView.new()
 	view.grid = SquareGrid.new(7, 5)
 	for c: Vector2i in [Vector2i(0, 0), Vector2i(3, 2), Vector2i(6, 4)]:
-		var tile := BoardView.CELL
+		var tile := view.cells_to_px(1.0)
 		var r := Rect2(Vector2(c) * tile, Vector2(tile, tile)).grow(-TILE_INSET)
 		var at := EntityLayer.tower_anchors(view.cell_centre(c))
 		assert_array(at.keys()).contains_exactly_in_any_order(
