@@ -1,0 +1,249 @@
+{
+ "description": "LT-72 option B with hp_mult of waves 6-10 /2",
+ "patch": {
+  "waves.json": {
+   "waves": [
+    {
+     "groups": [
+      {
+       "type": "cultist",
+       "count": 8,
+       "interval": 1.2
+      },
+      {
+       "type": "cultist",
+       "count": 4,
+       "interval": 2.5,
+       "delay": 12
+      }
+     ]
+    },
+    {
+     "groups": [
+      {
+       "type": "cultist",
+       "count": 12,
+       "interval": 2.2
+      },
+      {
+       "type": "deep_one",
+       "count": 1,
+       "interval": 0,
+       "delay": 8
+      },
+      {
+       "type": "deep_one",
+       "count": 1,
+       "interval": 0,
+       "delay": 24
+      }
+     ]
+    },
+    {
+     "groups": [
+      {
+       "type": "deep_one",
+       "count": 3,
+       "interval": 7
+      },
+      {
+       "type": "hybrid",
+       "count": 6,
+       "interval": 3.0,
+       "delay": 3
+      }
+     ]
+    },
+    {
+     "groups": [
+      {
+       "type": "hybrid",
+       "count": 12,
+       "interval": 2.5
+      },
+      {
+       "type": "night_gaunt",
+       "count": 10,
+       "interval": 4,
+       "delay": 6
+      }
+     ]
+    },
+    {
+     "groups": [
+      {
+       "type": "hybrid",
+       "count": 6,
+       "interval": 1.8
+      },
+      {
+       "type": "hybrid",
+       "count": 5,
+       "interval": 1.8,
+       "delay": 10.8
+      },
+      {
+       "type": "hybrid",
+       "count": 9,
+       "interval": 2.7,
+       "delay": 14
+      },
+      {
+       "type": "night_gaunt",
+       "count": 9,
+       "interval": 3.5,
+       "delay": 4
+      },
+      {
+       "type": "night_gaunt",
+       "count": 7,
+       "interval": 4.5,
+       "delay": 20
+      }
+     ]
+    },
+    {
+     "groups": [
+      {
+       "type": "cultist",
+       "count": 30,
+       "interval": 1.5
+      },
+      {
+       "type": "deep_one",
+       "count": 5,
+       "interval": 8,
+       "delay": 4
+      },
+      {
+       "type": "hybrid",
+       "count": 14,
+       "interval": 3,
+       "delay": 6
+      }
+     ],
+     "hp_mult": 0.8,
+     "speed_mult": 1.1
+    },
+    {
+     "groups": [
+      {
+       "type": "shoggoth",
+       "count": 1,
+       "interval": 0
+      },
+      {
+       "type": "cultist",
+       "count": 30,
+       "interval": 2,
+       "delay": 1
+      },
+      {
+       "type": "hybrid",
+       "count": 16,
+       "interval": 3.5,
+       "delay": 8
+      },
+      {
+       "type": "night_gaunt",
+       "count": 8,
+       "interval": 5,
+       "delay": 12
+      }
+     ],
+     "hp_mult": 0.925
+    },
+    {
+     "groups": [
+      {
+       "type": "hybrid",
+       "count": 28,
+       "interval": 2
+      },
+      {
+       "type": "night_gaunt",
+       "count": 22,
+       "interval": 3,
+       "delay": 4
+      },
+      {
+       "type": "deep_one",
+       "count": 5,
+       "interval": 8,
+       "delay": 10
+      }
+     ],
+     "hp_mult": 1.0
+    },
+    {
+     "groups": [
+      {
+       "type": "shoggoth",
+       "count": 1,
+       "interval": 0
+      },
+      {
+       "type": "cultist",
+       "count": 46,
+       "interval": 2.0,
+       "delay": 1
+      },
+      {
+       "type": "hybrid",
+       "count": 18,
+       "interval": 4,
+       "delay": 10
+      },
+      {
+       "type": "deep_one",
+       "count": 6,
+       "interval": 10,
+       "delay": 20
+      },
+      {
+       "type": "night_gaunt",
+       "count": 10,
+       "interval": 5,
+       "delay": 15
+      }
+     ],
+     "hp_mult": 1.2
+    },
+    {
+     "groups": [
+      {
+       "type": "shoggoth",
+       "count": 2,
+       "interval": 30
+      },
+      {
+       "type": "cultist",
+       "count": 46,
+       "interval": 2.0,
+       "delay": 1
+      },
+      {
+       "type": "hybrid",
+       "count": 18,
+       "interval": 4,
+       "delay": 10
+      },
+      {
+       "type": "deep_one",
+       "count": 6,
+       "interval": 10,
+       "delay": 20
+      },
+      {
+       "type": "night_gaunt",
+       "count": 16,
+       "interval": 5,
+       "delay": 15
+      }
+     ],
+     "hp_mult": 1.35
+    }
+   ]
+  }
+ }
+}
