@@ -206,6 +206,102 @@ func test_cell_polygons_tile_without_gaps_or_overlap() -> void:
 	assert_float(area).is_equal(W * H * TILE * TILE)
 
 
+# --- 4b. inset tiles and outline quads (LT-108 §6 items 3, 4, 6) --------------------------------
+
+const INSETS: Array[float] = [0.0, 2.0, 4.0, 6.0]
+
+
+## The summed area of Geometry2D's intersection of two polygons (0 when they only touch).
+func _overlap(a: PackedVector2Array, b: PackedVector2Array) -> float:
+	var sum := 0.0
+	for p in Geometry2D.intersect_polygons(a, b):
+		sum += _area(p)
+	return sum
+
+
+func _hex_view() -> BoardView:
+	var v := BoardView.new()
+	v.grid = HexGrid.new(5, 4)
+	return v
+
+
+func test_an_inset_square_tile_is_the_tile_rect_grown_by_minus_the_inset() -> void:
+	for d in INSETS:
+		for c in _view.grid.cells():
+			assert_object(_view.cell_polygon(c, d)).override_failure_message("%s inset %s" % [c, d]) \
+				.is_equal(_corners(Rect2(c.x * TILE, c.y * TILE, TILE, TILE).grow(-d)))
+
+
+func test_square_outline_quads_are_the_ring_between_the_two_insets() -> void:
+	var c := Vector2i(1, 1)  # the tile (40, 40)..(80, 80)
+	var quads := _view.outline_quads(c, 2.0, 0.0)
+	var outer := _corners(Rect2(39, 39, 42, 42))  # inset - w/2
+	var inner := _corners(Rect2(41, 41, 38, 38))  # inset + w/2
+	assert_int(quads.size()).is_equal(4)
+	for i in 4:
+		var j := (i + 1) % 4
+		assert_object(quads[i]).override_failure_message("quad %d" % i).is_equal(
+			PackedVector2Array([outer[i], outer[j], inner[j], inner[i]]))
+
+
+func _assert_outline_ring(view: BoardView, sides: int) -> void:
+	for c in view.grid.cells():
+		for w: float in [1.0, 2.0, 4.0]:
+			for d in INSETS:
+				var quads := view.outline_quads(c, w, d)
+				var outer := view.cell_polygon(c, d - w * 0.5)
+				var inner := view.cell_polygon(c, d + w * 0.5)
+				var tag := "%s w %s inset %s" % [c, w, d]
+				assert_int(quads.size()).override_failure_message(tag).is_equal(sides)
+				var area := 0.0
+				for i in quads.size():
+					area += _area(quads[i])
+					# outer corners first, inner last (a swap draws the same band inside out)
+					assert_object(quads[i][0]).override_failure_message(tag).is_equal(outer[i])
+					assert_object(quads[i][3]).override_failure_message(tag).is_equal(inner[i])
+					for k in range(i + 1, quads.size()):
+						assert_float(_overlap(quads[i], quads[k])) \
+							.override_failure_message("%s quads %d, %d" % [tag, i, k]) \
+							.is_less(1e-3)
+				assert_float(area).override_failure_message(tag) \
+					.is_equal_approx(_area(outer) - _area(inner), 1e-3)
+
+
+func test_outline_quads_cover_the_ring_without_overlap_on_square() -> void:
+	_assert_outline_ring(_view, 4)
+
+
+func test_outline_quads_cover_the_ring_without_overlap_on_hex() -> void:
+	_assert_outline_ring(_hex_view(), 6)
+
+
+func test_hex_tiles_are_hexagons_that_tile_without_overlap() -> void:
+	var hex := _hex_view()
+	var area := 0.0
+	for c in hex.grid.cells():
+		var poly := hex.cell_polygon(c)
+		assert_int(poly.size()).override_failure_message(str(c)).is_equal(6)
+		area += _area(poly)
+		for n in hex.grid.neighbours(c):
+			assert_float(_overlap(poly, hex.cell_polygon(n))) \
+				.override_failure_message("%s / %s" % [c, n]).is_less(1e-3)
+	# each hex is sqrt(3) / 2 cell units^2 (flat-to-flat width 1)
+	assert_float(area).is_equal_approx(20 * sqrt(3.0) / 2.0 * TILE * TILE, 1e-2)
+
+
+func test_an_inset_hex_tile_keeps_its_apothem_minus_the_inset() -> void:
+	var hex := _hex_view()
+	for c in hex.grid.cells():
+		var centre := hex.cell_centre(c)
+		for d in INSETS:
+			var poly := hex.cell_polygon(c, d)
+			for i in poly.size():
+				var mid := (poly[i] + poly[(i + 1) % poly.size()]) * 0.5
+				assert_float(mid.distance_to(centre)) \
+					.override_failure_message("%s inset %s edge %d" % [c, d, i]) \
+					.is_equal_approx(TILE * 0.5 - d, 1e-3)
+
+
 # --- 5. linearity -------------------------------------------------------------------------------
 
 func test_cell_to_world_is_linear_so_offsets_and_directions_scale() -> void:

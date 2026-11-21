@@ -155,3 +155,41 @@ func test_grid_key_hex_is_rejected_as_unknown() -> void:
 func test_other_unknown_map_keys_are_still_rejected() -> void:
 	assert_rejected(load_json_edit(MAP, func(root: Dictionary) -> void: root["gridd"] = "square"),
 		MAP, "gridd", "unknown field")
+
+
+# --- a hand-set hex topology (LT-108 §6 item 5b, F6) -------------------------------------
+
+## A MapDef on a hand-set HexGrid(4, 3) (hex is not in GridFactory yet), rows read in.
+func _hex_map(rows: Array, r: ConfigReader) -> MapDef:
+	var m := MapDef.new()
+	m.width = 4
+	m.height = 3
+	m.grid = HexGrid.new(4, 3)
+	m._read_rows(r, rows)
+	return m
+
+
+func test_hex_rows_read_into_axial_ids_and_the_path_follows_hex_neighbours() -> void:
+	# text (1,0) -> (0,1) -> (0,2) is a square diagonal but hex-adjacent (odd-r rows)
+	var r := ConfigReader.new("map.json")
+	var m := _hex_map([".S..", "#..~", "L..."], r)
+	assert_array(r.errors).is_empty()
+	assert_object(m.spawn).is_equal(Vector2i(1, 0))  # text (1, 0)
+	assert_object(m.lighthouse).is_equal(Vector2i(-1, 2))  # text (0, 2)
+	assert_array(m.path).is_equal([Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 2)])
+	assert_int(m.kind_at(Vector2i(-1, 2))).is_equal(MapDef.Kind.PATH)  # L
+	assert_int(m.kind_at(Vector2i(0, 2))).is_equal(MapDef.Kind.BUILDABLE)  # text (1, 2)
+	assert_int(m.kind_at(Vector2i(3, 1))).is_equal(MapDef.Kind.WATER)  # text (3, 1) "~"
+	assert_int(m.kind_at(Vector2i(2, 2))).is_equal(MapDef.Kind.BUILDABLE)  # text (3, 2)
+	assert_int(m.kind_at(Vector2i(3, 2))).is_equal(MapDef.Kind.WATER)  # text (4, 2): off board
+
+
+func test_the_same_rows_on_square_are_not_connected() -> void:
+	_assert_map_rejected([".S..", "#..~", "L..."], "rows[0]", "S must be a path end")
+
+
+func test_a_hex_orphan_path_cell_is_named_by_its_text_column() -> void:
+	var r := ConfigReader.new("map.json")
+	_hex_map([".S..", "#...", "L..#"], r)  # text (3, 2) = axial (2, 2) is off the walk
+	assert_array(r.errors).is_equal(
+		["map.json: rows[2]: path cell at column 3 is not on the walk from S to L"])
