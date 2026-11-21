@@ -9,8 +9,8 @@ extends RefCounted
 ## - screen: the Game's canvas in base viewport units (1200x675 before stretch), where the
 ##   UI lays out and input arrives (cell_at_screen, cell_to_screen, world_rect).
 ## The cell -> world map is linear (no offset), so it also scales offsets and directions.
-## Tiles come from GridTopology.polygon (cell_polygon); cell_rect is its bounding box, which
-## for the square grid is the tile itself (LT-77 Q4: tile drawing from polygon() in B4).
+## Tiles come from GridTopology.polygon (cell_polygon, LT-77 Q4); layers draw them through
+## fill_cell / outline_cell and anchor text and marks to cell_centre (LT-108 F2, guard G15).
 
 const CELL := 40.0  ## pixels per cell unit
 const ORIGIN := Vector2(0, 48)  ## the board's top-left on screen: below the HUD bar
@@ -63,18 +63,46 @@ func px_to_cells(len_px: float) -> float:
 	return len_px / CELL
 
 
-## The tile of `cell` in world coordinates, from GridTopology.polygon.
-func cell_polygon(cell: Vector2i) -> PackedVector2Array:
+## The tile of `cell` in world coordinates, from GridTopology.polygon, shrunk by `inset_px`
+## towards the centre (LT-108 F2): each corner moves by (a - inset) / a with a the apothem
+## (half the neighbour spacing, the same on square and hex). Multiply first, divide second,
+## so square is exactly the tile rect grown by -inset.
+func cell_polygon(cell: Vector2i, inset_px := 0.0) -> PackedVector2Array:
 	var poly := grid.polygon(cell)
+	var c := cell_centre(cell)
+	var a := cells_to_px(0.5)
 	for i in poly.size():
-		poly[i] = cell_to_world(poly[i])
+		poly[i] = c + (cell_to_world(poly[i]) - c) * (a - inset_px) / a
 	return poly
 
 
-## The bounding box of cell_polygon (square grid: the tile itself).
-func cell_rect(cell: Vector2i) -> Rect2:
-	var poly := cell_polygon(cell)
-	var r := Rect2(poly[0], Vector2.ZERO)
-	for i in range(1, poly.size()):
-		r = r.expand(poly[i])
-	return r
+## The centre of `cell` in world coordinates: the anchor of text and marks on a tile.
+func cell_centre(cell: Vector2i) -> Vector2:
+	return cell_to_world(grid.centre(cell))
+
+
+## A centred outline of width `width_px` along the tile inset by `inset_px`, as n
+## non-overlapping quads [outer i, outer i+1, inner i+1, inner i] (mitred corners on any
+## polygon): outer at inset - w/2, inner at inset + w/2.
+func outline_quads(cell: Vector2i, width_px: float, inset_px := 0.0) -> Array[PackedVector2Array]:
+	var outer := cell_polygon(cell, inset_px - width_px * 0.5)
+	var inner := cell_polygon(cell, inset_px + width_px * 0.5)
+	var out: Array[PackedVector2Array] = []
+	var n := outer.size()
+	for i in n:
+		var j := (i + 1) % n
+		out.append(PackedVector2Array([outer[i], outer[j], inner[j], inner[i]]))
+	return out
+
+
+## Fills the tile of `cell` (inset by `inset_px`) on `ci`. Takes a CanvasItem because
+## MapLayer and SeaFog are plain Node2D, not BoardLayers.
+func fill_cell(ci: CanvasItem, cell: Vector2i, color: Color, inset_px := 0.0) -> void:
+	ci.draw_colored_polygon(cell_polygon(cell, inset_px), color)
+
+
+## Outlines the tile of `cell` (inset by `inset_px`) on `ci`: a centred `width_px` line.
+func outline_cell(ci: CanvasItem, cell: Vector2i, color: Color, width_px: float,
+		inset_px := 0.0) -> void:
+	for q in outline_quads(cell, width_px, inset_px):
+		ci.draw_colored_polygon(q, color)

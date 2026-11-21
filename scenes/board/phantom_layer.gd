@@ -28,7 +28,7 @@ func _draw() -> void:
 	var c := Board.COLOR_PATH
 	c.a = a
 	for cell in phantom:
-		draw_rect(view.cell_rect(cell).grow(-2), c)
+		view.fill_cell(self, cell, c, 2.0)
 
 
 ## While Fraying / in Madness a phantom stretch of path appears off the real one, flickers

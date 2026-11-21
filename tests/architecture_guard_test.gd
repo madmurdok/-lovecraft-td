@@ -111,11 +111,12 @@ func test_g2_pixels_only_in_the_view() -> void:
 
 ## G3 (LT-76, LT-77, LT-35): one cell centre. Under sim/, tools/, scenes/ and ui/ a
 ## hand-written centre (`.x + 0.5`, `0.5 + .y`, `Vector2(c) + Vector2(0.5, 0.5)`,
-## continuation lines joined) appears only in sim/rules/square_grid.gd (SquareGrid.centre).
+## continuation lines joined) appears only in the topologies' centre(): sim/rules/square_grid.gd
+## and sim/rules/hex_grid.gd (LT-108 F5).
 ## B4: the scan covers BoardView and the board layers (scenes/), which take centres from
 ## GridTopology.centre and map them with BoardView.cell_to_world.
 const G3_DIRS := ["res://sim", "res://tools", "res://scenes", "res://ui"]
-const G3_HOME := "res://sim/rules/square_grid.gd"
+const G3_HOME := ["res://sim/rules/square_grid.gd", "res://sim/rules/hex_grid.gd"]
 const G3_CENTRE := "\\.(x|y)\\s*\\+\\s*0\\.5\\b|\\b0\\.5\\s*\\+\\s*[\\w.]*\\.(x|y)\\b" \
 	+ "|\\+\\s*Vector2\\(\\s*0\\.5\\s*,\\s*0\\.5\\s*\\)"
 
@@ -129,8 +130,8 @@ func test_g3_one_cell_centre() -> void:
 		for f in scan._gd_files(dir):
 			view_scanned = view_scanned or f == G2_HOME
 			var found := _find_joined(scan, f, FileAccess.get_file_as_string(f), G3_CENTRE)
-			if f == G3_HOME:
-				home_hits = found.size()
+			if f in G3_HOME:
+				home_hits += found.size()
 			else:
 				hits.append_array(found)
 	var probes := ["p = Vector2(cell) + Vector2(0.5, 0.5)", "p = Vector2(0.5 + c.x, 1)",
@@ -141,7 +142,7 @@ func test_g3_one_cell_centre() -> void:
 		probe_hits += _find_joined(scan, "probe.gd", p, G3_CENTRE).size()
 	scan.free()
 	assert_int(probe_hits).is_equal(probes.size())  # each centre form is caught
-	assert_int(home_hits).is_equal(2)  # the rule itself: x and y
+	assert_int(home_hits).is_equal(4)  # the rules themselves: x and y in each home
 	assert_bool(view_scanned).is_true()  # BoardView is in the scope
 	assert_array(hits).override_failure_message(
 		"cell centre written by hand (use GridTopology.centre): " + ", ".join(hits)).is_empty()
@@ -288,12 +289,59 @@ func test_g10_one_topology() -> void:
 		"for c in grid.cells():\nx = grid.neighbours(c)\nd = grid.distance(a, b)", G10_DENY)
 	scan.free()
 	assert_int(scanned).is_greater(40)  # sim/, tools/, scenes/ and ui/ really were walked
-	assert_int(home_scanned).is_equal(2)  # grid_topology.gd and square_grid.gd are the exempt ones
+	# grid_topology.gd, grid_factory.gd, square_grid.gd and hex_grid.gd are the exempt ones
+	assert_int(home_scanned).is_equal(4)
 	assert_int(probe_hits).is_equal(probes.size())  # each form is caught
 	assert_array(clean).is_empty()  # the topology calls are not
 	assert_array(hits).override_failure_message(
 		"grid geometry outside the topology files (use GridTopology): " + ", ".join(hits)) \
 		.is_empty()
+
+
+## G15 (LT-108): tiles from the polygon. Under sim/, tools/, scenes/ and ui/ (code only,
+## statements joined) no `cell_rect` (deleted: tiles are BoardView.cell_polygon /
+## fill_cell / outline_cell), no hand-built cell corner `- Vector2(0.5, 0.5)` (G3 owns the
+## `+` form) and no topology built outside GridFactory (`<Name>Grid.new(`).
+const G15_DIRS := ["res://sim", "res://tools", "res://scenes", "res://ui"]
+const G15_FACTORY := "res://sim/rules/grid_factory.gd"
+const G15_RECT := "\\bcell_rect\\b|-\\s*Vector2\\(\\s*0\\.5\\s*,\\s*0\\.5\\s*\\)"
+const G15_NEW := "\\b[A-Z]\\w*Grid\\.new\\("
+
+
+func _g15_hits(scan: SimBoundaryTest, file: String, text: String) -> Array[String]:
+	var found := _find_joined(scan, file, text, G15_RECT)
+	if file != G15_FACTORY:
+		found.append_array(_find_joined(scan, file, text, G15_NEW))
+	return found
+
+
+func test_g15_tiles_from_the_polygon() -> void:
+	var scan := SimBoundaryTest.new()
+	var hits: Array[String] = []
+	var scanned := 0
+	var factory_scanned := false
+	for dir: String in G15_DIRS:
+		for f in scan._gd_files(dir):
+			scanned += 1
+			factory_scanned = factory_scanned or f == G15_FACTORY
+			hits.append_array(_g15_hits(scan, f, FileAccess.get_file_as_string(f)))
+	var probes := ["r = view.cell_rect(c).grow(-2)", "func cell_rect(cell: Vector2i) -> Rect2:",
+		"q = view.cell_to_world(p - Vector2(0.5, 0.5))", "g = SquareGrid.new(w, h)",
+		"g = HexGrid.new(3, 3)", "r = view.cell_rect(\n\tc)"]
+	var probe_hits := 0
+	for p: String in probes:
+		probe_hits += _g15_hits(scan, "probe.gd", p).size()
+	var clean := _g15_hits(scan, "near.gd",
+		"p = view.cell_polygon(c)\nr = _cell_rect(c)\nview.outline_cell(self, c, k, 2.0)" \
+		+ "\ng = GridFactory.make(kind, w, h)\nq = p + Vector2(0.5, 0.5)")
+	scan.free()
+	assert_int(scanned).is_greater(40)  # sim/, tools/, scenes/ and ui/ really were walked
+	assert_bool(factory_scanned).is_true()  # the factory is in the scope, exempt only from Grid.new
+	assert_int(probe_hits).is_equal(probes.size())  # each form is caught
+	assert_array(clean).is_empty()  # the polygon helpers and the factory call are not
+	assert_array(hits).override_failure_message(
+		"tile drawn or topology built by hand (use BoardView.cell_polygon / GridFactory): "
+		+ ", ".join(hits)).is_empty()
 
 
 ## G11 (LT-77): the sim is trig-free (determinism: no libm sin/cos in replayed code). Code

@@ -410,7 +410,8 @@ func test_entity_layer_draws_towers_and_not_effects() -> void:
 
 func test_fx_layer_draws_the_effects_list() -> void:
 	var b := await _spy_board()
-	b.fx_layer.effects.append({"kind": "leak", "from": Vector2(1, 1), "ttl": 1.0})
+	b.fx_layer.effects.append({"kind": "leak", "from": Vector2(1, 1), "cell": Vector2i(0, 0),
+		"ttl": 1.0})
 	b.queue_redraw()
 	await _frames(2)
 	assert_int(b.log.count("effects")).is_equal(1)

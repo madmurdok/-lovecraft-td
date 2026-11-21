@@ -2,7 +2,7 @@ class_name BoardViewTest
 extends GdUnitTestSuite
 ## LT-35 (LT-65 §3.3, G2): BoardView, the screen <-> cell layer. Pinned from the spec with
 ## hand-computed numbers on a 7x5 grid (not square, so an x/y swap shows): picking at the
-## board's edges, the HUD strip, the cell <-> screen inverse, world_rect, cell_rect, linearity,
+## board's edges, the HUD strip, the cell <-> screen inverse, world_rect, cell_polygon, linearity,
 ## the board origin, light and relic-token positions, a standalone MapLayer, and picking
 ## through the running Game. The pixel numbers below (40 per cell, origin (0, 48)) are the
 ## spec's, written out on purpose: the view's own constants are not used to compute them.
@@ -169,30 +169,40 @@ func test_world_rect_is_the_same_in_a_1200x675_and_a_1920x1080_viewport() -> voi
 		await get_tree().process_frame
 
 
-# --- 4. cell_rect = the polygon's bounding box ----------------------------------------------
+# --- 4. cell_polygon = the square tile (LT-108: cell_rect deleted) ---------------------------
 
-func test_cell_rect_is_the_tile_and_equals_the_polygon_bbox() -> void:
+## The corners of the square tile rect `r`, screen-clockwise from the top-left.
+func _corners(r: Rect2) -> PackedVector2Array:
+	return PackedVector2Array([r.position, Vector2(r.end.x, r.position.y), r.end,
+		Vector2(r.position.x, r.end.y)])
+
+
+## The area of a simple polygon (shoelace).
+func _area(poly: PackedVector2Array) -> float:
+	var twice := 0.0
+	for i in poly.size():
+		var p := poly[i]
+		var q := poly[(i + 1) % poly.size()]
+		twice += p.x * q.y - q.x * p.y
+	return absf(twice) * 0.5
+
+
+func test_cell_polygon_is_the_square_tile() -> void:
 	for c in _view.grid.cells():
-		var poly := _view.cell_polygon(c)
-		assert_int(poly.size()).is_equal(4)
-		var lo := poly[0]
-		var hi := poly[0]
-		for p in poly:
-			lo = Vector2(minf(lo.x, p.x), minf(lo.y, p.y))
-			hi = Vector2(maxf(hi.x, p.x), maxf(hi.y, p.y))
-		var r := _view.cell_rect(c)
-		assert_object(r).override_failure_message(str(c)).is_equal(Rect2(lo, hi - lo))
-		assert_object(r).override_failure_message(str(c)).is_equal(
-			Rect2(c.x * TILE, c.y * TILE, TILE, TILE))  # board-local: no origin
+		assert_object(_view.cell_polygon(c)).override_failure_message(str(c)).is_equal(
+			_corners(Rect2(c.x * TILE, c.y * TILE, TILE, TILE)))  # board-local: no origin
 
 
-func test_cell_rect_tiles_tile_without_gaps_or_overlap() -> void:
+func test_cell_polygons_tile_without_gaps_or_overlap() -> void:
 	var area := 0.0
 	for c in _view.grid.cells():
-		area += _view.cell_rect(c).get_area()
+		var poly := _view.cell_polygon(c)
+		area += _area(poly)
 		var right := Vector2i(c.x + 1, c.y)
-		if _view.grid.contains(right):
-			assert_float(_view.cell_rect(c).end.x).is_equal(_view.cell_rect(right).position.x)
+		if _view.grid.contains(right):  # the shared edge: this tile's right, its left
+			var rp := _view.cell_polygon(right)
+			assert_object(poly[1]).override_failure_message(str(c)).is_equal(rp[0])
+			assert_object(poly[2]).override_failure_message(str(c)).is_equal(rp[3])
 	assert_float(area).is_equal(W * H * TILE * TILE)
 
 
@@ -265,8 +275,8 @@ func test_a_standalone_map_layer_draws_with_its_own_view() -> void:
 	assert_int(draws[0]).is_equal(1)
 	assert_object(layer.view.grid).is_same(_config.map.grid)
 	var m := _config.map
-	assert_object(layer.view.cell_rect(m.lighthouse)).is_equal(
-		Rect2(m.lighthouse.x * TILE, m.lighthouse.y * TILE, TILE, TILE))
+	assert_object(layer.view.cell_polygon(m.lighthouse)).is_equal(
+		_corners(Rect2(m.lighthouse.x * TILE, m.lighthouse.y * TILE, TILE, TILE)))
 
 
 # --- 7. picking through the view in the game ----------------------------------------------------

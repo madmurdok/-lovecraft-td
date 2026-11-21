@@ -14,7 +14,7 @@ const BAR_NAMES := ["GoldLabel", "RelicsLabel", "SellRelicsButton", "PhaseLabel"
 const LABEL_BASELINE_BELOW_MIDDLE := 5.0
 const LABEL_FONT_SIZE := 14
 ## Mirrors EntityLayer._draw_tower: the letter's origin in the tile, 16 px text, the tile inset.
-const LETTER_ORIGIN := Vector2(8, 20)
+const LETTER_ORIGIN := EntityLayer.GLYPH_OFFSET  ## from the cell centre (LT-108 F3)
 const LETTER_FONT_SIZE := 16
 const TILE_INSET := 6.0
 const FRAME := 2.0  ## the tile's outline width
@@ -178,7 +178,9 @@ func test_sanity_ticks_stay_out_of_the_label_band() -> void:
 
 func test_the_tower_letter_sits_on_a_dark_plate_inside_its_tile() -> void:
 	var tile := BoardView.new().cells_to_px(1.0) - 2.0 * TILE_INSET
-	var inside := Rect2(Vector2(FRAME, FRAME), Vector2(tile, tile) - Vector2(2, 2) * FRAME)
+	# the plate's inside, from the cell centre (LT-108 F3: marks anchor to the centre)
+	var inside := Rect2(Vector2(-tile, -tile) * 0.5 + Vector2(FRAME, FRAME),
+		Vector2(tile, tile) - Vector2(2, 2) * FRAME)
 	assert_bool(inside.encloses(EntityLayer.LETTER_PLATE)) \
 		.override_failure_message("plate %s, tile inside %s" % [EntityLayer.LETTER_PLATE, inside]) \
 		.is_true()
@@ -197,9 +199,9 @@ func test_the_tower_letter_sits_on_a_dark_plate_inside_its_tile() -> void:
 	var start := src.find("func _draw_tower(")
 	assert_int(start).is_greater(-1)
 	var body := src.substr(start, src.find("\nfunc ", start + 1) - start)
-	var tile_at := body.find("draw_rect(r, plate_color(")  # LT-70 §5: the tinted plate
+	var tile_at := body.find("fill_cell(self, t.cell, plate_color(")  # LT-70 §5: the tinted plate
 	var plate_at := RegEx.create_from_string(
-		"(?m)^\\s*draw_rect\\([^\\n]*LETTER_PLATE[^\\n]*COLOR_LETTER_PLATE\\)").search(body)
+		"(?m)^\\s*draw_rect\\([^\\n]*COLOR_LETTER_PLATE\\)").search(body)
 	var letter_at := body.find("draw_string(")
 	assert_int(tile_at).is_greater(-1)
 	assert_object(plate_at).override_failure_message("no plate draw_rect in _draw_tower") \
