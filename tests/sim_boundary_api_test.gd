@@ -594,3 +594,274 @@ func test_buyout_applies_ignores_gold_cap_and_outcome() -> void:
 	sim.state.outcome = SimState.Outcome.LOST
 	assert_int(sim.can_buy_sanity()).is_equal(R2.OUTCOME_REACHED)
 	assert_bool(sim.buyout_applies()).is_true()
+
+
+# --- LT-107: the command table (Simulation.COMMANDS, issue, can_issue) --------------------
+
+const SIM_SCRIPT := "res://sim/core/simulation.gd"
+## A command_log entry written by a log_command site: [tick, "<name>", ...].
+const LOG_SITE := "log_command\\(\\[[^,\\]]+,\\s*\"([A-Za-z_]+)\""
+
+
+func _sim_files(dir: String) -> Array[String]:
+	var out: Array[String] = []
+	for f in DirAccess.get_files_at(dir):
+		if f.ends_with(".gd"):
+			out.append(dir.path_join(f))
+	for d in DirAccess.get_directories_at(dir):
+		out.append_array(_sim_files(dir.path_join(d)))
+	return out
+
+
+## The body of `func <fname>(` in `src` (lines after the signature up to the next top-level line).
+func _func_body(src: String, fname: String) -> String:
+	var lines := src.split("\n")
+	var start := -1
+	for i in lines.size():
+		if lines[i].begins_with("func %s(" % fname):
+			start = i
+			break
+	assert_int(start).override_failure_message("no func %s in %s" % [fname, SIM_SCRIPT]) \
+		.is_greater(-1)
+	var body: Array[String] = []
+	for i in range(start + 1, lines.size()):
+		var l := lines[i]
+		if not l.is_empty() and not l.begins_with("\t") and not l.begins_with(" "):
+			break
+		body.append(l)
+	return "\n".join(body)
+
+
+## Every name a log_command site writes is a table entry and every entry has a site (LT-32:
+## a new command without an entry, or an entry nothing logs, fails here).
+func test_commands_keys_are_the_names_log_command_writes() -> void:
+	var re := RegEx.create_from_string(LOG_SITE)
+	var names := {}
+	var sites := 0
+	for f: String in _sim_files("res://sim"):
+		for m: RegExMatch in re.search_all(FileAccess.get_file_as_string(f)):
+			names[m.get_string(1)] = true
+			sites += 1
+	assert_int(sites).is_greater_equal(Simulation.COMMANDS.size())
+	var got: Array = names.keys()
+	got.sort()
+	var want: Array = Simulation.COMMANDS.keys()
+	want.sort()
+	assert_array(want).is_equal(got)
+	assert_int(want.size()).is_equal(12)
+
+
+## Each entry: exactly the four fields; args a list of Variant types; text a String; can and
+## apply Simulation methods that take args.size() arguments (defaults allowed).
+func test_every_command_entry_is_well_formed() -> void:
+	var methods := {}
+	for m: Dictionary in (load(SIM_SCRIPT) as Script).get_script_method_list():
+		methods[m.name] = m
+	for cmd: String in Simulation.COMMANDS:
+		var e: Dictionary = Simulation.COMMANDS[cmd]
+		var fields: Array = e.keys()
+		fields.sort()
+		assert_array(fields).override_failure_message("%s fields %s" % [cmd, fields]) \
+			.is_equal(["apply", "args", "can", "text"])
+		assert_bool(e.args is Array).is_true()
+		for t: Variant in e.args:
+			assert_bool(t is int and int(t) > TYPE_NIL and int(t) < TYPE_MAX) \
+				.override_failure_message("%s arg type %s" % [cmd, t]).is_true()
+		assert_bool(e.text is String).override_failure_message("%s text" % cmd).is_true()
+		var n: int = e.args.size()
+		for field: String in ["can", "apply"]:
+			var mname := String(e[field])
+			assert_bool(methods.has(mname)).override_failure_message(
+				"%s.%s: Simulation has no method %s" % [cmd, field, mname]).is_true()
+			if not methods.has(mname):
+				continue
+			var m: Dictionary = methods[mname]
+			var most: int = m.args.size()
+			var least: int = most - m.default_args.size()
+			assert_bool(n >= least and n <= most).override_failure_message(
+				"%s.%s: %s takes %d..%d args, the entry has %d" % [cmd, field, mname, least,
+				most, n]).is_true()
+
+
+## The args each command is tried with in the can/apply test: a valid call and, for the
+## commands with a target, one naming a missing target or an occupied cell.
+func _calls(tid: int) -> Array:
+	return [["build", [RIFLE, Vector2i(6, 1)]], ["build", [RIFLE, Vector2i(5, 1)]],
+		["sell", [tid]], ["sell", [9999]], ["upgrade", [tid, ""]], ["upgrade", [9999, ""]],
+		["set_target_priority", [tid, "strongest"]], ["set_target_priority", [9999, "strongest"]],
+		["call_wave", []], ["buy_sanity", []], ["sell_relics", ["star_stone"]],
+		["sell_relics", ["no_such_relic"]], ["debug_set_sanity", [12.0]],
+		["upgrade_lighthouse", []], ["buy_oil", []], ["fire_flare", []], ["debug_end_night", []]]
+
+
+## A fresh _ready_sim in condition `st`: day, night (wave called), over (run lost), poor (no
+## gold, relics or oil) or mad (sanity 0, MADNESS, exit rule buyout).
+func _sim_in(st: String) -> Array:
+	var p := _ready_sim()
+	var sim: Simulation = p[0]
+	match st:
+		"night":
+			assert_int(sim.call_wave()).is_equal(R2.OK)
+		"over":
+			sim.state.outcome = SimState.Outcome.LOST
+		"poor":
+			sim.state.gold = 0
+			sim.state.relics.clear()
+			sim.state.oil = 0
+		"mad":
+			assert_int(sim.debug_set_sanity(0.0)).is_equal(R2.OK)
+			assert_int(sim.state.sanity_state).is_equal(S.MADNESS)
+	sim.drain_events()
+	return p
+
+
+## can changes nothing; a refused apply returns can's result and changes nothing (state,
+## log, events); where can is OK, apply is OK and logs one entry. Every command is seen both
+## refused and OK, so the agreement is not vacuous.
+func test_can_and_apply_agree_for_every_command() -> void:
+	var refused := {}
+	var ok := {}
+	for st: String in ["day", "night", "over", "poor", "mad"]:
+		for i in _calls(-1).size():
+			var p := _sim_in(st)
+			var sim: Simulation = p[0]
+			var call: Array = _calls(p[1])[i]
+			var args: Array = call[1]
+			var cmd: String = call[0]
+			var e: Dictionary = Simulation.COMMANDS[cmd]
+			var where := "%s %s %s" % [st, cmd, args]
+			var before := _digest_all(sim)
+			var can: int = sim.callv(e.can, args)
+			assert_str(_digest_all(sim)).override_failure_message("can %s" % where) \
+				.is_equal(before)
+			var n: int = sim.state.command_log.size()
+			var applied: int = sim.callv(e.apply, args)
+			if can == R2.OK:
+				ok[cmd] = true
+				assert_int(applied).override_failure_message("apply %s" % where).is_equal(R2.OK)
+				assert_int(sim.state.command_log.size()).override_failure_message(where) \
+					.is_equal(n + 1)
+			else:
+				refused[cmd] = true
+				assert_int(applied).override_failure_message("apply %s" % where).is_equal(can)
+				assert_str(_digest_all(sim)).override_failure_message("apply %s" % where) \
+					.is_equal(before)
+	for cmd: String in Simulation.COMMANDS:
+		assert_bool(ok.has(cmd)).override_failure_message("%s never OK" % cmd).is_true()
+		assert_bool(refused.has(cmd)).override_failure_message("%s never refused" % cmd) \
+			.is_true()
+
+
+## The two extracted debug checks: by day / at night / once the run is over.
+func test_can_debug_end_night_and_can_debug_set_sanity() -> void:
+	var want := {"day": [R2.NOT_NIGHT, R2.OK], "night": [R2.OK, R2.OK],
+		"over": [R2.OUTCOME_REACHED, R2.OUTCOME_REACHED]}
+	for st: String in want:
+		var sim: Simulation = _sim_in(st)[0]
+		var before := _digest_all(sim)
+		assert_array([sim.can_debug_end_night(), sim.can_debug_set_sanity(40.0)]) \
+			.override_failure_message(st).is_equal(want[st])
+		assert_array([sim.can_issue("debug_end_night", []),
+			sim.can_issue("debug_set_sanity", [40.0])]).override_failure_message(st) \
+			.is_equal(want[st])
+		assert_str(_digest_all(sim)).is_equal(before)
+	# Without a WaveDirector (a plain tower sim) there is no night to end.
+	var plain := tsim()
+	assert_int(plain.can_debug_end_night()).is_equal(R2.NOT_NIGHT)
+
+
+## `name`/`args` through issue on one twin and `direct` on the other: same result, same
+## state, same last log entry.
+func _issued_same_as_direct(pair: Array, name: String, args: Array, direct: Callable) -> void:
+	var where := "%s %s" % [name, args]
+	var via_issue: int = pair[0].issue(name, args)
+	var via_direct: int = direct.call(pair[1])
+	assert_int(via_issue).override_failure_message(where).is_equal(via_direct)
+	assert_str(_digest(pair[0])).override_failure_message(where).is_equal(_digest(pair[1]))
+	assert_array(pair[0].state.command_log).override_failure_message(where) \
+		.is_equal(pair[1].state.command_log)
+
+
+## All 12 commands, OK and refused, through issue == the named method.
+func test_issue_equals_the_direct_call_for_every_command() -> void:
+	var p := _twin()
+	for s: Simulation in p:
+		s.step()
+		assert_int(s.state.phase).is_equal(SimState.Phase.BUILD)
+		s.state.oil = s.config.economy.flare.cost_oil - 1
+	var c := Vector2i(3, 1)
+	_issued_same_as_direct(p, "build", [SIGN, c], func(s: Simulation) -> int:
+		return s.build_tower(SIGN, c))
+	_issued_same_as_direct(p, "build", [SIGN, c], func(s: Simulation) -> int:
+		return s.build_tower(SIGN, c))  # occupied on both
+	_issued_same_as_direct(p, "build", [RIFLE, Vector2i(5, 1)], func(s: Simulation) -> int:
+		return s.build_tower(RIFLE, Vector2i(5, 1)))
+	var rid: int = p[0].state.tower_at[Vector2i(5, 1)]
+	_issued_same_as_direct(p, "set_target_priority", [rid, "strongest"],
+		func(s: Simulation) -> int: return s.set_target_priority(rid, "strongest"))
+	_issued_same_as_direct(p, "upgrade", [rid, ""], func(s: Simulation) -> int:
+		return s.upgrade_tower(rid, ""))
+	var sid: int = p[0].state.tower_at[c]
+	_issued_same_as_direct(p, "sell", [sid], func(s: Simulation) -> int: return s.sell_tower(sid))
+	_issued_same_as_direct(p, "sell_relics", ["star_stone"], func(s: Simulation) -> int:
+		return s.sell_relics("star_stone"))
+	_issued_same_as_direct(p, "debug_set_sanity", [0.0], func(s: Simulation) -> int:
+		return s.debug_set_sanity(0.0))
+	_issued_same_as_direct(p, "buy_sanity", [], func(s: Simulation) -> int: return s.buy_sanity())
+	_issued_same_as_direct(p, "debug_set_sanity", [12], func(s: Simulation) -> int:
+		return s.debug_set_sanity(12))  # int for float, logged as 12.0 on both
+	_issued_same_as_direct(p, "upgrade_lighthouse", [], func(s: Simulation) -> int:
+		return s.upgrade_lighthouse())
+	_issued_same_as_direct(p, "buy_oil", [], func(s: Simulation) -> int: return s.buy_oil())
+	_issued_same_as_direct(p, "fire_flare", [], func(s: Simulation) -> int:
+		return s.fire_flare())  # NOT_NIGHT on both
+	_issued_same_as_direct(p, "debug_end_night", [], func(s: Simulation) -> int:
+		return s.debug_end_night())  # NOT_NIGHT on both
+	_issued_same_as_direct(p, "call_wave", [], func(s: Simulation) -> int: return s.call_wave())
+	_issued_same_as_direct(p, "fire_flare", [], func(s: Simulation) -> int: return s.fire_flare())
+	_issued_same_as_direct(p, "debug_end_night", [], func(s: Simulation) -> int:
+		return s.debug_end_night())
+	var names := {}
+	for e: Array in p[0].state.command_log:
+		names[e[1]] = true
+	var got: Array = names.keys()
+	got.sort()
+	var want: Array = Simulation.COMMANDS.keys()
+	want.sort()
+	assert_array(got).is_equal(want)  # every command applied at least once
+
+
+## issue / can_issue on an unknown name or bad args: the error, the result, no change.
+func test_issue_and_can_issue_refuse_unknown_names_and_bad_args() -> void:
+	var sim: Simulation = _ready_sim()[0]
+	var before := _digest_all(sim)
+	var bad: Array = []
+	for name: String in ["no_such_command", "", "Build", "build_tower"]:
+		bad.append([name, [RIFLE, Vector2i(6, 1)], R2.UNKNOWN_COMMAND])
+	for cmd: String in BAD_ENTRIES:
+		for entry: Array in BAD_ENTRIES[cmd]:
+			bad.append([cmd, entry.slice(2), R2.BAD_ARGS])
+	for b: Array in bad:
+		var key: String = R2.find_key(b[2])
+		for fn: String in ["issue", "can_issue"]:
+			var r := {"v": -1}
+			await assert_error(func() -> void: r["v"] = sim.call(fn, b[0], b[1])) \
+				.is_push_error("Simulation.%s: %s %s %s" % [fn, key, b[0], b[1]])
+			assert_int(r["v"]).override_failure_message("%s %s" % [fn, b]).is_equal(b[2])
+	assert_str(_digest_all(sim)).is_equal(before)
+	assert_array(sim.drain_events()).is_empty()
+
+
+## LT-107: replay, issue and can_issue dispatch through the table only: no `match` and no
+## command name literal in their bodies (or in _check / _args_ok).
+func test_command_paths_have_no_per_name_dispatch() -> void:
+	var src := FileAccess.get_file_as_string(SIM_SCRIPT)
+	var match_re := RegEx.create_from_string("\\bmatch\\b")
+	for fname: String in ["replay_command", "issue", "can_issue", "_check", "_args_ok"]:
+		var body := _func_body(src, fname)
+		assert_bool(body.strip_edges().is_empty()).override_failure_message(fname).is_false()
+		assert_object(match_re.search(body)).override_failure_message(
+			"%s has a match" % fname).is_null()
+		for cmd: String in Simulation.COMMANDS:
+			assert_bool(body.contains("\"%s\"" % cmd)).override_failure_message(
+				"%s names the command %s" % [fname, cmd]).is_false()

@@ -94,3 +94,36 @@ func _gd_files(dir: String) -> Array[String]:
 	for d in DirAccess.get_directories_at(dir):
 		out.append_array(_gd_files(dir.path_join(d)))
 	return out
+
+
+# --- LT-107: per-command overrides (BY_COMMAND) ----------------------------------------------
+
+func test_reason_with_any_existing_command_equals_the_shared_text() -> void:
+	assert_int(Simulation.COMMANDS.size()).is_equal(12)
+	for cmd: String in Simulation.COMMANDS:
+		for name: String in R.keys():
+			assert_str(CommandText.reason(R[name], cmd)).override_failure_message(
+				"%s %s" % [cmd, name]).is_equal(CommandText.reason(R[name]))
+	# An unknown command name falls back too.
+	assert_str(CommandText.reason(R.NOT_NIGHT, "no_such_command")).is_equal(
+		CommandText.reason(R.NOT_NIGHT))
+
+
+## A planted override table (the const BY_COMMAND is empty): the override wins for its own
+## key and mapped result only; other keys, unmapped results and the empty key read TEXT.
+func test_a_planted_override_wins_only_for_its_command_and_result() -> void:
+	var planted := {"deploy": {R.NOT_NIGHT: "only at night"},
+		"": {R.NOT_NIGHT: "empty key must not apply"}}
+	assert_str(CommandText._reason_in(R.NOT_NIGHT, "deploy", planted)).is_equal("only at night")
+	assert_str(CommandText.TEXT[R.NOT_NIGHT]).is_not_equal("only at night")
+	assert_str(CommandText._reason_in(R.NOT_NIGHT, "", planted)).is_equal(
+		CommandText.TEXT[R.NOT_NIGHT])
+	assert_str(CommandText._reason_in(R.NOT_NIGHT, "hire", planted)).is_equal(
+		CommandText.TEXT[R.NOT_NIGHT])
+	assert_str(CommandText._reason_in(R.OIL_FULL, "deploy", planted)).is_equal(
+		CommandText.TEXT[R.OIL_FULL])
+	assert_str(CommandText._reason_in(9999 as R, "deploy", planted)).is_equal(
+		CommandText.GENERIC)
+	for name: String in R.keys():
+		assert_str(CommandText._reason_in(R[name], "", CommandText.BY_COMMAND)).is_equal(
+			CommandText.reason(R[name]))
