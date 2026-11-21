@@ -15,7 +15,7 @@ extends RefCounted
 ## whose members enter one by one like a real pack's (Simulation.spawn_enemy, LT-63). Enemies with a `boss` trait are never mimicked (owner
 ## decision Q6; the config accepts `"boss": {}` since LT-97, no shipped enemy carries it yet).
 
-const BOSS_TRAIT := "boss"
+const BOSS_TRAIT := BossTrait.ID
 
 var _elapsed := 0
 var _wave_seen := 0  ## wave_index the counter belongs to

@@ -49,6 +49,9 @@ func _build(combat_class: GDScript) -> void:
 	_spawn = SpawnSystem.new(_ctx)
 	_combat = combat_class.new(_ctx, _light, _sanity, _eco, _spawn)
 	_ally = AllySystem.new(_ctx, _combat)
+	var host := TraitHost.new(_ctx, _spawn.queue_pack_member)  # LT-106, like the facade
+	_spawn.set_trait_host(host)
+	_combat.set_trait_host(host)
 
 
 func _wire() -> void:

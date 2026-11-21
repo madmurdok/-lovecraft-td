@@ -3,7 +3,7 @@ extends GdUnitTestSuite
 ## LT-25: each tower's SHOT becomes its own attack look (tracer / harpoon / wave, aura for
 ## the Elder Sign), astray and missed shots get their own variants, live attack effects are
 ## capped per tower, the ward aura brightens with an enemy inside, and enemy markers follow
-## the per-tick aura state. Pinned through the pure mapping (shot_kind, enemy_markers,
+## the per-tick aura state. Pinned through the pure mapping (shot_kind, SimEnemy.markers,
 ## ward_alpha) and the effect dicts on_event appends; the look itself is checked by render.
 
 var _vp: SubViewport
@@ -140,7 +140,7 @@ func _marked(speed: float, taken: float) -> PackedStringArray:
 	var e := SimEnemy.new()
 	e.speed_mult = speed
 	e.damage_taken_mult = taken
-	return EntityLayer.enemy_markers(e)
+	return e.markers()
 
 
 func test_enemy_markers_follow_slow_and_damage_taken() -> void:
@@ -299,17 +299,17 @@ func _shoot_data(t: SimTower, data: Dictionary) -> void:
 
 func test_bleed_marker_iff_bleed_ticks_above_zero() -> void:
 	var e := SimEnemy.new()
-	assert_array(Array(EntityLayer.enemy_markers(e))).is_empty()
+	assert_array(Array(e.markers())).is_empty()
 	e.status = {"bleed_ticks": 0}
-	assert_array(Array(EntityLayer.enemy_markers(e))).is_empty()
+	assert_array(Array(e.markers())).is_empty()
 	e.status = {"bleed_ticks": 1, "pull_immune_ticks": 30}
-	assert_array(Array(EntityLayer.enemy_markers(e))).contains_exactly(["bleed"])
+	assert_array(Array(e.markers())).contains_exactly(["bleed"])
 	e.status = {"pull_immune_ticks": 30}
-	assert_array(Array(EntityLayer.enemy_markers(e))).is_empty()
+	assert_array(Array(e.markers())).is_empty()
 	e.status = {"bleed_ticks": 45}
 	e.speed_mult = 0.7
 	e.damage_taken_mult = 1.25
-	assert_array(Array(EntityLayer.enemy_markers(e))).contains_exactly(["slow", "vuln", "bleed"])
+	assert_array(Array(e.markers())).contains_exactly(["slow", "vuln", "bleed"])
 
 
 func test_a_crit_shot_copies_crit_into_its_effect() -> void:

@@ -43,6 +43,12 @@ without regenerating), and never edit the file by hand.
 - Regenerate it only together with the digests, with `scripts/golden-regen.sh` (it rewrites
   both and deletes stale `.jsonl` files); never edit it by hand.
 
+## Probe trait (LT-106)
+
+- `probe_trait.gd` (`ProbeTrait`): a test-only enemy trait that records every hook call.
+  `tests/trait_hooks_test.gd` injects it into `TraitCatalog` where a line in `_rows()` would
+  put it, so it doubles as the "one file + one catalog line" proof for a new trait.
+
 ## Look variants (LT-104, `docs/design/LT-104-look-catalog.md` §2.3)
 
 - `looks/variant_looks.json`: a `data/looks.json` that reuses built-in looks with no code
