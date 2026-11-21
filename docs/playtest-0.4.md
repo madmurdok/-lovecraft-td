@@ -284,8 +284,7 @@ Reading:
   waves 4-5 (early ok 52% / 50% / 46% of runs, baseline 9%).
 - Runs reach waves 6-10: loss waves in `lt72_b` are 41/53/60/34/6/0/1 in waves 4/5/6/7/8/9/10, mean
   waves survived (over lost runs, all strategies) 4.56 vs baseline 3.41; `/2` reaches 5.25 (waves 8-9 reached by
-  battery, resonator) and is the only arm with wins (7 `light` runs, 1 early finale loss). No run reaches the
-  wave-10 finale in `lt72_b`/`x2`: wave 10 is reached only by `/2` (3 losses) and `lt72_b` (1).
+  battery, resonator) and is the only arm with wins (7 `light` wins). The finale (wave 10) is reached by 1 run in `lt72_b`, 0 in `x2`, 3 in `/2` (plus those 7 wins).
 - Early waves 1..5 are now the wall again for 6 strategies (wave 4 is the new "hybrid 12 + gaunt 10"
   wave, not much easier than old wave 4 for mundane/mixed/gate): all 94-101/195 early survivors come from
   occult, madness, battery, resonator and light. The 6 early-dying strategies are the same in all three B arms
