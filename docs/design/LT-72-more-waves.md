@@ -170,3 +170,10 @@ reachable, so a content task for it is worth filing.
    `tools/balance/balance.py:282` comment "5 waves -> the first 3".
 7. Run `scripts/test.sh tests/roster_snapshot_test.gd tests/config_valid_test.gd
    tests/strategy_table_test.gd tests/wave_mult_test.gd`; the full suite is the verify slice's.
+
+## 9. Owner decisions (2026-11-21)
+
+1. Wave list: "B: 10 волн с новым темпом (Recommended)".
+2. Finale: "Как сегодняшняя волна 5 (Recommended)".
+3. Lab target: "≥10/20 поражений, ранние = 1..5 (Recommended)".
+4. Wave-10 boss: "Два шоггота + hp_mult, Дагон потом (Recommended)".
