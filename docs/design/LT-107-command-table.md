@@ -178,3 +178,11 @@ Read for context (do not change):
    (control: skip `after.call()` on refusal).
 10. **Text fallback:** `reason(r, cmd)` == `reason(r)` for every result and every existing command;
     a planted `BY_COMMAND` override wins only for its command (control: ignore `cmd`).
+
+## 7. Owner decisions (2026-11-21)
+
+1. Where the table lives: "const в simulation.gd (Recommended)".
+2. Logging: "Оставить 12 мест (Recommended)".
+3. Text key: "BY_COMMAND, пустой сейчас (Recommended)".
+4. Named forwarders: "Однострочники через issue (Recommended)".
+5. Debug commands' `can`: "Выделить can_debug_* (Recommended)".
