@@ -217,8 +217,8 @@ star-stone.
 | 9 | 3 shoggoths, 6 night-gaunts, 3 packs |
 | 10 | Dagon + periodic summons |
 
-Waves 1–5 are the MVP's `data/waves.json` (spawn intervals and delays live there, tuned in
-LT-15); waves 6–10 are the post-MVP plan.
+Waves 1–10 are `data/waves.json` (spawn intervals and delays live there; waves 1–5 tuned in
+LT-15, 6–10 added in LT-72).
 
 - Day (build phase) between nights: 40 s timer (`waves.json` `build_phase_seconds`), or
   end it early with "Light the lamp" for that night's luck (1 + 0.02 × whole seconds
@@ -229,7 +229,7 @@ LT-15); waves 6–10 are the post-MVP plan.
 
 - Mouse: click a buildable cell → tower picker; click a tower → upgrade / branch / sell.
 - HUD: money (`Money: $240`), relics (`Relics: 12 (≈ $96)`, per-kind tooltip), lighthouse
-  HP, wave counter, phase (`Day 3 — night falls in 31 s` / `Night 3 of 5` / `Dawn. All
+  HP, wave counter, phase (`Day 3 — night falls in 31 s` / `Night 3 of 10` / `Dawn. All
   nights survived`), `Light the lamp (luck ×1.6)` (day only), `Sell relics (+$96)` (day,
   non-empty stash), `Luck ×1.6` at night while luck > 1, sanity bar with threshold marks,
   speed toggle, pause.
