@@ -4,12 +4,13 @@ Spec: LT-96 §4 S13; owner decision D9 "Сначала гексы, потом п
 LT-77 (GridTopology, `"grid"` map key, Q4 "tiles from `polygon()` in B4"), LT-35 (BoardView,
 `cell_polygon`, `cell_rect` as its bbox), LT-90 (primitive warm-up in FxLayer). Acceptance: the
 square grid looks unchanged (at most a 1 px line shift, documented); adding hex is one sim class
-+ map data + one factory line. Later: LT-109 (route source), LT-110 (view transform, layers in
++ map data + one factory line. Owner decisions in §10 (cell_rect deleted, a real `HexGrid`
+shipped unregistered). Later: LT-109 (route source), LT-110 (view transform, layers in
 cell units) build on this; nothing here decides them.
 
 **LT-91 reconciliation.** LT-91 is already cancelled, folded into LT-108 by the owner ("Слить в
 LT-108, LT-91 отменить (Recommended)"). LT-108 absorbs all of it: tiles, sea fog, selection,
-the leak frame, the guard, the square tolerance and the hex-stub check. Nothing stays in LT-91.
+the leak frame, the guard, the square tolerance and the hex check (now a real HexGrid, §2 F5). Nothing stays in LT-91.
 Its line numbers (board.gd:556, 605, 692, 1239-1244, 874-876) predate the LT-84 layer split;
 the current sites are in §3.
 
@@ -42,8 +43,8 @@ static func make(kind: String, width: int, height: int) -> GridTopology  # null 
   (LT-77 §3). If a later look such as jittered hex needs more input (a seed), LT-64 adds an
   optional parameter then (Q1).
 - G10 exempts `sim/rules/*grid*.gd`, so the factory sits in the topology home. Its
-  `home_scanned == 2` assert becomes `== GridFactory.MAKERS.size() + 2` (base + factory +
-  one per maker). A hex file then needs no guard edit.
+  `home_scanned == 2` assert becomes `== 4` (grid_topology, grid_factory, square_grid,
+  hex_grid). Registering hex in `MAKERS` later needs no guard edit.
 
 **F2. Polygon drawing helpers in BoardView** (geometry stays in the view; layers only draw).
 - `cell_polygon(cell, inset_px := 0.0)`: each vertex `p' = c + (p - c) * (a - inset) / a`, where
@@ -62,8 +63,10 @@ static func make(kind: String, width: int, height: int) -> GridTopology  # null 
   layers already rely on centring, see `entity_layer.gd:136-138`). These helpers take a
   CanvasItem because MapLayer and SeaFog are plain `Node2D` inner classes, not BoardLayers.
   BoardView remains the only place that knows the polygon.
-- `cell_rect` stays, as the bbox for tests and for future UI anchoring. It has no production
-  callers outside board_view.gd (Q4).
+- `cell_rect` is **deleted** (owner, Q4). Its only callers are the six layer sites in §3 and
+  `tests/board_view_test.gd:183, 192, 195, 268`, which are rewritten against `cell_polygon`
+  (§6 item 3). `picker_overlay_test.gd:73` has its own `_cell_rect` helper, which is not a
+  caller and stays. The header comment `board_view.gd:12-13` is updated.
 
 **F3. Text and marks anchor to the centre.** Each offset is today's offset re-expressed from the
 centre. All are integers, so the square result is pixel-identical:
@@ -81,13 +84,48 @@ centre. All are integers, so the square result is pixel-identical:
 
 Whether these marks look right inside a hex plate is LT-64's look question (Q3).
 
+**F5. `HexGrid`, shipped now and not in `MAKERS`** (owner, Q6). New file
+`sim/rules/hex_grid.gd`, `class_name HexGrid extends GridTopology`, `_init(w, h)`. It is pure,
+immutable and has no trig. `R = 1 / sqrt(3.0)` and `H = sqrt(3.0) / 2` are computed once in the
+constructor, and `sqrt` is exact-rounded, so the values are deterministic. Map data cannot
+select it (`"grid": "hex"` stays a config error), so golden, balance and play do not change.
+Tests and the verify probe build it directly. Registering it later is the one factory line.
+- **Orientation and id (Q7):** pointy-top, odd-r offset ids. The id `(x, y)` is the column and
+  row of the `rows` text, and odd rows shift right by half a cell. MapDef's row loop,
+  `Vector2i(x, y)` for S/L and `_kinds` work unchanged, which meets the "one class + data +
+  factory line" acceptance. LT-77 §3 sketched axial ids; offset is the deviation that Q7 asks
+  about.
+- **Size:** the LT-77 unit, so neighbour centres are 1 apart and the flat-to-flat width is 1
+  (40 px). The apothem is 0.5, so F2's inset formula holds unchanged. The circumradius is `R`
+  and the row pitch is `H`. `range`, `speed` and `reach` keep their meaning (LT-77 §1).
+- `kind()`: `"hex"`. `centre(c)`: `(c.x + 0.5 + 0.5 * (c.y & 1), R + c.y * H)`.
+- `neighbours(c)`: the fixed order E, NE, NW, W, SW, SE (screen counter-clockwise from east),
+  in bounds only. On even rows the offsets are (+1,0) (0,-1) (-1,-1) (-1,0) (-1,+1) (0,+1). On
+  odd rows they are (+1,0) (+1,-1) (0,-1) (-1,0) (0,+1) (+1,+1).
+- `distance`: Euclidean distance between centres, using 64-bit scalars like SquareGrid.
+  `steps`: convert offset to axial (`q = x - (y - (y & 1)) / 2`, `r = y`), then
+  `(|dq| + |dr| + |dq + dr|) / 2`.
+- `polygon(c)`: 6 corners, screen-clockwise from the top: `(cx, cy - R)`,
+  `(cx + 0.5, cy - R/2)`, `(cx + 0.5, cy + R/2)`, `(cx, cy + R)`, `(cx - 0.5, cy + R/2)`,
+  `(cx - 0.5, cy - R/2)`.
+- `cell_at(p)`: shift by the (0, 0) centre `(0.5, R)`, then fractional axial
+  `q = x - y / sqrt3`, `r = y * 2 / sqrt3` (the constants come from the constructor). Then cube
+  rounding, with ties broken by the fixed rule "re-derive the component with the largest
+  rounding error". Finally convert axial back to offset. The result may be outside the board,
+  as in SquareGrid.
+- `contains`, `cells` (row-major), `index` (`y * w + x`), `cell_count`: the same as square.
+- `bounds()`: `Rect2(0, 0, w + (0.5 if h > 1 else 0.0), (h - 1) * H + 2 * R)`.
+- G3 (one cell centre) gains a second home: `G3_HOME` becomes a list
+  `[square_grid.gd, hex_grid.gd]` with 3 home hits (square x and y, hex x).
+
 **F4. Leak frame from the lighthouse polygon.** `LEAKED` stores `"cell": lighthouse` in the
 effect. The draw becomes `outline_cell(self, fx["cell"], COLOR_LEAK, 4.0)`. The primitive moves
 from `draw_rect` to `draw_colored_polygon`, which LT-90's `_draw_warmup` already warms, so no
 new cold primitive appears.
 
 ## 3. Sites (grep `grep -rn "cell_rect(" --include='*.gd' scenes ui tools`, plus
-`grep -rn "draw_rect\|cells_to_px(1" scenes ui`, triaged by role)
+`grep -rn "draw_rect\|cells_to_px(1" scenes ui`, triaged by role; `cell_rect` is deleted
+after these move)
 
 | # | Site | Role | Becomes |
 |---|---|---|---|
@@ -103,22 +141,24 @@ new cold primitive appears.
 
 Not cell-derived, left as is: HP bars (`entity_layer.gd:263-299`), `board_view.gd:25`
 (`world_rect_for`), `ui/sanity_bar.gd`, `ui/side_panel.gd:66`, `scenes/sanity_fx.gd:142`.
-Tests (`board_view_test.gd:183-195, 268`, `picker_overlay_test.gd:73` own `_cell_rect`) are
-exempt and unchanged.
+Tests: `board_view_test.gd:172-196, 268` are rewritten (§6 item 3). `picker_overlay_test.gd:73`
+(its own `_cell_rect`) stays.
 
 ## 4. Guard G15 (in `tests/architecture_guard_test.gd`, after G10)
 
 "Tiles from the polygon." Scan `sim/`, `tools/`, `scenes/` and `ui/` (comments and strings
-blanked, statements joined, via `_find_joined` like G3/G10) for two forms:
-- `\bcell_rect\(` outside `scenes/board/board_view.gd`;
+blanked, statements joined, via `_find_joined` like G3/G10) for three forms:
+- `\bcell_rect\b` anywhere, with no home. The method is gone, so no definition or call can
+  come back (`_cell_rect` in tests does not match: `\b` does not split `_c`);
 - `-\s*Vector2\(\s*0\.5\s*,\s*0\.5\s*\)`, the hand-built cell corner (G3 owns the `+` form);
 - `\b[A-Z]\w*Grid\.new\(` outside `sim/rules/grid_factory.gd` (topologies are built only by
   the factory; `tests/` stays exempt).
 
-The guard is tested like the others. Probes: `view.cell_rect(c).grow(-2)`, a split-line
-`cell_rect(\n c)`, and `p - Vector2(0.5, 0.5)`, `SquareGrid.new(w, h)`, each caught. Clean near-misses:
-`view.cell_polygon(c)`, `_cell_rect(c)` and `outline_cell(` are not hits. The home must have
-exactly 1 hit (the definition), and more than 40 files must be scanned.
+The guard is tested like the others. Probes: `view.cell_rect(c).grow(-2)`,
+`func cell_rect(cell)`, `p - Vector2(0.5, 0.5)`, `SquareGrid.new(w, h)` and `HexGrid.new(3, 3)`,
+each caught. Clean near-misses: `view.cell_polygon(c)`, `_cell_rect(c)` and `outline_cell(` are
+not hits. The factory home has the 1 `SquareGrid.new` hit, and more than 40 files must be
+scanned.
 
 ## 5. Square pixel equivalence: risk and check
 
@@ -146,32 +186,49 @@ probe saves `get_viewport().get_texture().get_image().save_png()`. The fog shade
 `TIME`, so pair A hides `Lighting.fog` and is compared exactly, and pair B (fog on) is checked by
 eye. A pixel diff reports the count and bbox of differing pixels per pair. Pass: fills 0;
 differences only on line pixels, each within 1 px of the baseline line; all numbers written in
-`complete_slice`. One hex-stub screenshot (§6 item 6) is attached for the owner.
+`complete_slice`. One hex screenshot is attached for the owner: the probe sets
+`view.grid = HexGrid.new(w, h)` on MapLayer and EntityLayer over the same map rows. It is a look
+check only, since the hex map is not playable.
 
 ## 6. Behaviours for the tests slice (each with a control)
 
 1. `GridFactory.make("square", 5, 4)` is a SquareGrid equal in `cells()`, `bounds()` and
-   `kind()` to `SquareGrid.new(5, 4)`; `make("hex", …)` is null; `kinds()` is `["square"]`.
-   Control: map `"square"` to null.
-2. `MapDef.parse` builds its grid through the factory: G15's third form (§4). An unknown grid
-   keeps today's error text (`map_def_test.gd:152`) and still yields a square grid. Control:
-   restore `m.grid = SquareGrid.new(...)` in map_def.gd; G15 fails.
-3. Square `cell_polygon(c, d)` equals the corners of `cell_rect(c).grow(-d)` exactly for
-   d ∈ {0, 2, 4, 6} over every cell. Control: drop the `(a - inset) / a` scale.
-4. `outline_cell` geometry, as a pure `outline_quads(cell, w, inset)` returning the quads:
-   4 quads on square, together covering exactly the area of `grow(w/2)` minus `grow(-w/2)`,
-   with no pairwise overlap (`Geometry2D.intersect_polygons` empty). Control: swap inner and
-   outer.
-5. Hex stub (`tests/support/stub_hex_grid.gd`, a test-only pointy-top GridTopology per LT-77 §3):
-   `cell_polygon` has 6 points, neighbour tiles do not overlap (intersection area 0), and the
-   inset apothem equals `a - d`. This proves that the layers' only shape source is the polygon.
-   Control: make `cell_polygon` return the bbox.
-6. Tower anchors: a pure `EntityLayer.tower_anchors(centre) -> Dictionary`, where each F3 anchor
-   equals today's `r.position + offset` for a square cell. Control: change one offset.
-7. `LEAKED` adds an effect with `"cell" == map.lighthouse`. Control: drop the key.
-8. G15 as in §4, plus the G10 home count `== MAKERS.size() + 2`. Control: put back
-   `fx_layer.gd`'s `from - Vector2(0.5, 0.5)` rect, and separately one `view.cell_rect(` call in
-   phantom_layer, so that both forms fail.
+   `kind()` to `SquareGrid.new(5, 4)`. `make("hex", …)` is null and `kinds()` is `["square"]`,
+   which pins that hex is unregistered. Control: map `"square"` to null.
+2. `MapDef.parse` builds its grid through the factory (G15's third form, §4). An unknown grid,
+   `"hex"` included, keeps today's error text (`map_def_test.gd:152`). Control: restore
+   `m.grid = SquareGrid.new(...)` in map_def.gd, so G15 fails.
+3. Square `cell_polygon(c, d)` equals the corners of
+   `Rect2(c * TILE, TILE²).grow(-d)` exactly, for d ∈ {0, 2, 4, 6} over every cell. This
+   replaces `board_view_test` §4. The tiling test sums the polygon areas to `W * H * TILE²`
+   and checks that right neighbours share an edge. Line 268 compares the lighthouse polygon's
+   corners. Control: drop the `(a - inset) / a` scale.
+4. `outline_quads(cell, w, inset)` returns n quads (4 on square, 6 on hex) that together cover
+   exactly the area of `inset - w/2` minus `inset + w/2`, with no pairwise overlap
+   (`Geometry2D.intersect_polygons` is empty). Control: swap inner and outer.
+5. `tests/hex_grid_test.gd`, mirroring `square_grid_test.gd`:
+   - interior neighbours are 6, in the pinned order, for an even row and an odd row;
+     neighbourhood is symmetric; edge and corner cells stay in bounds;
+   - `distance` to every neighbour ≈ 1 (1e-9); `steps` equals hex hops (hand-checked pairs);
+   - `polygon` has 6 corners in the pinned order;
+   - `cell_at(centre(c)) == c` for every cell, and points nudged 0.4 toward each neighbour
+     centre land in that neighbour;
+   - row-major `cells`/`index`, `bounds`, and `kind() == "hex"`.
+   Controls: swap the even-row and odd-row offset tables; drop the `(c.y & 1)` shift in
+   `centre`.
+6. Hex drawing geometry: with `view.grid = HexGrid.new(5, 4)`, each `cell_polygon` has
+   6 points, neighbour tiles intersect with area 0, the polygon areas sum to
+   `cell_count * (sqrt(3) / 2) * TILE²` (each hex is `sqrt(3)/2` cell units²), and the inset apothem
+   equals `a - d`. Control: make `cell_polygon` return the bounding box.
+7. Tower anchors: a pure `EntityLayer.tower_anchors(centre) -> Dictionary`, where each F3
+   anchor equals today's `r.position + offset` for a square cell. Control: change one offset.
+8. `LEAKED` adds an effect with `"cell" == map.lighthouse`. Control: drop the key.
+9. G15 as in §4, G10 home count `== 4`, and G3 with 2 homes and 3 hits. Controls (one
+   group): put back the `fx_layer.gd` `from - Vector2(0.5, 0.5)` rect, and separately a
+   `view.cell_rect(` call in phantom_layer, so that both forms fail.
+
+Controls chosen (8): items 1, 2, 3, 4, 5 (the parity swap), 6, 7, 9. Items 5's second control
+and item 8 are reverted only if the verify budget allows.
 
 Not pinned by a test: the draw calls themselves (render-only, §5 screenshots) and MapLayer's
 fill-then-outline order (checked by screenshot).
@@ -194,9 +251,11 @@ fill-then-outline order (checked by screenshot).
 
 Edit:
 - `sim/rules/grid_factory.gd` (new): F1.
+- `sim/rules/hex_grid.gd` (new): F5. Model it on `sim/rules/square_grid.gd:1-76`.
 - `sim/defs/map_def.gd:28-31` (`parse`): factory call, error text from `kinds()`, fallback.
 - `scenes/board/board_view.gd:66-81`: `cell_polygon(cell, inset_px)`, `cell_centre`,
-  `outline_quads`, static `fill_cell`/`outline_cell`; update the header comment `:12-13`.
+  `outline_quads`, static `fill_cell`/`outline_cell`; **delete `cell_rect` (`:74-81`)**; update
+  the header comment `:12-13`.
 - `scenes/board.gd:206-226` (`MapLayer._draw`): sites 1-3.
 - `scenes/lighting.gd:301-304` (`SeaFog._draw`): site 4.
 - `scenes/board/phantom_layer.gd:21-31` (`_draw`): site 5.
@@ -204,18 +263,24 @@ Edit:
   `:130-157` (`_draw_tower`, plus a new `tower_anchors`): site 6.
 - `scenes/board/overlay_layer.gd:13-22` (`_draw`): sites 7-8.
 - `scenes/board/fx_layer.gd:129-132` (`on_event` LEAKED), `:338-341` (`_draw_effects` leak): site 9.
-- `tests/architecture_guard_test.gd:254-297` (G10 home count), new G15 after it.
+- `tests/architecture_guard_test.gd`: G3 home list (`:118`, home count `:144`); G10 home count
+  (`:291`); new G15 after G10 (`:297`).
+- `tests/board_view_test.gd:5` (header), `:172-196` (§4 rewritten on `cell_polygon`), `:268`.
+- New tests: `tests/hex_grid_test.gd`, plus GridFactory, inset, outline and hex-drawing tests
+  in `board_view_test.gd` or a new `grid_factory_test.gd` (the tests slice decides).
 
 Read for context: `sim/rules/grid_topology.gd:1-56`, `sim/rules/square_grid.gd:44-53`
 (`polygon`), `scenes/board/board_layer.gd` (`view`), `fx_layer.gd:72-91, 299-310` (LT-90
 warm-up), `tests/board_view_test.gd:176-196` (bbox tests that must stay green),
-`tests/architecture_guard_test.gd:112-148` (G3, `_find_joined` usage).
+`tests/architecture_guard_test.gd:112-148` (G3, `_find_joined` usage),
+`tests/square_grid_test.gd` (outline to mirror), `sim/defs/map_def.gd` `_derive_path`
+(walks `grid.neighbours`; it must work with hex unchanged).
 
 Not touched (LT-109/LT-110 stay open): path derivation and `_ground_route`. Layers keep pixel
 widths and insets, so LT-110 can move the cell -> world map behind a transform inside BoardView
 without revisiting the call sites.
 
-## 9. Open questions for the owner
+## 9. Open questions for the owner (1-6 answered in §10; 7 is new)
 
 1. **Factory shape.** **A: `GridFactory` file with `MAKERS` (Recommended).** Benefit: hex is one
    line, and the error text and G10 count follow the table. Risk: one more small file.
@@ -239,3 +304,22 @@ without revisiting the call sites.
 6. **Hex proof.** **A: test-only stub hex topology in `tests/support/` (Recommended).** Benefit:
    no shipped hex before LT-64 picks the look. Risk: the stub can drift from the real HexGrid.
    B: ship `HexGrid` now, unregistered in `MAKERS`.
+7. **Hex orientation and cell id** (new, from Q6). **A: pointy-top, odd-r offset ids `(column,
+   row)` (Recommended).** Benefit: MapDef, the `rows` text and S/L parsing work unchanged, so
+   hex really is one class + data + factory line. Risk: neighbour offsets depend on row
+   parity, and `steps`/`cell_at` convert through axial internally. This deviates from LT-77
+   §3's axial id. B: pointy-top axial ids, as LT-77 §3 sketched. Benefit: simpler neighbour
+   math. Risk: MapDef must convert row and column to axial, so hex touches MapDef as well.
+   C: flat-top, odd-q columns. Benefit: may suit an angled view better (LT-64). Risk: `rows`
+   text no longer reads as rows of cells, and the map format and editor view change.
+
+## 10. Owner decisions (2026-11-21)
+
+1. Factory: "GridFactory + MAKERS (Recommended)".
+2. Outlines: "Кольцо из quad'ов (Recommended)".
+3. Tower marks: "Смещения как сейчас, гекс в LT-64 (Recommended)".
+4. cell_rect: "Удалить". `cell_rect` is deleted and its tests are rewritten on `cell_polygon`;
+   G15 bans `cell_rect` everywhere (§2 F2, §4, §6 item 3).
+5. Square tolerance: "Заливки 1:1, контуры ≤1 px (Recommended)".
+6. Hex proof: "HexGrid сейчас, без MAKERS". A real `sim/rules/hex_grid.gd` ships unregistered
+   (§2 F5, §6 items 5-6). Its orientation and id are open as Q7.
