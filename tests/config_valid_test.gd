@@ -240,7 +240,7 @@ func test_waves() -> void:
 
 
 ## LT-111, LT-72: waves 1-3 carry no hp_mult (absent = 1.0), shipped multipliers stay in bounds;
-## fraction load as given, on their own wave only.
+## 10 (the bound) and a fraction load as given, on their own wave only.
 func test_wave_multipliers_default_to_one_and_load_up_to_ten() -> void:
 	var real := _real().waves.waves
 	for i in real.size():  # LT-72: waves 4-10 ship a tuned hp_mult, waves 1-3 default to 1 (hp)
