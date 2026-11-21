@@ -309,6 +309,38 @@ def waves_table(variants, strategies, results):
     return lines
 
 
+def hp_cell(runs):
+    """LT-116: 'mean/median' lighthouse HP left at run end over the runs that carry
+    lighthouse_hp (old logs lack it: they are skipped, not counted as 0). '-' when none do."""
+    hp = sorted(r["lighthouse_hp"] for r in runs
+                if isinstance(r.get("lighthouse_hp"), (int, float)))
+    if not hp:
+        return "-"
+    mid = len(hp) // 2
+    med = hp[mid] if len(hp) % 2 else (hp[mid - 1] + hp[mid]) / 2
+    return f"{sum(hp) / len(hp):.1f}/{med:.1f}"
+
+
+def hp_table(variants, strategies, results):
+    """LT-116: lighthouse HP left at run end, per variant x strategy, as 'mean/median'. Unlike
+    won/lost it does not saturate at 0/20 or 20/20. Empty when no run carries lighthouse_hp."""
+    if not any("lighthouse_hp" in r for v in variants for s in strategies
+               for r in results[(v["name"], s)]["runs"]):
+        return []
+    lines = [
+        "",
+        "Lighthouse HP left at run end (LT-116): mean/median over the runs; '-' = no data "
+        "(old logs). Does not saturate when every run is won or lost.",
+        "",
+        "| variant | " + " | ".join(strategies) + " |",
+        "|---|" + "---|" * len(strategies),
+    ]
+    for v in variants:
+        row = [hp_cell(results[(v["name"], s)]["runs"]) for s in strategies]
+        lines.append(f"| {v['name']} | " + " | ".join(row) + " |")
+    return lines
+
+
 def report(variants, strategies, results, seeds, target, meta):
     need = math.ceil(target * seeds - 1e-9)
     early = early_waves(results)
@@ -350,6 +382,7 @@ def report(variants, strategies, results, seeds, target, meta):
         lines.append(f"| {v['name']} | " + " | ".join(row)
                      + f" | {met}/{len(strategies)} | {spr} | {ur} |")
     lines += waves_table(variants, strategies, results)
+    lines += hp_table(variants, strategies, results)
     lines += ["", "Variants:", ""]
     for v in variants:
         extra = f" flags: `{' '.join(v['flags'])}`" if v["flags"] else ""
