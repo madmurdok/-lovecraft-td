@@ -55,6 +55,13 @@ func _dps(s: TowerDef.Level) -> float:
 	return s.damage / s.fire_interval * maxf(1.0, _e(s, "banish_targets"))
 
 
+## LT-89: a shooter's DPS at fire interval multiplier `m` as the sim deals it: the cooldown
+## is whole ticks (the interval x TICK_RATE rounded, at least 1).
+func _ticked_dps(s: TowerDef.Level, m: float) -> float:
+	var ticks := maxi(1, roundi(s.fire_interval * m * SimTime.TICK_RATE))
+	return s.damage / (ticks / float(SimTime.TICK_RATE))
+
+
 # --- §1: the row set ------------------------------------------------------------------------
 
 func test_rows_are_the_ten_rows_of_the_note_in_order() -> void:
@@ -222,7 +229,8 @@ func test_beam_row_comes_from_the_beam_config_and_follows_an_edit() -> void:
 		"+100%", "edited mundane")
 
 
-## §5: lit mundane Every x fire_interval_mult, DPS / it ("0.56*", "25*" at Rifleman L2).
+## §5: lit mundane Every x fire_interval_mult, DPS over its whole ticks (LT-89: "0.56*",
+## "24.7*" at Rifleman L2: 0.56 s fires every 17 ticks).
 func test_lit_mundane_shooter_every_and_dps_carry_the_mark() -> void:
 	var m := _cfg.economy.beam.mundane_fire_interval_mult
 	for id: String in _cfg.towers:
@@ -239,7 +247,7 @@ func test_lit_mundane_shooter_every_and_dps_carry_the_mark() -> void:
 			assert_array(lit.keys()).override_failure_message(tag) \
 				.contains_exactly_in_any_order(["every", "dps"])
 			_eq(lit["every"], _n(s.fire_interval * m) + STAR, tag + " every")
-			_eq(lit["dps"], _d1(_dps(s) / m) + STAR, tag + " dps")
+			_eq(lit["dps"], _d1(_ticked_dps(s, m)) + STAR, tag + " dps")
 	var r2 := _def("rifleman").levels[1]
 	assert_str(TowerText.lit_values(_def("rifleman"), r2, _cfg)["every"]) \
 		.is_equal(_n(r2.fire_interval * m) + STAR)
@@ -395,7 +403,7 @@ func test_shadowed_values_use_the_shadow_multipliers_with_the_mark() -> void:
 	var s := rifle.levels[0]
 	var v := TowerText.lit_values(rifle, s, _cfg, -1.0, true)
 	_eq(v["every"], _n(s.fire_interval * sh.mundane_fire_interval_mult) + STAR, "every")
-	_eq(v["dps"], _d1(_dps(s) / sh.mundane_fire_interval_mult) + STAR, "dps")
+	_eq(v["dps"], _d1(_ticked_dps(s, sh.mundane_fire_interval_mult)) + STAR, "dps")
 	var necro := _def("necronomicon_reader")
 	var n := necro.levels[0]
 	var nv := TowerText.lit_values(necro, n, _cfg, _cfg.sanity.max_sanity, true)

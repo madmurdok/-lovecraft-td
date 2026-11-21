@@ -316,8 +316,13 @@ func test_special_lines_are_prefixed_by_column_only_with_upgrade_columns() -> vo
 
 # --- §5 lit ----------------------------------------------------------------------------------
 
-## Q4: a lit Rifleman L2: Every x fire_interval_mult and DPS / it with "*" in Now, the A/B
-## columns unlit and compared with the base Now, the status line and "No misses while lit".
+## LT-89: the seconds between shots the sim fires at `interval_s`: whole 30 Hz ticks.
+func _lit_period(interval_s: float) -> float:
+	return maxi(1, roundi(interval_s * SimTime.TICK_RATE)) / float(SimTime.TICK_RATE)
+
+
+## Q4: a lit Rifleman L2: Every x fire_interval_mult and DPS over its whole ticks (LT-89)
+## with "*" in Now, the A/B columns unlit and compared with the base Now, the status line and "No misses while lit".
 func test_lit_mundane_tower_shows_live_values_the_line_and_no_misses() -> void:
 	await _start_game()
 	var def: TowerDef = _config.towers[RIFLE]
@@ -332,7 +337,8 @@ func test_lit_mundane_tower_shows_live_values_the_line_and_no_misses() -> void:
 	_set_lit(t, true)
 	_game.tower_panel.refresh()
 	var lit := {"every": TowerText.num(s.fire_interval * m) + STAR,
-		"dps": TowerText.num(roundf(s.damage / s.fire_interval / m * 10.0) / 10.0) + STAR}
+		"dps": TowerText.num(roundf(s.damage / _lit_period(s.fire_interval * m) * 10.0) / 10.0)
+			+ STAR}
 	_assert_compare("lit rifleman L2", ["Now", "A", "B"], [_values(t, s),
 		_values(t, def.branches["a"]), _values(t, def.branches["b"])], lit)
 	assert_bool(_game.tower_panel.lit_label.visible).is_true()
