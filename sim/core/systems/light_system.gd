@@ -234,7 +234,8 @@ func _lit_now(dirs: Array, k: float, px: float, py: float) -> bool:
 
 ## Slot 2, first (LT-30 §3.1): saves prev_beam_*, turns the base direction (night only; a
 ## flare no longer holds it, LT-57), then sets the net `lit` / `shadowed` of every tower
-## (centre; TOWER_LIT {lit, shadowed} when either flips, id order) and `lit` of every live
+## (centre; TOWER_LIT {lit, shadowed} when either flips, id order; LT-105: every tick its
+## light values go into the tower's modifier channel, _write_light_mods) and `lit` of every live
 ## enemy (route position at the start of the tick, as auras). LT-70 §2.1: a tower is lit
 ## by a beam, the flare (LT-69) or another casts_light tower's radius, shadowed by another
 ## casts_shadow tower's radius; both at once cancel to neither. An enemy is lit by a beam,
@@ -258,6 +259,7 @@ func update_beam() -> void:
 			t.lit = lit
 			t.shadowed = shadowed
 			_ctx.emit(SimEvent.Type.TOWER_LIT, t.id, {"lit": lit, "shadowed": shadowed})
+		_write_light_mods(t, lit, shadowed)
 	if not on:
 		return
 	for e in _state.enemies:
@@ -342,18 +344,17 @@ func _cast_count(p: Vector2, key: String, skip_id: int, casters: Array[SimTower]
 	return n
 
 
-## LT-30 §2, LT-70 §2.3: an occult tower's damage / aura / banish / summon multiplier from
-## its net state: beam.occult_power_mult lit, shadow.occult_power_mult shadowed (1.0 without
-## a shadow block), else 1.0. Mundane towers: 1.0.
-func power_mult(t: SimTower) -> float:
-	return TowerRules.power_mult(t.def.kind, _config, t.lit, t.shadowed)
-
-
-## LT-30 §2, LT-70 §2.3: a mundane tower's fire interval multiplier from its net state:
-## beam.mundane_fire_interval_mult lit, shadow.mundane_fire_interval_mult shadowed (1.0
-## without a shadow block), else 1.0. Occult towers: 1.0.
-func interval_mult(t: SimTower) -> float:
-	return TowerRules.interval_mult(t.def.kind, _config, t.lit, t.shadowed)
+## LT-105 D3: light is the channel's first writer, every tick (after the slot-1 reset):
+## TowerRules' light values of the tower's net state (the kind gates live there). A neutral
+## state writes nothing (adding 1.0 / 0.0 / false would change nothing).
+func _write_light_mods(t: SimTower, lit: bool, shadowed: bool) -> void:
+	if not lit and not shadowed:
+		return
+	var kind := t.def.kind
+	t.add_modifiers(TowerRules.power_mult(kind, _config, lit, shadowed),
+		TowerRules.interval_mult(kind, _config, lit, shadowed),
+		TowerRules.miss_add(kind, _config, shadowed),
+		TowerRules.ignore_miss(kind, _config, lit))
 
 
 ## Run start: "rotate" points the base direction left (SimState default); "sweep" starts at

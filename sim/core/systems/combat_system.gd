@@ -10,8 +10,9 @@ extends RefCounted
 ## keeps the object id, not a reference, so there is no RefCounted cycle.
 
 
-## SimEnemy.status timers that only count down to 0 and go (LT-29 pull, LT-51 banish).
-const IMMUNITY_KEYS: PackedStringArray = ["pull_immune_ticks", "banish_immune_ticks"]
+## SimEnemy.status timers that only count down to 0 and go (LT-29 pull, LT-51 banish);
+## LT-106: the StatusRules table owns them.
+const IMMUNITY_KEYS: PackedStringArray = StatusRules.COUNTDOWN_KEYS
 
 var _ctx: SimContext
 var _state: SimState
@@ -23,6 +24,8 @@ var _spawn: SpawnSystem
 ## AllySystem.spawn / AllySystem.allies_of, set by the facade after both systems exist.
 var _spawn_ally: Callable
 var _allies_of: Callable
+## LT-106: the trait API (on_damaged, on_death), set by the facade once (set_trait_host).
+var _host: TraitHost
 
 
 func _init(ctx: SimContext, light: LightSystem, sanity: SanitySystem,
@@ -41,6 +44,11 @@ func _init(ctx: SimContext, light: LightSystem, sanity: SanitySystem,
 func set_ally_hooks(spawn: Callable, allies_of: Callable) -> void:
 	_spawn_ally = spawn
 	_allies_of = allies_of
+
+
+## The facade wires the trait API once (LT-106).
+func set_trait_host(host: TraitHost) -> void:
+	_host = host
 
 
 ## The tower with this id, or null (also null once sold).
@@ -95,6 +103,9 @@ func live_fakes_in_range(cell: Vector2i, range_cells: float) -> Array[SimEnemy]:
 ## leaked enemy, or once the outcome is set (then nothing changes and no event is emitted).
 ## A killed enemy emits DIED and is removed at the end of the current/next tick.
 ## `ignore_armor` (LT-48 P7): the hit skips armor; damage_taken_mult still applies.
+## LT-106 T4: a survivor runs its on_damaged trait hooks, a killed enemy its on_death hooks
+## after the kill hook (token drop first); one int test per hit when it has none. A hook
+## must not damage its own enemy (no re-entry).
 func apply_damage(enemy_id: int, amount: float, source: String, ignore_armor := false) -> float:
 	if _state.outcome != SimState.Outcome.NONE:
 		return 0.0
@@ -106,10 +117,21 @@ func apply_damage(enemy_id: int, amount: float, source: String, ignore_armor := 
 	var taken := maxf(0.0, amount - armor) * e.damage_taken_mult
 	var removed := minf(taken, e.hp)
 	e.hp -= taken
+	var d := e.def
 	if e.hp <= 0.0:
 		e.dead = true
 		_ctx.emit(SimEvent.Type.DIED, e.id, {"source": source})
 		_on_enemy_killed(e, source)
+		if d.hooks & EnemyTrait.ON_DEATH:
+			for i in d.hook_traits.size():
+				var tr := d.hook_traits[i]
+				if tr.hooks() & EnemyTrait.ON_DEATH:
+					tr.on_death(_host, e, d.hook_params[i], source)
+	elif d.hooks & EnemyTrait.ON_DAMAGED:
+		for i in d.hook_traits.size():
+			var tr := d.hook_traits[i]
+			if tr.hooks() & EnemyTrait.ON_DAMAGED:
+				tr.on_damaged(_host, e, d.hook_params[i], taken, source)
 	return removed
 
 
@@ -139,11 +161,14 @@ func _on_enemy_killed(e: SimEnemy, source: String) -> void:
 ## LT-49 (LT-46 P8): a `reveal_fakes` aura (Searchlight) also sets `revealed` on every live
 ## fake inside, for good; _candidates then drops it, so no tower targets it again. A lit or
 ## shadowed mundane aura is unchanged (LT-30 / LT-70 modifiers apply to firing and to
-## occult auras only); a lit or shadowed occult aura works at _power_mult strength.
+## occult auras only); a lit or shadowed occult aura works at t.power_mult strength (the
+## LT-105 channel). LT-105 D6: a disabled aura applies nothing.
 func apply_auras() -> void:
 	var auras: Array[SimTower] = []
 	for t in _state.towers:
 		var s := t.stats()
+		if t.disabled:
+			continue  # LT-105 D6: a disabled aura applies nothing
 		if not s.acts() and (s.effects.has("slow") or s.effects.has("damage_taken_multiplier")
 				or s.effects.has("strip_armor") or s.effects.get("reveal_fakes", 0.0) > 0.0):
 			auras.append(t)
@@ -166,7 +191,7 @@ func apply_auras() -> void:
 			var t_slow: float = s.effects.get("slow", 0.0)
 			var t_mult: float = s.effects.get("damage_taken_multiplier", 1.0)
 			var t_strip: float = s.effects.get("strip_armor", 0.0)
-			var pm := _light.power_mult(t)
+			var pm := t.power_mult  # LT-105: the modifier channel (light wrote it in slot 2)
 			if pm != 1.0:
 				# LT-30 §2 / LT-70 §2.3: a lit (x0.7) or shadowed (x1.15) occult aura works at
 				# that strength (LT-29 §2: the armor strip too).
@@ -210,18 +235,25 @@ func fire_towers() -> void:
 			t.cooldown_ticks -= 1
 			if t.cooldown_ticks > 0:
 				continue
-		var s := t.stats()
-		if not s.acts():
+		# LT-105 D6 (Q2): a disabled tower keeps counting its cooldown but does nothing else
+		# (no target, no RNG draw, no burst / beam lock change).
+		if t.disabled:
 			continue
-		if s.is_banish():
+		var s := t.stats()
+		var mode := s.mode()  # LT-103 §2.2: one precedence (EffectCatalog.Mode)
+		if mode == EffectCatalog.Mode.AURA:
+			continue
+		if mode == EffectCatalog.Mode.BANISH:
 			_cast_banish(t, s)  # LT-51: its own cast; no miss, crit or shot shape
 			continue
-		if s.is_summon():
+		if mode == EffectCatalog.Mode.SUMMON:
 			_summon(t, s)  # LT-52: allied units do the damage (slot 5 _ally_combat)
 			continue
 		var in_range := _candidates(t, s)
 		var target: SimEnemy = null
-		var burst := int(s.effects.get("burst_targets", 0.0))
+		# A burst below 1 target (0 < n < 1) aims like a single shot.
+		var burst := int(s.effects.get("burst_targets", 0.0)) if mode == EffectCatalog.Mode.BURST \
+			else 0
 		if burst > 0:
 			# LT-29 §1.2: round robin over the top `burst` by target_priority; a miss moves on
 			# too. The ranked set may shrink between shots: nothing is locked.
@@ -230,7 +262,7 @@ func fire_towers() -> void:
 				var m := ranked.size()
 				target = ranked[t.burst_index % m]
 				t.burst_index = (t.burst_index % m + 1) % m
-		elif s.is_beam():
+		elif mode == EffectCatalog.Mode.BEAM:
 			target = _beam_target(t, in_range)
 		else:
 			target = _pick_target(t, in_range)
@@ -243,7 +275,7 @@ func fire_towers() -> void:
 		# before the lit x0.7 and the madness x2.
 		var factor := TowerRules.shot_factor(s, _config, _state.sanity)
 		# LT-30 §2 / LT-70 §2.3: lit x0.7 / shadowed x1.15 (occult), before the madness x2.
-		var damage := TowerRules.shot_damage(s, factor, _light.power_mult(t))
+		var damage := TowerRules.shot_damage(s, factor, t.power_mult)
 		var astray := ""
 		if s.madness_affected and _state.sanity_state == SimState.SanityState.MADNESS:
 			damage *= _config.sanity.madness.damage_multiplier
@@ -263,7 +295,7 @@ func fire_towers() -> void:
 		var pierce: float = s.effects.get("pierce", 0.0)
 		var aoe: float = s.effects.get("aoe_radius", 0.0)
 		var fuse_ticks := 0
-		if s.effects.get("fuse_seconds", 0.0) > 0.0:
+		if mode == EffectCatalog.Mode.FUSE:
 			fuse_ticks = maxi(1, SimTime.ticks(float(s.effects["fuse_seconds"])))
 		var hits: Array[SimEnemy] = [target]
 		var to := target.route.position_at(target.distance)
@@ -272,17 +304,16 @@ func fire_towers() -> void:
 			# this tick; who is hit is decided when it explodes (settle_blasts).
 			to = _lead_point(target, fuse_ticks)
 			hits = []
-		elif pierce > 0.0:
+		elif mode == EffectCatalog.Mode.LINE:
 			to = _line_end(t.centre(), to, s.range_cells)
 			hits = _ground_filter(t, _line_hits(t.centre(), to, pierce * 0.5, target))
-		elif aoe > 0.0:
+		elif mode == EffectCatalog.Mode.BLAST:
 			hits = _ground_filter(t, enemies_near(to, aoe))
 		# LT-12 §4: a mundane shot may miss as a whole (Q3: occult towers never miss).
 		# LT-30: a lit mundane tower with ignore_miss never misses (no COMBAT draw).
 		# LT-70 §2.3: a shadowed one adds shadow.mundane.miss_chance_add to the chance.
-		var miss_add := TowerRules.miss_add(t.def.kind, _config, t.shadowed)
-		var miss := t.def.kind == "mundane" \
-			and not TowerRules.ignore_miss(t.def.kind, _config, t.lit) and _roll_miss(miss_add)
+		# LT-105: both from the modifier channel (ignore_miss wins: no COMBAT draw).
+		var miss := t.def.kind == "mundane" and not t.ignore_miss and _roll_miss(t.miss_add)
 		var dud := miss or astray == "empty"
 		if dud:
 			hits = []
@@ -303,7 +334,7 @@ func fire_towers() -> void:
 			shot["astray"] = true
 		if crit:
 			shot["crit"] = true
-		if s.is_beam():
+		if mode == EffectCatalog.Mode.BEAM:
 			shot["beam"] = true  # LT-50: the board holds one beam per tower
 			shot["sanity_factor"] = factor
 		if fuse_ticks > 0:
@@ -319,16 +350,16 @@ func fire_towers() -> void:
 		if fuse_ticks == 0:
 			_on_hit_effects(t, s, target, hits, shot)
 		# LT-30 / LT-70 §2.3: lit x0.8 / shadowed x1.25 (mundane), decided at the shot.
-		var interval := TowerRules.fire_interval(s, _light.interval_mult(t))
+		var interval := TowerRules.fire_interval(s, t.interval_mult)
 		t.cooldown_ticks = TowerRules.cooldown_ticks(interval)
 
 
 ## LT-51 (§2.2, Q4): a Silver Key cast. Picks (by target_priority) up to banish_targets of
 ## the tower's candidates that may be banished (_banishable), moves each back banish_cells
-## along its own route (P5 push_back, the Chain pull's rewind; x _power_mult: lit x0.7,
+## along its own route (P5 push_back, the Chain pull's rewind; x t.power_mult: lit x0.7,
 ## LT-70 shadowed x1.15) and gives it banish_immune_seconds of banish immunity (its own status key:
 ## pull immunity does not block a banish, nor the reverse). A level with damage (Corrupted)
-## then hits each one (armor applies; x _power_mult, x the madness multiplier).
+## then hits each one (armor applies; x t.power_mult, x the madness multiplier).
 ## No candidate: no cast and no cooldown, the gate stays ready. In MADNESS a
 ## madness_affected gate goes astray (LT-13, one roll per cast): its picks are drawn at
 ## random from the banishable reals in range, or from the banishable fakes in range
@@ -340,7 +371,7 @@ func _cast_banish(t: SimTower, s: TowerDef.Level) -> void:
 	var picks := _ranked_targets(t, _banishable(s, _candidates(t, s)), n)
 	if picks.is_empty():
 		return
-	var power := _light.power_mult(t)
+	var power := t.power_mult  # LT-105: the modifier channel
 	var damage := TowerRules.shot_damage(s, 1.0, power)
 	var astray := ""
 	if s.madness_affected and _state.sanity_state == SimState.SanityState.MADNESS:
@@ -376,30 +407,33 @@ func _cast_banish(t: SimTower, s: TowerDef.Level) -> void:
 
 
 ## LT-52 (§2.2): a Summoning Circle with fewer than summon_max live units summons one at
-## its centre (spawn_ally: leash = range + 1, lifetime summon_lifetime) and spends the
+## its centre (spawn_ally: leash Level.summon_leash, default range + 1; hold distance
+## Level.summon_contact, LT-103 Q2; lifetime summon_lifetime) and spends the
 ## cooldown. At its maximum it does not summon and stays ready, so a unit gone frees a
 ## slot at once. A circle lit (or, LT-70, shadowed) at summon time gives the unit
-## summon_dps x _power_mult for its whole life (§3 "lit at summon time"); madness is
+## summon_dps x t.power_mult for its whole life (§3 "lit at summon time"); madness is
 ## applied live by _ally_combat.
 ## No miss, crit or astray (a unit bites what it holds).
 func _summon(t: SimTower, s: TowerDef.Level) -> void:
 	if _allies_of.call(t.id).size() >= s.summon_max():
 		return
-	var dps := TowerRules.unit_dps(s, _light.power_mult(t))
+	var dps := TowerRules.unit_dps(s, t.power_mult)  # LT-105: the modifier channel
 	var id: int = _spawn_ally.call(t.id, t.def.id, t.centre(),
 		s.effects.get("summon_hp", 0.0), dps, s.effects.get("summon_speed", 0.0), s.summon_flying(),
-		SimTime.ticks(float(s.effects.get("summon_lifetime", 0.0))), s.range_cells + 1.0)
+		SimTime.ticks(float(s.effects.get("summon_lifetime", 0.0))), s.summon_leash(),
+		s.summon_contact())
 	if id != 0:
 		t.cooldown_ticks = TowerRules.cooldown_ticks(s.fire_interval)
 
 
 ## LT-51 (Q4 "HP cap per level"): those of `enemies` a gate with stats `s` may banish:
-## max_hp <= banish_max_hp (Dagon's is above every cap) and no banish immunity.
+## base_max_hp <= banish_max_hp (Dagon's is above every cap; LT-111: base HP, before the
+## wave's hp_mult) and no banish immunity.
 func _banishable(s: TowerDef.Level, enemies: Array[SimEnemy]) -> Array[SimEnemy]:
 	var cap: float = s.effects.get("banish_max_hp", 0.0)
 	var out: Array[SimEnemy] = []
 	for e in enemies:
-		if e.max_hp <= cap and int(e.status.get("banish_immune_ticks", 0)) <= 0:
+		if e.base_max_hp <= cap and int(e.status.get("banish_immune_ticks", 0)) <= 0:
 			out.append(e)
 	return out
 
@@ -597,8 +631,8 @@ func _line_hits(origin: Vector2, end: Vector2, half_width: float,
 
 
 ## Slot 5, after a shot's damage (LT-29 §1.3-1.4): bleed on every hit still live; the chain
-## pull on the shot's primary target only (Q4), if it was hit, is still live, has max_hp <=
-## pull_max_hp (0 = no cap) and no pull immunity. SHOT was emitted before the damage (the
+## pull on the shot's primary target only (Q4), if it was hit, is still live, has base_max_hp
+## <= pull_max_hp (0 = no cap; LT-111: base HP, before the wave's hp_mult) and no pull immunity. SHOT was emitted before the damage (the
 ## pinned SHOT -> DIED order), so `pulled` is written into the same `shot` Dictionary
 ## already passed to _emit: events are drained only after step(), and SimEvent keeps the
 ## Dictionary by reference.
@@ -616,7 +650,7 @@ func _on_hit_effects(t: SimTower, s: TowerDef.Level, target: SimEnemy, hits: Arr
 		return
 	var pulled: Array[int] = []
 	var cap: float = s.effects.get("pull_max_hp", 0.0)
-	if hits.has(target) and target.is_live() and (cap <= 0.0 or target.max_hp <= cap) \
+	if hits.has(target) and target.is_live() and (cap <= 0.0 or target.base_max_hp <= cap) \
 			and int(target.status.get("pull_immune_ticks", 0)) <= 0:
 		_spawn.push_back(target, pull)
 		var immune := SimTime.ticks(float(s.effects.get("pull_immune_seconds", 0.0)))

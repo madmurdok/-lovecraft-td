@@ -136,53 +136,7 @@ class Level:
 	## x2 damage and astray shots in madness (GDD §5.4). Defaults to kind == "occult";
 	## only occult towers may set it true (Pure Rite sets false).
 	var madness_affected: bool
-	## Known effect parameters (schema, not balance): key -> max value (min is 0).
-	const EFFECTS := {
-		"crit_chance": 1.0, "crit_multiplier": INF, "burst_targets": INF, "pierce": INF,
-		"bleed_dps": INF, "bleed_seconds": INF, "pull_cells": INF, "pull_max_hp": INF,
-		"pull_immune_seconds": INF, "slow": 1.0, "damage_taken_multiplier": INF,
-		"strip_armor": INF, "aoe_radius": INF, "fuse_seconds": INF,
-		"ignore_armor": 1.0, "reveal_fakes": 1.0, "sanity_scaling": INF,
-		"banish_cells": INF, "banish_targets": INF, "banish_max_hp": INF,
-		"banish_immune_seconds": INF,
-		"summon_max": INF, "summon_hp": INF, "summon_dps": INF, "summon_lifetime": INF,
-		"summon_speed": INF, "summon_flying": 1.0,
-		"casts_light": 1.0, "casts_shadow": 1.0,
-	}
-	## LT-70 §3: the caster flags. At night a level with casts_light lights the other
-	## towers and the enemies within its range; one with casts_shadow shadows the other
-	## towers within its range. Support levels only, at most one per level.
-	const CAST_EFFECTS: PackedStringArray = ["casts_light", "casts_shadow"]
-	## LT-51: the keys that only mean something on a banishing level (banish_cells > 0).
-	const BANISH_KEYS: PackedStringArray = ["banish_targets", "banish_max_hp",
-		"banish_immune_seconds"]
-	## LT-51: shot shapes a banish cast does not have (it moves its picks, nothing else).
-	const NOT_WITH_BANISH: PackedStringArray = ["pierce", "aoe_radius", "fuse_seconds",
-		"burst_targets", "pull_cells", "sanity_scaling", "slow", "damage_taken_multiplier",
-		"strip_armor", "reveal_fakes", "casts_light", "casts_shadow"]
-	## LT-52: the keys that only mean something on a summoning level (summon_max > 0).
-	const SUMMON_KEYS: PackedStringArray = ["summon_hp", "summon_dps", "summon_lifetime",
-		"summon_speed", "summon_flying"]
-	## LT-52: a summoning level's units must have these (> 0): a unit with no HP never
-	## appears, one that cannot move never engages, one with no lifetime never makes room.
-	const SUMMON_REQUIRED: PackedStringArray = ["summon_hp", "summon_lifetime", "summon_speed"]
-	## LT-52: a circle only summons; its units do the damage (no shot shape, no banish).
-	const NOT_WITH_SUMMON: PackedStringArray = ["pierce", "aoe_radius", "fuse_seconds",
-		"burst_targets", "pull_cells", "sanity_scaling", "slow", "damage_taken_multiplier",
-		"strip_armor", "reveal_fakes", "crit_chance", "bleed_dps", "ignore_armor",
-		"banish_cells", "casts_light", "casts_shadow"]
-	## LT-48/LT-49: flag effects, 0 or 1 (not amounts). LT-52: summon_flying. LT-70:
-	## casts_light, casts_shadow.
-	const FLAG_EFFECTS: PackedStringArray = ["ignore_armor", "reveal_fakes", "summon_flying",
-		"casts_light", "casts_shadow"]
-
-	## Config keys (EFFECTS or stats) that parse but the sim does not apply yet (LT-24
-	## Decision 1). The UI marks them "(coming soon)" and bots skip branches using them;
-	## the task that wires a key removes it from here. Empty since LT-29 wired the L3
-	## branch effects; a later task that adds a key ahead of its sim code lists it here.
-	const PENDING: PackedStringArray = []
-
-	## Branch/level-specific numeric parameters (String -> float), keys from EFFECTS.
+	## Branch/level-specific numeric parameters (String -> float), keys from EffectCatalog.
 	var effects: Dictionary = {}
 
 	## LT-50 (LT-46 P13/P14): a sanity-scaled level is a beam: it keeps its target while
@@ -232,12 +186,35 @@ class Level:
 			return 1.0
 		return 1.0 + k * (1.0 - clampf(sanity, 0.0, max_sanity) / max_sanity)
 
-	## True when any PENDING effect key is non-zero on this level.
+	## True when any pending effect key (EffectCatalog.pending_keys) is non-zero here.
 	func has_pending() -> bool:
-		for key in PENDING:
+		for key in EffectCatalog.pending_keys():
 			if effects.get(key, 0.0) != 0.0:
 				return true
 		return false
+
+	## LT-103 §2.2: this level's attack mode (EffectCatalog.Mode): AURA when it does not act,
+	## else the first mode key (EffectCatalog.mode_order) above 0, else SINGLE. Read live, not
+	## cached at parse: effects and stats may change after parse.
+	func mode() -> int:
+		if not acts():
+			return EffectCatalog.Mode.AURA
+		for key in EffectCatalog.mode_order():
+			if effects.get(key, 0.0) > 0.0:
+				return EffectCatalog.mode_of(key)
+		return EffectCatalog.Mode.SINGLE
+
+	## LT-103 Q2: how close (cells) this circle's units hold an enemy: summon_contact, or
+	## AllySystem.ALLY_CONTACT when absent.
+	func summon_contact() -> float:
+		var c: float = effects.get("summon_contact", 0.0)
+		return c if c > 0.0 else AllySystem.ALLY_CONTACT
+
+	## LT-103 Q2: whom this circle's units engage, cells from their summon spot:
+	## summon_leash, or range + 1 when absent (LT-52).
+	func summon_leash() -> float:
+		var l: float = effects.get("summon_leash", 0.0)
+		return l if l > 0.0 else range_cells + 1.0
 
 	## `is_branch`: an L3 branch, the only place `role` is allowed.
 	static func parse(r: ConfigReader, obj: Dictionary, path: String, is_upgrade: bool,
@@ -286,33 +263,22 @@ class Level:
 		var effects: Variant = r.opt_object(obj, "effects", path)
 		if effects != null:
 			var ep := ConfigReader.join(path, "effects")
-			r.check_keys(effects, EFFECTS.keys(), ep)
+			r.check_keys(effects, EffectCatalog.keys(), ep)
 			for key: String in effects:
-				if EFFECTS.has(key):
+				if EffectCatalog.has(key):
 					l.effects[key] = r.as_number(effects[key], ConfigReader.join(ep, key),
-						0.0, EFFECTS[key])
-			# LT-47: a fused charge is a delayed blast, so it needs a blast radius and is
-			# not a line shot.
-			if l.effects.get("fuse_seconds", 0.0) > 0.0:
-				if l.effects.get("aoe_radius", 0.0) <= 0.0:
-					r.error(ConfigReader.join(ep, "fuse_seconds"), "needs aoe_radius > 0")
-				if l.effects.get("pierce", 0.0) > 0.0:
-					r.error(ConfigReader.join(ep, "fuse_seconds"), "cannot combine with pierce")
-				if l.effects.get("pull_cells", 0.0) > 0.0:
-					r.error(ConfigReader.join(ep, "fuse_seconds"), "cannot combine with pull_cells")
+						0.0, EffectCatalog.max_of(key))
+			# LT-47 / LT-103 Q1: the shot-shape rules (fuse needs aoe, not a line; burst and
+			# beam take a point shot), every row that is no flag and no banish/summon owner.
+			_check_shapes(r, l, ep)
 			# LT-48/LT-49: flags, not amounts.
-			for key in FLAG_EFFECTS:
+			for key in EffectCatalog.flag_keys():
 				var f: float = l.effects.get(key, 0.0)
 				if f != 0.0 and f != 1.0:
 					r.error(ConfigReader.join(ep, key), "must be 0 or 1, got %s" % f)
 					l.effects[key] = 0.0
-			# LT-49/LT-50 (P8): a support level reveals the fakes in its aura, a level with
-			# damage the fakes its shot hits (_on_hit_effects). A fused charge hits at the
-			# blast, which reveals nothing, so it may not carry the flag.
-			if l.effects.get("reveal_fakes", 0.0) > 0.0 \
-					and l.effects.get("fuse_seconds", 0.0) > 0.0:
-				r.error(ConfigReader.join(ep, "reveal_fakes"), "cannot combine with fuse_seconds")
-				l.effects["reveal_fakes"] = 0.0
+			# LT-49/LT-50 (P8): a fused charge may not reveal; LT-70 §3: light or shadow.
+			_check_flag_pairs(r, l, ep)
 			# LT-50 (P13): the sanity factor scales shot damage, so it needs an attack.
 			if l.effects.get("sanity_scaling", 0.0) > 0.0 and l.damage <= 0.0:
 				r.error(ConfigReader.join(ep, "sanity_scaling"), "needs damage > 0")
@@ -328,57 +294,93 @@ class Level:
 			r.error(ConfigReader.join(path, "fire_interval"), "required > 0 with summon_max")
 		return l
 
+	## LT-47 / LT-103 Q1: for each set row (row order) that is no flag (_check_flag_pairs) and
+	## no banish/summon owner (their own phases): its `requires` and `not_with` keys, those
+	## naming an owner left to the owner's phase.
+	static func _check_shapes(r: ConfigReader, l: Level, ep: String) -> void:
+		for key: String in EffectCatalog.keys():
+			if EffectCatalog.is_flag(key) or EffectCatalog.is_owner(key) \
+					or l.effects.get(key, 0.0) <= 0.0:
+				continue
+			for q: String in EffectCatalog.requires_of(key):
+				if not EffectCatalog.is_owner(q) and l.effects.get(q, 0.0) <= 0.0:
+					r.error(ConfigReader.join(ep, key), "needs %s > 0" % q)
+			for n: String in EffectCatalog.not_with_of(key):
+				if not EffectCatalog.is_owner(n) and l.effects.get(n, 0.0) > 0.0:
+					r.error(ConfigReader.join(ep, key), "cannot combine with %s" % n)
+
+	## A set flag that may not combine with another set key (not an owner) is an error and
+	## is cleared: reveal_fakes with fuse_seconds (LT-49/LT-50), casts_shadow with
+	## casts_light (LT-70 §3).
+	static func _check_flag_pairs(r: ConfigReader, l: Level, ep: String) -> void:
+		for key in EffectCatalog.flag_keys():
+			if l.effects.get(key, 0.0) <= 0.0:
+				continue
+			for n: String in EffectCatalog.not_with_of(key):
+				if not EffectCatalog.is_owner(n) and l.effects.get(n, 0.0) > 0.0:
+					r.error(ConfigReader.join(ep, key), "cannot combine with %s" % n)
+					l.effects[key] = 0.0
+					break
+
 	## LT-70 §3: a caster is a support level (damage 0; banish and summon levels are
-	## rejected by NOT_WITH_BANISH / NOT_WITH_SUMMON) and casts light or shadow, not both.
+	## rejected by their `not_with`) and casts light or shadow, not both (_check_flag_pairs).
 	static func _check_cast(r: ConfigReader, l: Level, ep: String) -> void:
-		if l.casts_light() and l.casts_shadow():
-			r.error(ConfigReader.join(ep, "casts_shadow"), "cannot combine with casts_light")
-			l.effects["casts_shadow"] = 0.0
 		if l.damage > 0.0:
-			for key in CAST_EFFECTS:
+			for key in ["casts_light", "casts_shadow"]:
 				if l.effects.get(key, 0.0) > 0.0:
 					r.error(ConfigReader.join(ep, key), "%s needs a support level (damage 0)" % key)
 					l.effects[key] = 0.0
 
-	## LT-52 (§2.2): a summoning level needs a whole summon_max >= 1, summon_hp,
-	## summon_lifetime and summon_speed > 0, no damage of its own and no other attack
-	## shape; the other summon keys need summon_max.
+	## A `whole` key of `family` that is set must be a whole number >= 1 (else error, rounded
+	## down to at least 1).
+	static func _check_whole(r: ConfigReader, l: Level, ep: String, family: Array) -> void:
+		for key: String in family:
+			if not EffectCatalog.is_whole(key) or not l.effects.has(key):
+				continue
+			var n: float = l.effects[key]
+			if n < 1.0 or n != floorf(n):
+				r.error(ConfigReader.join(ep, key), "must be a whole number >= 1, got %s" % n)
+				l.effects[key] = maxf(1.0, floorf(n))
+
+	## The owner `owner` and the keys whose row requires it.
+	static func _family(owner: String) -> Array:
+		var f: Array = [owner]
+		f.append_array(EffectCatalog.keys_requiring(owner))
+		return f
+
+	## LT-52 (§2.2): a summoning level needs a whole summon_max >= 1, its `requires` > 0, no
+	## damage of its own and no key whose row is `not_with` summon_max; the keys requiring
+	## summon_max need it.
 	static func _check_summon(r: ConfigReader, l: Level, ep: String, path: String) -> void:
 		if not l.is_summon():
-			for key in SUMMON_KEYS:
+			for key in EffectCatalog.keys_requiring("summon_max"):
 				if l.effects.get(key, 0.0) > 0.0:
 					r.error(ConfigReader.join(ep, key), "needs summon_max > 0")
 			return
-		var n: float = l.effects["summon_max"]
-		if n != floorf(n):
-			r.error(ConfigReader.join(ep, "summon_max"), "must be a whole number >= 1, got %s" % n)
-			l.effects["summon_max"] = maxf(1.0, floorf(n))
-		for key in SUMMON_REQUIRED:
+		_check_whole(r, l, ep, _family("summon_max"))
+		for key: String in EffectCatalog.requires_of("summon_max"):
 			if l.effects.get(key, 0.0) <= 0.0:
 				r.error(ConfigReader.join(ep, "summon_max"), "needs %s > 0" % key)
 		if l.damage > 0.0:
 			r.error(ConfigReader.join(path, "damage"), "cannot combine with summon_max")
-		for key in NOT_WITH_SUMMON:
+		for key in EffectCatalog.keys_not_with("summon_max"):
 			if l.effects.get(key, 0.0) > 0.0:
 				r.error(ConfigReader.join(ep, key), "cannot combine with summon_max")
 
-	## LT-51 (§2.2, Q4 "HP cap per level"): a banishing level needs its HP cap
-	## (banish_max_hp > 0: Dagon is never banished, so "no cap" is not offered), a whole
-	## banish_targets >= 1, and no other shot shape; the other banish keys need banish_cells.
+	## LT-51 (§2.2, Q4 "HP cap per level"): a banishing level needs its `requires` > 0
+	## (banish_max_hp: Dagon is never banished, so "no cap" is not offered), a whole
+	## banish_targets >= 1 and no key whose row is `not_with` banish_cells; the keys requiring
+	## banish_cells need it.
 	static func _check_banish(r: ConfigReader, l: Level, ep: String) -> void:
 		if not l.is_banish():
-			for key in BANISH_KEYS:
+			for key in EffectCatalog.keys_requiring("banish_cells"):
 				if l.effects.get(key, 0.0) > 0.0:
 					r.error(ConfigReader.join(ep, key), "needs banish_cells > 0")
 			return
-		if l.effects.get("banish_max_hp", 0.0) <= 0.0:
-			r.error(ConfigReader.join(ep, "banish_cells"), "needs banish_max_hp > 0")
-		if l.effects.has("banish_targets"):
-			var n: float = l.effects["banish_targets"]
-			if n < 1.0 or n != floorf(n):
-				r.error(ConfigReader.join(ep, "banish_targets"),
-					"must be a whole number >= 1, got %s" % n)
-				l.effects["banish_targets"] = 1.0
-		for key in NOT_WITH_BANISH:
+		for key: String in EffectCatalog.requires_of("banish_cells"):
+			if l.effects.get(key, 0.0) <= 0.0:
+				r.error(ConfigReader.join(ep, "banish_cells"), "needs %s > 0" % key)
+		_check_whole(r, l, ep, _family("banish_cells"))
+		for key in EffectCatalog.keys_not_with("banish_cells"):
 			if l.effects.get(key, 0.0) > 0.0:
 				r.error(ConfigReader.join(ep, key), "cannot combine with banish_cells")

@@ -128,7 +128,14 @@ static func dps(s: TowerDef.Level, damage: float, interval_s: float, unit: float
 ## cooldown ticks (LT-33 #18 stays open: a lit Rifleman reads 43.8, the sim fires at 42).
 static func effective(def: TowerDef, s: TowerDef.Level, cfg: GameConfig, lit := false,
 		shadowed := false, sanity := -1.0) -> Dictionary:
-	var fx := light_effect(def, cfg, lit, shadowed)
+	return effective_with(s, cfg, light_effect(def, cfg, lit, shadowed), sanity)
+
+
+## LT-105 D7: effective() at the modifiers `fx` (power_mult, interval_mult read; a tower's
+## channel, SimTower.modifiers, or a light_effect), so the panel shows the numbers the sim
+## fires with. `disabled` is not shown here.
+static func effective_with(s: TowerDef.Level, cfg: GameConfig, fx: Dictionary,
+		sanity := -1.0) -> Dictionary:
 	var power: float = fx["power_mult"]
 	var factor := 1.0
 	if sanity >= 0.0 and cfg != null:
@@ -146,25 +153,21 @@ static func effective(def: TowerDef, s: TowerDef.Level, cfg: GameConfig, lit := 
 	}
 
 
-## LT-30 §2 / LT-70 §2.3: the effects a power mult scales on an occult aura, gate or circle
-## (Simulation._apply_auras, _cast_banish, _summon); damage_taken_multiplier scales by
-## powered_taken_mult. A shooter's power scales its damage only.
-const POWER_SCALED_EFFECTS: PackedStringArray = ["slow", "strip_armor", "banish_cells",
-	"summon_dps"]
-
-
-## The effects of level `s` at power mult `power`: a copy of s.effects with
-## POWER_SCALED_EFFECTS x power and damage_taken_multiplier by powered_taken_mult; for a
-## shooter (acts, neither banish nor summon) an unchanged copy.
+## LT-30 §2 / LT-70 §2.3: the effects of level `s` at power mult `power` on an occult aura,
+## gate or circle (Simulation._apply_auras, _cast_banish, _summon): a copy of s.effects with
+## the EffectCatalog rows of power "mult" x power and those of power "taken" by
+## powered_taken_mult; for a shooter (acts, neither banish nor summon) an unchanged copy
+## (a shooter's power scales its damage only).
 static func powered_effects(s: TowerDef.Level, power: float) -> Dictionary:
 	var e := s.effects.duplicate()
 	if s.acts() and not s.is_banish() and not s.is_summon():
 		return e
-	for key: String in POWER_SCALED_EFFECTS:
+	for key: String in EffectCatalog.power_keys("mult"):
 		if e.has(key):
 			e[key] = e[key] * power
-	if e.has("damage_taken_multiplier"):
-		e["damage_taken_multiplier"] = powered_taken_mult(e["damage_taken_multiplier"], power)
+	for key: String in EffectCatalog.power_keys("taken"):
+		if e.has(key):
+			e[key] = powered_taken_mult(e[key], power)
 	return e
 
 

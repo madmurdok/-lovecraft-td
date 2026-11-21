@@ -264,6 +264,52 @@ func test_effect_key_neutrals() -> void:
 	assert_bool(TowerStatsModel.is_active({}, "slow")).is_false()
 
 
+# --- LT-105 Q3: light_only / is_modified over a tower's channel ------------------------------
+
+## A tower channel (SimTower.modifiers) built through the real write path.
+func _channel(writes: Array) -> Dictionary:
+	var t := SimTower.new()
+	for w: Array in writes:
+		t.add_modifiers(w[0], w[1], w[2], w[3], w[4])
+	return t.modifiers()
+
+
+## The writes light alone makes for `def` in the net state (as LightSystem._write_light_mods).
+func _light_write(def: TowerDef, lit: bool, shadowed: bool) -> Array:
+	var fx := TowerRules.light_effect(def, _cfg, lit, shadowed)
+	return [fx["power_mult"], fx["interval_mult"], fx["miss_add"], fx["ignore_miss"], false]
+
+
+func test_light_only_is_true_for_light_values_and_false_with_another_writer_or_disabled() -> void:
+	for id: String in ["rifleman", "necronomicon_reader"]:
+		var def := _def(id)
+		for state: Array in [[true, false], [false, true]]:
+			var what := "%s lit/shadow %s" % [id, state]
+			var light := _light_write(def, state[0], state[1])
+			var only := _channel([light])
+			assert_bool(TowerStatsModel.is_modified(only)).override_failure_message(what).is_true()
+			assert_bool(TowerStatsModel.light_only(def, _cfg, state[0], state[1], only)) \
+				.override_failure_message(what).is_true()
+			# Light plus another writer (power x1.5): not light alone any more.
+			var plus := _channel([light, [1.5, 1.0, 0.0, false, false]])
+			assert_bool(TowerStatsModel.light_only(def, _cfg, state[0], state[1], plus)) \
+				.override_failure_message(what + " + power").is_false()
+			var off := _channel([light, [1.0, 1.0, 0.0, false, true]])
+			assert_bool(TowerStatsModel.light_only(def, _cfg, state[0], state[1], off)) \
+				.override_failure_message(what + " + disabled").is_false()
+	# A dark tower: a neutral channel is light-only and unmodified; any writer is neither.
+	var rifle := _def("rifleman")
+	var neutral := _channel([])
+	assert_bool(TowerStatsModel.is_modified(neutral)).is_false()
+	assert_bool(TowerStatsModel.light_only(rifle, _cfg, false, false, neutral)).is_true()
+	for w: Array in [[1.0, 1.0, 0.1, false, false], [1.0, 1.0, 0.0, true, false],
+			[1.0, 2.0, 0.0, false, false], [1.0, 1.0, 0.0, false, true]]:
+		var fx := _channel([w])
+		assert_bool(TowerStatsModel.is_modified(fx)).override_failure_message(str(w)).is_true()
+		assert_bool(TowerStatsModel.light_only(rifle, _cfg, false, false, fx)) \
+			.override_failure_message(str(w)).is_false()
+
+
 # --- guards: the model / text split ----------------------------------------------------------------
 
 const GUARD_DIRS := ["res://ui", "res://scenes", "res://tools", "res://tests"]

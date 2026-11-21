@@ -66,6 +66,9 @@ All three keys are optional (`baseline.json` has only a description).
 - A patch only changes values that exist. A key or index that is not in `data/`, a missing
   data file, or a value of another type (a string where a number was) is an error that names
   the variant, the file and the path, and nothing is run.
+- Exception: optional config keys that `data/` leaves out may be added (`OPTIONAL_KEYS` in
+  `balance.py`): per-wave `hp_mult` / `speed_mult` in `waves.json` (LT-111), e.g.
+  `"waves.json": {"waves": {"4": {"hp_mult": 2}}}`. `"4"` is the 0-based index (wave 5).
 - `flags` are passed to `tools/bot_runs.gd` (see its header): `--flare=0`, `--lighthouse=0`,
   `--upgrades=0`, `--branch=rifleman:b`. `--seeds`, `--data`, `--out` and `--strategies` belong
   to the runner and are refused.

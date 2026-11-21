@@ -27,6 +27,7 @@ var _light: LightSystem
 var _combat: CombatSystem
 var _ally: AllySystem
 var _spawn: SpawnSystem
+var _traits: TraitSystem
 var _hallucinations := HallucinationSystem.new()
 
 
@@ -48,6 +49,11 @@ func _init(p_config: GameConfig, run_seed: int) -> void:
 	_ally = AllySystem.new(_ctx, _combat)
 	_combat.set_ally_hooks(_ally.spawn, _ally.allies_of)
 	_spawn.set_ally_compact(_ally.compact)
+	# LT-106 T5: the enemy traits' one API, after the systems it reaches (method Callables).
+	var host := TraitHost.new(_ctx, _spawn.queue_pack_member)
+	_spawn.set_trait_host(host)
+	_combat.set_trait_host(host)
+	_traits = TraitSystem.new(_ctx, host)
 
 
 ## Without a spawner the run never wins (nothing can be "exhausted"). A WaveDirector
@@ -70,16 +76,24 @@ func step() -> void:
 	state.tick += 1
 	for e in state.enemies:
 		e.reset_modifiers()
+	# LT-105 D2: the tower modifier channel starts neutral; slot-2 writers compose into it.
+	for t in state.towers:
+		t.reset_modifiers()
 	# 2. Effect systems: the lighthouse beam first (LT-30: turn, `lit` of towers and enemies),
+	# LT-105 D2: tower channel writers in this fixed order, all before apply_auras (the first
+	# reader): light (update_beam), LT-106 enemy traits (near_tower, id order, then catalog
+	# order), [LT-32 crew posts].
 	# then Elder Sign auras (LT-11; Corrupted Seal's armor strip, LT-29), the madness buff
 	# (LT-23 §3) and the flare's slow; then enemy status timers (LT-29 P6: bleed pulses see
-	# this tick's auras and buff; pull immunity counts down); later slows/stuns add theirs
-	# here. The flare timers count down last.
+	# this tick's auras and buff; pull immunity counts down) and the LT-106 enemy trait ticks;
+	# later slows/stuns add theirs here. The flare timers count down last.
 	_light.update_beam()
+	_traits.near_tower()
 	_combat.apply_auras()
 	_sanity.apply_madness_buff()
 	_light.apply_flare_slow()
 	_combat.tick_statuses()
+	_traits.tick_traits()
 	# LT-52 (P10): allies past their lifetime are gone; the rest hold their enemy
 	# (speed_mult 0, after every other speed modifier).
 	_ally.tick_allies()
@@ -585,13 +599,14 @@ func sanity_state_for(s: float) -> SimState.SanityState:
 	return _sanity.sanity_state_for(s)
 
 
-## LT-76 (LT-65 §3.2) read-only: TowerRules.light_effect of tower `tower_id` in its net light
-## state now ({power_mult, interval_mult, ignore_miss, miss_add}); {} for no such tower.
+## LT-76 (LT-65 §3.2), LT-105 D7 read-only: the modifier channel of tower `tower_id` as the
+## sim fires with it (SimTower.modifiers: {power_mult, interval_mult, miss_add, ignore_miss,
+## disabled}; the last tick's values between ticks); {} for no such tower.
 func tower_mults(tower_id: int) -> Dictionary:
 	var t := tower_by_id(tower_id)
 	if t == null:
 		return {}
-	return TowerRules.light_effect(t.def, config, t.lit, t.shadowed)
+	return t.modifiers()
 
 
 ## LT-76 (LT-65 §3.2): the tower standing on `cell` (built or building), or null.
@@ -624,8 +639,9 @@ func enemy_position(e: SimEnemy, alpha: float) -> Vector2:
 
 
 func spawn_ally(tower: int, source: String, at: Vector2, hp: float, dps: float, speed: float,
-		flying: bool, lifetime_ticks: int, leash: float) -> int:
-	return _ally.spawn(tower, source, at, hp, dps, speed, flying, lifetime_ticks, leash)
+		flying: bool, lifetime_ticks: int, leash: float,
+		contact := AllySystem.ALLY_CONTACT) -> int:
+	return _ally.spawn(tower, source, at, hp, dps, speed, flying, lifetime_ticks, leash, contact)
 
 
 func ally_by_id(id: int) -> SimAlly:

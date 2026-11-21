@@ -6,6 +6,9 @@ var id: int
 var def: EnemyDef
 var hp: float
 var max_hp: float
+## LT-111: max HP before the wave's hp_mult (= def.hp at spawn). The size class the
+## pull/banish HP caps compare, so a wave multiplier never switches tower roles.
+var base_max_hp: float
 var route: SimRoute
 var distance: int = 0  ## along `route`, in SimTime.UNITS_PER_CELL units
 var prev_distance: int = 0  ## distance before this tick's movement (render interpolation)
@@ -31,10 +34,11 @@ var armor_bonus := 0.0
 ## flare or a casts_light tower's radius (Searchlight). Enemies have no shadow.
 var lit := false
 
-## Status timers, ticked in slot 2 by Simulation._tick_statuses; `*_ticks` keys are erased
-## at 0 (LT-29 P6). Keys: `bleed_ticks` (int, ticks left), `bleed_dps` (float),
-## `bleed_pulse` (int, ticks to the next pulse), `bleed_source` (String, tower def id),
-## `pull_immune_ticks` (int). Later tasks add theirs (stun, harass stop, banish immunity).
+## Status timers, ticked in slot 2 by CombatSystem.tick_statuses; `*_ticks` keys are erased
+## at 0 (LT-29 P6). LT-106: the keys are listed per status in StatusRules.ROWS (bleed:
+## `bleed_ticks`, `bleed_dps`, `bleed_pulse`, `bleed_source`; `banish_immune_ticks`;
+## `pull_immune_ticks`); a trait keeps its own state here under keys prefixed with its id.
+## Sim only: presentation reads markers(), never this (guard G14).
 var status: Dictionary = {}
 
 
@@ -43,6 +47,22 @@ func reset_modifiers() -> void:
 	damage_taken_mult = 1.0
 	armor_bonus = 0.0
 	lit = false
+
+
+## LT-25 §2 / LT-106 T8: the markers it shows, from its per-tick aura state and its
+## StatusRules rows with a marker, in that order: slow, vuln, then ROWS order.
+func markers() -> PackedStringArray:
+	var out := PackedStringArray()
+	if speed_mult < 0.999:
+		out.append("slow")
+	if damage_taken_mult > 1.001:
+		out.append("vuln")
+	if status.is_empty():
+		return out
+	for row: Dictionary in StatusRules.ROWS.values():
+		if row["marker"] != "" and int(status.get(row["ticks"], 0)) > 0:
+			out.append(row["marker"])
+	return out
 
 
 ## Still in play: neither killed, leaked nor dissolved.

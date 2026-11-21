@@ -7,7 +7,7 @@ extends RefCounted
 
 const CURRENCY := "$"  ## the money sign (LT-27 §2: "gold" internally, "$" on screen)
 const DASH := " — "  ## between a name and its cost: "Rifleman — $50"
-const COMING_SOON := " (coming soon)"  ## appended to lines whose key is in Level.PENDING
+const COMING_SOON := " (coming soon)"  ## appended to lines whose key is pending (EffectCatalog)
 const MINUS := "−"  ## U+2212, for sanity drains
 const MADNESS_WARNING := " (drives you mad!)"  ## LT-23 Q3: build/upgrade takes the cap to 0
 const REMOVED := "Loses: "  ## LT-28: before the old line of an effect an upgrade removes
@@ -16,6 +16,9 @@ const LIT_MARK := "*"  ## LT-43 §5 (Q4): after a value the lighthouse beam chan
 const NO_MISSES_LIT := "No misses while lit"  ## LT-43 §5: the Fraying line of a lit tower
 const NOW_LIT := "* In the beam now: "  ## LT-43 §5: the status line of a lit tower
 const NOW_SHADOW := "* In shadow now: "  ## LT-70 §5: the status line of a shadowed tower
+## LT-105 (Q3): the status line of a tower whose modifier channel is changed by something
+## other than light / shadow (neither lit nor shadowed).
+const NOW_MODIFIED := "* Modified now: "
 
 ## Player-facing names of SimTower.TARGET_PRIORITIES (LT-31).
 const PRIORITY_NAMES := {
@@ -23,17 +26,6 @@ const PRIORITY_NAMES := {
 	"strongest": "Strongest",
 	"fastest": "Fastest",
 }
-
-## Effect lines in display order: the keys one line reads (a pair shares a line).
-const EFFECT_GROUPS := [
-	["pierce"], ["aoe_radius"], ["fuse_seconds"], ["ignore_armor"], ["sanity_scaling"],
-	["reveal_fakes"], ["slow"], ["damage_taken_multiplier"], ["casts_light"], ["casts_shadow"],
-	["crit_chance", "crit_multiplier"], ["burst_targets"], ["bleed_dps", "bleed_seconds"],
-	["pull_cells", "pull_max_hp", "pull_immune_seconds"], ["strip_armor"],
-	["banish_cells", "banish_targets"], ["banish_max_hp", "banish_immune_seconds"],
-	["summon_max", "summon_lifetime"], ["summon_hp", "summon_dps"], ["summon_speed"],
-	["summon_flying"],
-]
 
 
 ## Up to 2 decimals, trailing zeros dropped: 3.5, 82.5, 0.2, 12.
@@ -64,17 +56,18 @@ static func money(amount: int) -> String:
 static func effect_lines(effects: Dictionary, suffix := true) -> PackedStringArray:
 	var out := PackedStringArray()
 	var seen := {}
-	for group: Array in EFFECT_GROUPS:
+	for entry: Dictionary in EffectText.lines():
 		var present := false
 		var pending := false
-		for key: String in group:
+		for key: String in entry["keys"]:
 			seen[key] = true
 			if TowerStatsModel.is_active(effects, key):
 				present = true
 			if TowerStatsModel.is_pending(key):
 				pending = true
 		if present:
-			out.append(_effect_text(group[0], effects) + (COMING_SOON if pending and suffix else ""))
+			out.append(EffectText.line_text(entry, effects)
+				+ (COMING_SOON if pending and suffix else ""))
 	for key: String in effects:
 		if not seen.has(key) and TowerStatsModel.is_active(effects, key):
 			out.append("%s: %s" % [key, num(effects[key])]
@@ -131,8 +124,10 @@ static func special_delta_lines(from: TowerDef.Level, to: TowerDef.Level) -> Pac
 	var shown := {}
 	var removed := {}
 	var grouped := {}
-	for group: Array in EFFECT_GROUPS:
-		grouped.merge(_keys_dict(group))
+	for entry: Dictionary in EffectText.lines():
+		var group: Array = entry["keys"]
+		for key: String in group:
+			grouped[key] = true
 		if not group.any(func(k: String) -> bool: return changed.has(k)):
 			continue
 		if group.any(func(k: String) -> bool: return TowerStatsModel.is_active(to.effects, k)):
@@ -168,8 +163,6 @@ const ROWS := [
 	["range", "Range"], ["hits", "Hits"], ["kill", "Sanity/kill"], ["reserve", "Reserve"],
 	["beam", "In light"], ["shadow", "In shadow"], ["special", "Special"],
 ]
-## Effect keys a table row says already (Attack "Line", Hits "All"): no special line.
-const ROW_EFFECT_KEYS: PackedStringArray = ["pierce", "summon_flying"]
 
 
 ## One string per ROWS key for `s` (a level or branch of `def`): TowerStatsModel.row_numbers
@@ -194,24 +187,10 @@ static func row_values(def: TowerDef, s: TowerDef.Level, cfg: GameConfig,
 	}
 
 
-## LT-43 §1 (Q2 "attack shape"), first match: Summon, Banish, Aura (no damage), Beam
-## (sanity-scaled), Burst, Line (pierce), Blast (aoe), else Single.
+## LT-43 §1 (Q2 "attack shape") / LT-103 §2.2: the label of Level.mode from
+## data/effect_text.json (a fused charge reads "Blast").
 static func attack_text(s: TowerDef.Level) -> String:
-	if s.is_summon():
-		return "Summon"
-	if s.is_banish():
-		return "Banish"
-	if s.damage <= 0.0:
-		return "Aura"
-	if s.is_beam():
-		return "Beam"
-	if TowerStatsModel.is_active(s.effects, "burst_targets"):
-		return "Burst"
-	if TowerStatsModel.is_active(s.effects, "pierce"):
-		return "Line"
-	if TowerStatsModel.is_active(s.effects, "aoe_radius"):
-		return "Blast"
-	return "Single"
+	return EffectText.mode_label(s.mode())
 
 
 ## A table number with one decimal at most: 12.5, 11.3, 18.
@@ -260,11 +239,12 @@ static func hits_text(def: TowerDef, s: TowerDef.Level) -> String:
 ## LT-43 §5 (Q4): the cells the beam changes on a lit tower (TowerStatsModel.lit_numbers),
 ## value + LIT_MARK, keyed like row_values: mundane Every and DPS; occult Damage and DPS (a
 ## circle: its unit DPS and DPS). Empty when nothing changes. LT-70: `shadow` takes the
-## shadow multipliers (a shadowed tower), with the same mark.
+## shadow multipliers (a shadowed tower), with the same mark. LT-105 D7: `fx`, when given,
+## is the tower's modifier channel (TowerStatsModel.lit_numbers).
 static func lit_values(def: TowerDef, s: TowerDef.Level, cfg: GameConfig,
-		sanity_now := -1.0, shadow := false) -> Dictionary:
+		sanity_now := -1.0, shadow := false, fx := {}) -> Dictionary:
 	var out := {}
-	var n := TowerStatsModel.lit_numbers(def, s, cfg, sanity_now, shadow)
+	var n := TowerStatsModel.lit_numbers(def, s, cfg, sanity_now, shadow, fx)
 	for key: String in n:
 		var v: float = n[key]
 		# a circle's unit DPS reads "12.6*", no "/s": "12.6/s*" is cut in a 3-column panel
@@ -275,21 +255,43 @@ static func lit_values(def: TowerDef, s: TowerDef.Level, cfg: GameConfig,
 
 ## LT-43 §5: the status line under the role of a lit tower; "" when the beam changes nothing.
 ## LT-70 §5: with `shadow`, a shadowed tower's line: NOW_SHADOW + "fire −20%, +10% misses"
-## (mundane shooter) or "+15% power" (occult).
-static func lit_line(def: TowerDef, s: TowerDef.Level, cfg: GameConfig, shadow := false) -> String:
-	var pct := TowerStatsModel.beam_percent(def, s, cfg, shadow)
+## (mundane shooter) or "+15% power" (occult). LT-105 D7: `fx`, when given, is the tower's
+## modifier channel; `head`, when given, replaces the NOW_LIT / NOW_SHADOW head (the panel
+## passes NOW_MODIFIED when another writer contributed, Q3). A mundane line ends
+## ", no misses" with ignore_miss, else ", +N% misses" with miss_add > 0. With the generic
+## NOW_MODIFIED head only: a disabled tower reads NOW_MODIFIED + "disabled"; a channel whose
+## fire / power percent is 0 still gets a line (mundane: "no misses" / "±N% misses"), or
+## the bare head "* Modified now" when nothing else is nameable. The light heads keep "" there.
+static func lit_line(def: TowerDef, s: TowerDef.Level, cfg: GameConfig, shadow := false,
+		fx := {}, head := "") -> String:
+	fx = TowerStatsModel.effect_of(def, cfg, shadow, fx)
+	var generic := head == NOW_MODIFIED
+	if generic and fx.get("disabled", false):
+		return head + "disabled"
+	var pct := TowerStatsModel.beam_percent(def, s, cfg, shadow, fx)
 	if pct == 0.0:
-		return ""
-	var head := NOW_SHADOW if shadow else NOW_LIT
+		return _modified_misses(def, fx, head) if generic else ""
+	if head.is_empty():
+		head = NOW_SHADOW if shadow else NOW_LIT
 	var signed := "%s%s%%" % [MINUS if pct < 0.0 else "+", num(roundf(absf(pct)))]
 	if def.kind == "mundane":
 		var t := head + "fire " + signed
-		var fx := TowerStatsModel.state_effect(def, cfg, shadow)
-		if shadow:
-			var add: float = fx["miss_add"]
-			return t + (", +%s%% misses" % num(add * 100.0) if add > 0.0 else "")
-		return t + (", no misses" if fx["ignore_miss"] else "")
+		if fx["ignore_miss"]:
+			return t + ", no misses"
+		var add: float = fx["miss_add"]
+		return t + (", +%s%% misses" % num(add * 100.0) if add > 0.0 else "")
 	return head + signed + " power"
+
+
+## LT-105 (Q3): the generic status line of a channel with no fire / power change: a mundane
+## tower's miss change ("no misses", "+N% misses", "−N% misses"), else the bare head.
+static func _modified_misses(def: TowerDef, fx: Dictionary, head: String) -> String:
+	var add: float = fx.get("miss_add", 0.0)
+	if def.kind == "mundane" and fx.get("ignore_miss", false):
+		return head + "no misses"
+	if def.kind == "mundane" and add != 0.0:
+		return head + "%s%s%% misses" % [MINUS if add < 0.0 else "+", num(absf(add) * 100.0)]
+	return head.trim_suffix(": ")
 
 
 ## LT-43 Q3: the panel line under a sanity-scaled tower's table.
@@ -301,60 +303,16 @@ static func live_dps_text(sanity_now: float) -> String:
 ## "Slow 35%, +50% taken"); CELL_DASH when nothing is left. `effects` defaults to the level's.
 static func special_short(s: TowerDef.Level, effects: Variant = null) -> String:
 	var e: Dictionary = s.effects if effects == null else effects
-	var parts := PackedStringArray()
-	if TowerStatsModel.is_active(e, "aoe_radius"):
-		parts.append("r %s" % num(e["aoe_radius"]))
-	if TowerStatsModel.is_active(e, "fuse_seconds"):
-		parts.append("fuse %s s" % num(e["fuse_seconds"]))
-	if TowerStatsModel.is_active(e, "ignore_armor"):
-		parts.append("no armor")
-	if TowerStatsModel.is_active(e, "sanity_scaling"):
-		parts.append("×%s at 0 sanity" % num(1.0 + e["sanity_scaling"]))
-	if TowerStatsModel.is_active(e, "slow"):
-		parts.append("slow %s%%" % num(e["slow"] * 100.0))
-	if TowerStatsModel.is_active(e, "damage_taken_multiplier"):
-		parts.append("+%s%% taken" % num((e["damage_taken_multiplier"] - 1.0) * 100.0))
-	if TowerStatsModel.is_active(e, "reveal_fakes"):
-		parts.append("shows fakes")
-	if TowerStatsModel.is_active(e, "crit_chance"):
-		parts.append("%s%% crit ×%s" % [num(e["crit_chance"] * 100.0),
-			num(e.get("crit_multiplier", 1.0))])
-	if TowerStatsModel.is_active(e, "burst_targets"):
-		parts.append("%s targets in turn" % num(e["burst_targets"]))
-	if TowerStatsModel.is_active(e, "bleed_dps"):
-		parts.append("bleed %s/s" % num(e["bleed_dps"]))
-	if TowerStatsModel.is_active(e, "pull_cells"):
-		parts.append("pull %s" % num(e["pull_cells"]))
-	if TowerStatsModel.is_active(e, "strip_armor"):
-		parts.append("%s%s armor" % [MINUS, num(e["strip_armor"])])
-	if TowerStatsModel.is_active(e, "banish_cells"):
-		parts.append("back " + cells_text(num(e["banish_cells"])))
-	if e.get("banish_targets", 1.0) > 1.0:
-		parts.append("%s foes" % num(e["banish_targets"]))
-	if TowerStatsModel.is_active(e, "banish_max_hp"):
-		parts.append("≤%s HP" % num(e["banish_max_hp"]))
-	if TowerStatsModel.is_active(e, "summon_max"):
-		var n: float = e["summon_max"]
-		parts.append("%s unit%s, %s HP" % [num(n), "" if n == 1.0 else "s",
-			num(e.get("summon_hp", 0.0))])
-	if TowerStatsModel.is_active(e, "casts_light"):  # LT-70
-		parts.append("lights")
-	if TowerStatsModel.is_active(e, "casts_shadow"):
-		parts.append("shadows")
-	if parts.is_empty():
-		return CELL_DASH
-	var t := ", ".join(parts)
-	if t.begins_with("r "):  # the blast radius reads "r 1.5" (LT-43 §1)
-		return t
-	return t.substr(0, 1).to_upper() + t.substr(1)
+	var t := EffectText.short_text(e)
+	return CELL_DASH if t.is_empty() else t
 
 
 ## The full special lines under a table (LT-43 §1, §4): effect_lines without the keys a row
-## already says (ROW_EFFECT_KEYS). `effects` defaults to the level's (lit_effects passes
+## already says (EffectText.in_row_keys). `effects` defaults to the level's (lit_effects passes
 ## the lit ones).
 static func special_lines(s: TowerDef.Level, effects: Variant = null) -> PackedStringArray:
 	var e: Dictionary = (s.effects if effects == null else effects).duplicate()
-	for key in ROW_EFFECT_KEYS:
+	for key in EffectText.in_row_keys():
 		e.erase(key)
 	return effect_lines(e)
 
@@ -400,68 +358,3 @@ static func _percent_cell(pct: float) -> String:
 	if pct == 0.0:
 		return CELL_DASH
 	return ("+" if pct > 0.0 else MINUS) + num(roundf(absf(pct))) + "%"
-
-
-static func _keys_dict(keys: Array) -> Dictionary:
-	var d := {}
-	for k: String in keys:
-		d[k] = true
-	return d
-
-
-static func _effect_text(first_key: String, e: Dictionary) -> String:
-	match first_key:
-		"pierce":
-			return "Pierce: %s-cell-wide line" % num(e.get("pierce", 0.0))
-		"aoe_radius":
-			return "Blast radius " + cells_text(num(e.get("aoe_radius", 0.0)))
-		"fuse_seconds":
-			return "Fuse %s s, thrown ahead" % num(e.get("fuse_seconds", 0.0))
-		"ignore_armor":
-			return "Ignores armor"
-		"sanity_scaling":
-			return "Up to x%s at low sanity" % num(1.0 + e.get("sanity_scaling", 0.0))
-		"reveal_fakes":
-			return "Reveals fakes"
-		"slow":
-			return "Slows enemies %s%%" % num(e.get("slow", 0.0) * 100.0)
-		"damage_taken_multiplier":
-			return "Foes take +%s%% damage" \
-				% num((e.get("damage_taken_multiplier", 1.0) - 1.0) * 100.0)
-		"crit_chance":
-			return "%s%% crit, x%s damage" \
-				% [num(e.get("crit_chance", 0.0) * 100.0), num(e.get("crit_multiplier", 0.0))]
-		"burst_targets":
-			return "Spreads fire over %s foes" % num(e.get("burst_targets", 0.0))
-		"bleed_dps":
-			return "Bleed %s/s for %s s" \
-				% [num(e.get("bleed_dps", 0.0)), num(e.get("bleed_seconds", 0.0))]
-		"pull_cells":
-			return "Pull %sc, ≤%s HP, %ss" % [num(e.get("pull_cells", 0.0)),
-				num(e.get("pull_max_hp", 0.0)), num(e.get("pull_immune_seconds", 0.0))]
-		"strip_armor":
-			return "Foes lose %s armor" % num(e.get("strip_armor", 0.0))
-		"banish_cells":  # LT-51
-			var n: float = e.get("banish_targets", 1.0)
-			if n > 1.0:
-				return "Banish %s foes %s" % [num(n), cells_text(num(e.get("banish_cells", 0.0)))]
-			return "Banish %s back" % cells_text(num(e.get("banish_cells", 0.0)))
-		"summon_max":  # LT-52
-			var n: float = e.get("summon_max", 0.0)
-			return "Up to %s unit%s, %s s each" % [num(n), "" if n == 1.0 else "s",
-				num(e.get("summon_lifetime", 0.0))]
-		"summon_hp":  # LT-52
-			return "Unit %s HP, %s DPS" % [num(e.get("summon_hp", 0.0)),
-				num(e.get("summon_dps", 0.0))]
-		"summon_speed":  # LT-52
-			return "Unit speed %s cells/s" % num(e.get("summon_speed", 0.0))
-		"summon_flying":  # LT-52 (Byakhee)
-			return "Units fly, hold flyers"
-		"casts_light":  # LT-70 §5: at night only
-			return "Lights towers and foes"
-		"casts_shadow":  # LT-70 §5: at night only
-			return "Shadows nearby towers"
-		"banish_max_hp":  # LT-51 (Q4): the cap is shown
-			return "Max %s HP; immune %s s" % [num(e.get("banish_max_hp", 0.0)),
-				num(e.get("banish_immune_seconds", 0.0))]
-	return "%s: %s" % [first_key, num(e.get(first_key, 0.0))]

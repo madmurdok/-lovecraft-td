@@ -113,7 +113,7 @@ func test_a_25_char_role_is_rejected_naming_the_path() -> void:
 
 ## LT-29 wired every L3 effect: PENDING is empty and no shipped level or branch is pending.
 func test_nothing_shipped_is_pending() -> void:
-	assert_array(Array(TowerDef.Level.PENDING)).is_empty()
+	assert_array(EffectCatalog.pending_keys()).is_empty()
 	var cfg := _real()
 	assert_int(cfg.towers.size()).is_greater(0)
 	for id: String in cfg.towers:
@@ -138,7 +138,7 @@ func test_has_pending_reads_only_effect_keys() -> void:
 		var w := TowerDef.Level.new()
 		w.effects[key] = 1.0
 		assert_bool(w.has_pending()).override_failure_message(key).is_false()
-	for key: String in TowerDef.Level.PENDING:
+	for key: String in EffectCatalog.pending_keys():
 		var k := TowerDef.Level.new()
 		k.effects[key] = 1.0
 		assert_bool(k.has_pending()).override_failure_message(key).is_true()
@@ -148,7 +148,7 @@ func test_has_pending_reads_only_effect_keys() -> void:
 ## LT-29: the Corrupted Seal's strip_armor is wired, so the Seal is not pending with or
 ## without it.
 func test_sanity_per_second_left_pending_and_the_seal_is_not_pending() -> void:
-	assert_bool(TowerDef.Level.PENDING.has("sanity_per_second")).is_false()
+	assert_bool(EffectCatalog.is_pending("sanity_per_second")).is_false()
 	var k := TowerDef.Level.new()
 	k.sanity_reserve = 15.0
 	assert_bool(k.has_pending()).is_false()

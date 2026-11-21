@@ -1,7 +1,8 @@
 extends Node2D
 ## Boot: loads every balance config before anything else starts.
-## A bad config refuses to start: each error goes to push_error, the screen
-## lists them, and a headless run exits with code 1.
+## A bad config (or data/effect_text.json, LT-103, or data/looks.json, LT-104) refuses to
+## start: each error goes to push_error, the screen lists them, and a headless run exits
+## with code 1.
 ## Override the config directory with `-- --config-dir=<path>` (dev/CI) and the run seed
 ## with `-- --seed=<int>` (random otherwise). A loaded config starts a Game (LT-7);
 ## its restart button replaces it with a fresh run.
@@ -26,6 +27,20 @@ func _ready() -> void:
 	var result := ConfigLoader.load_dir(dir)
 	if not result.ok:
 		_refuse_to_start(dir, result.errors)
+		return
+	# LT-103 §2.4: the effect text file (presentation, not GameConfig) is checked here too,
+	# so a missing or broken entry refuses to start instead of showing `key: value` lines.
+	var text_errors := EffectText.errors()
+	if not text_errors.is_empty():
+		_refuse_to_start(EffectText.PATH, text_errors)
+		return
+	# LT-104 Q1: so does data/looks.json (optional; a missing file is no error): an invalid
+	# table, an id not in the config or an override that draws none of its tower's modes.
+	var look_errors: Array[String] = []
+	look_errors.append_array(LookCatalog.errors())
+	look_errors.append_array(LookCatalog.check_config(result.config))
+	if not look_errors.is_empty():
+		_refuse_to_start(LookCatalog.PATH, look_errors)
 		return
 	config = result.config
 	print("Config loaded from %s: %d towers, %d enemies, %d waves"

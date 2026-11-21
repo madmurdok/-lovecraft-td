@@ -277,7 +277,9 @@ static func state_text(sim: Simulation) -> String:
 	for t in s.towers:
 		parts.append("t%d:%s:%d:%s:%s:%s:%d:%s:%s" % [t.id, t.def.id, t.level, t.branch,
 			t.target_priority, t.cell, t.cooldown_ticks, canon([t.lit, t.shadowed, t.spent]),
-			canon(t.status)])
+			# LT-105 Q5: the old (always empty) SimTower.status slot stays `{}`, so the digests
+			# need no regen; the modifier channel is derived from the dumped lit / shadowed.
+			canon({})])
 	parts.append("allies=%d" % s.allies.size())
 	return "\n".join(parts)
 

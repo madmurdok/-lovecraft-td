@@ -27,10 +27,11 @@ func _init(ctx: SimContext, combat: CombatSystem) -> void:
 ## emits ALLY_SUMMONED. `tower` is the summoning tower's id (0 = none), `source` the kill
 ## credit; `dps` is dealt to the held enemy (armor: ally_combat), `speed` in
 ## cells/s, `flying` lets it engage flyers, `leash` (cells from `at`) bounds whom it
-## engages; `lifetime_ticks` <= 0 = no lifetime. Returns the new id, or 0 if the outcome
+## engages, `contact` (cells; LT-103 Q2, default ALLY_CONTACT) is how close it holds an
+## enemy; `lifetime_ticks` <= 0 = no lifetime. Returns the new id, or 0 if the outcome
 ## is set or `hp` <= 0 (then nothing changes and no event is emitted).
 func spawn(tower: int, source: String, at: Vector2, hp: float, dps: float, speed: float,
-		flying: bool, lifetime_ticks: int, leash: float) -> int:
+		flying: bool, lifetime_ticks: int, leash: float, contact := ALLY_CONTACT) -> int:
 	if _state.outcome != SimState.Outcome.NONE or hp <= 0.0:
 		return 0
 	var a := SimAlly.new()
@@ -39,6 +40,7 @@ func spawn(tower: int, source: String, at: Vector2, hp: float, dps: float, speed
 	a.source = source
 	a.home = at
 	a.leash = maxf(0.0, leash)
+	a.contact = maxf(0.0, contact)
 	a.pos = at
 	a.prev_pos = at
 	a.hp = hp
@@ -97,17 +99,17 @@ func tick_allies() -> void:
 
 
 ## LT-52: true while `a` may keep holding `e`: live, not a revealed fake (units never
-## engage one) and within ALLY_CONTACT of `a` (a push back breaks the hold).
+## engage one) and within `a.contact` of `a` (a push back breaks the hold).
 func _holds(a: SimAlly, e: SimEnemy) -> bool:
 	return e != null and e.is_live() and not e.revealed \
-		and _dist2(a.pos, e.route.position_at(e.distance)) <= ALLY_CONTACT * ALLY_CONTACT
+		and _dist2(a.pos, e.route.position_at(e.distance)) <= a.contact * a.contact
 
 
 ## LT-52 slot 3, after enemies move; allies in id order. A holding ally stays while its enemy
-## is live and within ALLY_CONTACT (a push back breaks the hold). Otherwise it picks the
+## is live and within `a.contact` (a push back breaks the hold). Otherwise it picks the
 ## nearest enemy (to itself; ties by id) it may engage: live, not a revealed fake, ground
 ## only unless it flies, not held by another ally, position within `leash` of `home`; it
-## moves `speed x DT` straight toward that enemy and holds it once within ALLY_CONTACT. With
+## moves `speed x DT` straight toward that enemy and holds it once within `a.contact`. With
 ## no such enemy it walks back toward `home`.
 func move_allies() -> void:
 	if _state.allies.is_empty():
@@ -135,7 +137,7 @@ func move_allies() -> void:
 		a.target_id = target.id
 		var p := target.route.position_at(target.distance)
 		a.pos = _step_toward(a.pos, p, step_cells)
-		if _dist2(a.pos, p) <= ALLY_CONTACT * ALLY_CONTACT:
+		if _dist2(a.pos, p) <= a.contact * a.contact:
 			a.held_id = target.id
 			held[target.id] = true
 

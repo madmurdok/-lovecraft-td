@@ -6,9 +6,10 @@ extends RefCounted
 ## Pure and static (no nodes).
 
 
-## The value of an effect key that means "no effect": 1 for a multiplier, 0 otherwise.
+## The value of an effect key that means "no effect" (EffectCatalog.neutral): 1 for a
+## multiplier, 0 otherwise.
 static func neutral(key: String) -> float:
-	return 1.0 if key.ends_with("_multiplier") else 0.0
+	return EffectCatalog.neutral(key)
 
 
 ## LT-28: an effect key with a value other than its neutral one (a x1 multiplier does nothing).
@@ -16,9 +17,9 @@ static func is_active(effects: Dictionary, key: String) -> bool:
 	return effects.has(key) and effects[key] != neutral(key)
 
 
-## An effect key the sim does not apply yet (TowerDef.Level.PENDING).
+## An effect key the sim does not apply yet (EffectCatalog.is_pending).
 static func is_pending(key: String) -> bool:
-	return TowerDef.Level.PENDING.has(key)
+	return EffectCatalog.is_pending(key)
 
 
 ## The numbers of the table rows for `s` (a level or branch of `def`), keyed like
@@ -92,12 +93,41 @@ static func state_effect(def: TowerDef, cfg: GameConfig, shadow := false) -> Dic
 	return TowerRules.light_effect(def, cfg, not shadow, shadow)
 
 
+## LT-105 D7: the modifiers a lit / shadow function reads: `fx` when given (a placed
+## tower's channel, Simulation.tower_mults), else state_effect(def, cfg, shadow).
+static func effect_of(def: TowerDef, cfg: GameConfig, shadow: bool, fx: Dictionary) -> Dictionary:
+	return fx if not fx.is_empty() else state_effect(def, cfg, shadow)
+
+
+## LT-105 (Q3): a tower's modifiers `fx` (SimTower.modifiers keys) change anything: the panel
+## marks it then.
+static func is_modified(fx: Dictionary) -> bool:
+	return fx.get("power_mult", 1.0) != 1.0 or fx.get("interval_mult", 1.0) != 1.0 \
+		or fx.get("miss_add", 0.0) != 0.0 or fx.get("ignore_miss", false) \
+		or fx.get("disabled", false)
+
+
+## LT-105 (Q3): the tower's channel `fx` is exactly what light alone writes for the net state
+## `lit` / `shadowed` (TowerRules.light_effect, never disabled): the panel keeps the lit /
+## shadowed wording then, else (another writer contributed, alone or with light) it shows
+## the generic NOW_MODIFIED wording.
+static func light_only(def: TowerDef, cfg: GameConfig, lit: bool, shadowed: bool,
+		fx: Dictionary) -> bool:
+	var light := TowerRules.light_effect(def, cfg, lit, shadowed)
+	return fx.get("power_mult", 1.0) == light["power_mult"] \
+		and fx.get("interval_mult", 1.0) == light["interval_mult"] \
+		and fx.get("miss_add", 0.0) == light["miss_add"] \
+		and fx.get("ignore_miss", false) == light["ignore_miss"] \
+		and not fx.get("disabled", false)
+
+
 ## LT-30 beam effect as a percent: mundane fire rate (1 / fire_interval_mult - 1), occult
 ## power (power_mult - 1); 0 for a mundane support tower (it never fires), a neutral
-## multiplier or an absent block. LT-70: `shadow` reads the shadow block.
+## multiplier or an absent block. LT-70: `shadow` reads the shadow block. LT-105: `fx`, when
+## given, replaces the light block (a placed tower's channel).
 static func beam_percent(def: TowerDef, s: TowerDef.Level, cfg: GameConfig,
-		shadow := false) -> float:
-	var fx := state_effect(def, cfg, shadow)
+		shadow := false, fx := {}) -> float:
+	fx = effect_of(def, cfg, shadow, fx)
 	if fx.is_empty():
 		return 0.0
 	if def.kind == "mundane":
@@ -112,22 +142,25 @@ static func beam_percent(def: TowerDef, s: TowerDef.Level, cfg: GameConfig,
 ## row_numbers: mundane "every" (x fire_interval_mult) and "dps"; occult "damage" (per hit;
 ## a circle: a new unit's DPS, as Simulation._summon gives the units it summons while lit)
 ## and "dps" (x power_mult). Empty when nothing changes. LT-70: `shadow` takes the shadow
-## multipliers (a shadowed tower).
+## multipliers (a shadowed tower). LT-105 D7: `fx`, when given, is the tower's modifier
+## channel (the numbers the sim fires with); then any kind shows an interval change (a
+## shooter's) and a power change, as the sim applies them (light alone changes only the
+## interval of a mundane tower and the power of an occult one, as before).
 static func lit_numbers(def: TowerDef, s: TowerDef.Level, cfg: GameConfig,
-		sanity_now := -1.0, shadow := false) -> Dictionary:
+		sanity_now := -1.0, shadow := false, fx := {}) -> Dictionary:
 	var out := {}
-	var fx := state_effect(def, cfg, shadow)
+	fx = effect_of(def, cfg, shadow, fx)
 	if fx.is_empty():
 		return out
 	# TowerRules.effective in the sim's own order (damage x factor x power, / interval).
 	var sanity := sanity_now if s.is_beam() else -1.0
-	var now := TowerRules.effective(def, s, cfg, not shadow, shadow, sanity)
-	if def.kind == "mundane":
-		var m: float = fx["interval_mult"]
-		if s.damage > 0.0 and m > 0.0 and m != 1.0:
-			out["every"] = now["interval"]
-			out["dps"] = now["dps"]
-	elif fx["power_mult"] != 1.0 and (s.damage > 0.0 or s.is_summon() and dps_value(s) > 0.0):
+	var now := TowerRules.effective_with(s, cfg, fx, sanity)
+	var m: float = fx["interval_mult"]
+	# A gate's / circle's cooldown ignores interval_mult (LT-105 Q4).
+	if s.damage > 0.0 and m > 0.0 and m != 1.0 and not s.is_banish() and not s.is_summon():
+		out["every"] = now["interval"]
+		out["dps"] = now["dps"]
+	if fx["power_mult"] != 1.0 and (s.damage > 0.0 or s.is_summon() and dps_value(s) > 0.0):
 		var pm: float = fx["power_mult"]
 		if s.is_summon():
 			out["damage"] = now["unit_dps"]
@@ -140,11 +173,15 @@ static func lit_numbers(def: TowerDef, s: TowerDef.Level, cfg: GameConfig,
 ## LT-43 §5: the effects of an occult aura, gate or circle while lit (slow, the taken bonus,
 ## the armor strip, the banish distance and a new unit's summon_dps x power_mult, as
 ## Simulation applies them); {} when the beam does not change them. LT-70: `shadow` takes
-## shadow.occult_power_mult (a shadowed tower).
+## shadow.occult_power_mult (a shadowed tower). LT-105 D7: `fx`, when given, is the tower's
+## modifier channel; then any aura, gate or circle at power_mult != 1 (the sim's apply_auras
+## scales any kind; light gives a mundane one 1.0).
 static func lit_effects(def: TowerDef, s: TowerDef.Level, cfg: GameConfig,
-		shadow := false) -> Dictionary:
-	var fx := state_effect(def, cfg, shadow)
-	if def.kind != "occult" or fx.is_empty():
+		shadow := false, fx := {}) -> Dictionary:
+	if fx.is_empty() and def.kind != "occult":
+		return {}
+	fx = effect_of(def, cfg, shadow, fx)
+	if fx.is_empty():
 		return {}
 	var pm: float = fx["power_mult"]
 	if pm == 1.0:

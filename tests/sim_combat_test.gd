@@ -49,6 +49,9 @@ func _build(combat_class: GDScript) -> void:
 	_spawn = SpawnSystem.new(_ctx)
 	_combat = combat_class.new(_ctx, _light, _sanity, _eco, _spawn)
 	_ally = AllySystem.new(_ctx, _combat)
+	var host := TraitHost.new(_ctx, _spawn.queue_pack_member)  # LT-106, like the facade
+	_spawn.set_trait_host(host)
+	_combat.set_trait_host(host)
 
 
 func _wire() -> void:
@@ -333,8 +336,8 @@ func test_a_circle_summons_through_the_spawn_hook_and_spends_its_cooldown() -> v
 	var asked := []
 	_combat.set_ally_hooks(
 		func(tower: int, source: String, at: Vector2, hp: float, dps: float, speed: float,
-				flying: bool, lifetime: int, leash: float) -> int:
-			calls.append([tower, source, at, hp, dps, speed, flying, lifetime, leash])
+				flying: bool, lifetime: int, leash: float, contact: float) -> int:
+			calls.append([tower, source, at, hp, dps, speed, flying, lifetime, leash, contact])
 			return 42,
 		func(tower_id: int) -> Array[SimAlly]:
 			asked.append(tower_id)
@@ -343,8 +346,9 @@ func test_a_circle_summons_through_the_spawn_hook_and_spends_its_cooldown() -> v
 	assert_array(asked).is_equal([t.id])
 	assert_array(calls).has_size(1)
 	assert_array(calls[0]).is_equal([t.id, SC, t.centre(), float(s.effects["summon_hp"]),
-		TowerRules.unit_dps(s, _light.power_mult(t)), float(s.effects["summon_speed"]),
-		s.summon_flying(), SimTime.ticks(float(s.effects["summon_lifetime"])), s.range_cells + 1.0])
+		TowerRules.unit_dps(s, t.power_mult), float(s.effects["summon_speed"]),
+		s.summon_flying(), SimTime.ticks(float(s.effects["summon_lifetime"])), s.range_cells + 1.0,
+		AllySystem.ALLY_CONTACT])
 	assert_int(t.cooldown_ticks).is_equal(TowerRules.cooldown_ticks(s.fire_interval))
 
 

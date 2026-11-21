@@ -239,6 +239,25 @@ func test_waves() -> void:
 	# Every wave's groups: test_every_wave_is_well_formed.
 
 
+## LT-111: the shipped waves carry no multipliers (absent = 1.0); 10 (the bound) and a
+## fraction load as given, on their own wave only.
+func test_wave_multipliers_default_to_one_and_load_up_to_ten() -> void:
+	for w: WavesConfig.Wave in _real().waves.waves:
+		assert_float(w.hp_mult).is_equal(1.0)
+		assert_float(w.speed_mult).is_equal(1.0)
+	var r := load_json_edit("waves.json", func(d: Dictionary) -> void:
+		d["waves"][1]["hp_mult"] = 10
+		d["waves"][1]["speed_mult"] = 0.25
+		d["waves"][2]["hp_mult"] = 1.0)
+	assert_array(r.errors).is_empty()
+	var waves := r.config.waves.waves
+	assert_float(waves[1].hp_mult).is_equal(10.0)
+	assert_float(waves[1].speed_mult).is_equal(0.25)
+	assert_float(waves[2].hp_mult).is_equal(1.0)
+	assert_float(waves[0].hp_mult).is_equal(1.0)
+	assert_float(waves[0].speed_mult).is_equal(1.0)
+
+
 func test_sanity() -> void:
 	var s := _real().sanity
 	assert_float(s.max_sanity).is_equal(100.0)
@@ -337,12 +356,12 @@ func test_every_tower_level_is_well_formed() -> void:
 				assert_bool(lv.madness_affected).override_failure_message(where).is_false()
 			for key: String in lv.effects:
 				var at := where + ".effects." + key
-				assert_bool(TowerDef.Level.EFFECTS.has(key)).override_failure_message(at).is_true()
-				assert_bool(TowerDef.Level.PENDING.has(key)).override_failure_message(at).is_false()
+				assert_bool(EffectCatalog.has(key)).override_failure_message(at).is_true()
+				assert_bool(EffectCatalog.is_pending(key)).override_failure_message(at).is_false()
 				var v: float = lv.effects[key]
 				assert_float(v).override_failure_message(at).is_greater_equal(0.0)
 				assert_float(v).override_failure_message(at) \
-					.is_less_equal(TowerDef.Level.EFFECTS.get(key, -1.0))
+					.is_less_equal(EffectCatalog.max_of(key) if EffectCatalog.has(key) else -1.0)
 
 
 func test_tower_glyphs_are_unique() -> void:
@@ -375,7 +394,7 @@ func test_every_enemy_def_is_well_formed() -> void:
 			total += e.drops[kind]
 		assert_int(total).override_failure_message(id + ": drops sum to 0").is_greater(0)
 		for trait_id: String in e.traits:
-			assert_bool(EnemyDef.TRAITS.has(trait_id)).override_failure_message(
+			assert_bool(TraitCatalog.has(trait_id)).override_failure_message(
 				id + ".traits." + trait_id).is_true()
 
 
