@@ -513,7 +513,7 @@ func _ready_sim() -> Array:
 func test_bad_entries_cover_every_replayable_command() -> void:
 	var keys: Array = BAD_ENTRIES.keys()
 	keys.sort()
-	var want: Array = Simulation.REPLAY_ARGS.keys()
+	var want: Array = Simulation.COMMANDS.keys()
 	want.sort()
 	assert_array(keys).is_equal(want)
 

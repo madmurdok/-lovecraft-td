@@ -73,14 +73,23 @@ func buy_sanity() -> SimCommand.CommandResult:
 	return SimCommand.CommandResult.OK
 
 
+## LT-107: debug_set_sanity's check, changes nothing: OUTCOME_REACHED once the run is
+## over, else OK (any value is accepted).
+func can_debug_set_sanity(_value: float) -> SimCommand.CommandResult:
+	if _state.outcome != SimState.Outcome.NONE:
+		return SimCommand.CommandResult.OUTCOME_REACHED
+	return SimCommand.CommandResult.OK
+
+
 ## Debug command (LT-34, LT-33 finding 5; the `--sanity` flag of debug builds): sets
 ## sanity to `value` through add "debug" (clamped to [0, sanity_cap]; SANITY_CHANGED
 ## {reason: "debug"} and SANITY_STATE_CHANGED as usual; nothing applies while in MADNESS,
 ## "debug" is no exit reason). Logged as [tick, "debug_set_sanity", value] so a replay
 ## reproduces it. OUTCOME_REACHED once the run is over, else OK.
 func debug_set_sanity(value: float) -> SimCommand.CommandResult:
-	if _state.outcome != SimState.Outcome.NONE:
-		return SimCommand.CommandResult.OUTCOME_REACHED
+	var result := can_debug_set_sanity(value)
+	if result != SimCommand.CommandResult.OK:
+		return result
 	_ctx.log_command([_state.tick, "debug_set_sanity", value])
 	add(value - _state.sanity, "debug", 0)
 	return SimCommand.CommandResult.OK
