@@ -35,7 +35,7 @@ static func row_numbers(def: TowerDef, s: TowerDef.Level, cfg: GameConfig,
 	elif s.damage > 0.0:
 		out["damage"] = s.damage
 	if s.acts():
-		out["every"] = s.fire_interval
+		out["every"] = TowerRules.shot_period(s, 1.0)  # LT-89: whole ticks, as the sim fires
 	out.merge(dps_numbers(s, cfg, sanity_now))
 	out.merge(range_numbers(s))
 	var kill := kill_regen(def, s, cfg)
@@ -121,7 +121,8 @@ static func light_only(def: TowerDef, cfg: GameConfig, lit: bool, shadowed: bool
 		and not fx.get("disabled", false)
 
 
-## LT-30 beam effect as a percent: mundane fire rate (1 / fire_interval_mult - 1), occult
+## LT-30 beam effect as a percent: mundane fire rate (LT-89: base cooldown ticks / the
+## ticks at fire_interval_mult - 1, TowerRules.shot_ticks, as the sim fires), occult
 ## power (power_mult - 1); 0 for a mundane support tower (it never fires), a neutral
 ## multiplier or an absent block. LT-70: `shadow` reads the shadow block. LT-105: `fx`, when
 ## given, replaces the light block (a placed tower's channel).
@@ -134,7 +135,7 @@ static func beam_percent(def: TowerDef, s: TowerDef.Level, cfg: GameConfig,
 		var m: float = fx["interval_mult"]
 		if s.damage <= 0.0 or m <= 0.0:
 			return 0.0
-		return (1.0 / m - 1.0) * 100.0
+		return (float(TowerRules.shot_ticks(s, 1.0)) / TowerRules.shot_ticks(s, m) - 1.0) * 100.0
 	return (fx["power_mult"] - 1.0) * 100.0
 
 

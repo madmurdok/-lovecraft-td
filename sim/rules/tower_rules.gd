@@ -94,6 +94,21 @@ static func cooldown_ticks(interval_s: float) -> int:
 	return maxi(1, SimTime.ticks(interval_s))
 
 
+## LT-89: the cooldown ticks a shot, cast or summon of level `s` sets at the interval
+## multiplier `interval_mult_` (SimTower.interval_mult): a shooter's fire_interval x it; a
+## gate's cast or a circle's summon ignores it (LT-105 Q4). CombatSystem sets every tower
+## cooldown with it, and effective()'s dps divides by it, so the two cannot drift.
+static func shot_ticks(s: TowerDef.Level, interval_mult_: float) -> int:
+	if s.is_banish() or s.is_summon():
+		return cooldown_ticks(s.fire_interval)
+	return cooldown_ticks(fire_interval(s, interval_mult_))
+
+
+## LT-89: the seconds between two shots as the sim fires them: shot_ticks / TICK_RATE.
+static func shot_period(s: TowerDef.Level, interval_mult_: float) -> float:
+	return shot_ticks(s, interval_mult_) / float(SimTime.TICK_RATE)
+
+
 ## LT-52: a summoned unit's DPS, summon_dps x the circle's power mult at summon time.
 static func unit_dps(s: TowerDef.Level, power: float) -> float:
 	return s.effects.get("summon_dps", 0.0) * power
@@ -122,10 +137,12 @@ static func dps(s: TowerDef.Level, damage: float, interval_s: float, unit: float
 ## {damage, interval, interval_ticks, dps, unit_dps, factor}. As the sim fires: a shooter's
 ## shot damage is damage x factor x power; a banish cast's damage x power (no sanity
 ## factor); a circle's unit gets summon_dps x power. `damage` is per shot, `interval` in
-## seconds. `dps` is the stats table's per-second figure: the base dps x factor x power /
-## interval_mult, in that order (the order the UI used before LT-76; per-shot order would
-## move ties such as 43.75 across a rounding edge). It counts seconds, not the sim's whole
-## cooldown ticks (LT-33 #18 stays open: a lit Rifleman reads 43.8, the sim fires at 42).
+## seconds. `dps` is the stats table's per-second figure as the sim deals it (LT-89):
+## dps() over shot_period (whole cooldown ticks, so a lit Rifleman reads 42, not 43.8)
+## x factor x power. A level whose interval is whole ticks gets the same bits as
+## damage / fire_interval (n / 30.0 is the nearest double to the decimal interval).
+## `interval` is shot_period and `interval_ticks` shot_ticks (LT-89: the sim's period, so
+## a lit 0.2 s Rifleman L3b reads 0.1667 s, 5 ticks, not 0.16).
 static func effective(def: TowerDef, s: TowerDef.Level, cfg: GameConfig, lit := false,
 		shadowed := false, sanity := -1.0) -> Dictionary:
 	return effective_with(s, cfg, light_effect(def, cfg, lit, shadowed), sanity)
@@ -141,13 +158,12 @@ static func effective_with(s: TowerDef.Level, cfg: GameConfig, fx: Dictionary,
 	if sanity >= 0.0 and cfg != null:
 		factor = shot_factor(s, cfg, sanity)
 	var im: float = fx["interval_mult"]
-	var interval := fire_interval(s, im)
-	var base := dps(s, s.damage, s.fire_interval, s.effects.get("summon_dps", 0.0))
+	var base := dps(s, s.damage, shot_period(s, im), s.effects.get("summon_dps", 0.0))
 	return {
 		"damage": shot_damage(s, factor, power),
-		"interval": interval,
-		"interval_ticks": cooldown_ticks(interval),
-		"dps": base * factor * power / im,
+		"interval": shot_period(s, im),
+		"interval_ticks": shot_ticks(s, im),
+		"dps": base * factor * power,
 		"unit_dps": unit_dps(s, power),
 		"factor": factor,
 	}

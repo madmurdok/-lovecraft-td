@@ -175,7 +175,7 @@ static func row_values(def: TowerDef, s: TowerDef.Level, cfg: GameConfig,
 	return {
 		"attack": attack_text(s),
 		"damage": _damage_cell(s, n),
-		"every": num(n["every"]) if n.has("every") else CELL_DASH,
+		"every": every_text(n["every"]) if n.has("every") else CELL_DASH,
 		"dps": _dps_cell(n),
 		"range": _range_cell(n),
 		"hits": hits_text(def, s),
@@ -191,6 +191,14 @@ static func row_values(def: TowerDef, s: TowerDef.Level, cfg: GameConfig,
 ## data/effect_text.json (a fused charge reads "Blast").
 static func attack_text(s: TowerDef.Level) -> String:
 	return EffectText.mode_label(s.mode())
+
+
+## LT-89: the Every cell, seconds between shots (whole sim ticks) cut, not rounded, to 4
+## decimals at most: 0.8, 0.5666, 0.1666. Cutting keeps damage / Every >= the true
+## DPS, so it rounds to the DPS cell even on an exact tie (7 / (8 ticks) = 26.25 -> 26.3).
+static func every_text(v: float) -> String:
+	var s := "%.4f" % (floorf(v * 10000.0 + 1e-6) / 10000.0)
+	return s.rstrip("0").rstrip(".")
 
 
 ## A table number with one decimal at most: 12.5, 11.3, 18.
@@ -249,7 +257,8 @@ static func lit_values(def: TowerDef, s: TowerDef.Level, cfg: GameConfig,
 		var v: float = n[key]
 		# a circle's unit DPS reads "12.6*", no "/s": "12.6/s*" is cut in a 3-column panel
 		var one := key == "dps" or key == "damage" and s.is_summon()
-		out[key] = (one_decimal(v) if one else num(v)) + LIT_MARK
+		var text := every_text(v) if key == "every" else (one_decimal(v) if one else num(v))
+		out[key] = text + LIT_MARK
 	return out
 
 
