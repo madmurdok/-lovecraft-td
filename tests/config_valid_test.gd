@@ -239,7 +239,7 @@ func test_waves() -> void:
 	# Every wave's groups: test_every_wave_is_well_formed.
 
 
-## LT-111: the shipped waves carry no multipliers (absent = 1.0); 10 (the bound) and a
+## LT-111, LT-72: waves 1-3 carry no hp_mult (absent = 1.0), shipped multipliers stay in bounds;
 ## fraction load as given, on their own wave only.
 func test_wave_multipliers_default_to_one_and_load_up_to_ten() -> void:
 	var real := _real().waves.waves
