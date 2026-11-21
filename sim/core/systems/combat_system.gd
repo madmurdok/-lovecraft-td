@@ -350,8 +350,7 @@ func fire_towers() -> void:
 		if fuse_ticks == 0:
 			_on_hit_effects(t, s, target, hits, shot)
 		# LT-30 / LT-70 §2.3: lit x0.8 / shadowed x1.25 (mundane), decided at the shot.
-		var interval := TowerRules.fire_interval(s, t.interval_mult)
-		t.cooldown_ticks = TowerRules.cooldown_ticks(interval)
+		t.cooldown_ticks = TowerRules.shot_ticks(s, t.interval_mult)
 
 
 ## LT-51 (§2.2, Q4): a Silver Key cast. Picks (by target_priority) up to banish_targets of
@@ -403,7 +402,7 @@ func _cast_banish(t: SimTower, s: TowerDef.Level) -> void:
 	if damage > 0.0:
 		for e in picks:
 			apply_damage(e.id, damage, t.def.id)
-	t.cooldown_ticks = TowerRules.cooldown_ticks(s.fire_interval)
+	t.cooldown_ticks = TowerRules.shot_ticks(s, t.interval_mult)  # LT-105 Q4: ignores it
 
 
 ## LT-52 (§2.2): a Summoning Circle with fewer than summon_max live units summons one at
@@ -423,7 +422,7 @@ func _summon(t: SimTower, s: TowerDef.Level) -> void:
 		SimTime.ticks(float(s.effects.get("summon_lifetime", 0.0))), s.summon_leash(),
 		s.summon_contact())
 	if id != 0:
-		t.cooldown_ticks = TowerRules.cooldown_ticks(s.fire_interval)
+		t.cooldown_ticks = TowerRules.shot_ticks(s, t.interval_mult)  # LT-105 Q4: ignores it
 
 
 ## LT-51 (Q4 "HP cap per level"): those of `enemies` a gate with stats `s` may banish:

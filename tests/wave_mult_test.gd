@@ -20,7 +20,7 @@ func before_test() -> void:
 	_spawn.set_trait_host(TraitHost.new(_ctx, _spawn.queue_pack_member))  # LT-106, like the facade
 
 
-## Sets every wave of the context's config to `hp` / `speed` (the real data has 5 waves).
+## Sets every wave of the context's config to `hp` / `speed` (the real data has 10 waves).
 func _scale_all(hp: float, speed: float) -> void:
 	for w: WavesConfig.Wave in _ctx.config.waves.waves:
 		w.hp_mult = hp

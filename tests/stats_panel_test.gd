@@ -316,8 +316,19 @@ func test_special_lines_are_prefixed_by_column_only_with_upgrade_columns() -> vo
 
 # --- §5 lit ----------------------------------------------------------------------------------
 
-## Q4: a lit Rifleman L2: Every x fire_interval_mult and DPS / it with "*" in Now, the A/B
-## columns unlit and compared with the base Now, the status line and "No misses while lit".
+## LT-89: the seconds between shots the sim fires at `interval_s`: whole 30 Hz ticks.
+func _lit_period(interval_s: float) -> float:
+	return maxi(1, roundi(interval_s * SimTime.TICK_RATE)) / float(SimTime.TICK_RATE)
+
+
+## LT-89: a mundane fire-rate percent at multiplier `m`: base period / period at m - 1.
+func _rate(interval_s: float, m: float) -> float:
+	return (_lit_period(interval_s) / _lit_period(interval_s * m) - 1.0) * 100.0
+
+
+## Q4: a lit Rifleman L2: Every x fire_interval_mult and DPS over its whole ticks (LT-89)
+## with "*" in Now, the A/B columns unlit and compared with the base Now, the status line
+## and "No misses while lit".
 func test_lit_mundane_tower_shows_live_values_the_line_and_no_misses() -> void:
 	await _start_game()
 	var def: TowerDef = _config.towers[RIFLE]
@@ -331,13 +342,14 @@ func test_lit_mundane_tower_shows_live_values_the_line_and_no_misses() -> void:
 			assert_str(l.text).override_failure_message(key).not_contains(STAR)
 	_set_lit(t, true)
 	_game.tower_panel.refresh()
-	var lit := {"every": TowerText.num(s.fire_interval * m) + STAR,
-		"dps": TowerText.num(roundf(s.damage / s.fire_interval / m * 10.0) / 10.0) + STAR}
+	var lit := {"every": TowerText.every_text(_lit_period(s.fire_interval * m)) + STAR,
+		"dps": TowerText.num(roundf(s.damage / _lit_period(s.fire_interval * m) * 10.0) / 10.0)
+			+ STAR}
 	_assert_compare("lit rifleman L2", ["Now", "A", "B"], [_values(t, s),
 		_values(t, def.branches["a"]), _values(t, def.branches["b"])], lit)
 	assert_bool(_game.tower_panel.lit_label.visible).is_true()
 	assert_str(_game.tower_panel.lit_label.text).is_equal("* In the beam now: fire +%s%%, no misses"
-		% TowerText.num(roundf((1.0 / m - 1.0) * 100.0)))
+		% TowerText.num(roundf(_rate(s.fire_interval, m))))
 	assert_str(_game.tower_panel.kind_label.text).is_equal(TowerText.NO_MISSES_LIT)
 	_set_lit(t, false)
 	_game.tower_panel.refresh()
@@ -462,8 +474,8 @@ func test_the_flare_lights_a_tower_and_the_panel_marks_it() -> void:
 	assert_bool(t.lit).is_true()
 	_game.tower_panel.refresh()
 	var s := t.stats()
-	assert_str(_table().text_at("every", 0)).is_equal(TowerText.num(s.fire_interval
-		* _config.economy.beam.mundane_fire_interval_mult) + STAR)
+	assert_str(_table().text_at("every", 0)).is_equal(TowerText.every_text(_lit_period(
+		s.fire_interval * _config.economy.beam.mundane_fire_interval_mult)) + STAR)
 	assert_bool(_game.tower_panel.lit_label.visible).is_true()
 
 
@@ -498,7 +510,7 @@ func test_another_writer_turns_the_status_line_into_modified_now() -> void:
 	await _start_game()
 	var s: TowerDef.Level = _config.towers[RIFLE].levels[0]
 	var m := _config.economy.beam.mundane_fire_interval_mult
-	var fire := "fire +%s%%, no misses" % TowerText.num(roundf((1.0 / m - 1.0) * 100.0))
+	var fire := "fire +%s%%, no misses" % TowerText.num(roundf(_rate(s.fire_interval, m)))
 	var t := await _tower(RIFLE)
 	var panel := _game.tower_panel
 	_set_lit(t, true)

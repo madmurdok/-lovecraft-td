@@ -9,6 +9,8 @@ variant the runner writes a patched copy of data/ under a temp dir outside the r
 plays tools/bot_runs.gd once per (variant, strategy) with at most --jobs Godot processes at
 a time, and writes a markdown table: one row per variant, per strategy wins/losses out of
 --seeds and whether the strategy meets the target (losses >= ceil(target * seeds)).
+A variant's "bot" key patches a copy of tools/bot/strategies.json the same way (LT-112),
+passed to the bot as --bot-strategies=<path>.
 
 Python stdlib only. Exit codes: 0 ok, 1 a Godot run failed, 2 a bad variant/patch/argument.
 """
@@ -32,13 +34,22 @@ VARIANTS = os.path.join(HERE, "variants")
 BOT = "res://tools/bot_runs.gd"
 STRATEGIES_FILE = os.path.join(REPO, "tools", "bot", "strategies.json")
 ## Flags the runner sets itself; a variant may not pass them.
-RESERVED_FLAGS = ("--seeds=", "--data=", "--out=", "--strategies=")
-VARIANT_KEYS = {"description", "patch", "flags"}
+RESERVED_FLAGS = ("--seeds=", "--data=", "--out=", "--strategies=", "--bot-strategies=")
+VARIANT_KEYS = {"description", "patch", "flags", "bot"}
 ## Optional config keys a patch may add although data/ omits them (absent = the default given
 ## here, which also fixes the value's type), per data file and place; "*" is any array item.
 ## Every other unknown key stays an error, so a typo cannot slip through (LT-111).
 OPTIONAL_KEYS = {
     "waves.json": {("waves", "*"): {"hp_mult": 1.0, "speed_mult": 1.0}},
+}
+## The same for a variant's "bot" patch of tools/bot/strategies.json (LT-112): the optional row
+## fields of the LT-101 schema, and any tower id in a row's `branches` ("*" as a key: any key,
+## with a value of that type). The bot's loader still validates the patched file.
+BOT_OPTIONAL_KEYS = {
+    ("strategies", "*"): {"about": "", "prefix": [], "branches": {}, "cap_floor": 0.0,
+                          "on_blocked": "skip", "fallback": "", "fallback_max": 0,
+                          "buy_sanity": False},
+    ("strategies", "*", "branches"): {"*": "a"},
 }
 ## A job (one Godot process) is killed after JOB_TIMEOUT_BASE + JOB_TIMEOUT_PER_SEED * seeds
 ## real seconds and reported as failed (LT-101: a bot that never quits must not block the lab).
@@ -100,16 +111,17 @@ def apply_patch(target, patch, path=(), optional=None, _shape=()):
     """Deep-merges patch into target in place. An object patch on an object merges key by key,
     on an array addresses items (see _select); any other value replaces the existing one. Every
     key must already exist: a patch only changes values, never adds keys, except the optional
-    keys `optional` names for that place (see OPTIONAL_KEYS), which may be added with a value
-    of their default's type."""
+    keys `optional` names for that place (see OPTIONAL_KEYS; a "*" key there allows any key),
+    which may be added with a value of their default's type."""
     optional = optional or {}
     if isinstance(target, dict):
         for k, v in patch.items():
             if k not in target:
                 allowed = optional.get(_shape, {})
-                if k not in allowed:
+                proto = allowed.get(k, allowed.get("*"))
+                if proto is None:
                     raise PatchError(f"{_fmt(path + (k,))}: no such key (have: {', '.join(target)})")
-                _check_type(allowed[k], v, path + (k,))
+                _check_type(proto, v, path + (k,))
                 target[k] = v
             elif isinstance(v, dict) and isinstance(target[k], (dict, list)):
                 apply_patch(target[k], v, path + (k,), optional, _shape + (k,))
@@ -160,8 +172,11 @@ def load_variant(name):
     for f in flags:
         if f.startswith(RESERVED_FLAGS):
             raise PatchError(f"{path}: flag {f} is set by the runner, not by a variant")
+    bot = v.get("bot", {})
+    if not isinstance(bot, dict):
+        raise PatchError(f"{path}: 'bot' must be an object (a patch of tools/bot/strategies.json)")
     return {"name": name, "description": v.get("description", ""), "patch": patch,
-            "flags": flags}
+            "flags": flags, "bot": bot}
 
 
 def materialize(variant, dest):
@@ -182,6 +197,26 @@ def materialize(variant, dest):
         with open(os.path.join(dest, f), "w", encoding="utf-8") as out:
             json.dump(doc, out, indent=1)
             out.write("\n")
+
+
+def materialize_bot(variant, dest):
+    """Writes tools/bot/strategies.json with the variant's "bot" patch applied to the file dest
+    (LT-112). Strategy names may not change: the lab plays the repo file's names."""
+    doc = json.loads(_read(STRATEGIES_FILE))
+    names = [r.get("name") for r in doc["strategies"]]
+    try:
+        apply_patch(doc, variant["bot"], optional=BOT_OPTIONAL_KEYS)
+    except PatchError as e:
+        raise PatchError(f"variant {variant['name']}: bot: {e}")
+    rows = doc.get("strategies")
+    if not isinstance(rows, list) or not all(isinstance(r, dict) for r in rows):
+        raise PatchError(f"variant {variant['name']}: bot: strategies must be a list of objects")
+    if [r.get("name") for r in rows] != names:
+        raise PatchError(f"variant {variant['name']}: bot: a strategy name may not change "
+                         "(the lab plays the names of tools/bot/strategies.json)")
+    with open(dest, "w", encoding="utf-8") as out:
+        json.dump(doc, out, indent=1)
+        out.write("\n")
 
 
 def godot_bin():
@@ -309,6 +344,38 @@ def waves_table(variants, strategies, results):
     return lines
 
 
+def hp_cell(runs):
+    """LT-116: 'mean/median' lighthouse HP left at run end over the runs that carry
+    lighthouse_hp (old logs lack it: they are skipped, not counted as 0). '-' when none do."""
+    hp = sorted(r["lighthouse_hp"] for r in runs
+                if isinstance(r.get("lighthouse_hp"), (int, float)))
+    if not hp:
+        return "-"
+    mid = len(hp) // 2
+    med = hp[mid] if len(hp) % 2 else (hp[mid - 1] + hp[mid]) / 2
+    return f"{sum(hp) / len(hp):.1f}/{med:.1f}"
+
+
+def hp_table(variants, strategies, results):
+    """LT-116: lighthouse HP left at run end, per variant x strategy, as 'mean/median'. Unlike
+    won/lost it does not saturate at 0/20 or 20/20. Empty when no run carries lighthouse_hp."""
+    if not any("lighthouse_hp" in r for v in variants for s in strategies
+               for r in results[(v["name"], s)]["runs"]):
+        return []
+    lines = [
+        "",
+        "Lighthouse HP left at run end (LT-116): mean/median over the runs; '-' = no data "
+        "(old logs). Does not saturate when every run is won or lost.",
+        "",
+        "| variant | " + " | ".join(strategies) + " |",
+        "|---|" + "---|" * len(strategies),
+    ]
+    for v in variants:
+        row = [hp_cell(results[(v["name"], s)]["runs"]) for s in strategies]
+        lines.append(f"| {v['name']} | " + " | ".join(row) + " |")
+    return lines
+
+
 def report(variants, strategies, results, seeds, target, meta):
     need = math.ceil(target * seeds - 1e-9)
     early = early_waves(results)
@@ -350,9 +417,12 @@ def report(variants, strategies, results, seeds, target, meta):
         lines.append(f"| {v['name']} | " + " | ".join(row)
                      + f" | {met}/{len(strategies)} | {spr} | {ur} |")
     lines += waves_table(variants, strategies, results)
+    lines += hp_table(variants, strategies, results)
     lines += ["", "Variants:", ""]
     for v in variants:
         extra = f" flags: `{' '.join(v['flags'])}`" if v["flags"] else ""
+        if v.get("bot"):
+            extra += f" bot: `{json.dumps(v['bot'], separators=(',', ':'))}`"
         lines.append(f"- **{v['name']}**: {v['description'] or '(no description)'}{extra}")
     return "\n".join(lines) + "\n"
 
@@ -425,6 +495,12 @@ def main(argv):
             if os.path.exists(v["data"]):
                 shutil.rmtree(v["data"])
             materialize(v, v["data"])
+            # No "bot" key: no flag, so the command line (and the RUN lines) stay as before.
+            v["bot_flags"] = []
+            if v["bot"]:
+                bot_file = os.path.join(work, "bot_" + n + ".json")
+                materialize_bot(v, bot_file)
+                v["bot_flags"] = ["--bot-strategies=" + bot_file]
             variants.append(v)
         except PatchError as e:
             errors.append(str(e))
@@ -447,7 +523,8 @@ def main(argv):
     meta = {"started": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "commit": commit + (" (dirty)" if dirty else ""), "jobs": opts["jobs"],
             "uptime_start": uptime(), "work": work}
-    jobs = [{"variant": v["name"], "strategy": s, "data": v["data"], "flags": v["flags"]}
+    jobs = [{"variant": v["name"], "strategy": s, "data": v["data"],
+             "flags": v["flags"] + v["bot_flags"]}
             for v in variants for s in strategies]
     print(f"balance: {len(jobs)} job(s) ({len(variants)} variant(s) x {len(strategies)} "
           f"strategies x {opts['seeds']} seeds), {opts['jobs']} at a time; work dir {work}",

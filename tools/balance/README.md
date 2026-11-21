@@ -55,7 +55,7 @@ Create `tools/balance/variants/<name>.json`:
 }
 ```
 
-All three keys are optional (`baseline.json` has only a description).
+All keys are optional (`baseline.json` has only a description).
 
 - `patch` maps a file in `data/` to an object that is deep-merged into it. An object merges
   key by key; any other value (number, string, bool, a whole array) replaces the old value.
@@ -70,10 +70,44 @@ All three keys are optional (`baseline.json` has only a description).
   `balance.py`): per-wave `hp_mult` / `speed_mult` in `waves.json` (LT-111), e.g.
   `"waves.json": {"waves": {"4": {"hp_mult": 2}}}`. `"4"` is the 0-based index (wave 5).
 - `flags` are passed to `tools/bot_runs.gd` (see its header): `--flare=0`, `--lighthouse=0`,
-  `--upgrades=0`, `--branch=rifleman:b`. `--seeds`, `--data`, `--out` and `--strategies` belong
-  to the runner and are refused.
+  `--upgrades=0`, `--branch=rifleman:b`. `--seeds`, `--data`, `--out`, `--strategies` and
+  `--bot-strategies` belong to the runner and are refused.
 - The patched data still goes through the game's config validation; a value it rejects fails
   that variant's runs with `config errors: ...` in the `.err` log.
+
+### Vary the bot's strategies (`bot`, LT-112)
+
+The optional key `bot` patches a copy of `tools/bot/strategies.json` (see *Add a strategy*
+below) with the same rules as `patch`, so an A/B of a build order or a tunable needs no edit in
+the repo:
+
+```json
+{
+  "description": "mundane builds a harpooner every second tower; upgrades from tower 3",
+  "bot": {
+    "tunables": { "build_first": 3 },
+    "strategies": {
+      "name=mundane": { "cycle": ["rifleman", "harpooner"] },
+      "name=occult": { "cap_floor": 20, "branches": { "rifleman": "b" } }
+    }
+  }
+}
+```
+
+- Rows are addressed like any array: `"name=<strategy>"` (an unknown name is an error), an
+  index or `"*"`.
+- Arrays replace arrays: `cycle` / `prefix` are given whole, never merged item by item (an
+  object patch on an array still addresses items, e.g. `"cycle": {"0": "harpooner"}`).
+- Objects merge: `branches` keeps the towers it does not name. A row may also get the
+  optional fields it leaves out (`prefix`, `branches`, `cap_floor`, `on_blocked`, `fallback`,
+  `fallback_max`, `buy_sanity`, `about`), and `branches` any tower id (`BOT_OPTIONAL_KEYS`).
+- `--check` rejects an unknown row or key, a value of another type and a renamed strategy (the
+  lab plays the repo file's names). Rules across fields (`cap_floor` needs `on_blocked`) and
+  tower ids are checked by the bot's loader at run time: a bad table fails that variant's runs
+  with `strategies.json errors: ...` in the `.err` log.
+- The runner writes the copy to `<work>/bot_<variant>.json` and passes it to the bot as
+  `--bot-strategies=<path>` (reserved, like `--data=`). A variant without `bot` gets no such
+  flag, so its command line and RUN lines are the same as before LT-112.
 
 Shipped examples reproduce LT-30 S13 arms: `baseline` (A), `beam_off` (B), `flare_off` (D),
 `oil_price_1` (F), `lighthouse_half_cost` (H).
@@ -103,6 +137,12 @@ Shipped examples reproduce LT-30 S13 arms: `baseline` (A), `beam_off` (B), `flar
   by `.` (e.g. `0.0.3.12.5`: 3 runs lost in wave 3, 12 in wave 4, 5 in wave 5), then the mean
   waves survived in brackets. `all losses by wave` sums the row; `early ok` is the share of all
   runs in the row that survived the first half of the waves (waves 1..3 of 5).
+- A third table, "Lighthouse HP left" (LT-116), shows per variant and strategy the `mean/median`
+  of `lighthouse_hp` at run end (e.g. `7.4/8.0`; 0 for a lost run). It separates variants that
+  both win every run (how close the wins were); a lost run is always 0, so variants that both lose
+  every run show `0.0/0.0` here and are told apart by "Where runs end" (wave reached).
+  Runs whose RUN line lacks `lighthouse_hp` (old logs) are left out of the statistic, not counted
+  as 0; `-` when none carry it, and the table is omitted when no run does.
 - Per-run detail (all RUN fields: flares, lighthouse level, gold, sanity, ...) is in
   `<work>/logs/<variant>.<strategy>.log`, one `RUN {json}` line per run.
 

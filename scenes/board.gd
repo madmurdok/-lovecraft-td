@@ -214,12 +214,9 @@ class MapLayer extends Node2D:
 					color = Board.COLOR_BUILDABLE
 				MapDef.Kind.PATH:
 					color = Board.COLOR_PATH
-			var r := view.cell_rect(c)
-			draw_rect(r, color)
-			draw_rect(r, Board.COLOR_GRID, false, 1.0)
-		draw_rect(view.cell_rect(m.spawn).grow(-4),
-			Board.COLOR_START)
-		var lh := view.cell_rect(m.lighthouse).grow(-4)
-		draw_rect(lh, Board.COLOR_LIGHTHOUSE)
-		draw_string(ThemeDB.fallback_font, lh.position + Vector2(9, 24), "L",
+			view.fill_cell(self, c, color)  # fill, then line, per cell (LT-108 §3 site 1)
+			view.outline_cell(self, c, Board.COLOR_GRID, 1.0)
+		view.fill_cell(self, m.spawn, Board.COLOR_START, 4.0)
+		view.fill_cell(self, m.lighthouse, Board.COLOR_LIGHTHOUSE, 4.0)
+		draw_string(ThemeDB.fallback_font, view.cell_centre(m.lighthouse) + Vector2(-7, 8), "L",
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color.BLACK)

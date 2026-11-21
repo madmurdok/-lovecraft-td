@@ -301,4 +301,4 @@ class SeaFog extends Node2D:
 	func _draw() -> void:
 		for c in map.grid.cells():
 			if map.kind_at(c) == MapDef.Kind.WATER:
-				draw_rect(view.cell_rect(c), Color.WHITE)
+				view.fill_cell(self, c, Color.WHITE)

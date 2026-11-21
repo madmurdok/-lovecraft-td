@@ -54,3 +54,14 @@ extends RefCounted
 
 ## World rect in cell units.
 @abstract func bounds() -> Rect2
+
+
+## LT-108 F6: the cell id of the map text's (column x, row y). Identity unless a topology's
+## ids differ from the text layout (HexGrid: axial from odd-r rows).
+func cell_of_text(x: int, y: int) -> Vector2i:
+	return Vector2i(x, y)
+
+
+## LT-108 F6: the map text's (column, row) of `cell`; the inverse of cell_of_text.
+func text_of(cell: Vector2i) -> Vector2i:
+	return cell

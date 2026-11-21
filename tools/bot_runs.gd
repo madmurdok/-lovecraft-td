@@ -10,6 +10,9 @@ extends SceneTree
 ##   the strategy's pick; a branch other than a or b is an error)
 ##   [--strategies=<name>[,<name>...]] (LT-56: play only these strategies, in the table's
 ##   order; an unknown name is an error. tools/balance/ runs one strategy per process)
+##   [--bot-strategies=<path>] (LT-112: play the strategy table in this file instead of
+##   tools/bot/strategies.json; validated like the default, a bad file quits 1 before any run.
+##   Set by tools/balance/ for a variant with a "bot" key)
 ## For each strategy x seed it plays one full run on data/ with a fresh Simulation +
 ## WaveDirector and prints one "RUN {json}" line per run, then a "SUMMARY {json}" line.
 ##
@@ -80,17 +83,26 @@ var _max_ticks := 0  ## run cap in ticks; 0: TICKS_PER_WAVE x the config's wave 
 ## after every drain; it only reads them, so the runs and RUN lines do not change.
 var _event_sink := Callable()
 var _strategy: Strategies  ## created on first use by _policy()
+var _table: StrategyTable = null  ## --bot-strategies= table; null: the policy's default table
 
 
 func _init() -> void:
 	var seeds := 10
 	var out := ""
 	var data_dir := ""
-	var table := StrategyTable.default()
+	var table_path := StrategyTable.DEFAULT_PATH
+	var own_table := false  # --bot-strategies= given (an empty path is an error, not the default)
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--bot-strategies="):
+			table_path = a.substr(17)
+			own_table = true
+	var table := StrategyTable.load_file(table_path) if own_table else StrategyTable.default()
 	if not table.errors.is_empty():
-		printerr("strategies.json errors: ", table.errors)
+		printerr("strategies.json errors: ", table.errors, " (file %s)" % table_path)
 		quit(1)
 		return
+	if own_table:
+		_table = table
 	_strategies = table.names.duplicate()
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--seeds="):
@@ -308,6 +320,8 @@ func _policy() -> Strategies:
 	_strategy.lighthouse = _lighthouse
 	_strategy.flare = _flare
 	_strategy.branch_override = _branch_override
+	if _table != null:
+		_strategy.table = _table
 	return _strategy
 
 

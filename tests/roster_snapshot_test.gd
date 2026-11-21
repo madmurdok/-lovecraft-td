@@ -9,7 +9,7 @@ const TOWER_IDS := ["rifleman", "harpooner", "elder_sign", "necronomicon_reader"
 	"dynamite_crew", "coast_battery", "searchlight", "resonator", "silver_key",
 	"summoning_circle"]
 const ENEMY_IDS := ["cultist", "hybrid", "deep_one", "night_gaunt", "shoggoth"]
-const WAVE_COUNT := 5
+const WAVE_COUNT := 10
 const TOUGHEST_ENEMY := "shoggoth"  ## LT-23 S15: the boss has the most hp of all enemies
 
 

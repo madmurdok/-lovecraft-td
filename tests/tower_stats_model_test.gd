@@ -32,8 +32,9 @@ func _dps(s: TowerDef.Level) -> float:
 	return TowerRules.dps(s, s.damage, s.fire_interval, s.effects.get("summon_dps", 0.0))
 
 
-func _pct_mundane(mult: float) -> float:
-	return (1.0 / mult - 1.0) * 100.0
+## LT-89: the fire-rate percent as the sim fires: base cooldown ticks / ticks at `mult` - 1.
+func _pct_mundane(s: TowerDef.Level, mult: float) -> float:
+	return (float(TowerRules.shot_ticks(s, 1.0)) / TowerRules.shot_ticks(s, mult) - 1.0) * 100.0
 
 
 func _near(got: float, want: float, what: String) -> void:
@@ -55,8 +56,8 @@ func test_mundane_shooter_rows_follow_the_rules_and_change_on_a_level_up() -> vo
 		_near(got["dps"], _dps(s), "dps")
 		_near(got["range"], s.range_cells, "range")
 		_near(got["kill"], _cfg.sanity.regen_mundane_kill, "kill")
-		_near(got["beam"], _pct_mundane(im_lit), "beam")
-		_near(got["shadow"], _pct_mundane(im_sh), "shadow")
+		_near(got["beam"], _pct_mundane(s, im_lit), "beam")
+		_near(got["shadow"], _pct_mundane(s, im_sh), "shadow")
 		assert_bool(got.has("reserve") or got.has("min_range") or got.has("dps_to")).is_false()
 		seen.append(got["dps"])
 	assert_float(seen[1]).is_not_equal(seen[0])  # level 2 is not level 1's value
@@ -225,7 +226,7 @@ func test_without_a_shadow_block_the_shadow_numbers_are_empty_but_the_beam_stays
 	assert_dict(TowerStatsModel.lit_numbers(def, s, cfg, -1.0, true)).is_empty()
 	var got := TowerStatsModel.row_numbers(def, s, cfg)
 	_near(got["shadow"], 0.0, "shadow row")
-	_near(got["beam"], _pct_mundane(TowerRules.interval_mult("mundane", cfg, true, false)), "beam row")
+	_near(got["beam"], _pct_mundane(s, TowerRules.interval_mult("mundane", cfg, true, false)), "beam row")
 	assert_bool(TowerStatsModel.lit_numbers(def, s, cfg).is_empty()).is_false()
 
 

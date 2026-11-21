@@ -410,11 +410,28 @@ func test_entity_layer_draws_towers_and_not_effects() -> void:
 
 func test_fx_layer_draws_the_effects_list() -> void:
 	var b := await _spy_board()
-	b.fx_layer.effects.append({"kind": "leak", "from": Vector2(1, 1), "ttl": 1.0})
+	b.fx_layer.effects.append({"kind": "leak", "from": Vector2(1, 1), "cell": Vector2i(0, 0),
+		"ttl": 1.0})
 	b.queue_redraw()
 	await _frames(2)
 	assert_int(b.log.count("effects")).is_equal(1)
 	assert_bool(b.log.find("warmup") < b.log.find("effects")).is_true()
+
+
+## LT-108 §6 item 8 (F4): a leak's frame outlines the lighthouse cell, carried as its "cell".
+func test_a_leak_effect_carries_the_lighthouse_cell() -> void:
+	await _start_game()
+	var fx := _game.board.fx_layer
+	var n := fx.effects.size()
+	fx.on_event(SimEvent.new(SimEvent.Type.LEAKED, _game.sim.state.tick, 1, {}))
+	assert_int(fx.effects.size()).is_equal(n + 1)
+	var leak: Dictionary = fx.effects[-1]
+	var lh := _game.sim.state.map.lighthouse
+	assert_str(leak["kind"]).is_equal("leak")
+	assert_bool(leak.has("cell")).override_failure_message(str(leak)).is_true()
+	assert_object(leak.get("cell")).is_equal(lh)
+	assert_object(leak["from"]).is_equal(_game.sim.state.map.grid.centre(lh))
+	await _frames(2)  # and the frame draws from it without an error
 
 
 func test_layers_draw_nothing_without_a_game() -> void:

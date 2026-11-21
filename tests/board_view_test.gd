@@ -2,7 +2,7 @@ class_name BoardViewTest
 extends GdUnitTestSuite
 ## LT-35 (LT-65 §3.3, G2): BoardView, the screen <-> cell layer. Pinned from the spec with
 ## hand-computed numbers on a 7x5 grid (not square, so an x/y swap shows): picking at the
-## board's edges, the HUD strip, the cell <-> screen inverse, world_rect, cell_rect, linearity,
+## board's edges, the HUD strip, the cell <-> screen inverse, world_rect, cell_polygon, linearity,
 ## the board origin, light and relic-token positions, a standalone MapLayer, and picking
 ## through the running Game. The pixel numbers below (40 per cell, origin (0, 48)) are the
 ## spec's, written out on purpose: the view's own constants are not used to compute them.
@@ -169,31 +169,137 @@ func test_world_rect_is_the_same_in_a_1200x675_and_a_1920x1080_viewport() -> voi
 		await get_tree().process_frame
 
 
-# --- 4. cell_rect = the polygon's bounding box ----------------------------------------------
+# --- 4. cell_polygon = the square tile (LT-108: cell_rect deleted) ---------------------------
 
-func test_cell_rect_is_the_tile_and_equals_the_polygon_bbox() -> void:
+## The corners of the square tile rect `r`, screen-clockwise from the top-left.
+func _corners(r: Rect2) -> PackedVector2Array:
+	return PackedVector2Array([r.position, Vector2(r.end.x, r.position.y), r.end,
+		Vector2(r.position.x, r.end.y)])
+
+
+## The area of a simple polygon (shoelace).
+func _area(poly: PackedVector2Array) -> float:
+	var twice := 0.0
+	for i in poly.size():
+		var p := poly[i]
+		var q := poly[(i + 1) % poly.size()]
+		twice += p.x * q.y - q.x * p.y
+	return absf(twice) * 0.5
+
+
+func test_cell_polygon_is_the_square_tile() -> void:
 	for c in _view.grid.cells():
-		var poly := _view.cell_polygon(c)
-		assert_int(poly.size()).is_equal(4)
-		var lo := poly[0]
-		var hi := poly[0]
-		for p in poly:
-			lo = Vector2(minf(lo.x, p.x), minf(lo.y, p.y))
-			hi = Vector2(maxf(hi.x, p.x), maxf(hi.y, p.y))
-		var r := _view.cell_rect(c)
-		assert_object(r).override_failure_message(str(c)).is_equal(Rect2(lo, hi - lo))
-		assert_object(r).override_failure_message(str(c)).is_equal(
-			Rect2(c.x * TILE, c.y * TILE, TILE, TILE))  # board-local: no origin
+		assert_object(_view.cell_polygon(c)).override_failure_message(str(c)).is_equal(
+			_corners(Rect2(c.x * TILE, c.y * TILE, TILE, TILE)))  # board-local: no origin
 
 
-func test_cell_rect_tiles_tile_without_gaps_or_overlap() -> void:
+func test_cell_polygons_tile_without_gaps_or_overlap() -> void:
 	var area := 0.0
 	for c in _view.grid.cells():
-		area += _view.cell_rect(c).get_area()
+		var poly := _view.cell_polygon(c)
+		area += _area(poly)
 		var right := Vector2i(c.x + 1, c.y)
-		if _view.grid.contains(right):
-			assert_float(_view.cell_rect(c).end.x).is_equal(_view.cell_rect(right).position.x)
+		if _view.grid.contains(right):  # the shared edge: this tile's right, its left
+			var rp := _view.cell_polygon(right)
+			assert_object(poly[1]).override_failure_message(str(c)).is_equal(rp[0])
+			assert_object(poly[2]).override_failure_message(str(c)).is_equal(rp[3])
 	assert_float(area).is_equal(W * H * TILE * TILE)
+
+
+# --- 4b. inset tiles and outline quads (LT-108 §6 items 3, 4, 6) --------------------------------
+
+const INSETS: Array[float] = [0.0, 2.0, 4.0, 6.0]
+
+
+## The summed area of Geometry2D's intersection of two polygons (0 when they only touch).
+func _overlap(a: PackedVector2Array, b: PackedVector2Array) -> float:
+	var sum := 0.0
+	for p in Geometry2D.intersect_polygons(a, b):
+		sum += _area(p)
+	return sum
+
+
+func _hex_view() -> BoardView:
+	var v := BoardView.new()
+	v.grid = HexGrid.new(5, 4)
+	return v
+
+
+func test_an_inset_square_tile_is_the_tile_rect_grown_by_minus_the_inset() -> void:
+	for d in INSETS:
+		for c in _view.grid.cells():
+			assert_object(_view.cell_polygon(c, d)).override_failure_message("%s inset %s" % [c, d]) \
+				.is_equal(_corners(Rect2(c.x * TILE, c.y * TILE, TILE, TILE).grow(-d)))
+
+
+func test_square_outline_quads_are_the_ring_between_the_two_insets() -> void:
+	var c := Vector2i(1, 1)  # the tile (40, 40)..(80, 80)
+	var quads := _view.outline_quads(c, 2.0, 0.0)
+	var outer := _corners(Rect2(39, 39, 42, 42))  # inset - w/2
+	var inner := _corners(Rect2(41, 41, 38, 38))  # inset + w/2
+	assert_int(quads.size()).is_equal(4)
+	for i in 4:
+		var j := (i + 1) % 4
+		assert_object(quads[i]).override_failure_message("quad %d" % i).is_equal(
+			PackedVector2Array([outer[i], outer[j], inner[j], inner[i]]))
+
+
+func _assert_outline_ring(view: BoardView, sides: int) -> void:
+	for c in view.grid.cells():
+		for w: float in [1.0, 2.0, 4.0]:
+			for d in INSETS:
+				var quads := view.outline_quads(c, w, d)
+				var outer := view.cell_polygon(c, d - w * 0.5)
+				var inner := view.cell_polygon(c, d + w * 0.5)
+				var tag := "%s w %s inset %s" % [c, w, d]
+				assert_int(quads.size()).override_failure_message(tag).is_equal(sides)
+				var area := 0.0
+				for i in quads.size():
+					area += _area(quads[i])
+					# outer corners first, inner last (a swap draws the same band inside out)
+					assert_object(quads[i][0]).override_failure_message(tag).is_equal(outer[i])
+					assert_object(quads[i][3]).override_failure_message(tag).is_equal(inner[i])
+					for k in range(i + 1, quads.size()):
+						assert_float(_overlap(quads[i], quads[k])) \
+							.override_failure_message("%s quads %d, %d" % [tag, i, k]) \
+							.is_less(1e-3)
+				assert_float(area).override_failure_message(tag) \
+					.is_equal_approx(_area(outer) - _area(inner), 1e-3)
+
+
+func test_outline_quads_cover_the_ring_without_overlap_on_square() -> void:
+	_assert_outline_ring(_view, 4)
+
+
+func test_outline_quads_cover_the_ring_without_overlap_on_hex() -> void:
+	_assert_outline_ring(_hex_view(), 6)
+
+
+func test_hex_tiles_are_hexagons_that_tile_without_overlap() -> void:
+	var hex := _hex_view()
+	var area := 0.0
+	for c in hex.grid.cells():
+		var poly := hex.cell_polygon(c)
+		assert_int(poly.size()).override_failure_message(str(c)).is_equal(6)
+		area += _area(poly)
+		for n in hex.grid.neighbours(c):
+			assert_float(_overlap(poly, hex.cell_polygon(n))) \
+				.override_failure_message("%s / %s" % [c, n]).is_less(1e-3)
+	# each hex is sqrt(3) / 2 cell units^2 (flat-to-flat width 1)
+	assert_float(area).is_equal_approx(20 * sqrt(3.0) / 2.0 * TILE * TILE, 1e-2)
+
+
+func test_an_inset_hex_tile_keeps_its_apothem_minus_the_inset() -> void:
+	var hex := _hex_view()
+	for c in hex.grid.cells():
+		var centre := hex.cell_centre(c)
+		for d in INSETS:
+			var poly := hex.cell_polygon(c, d)
+			for i in poly.size():
+				var mid := (poly[i] + poly[(i + 1) % poly.size()]) * 0.5
+				assert_float(mid.distance_to(centre)) \
+					.override_failure_message("%s inset %s edge %d" % [c, d, i]) \
+					.is_equal_approx(TILE * 0.5 - d, 1e-3)
 
 
 # --- 5. linearity -------------------------------------------------------------------------------
@@ -265,8 +371,8 @@ func test_a_standalone_map_layer_draws_with_its_own_view() -> void:
 	assert_int(draws[0]).is_equal(1)
 	assert_object(layer.view.grid).is_same(_config.map.grid)
 	var m := _config.map
-	assert_object(layer.view.cell_rect(m.lighthouse)).is_equal(
-		Rect2(m.lighthouse.x * TILE, m.lighthouse.y * TILE, TILE, TILE))
+	assert_object(layer.view.cell_polygon(m.lighthouse)).is_equal(
+		_corners(Rect2(m.lighthouse.x * TILE, m.lighthouse.y * TILE, TILE, TILE)))
 
 
 # --- 7. picking through the view in the game ----------------------------------------------------

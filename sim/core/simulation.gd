@@ -400,8 +400,22 @@ func buy_sanity() -> SimCommand.CommandResult:
 	return _sanity.buy_sanity()
 
 
+func can_debug_set_sanity(value: float) -> SimCommand.CommandResult:
+	return _sanity.can_debug_set_sanity(value)
+
+
 func debug_set_sanity(value: float) -> SimCommand.CommandResult:
 	return _sanity.debug_set_sanity(value)
+
+
+## LT-107: debug_end_night's check, changes nothing: OUTCOME_REACHED once the run is over;
+## NOT_NIGHT without a WaveDirector or outside a wave (phase BUILD / DONE); else OK.
+func can_debug_end_night() -> SimCommand.CommandResult:
+	if state.outcome != SimState.Outcome.NONE:
+		return SimCommand.CommandResult.OUTCOME_REACHED
+	if not (_spawner is WaveDirector) or state.phase != SimState.Phase.WAVE:
+		return SimCommand.CommandResult.NOT_NIGHT
+	return SimCommand.CommandResult.OK
 
 
 ## LT-67 (debug, `--sandbox`): ends the current night now. The WaveDirector marks every
@@ -412,10 +426,9 @@ func debug_set_sanity(value: float) -> SimCommand.CommandResult:
 ## [tick, "debug_end_night"] so a replay reproduces it. OUTCOME_REACHED once the run is
 ## over; NOT_NIGHT without a WaveDirector or outside a wave (phase BUILD / DONE); else OK.
 func debug_end_night() -> SimCommand.CommandResult:
-	if state.outcome != SimState.Outcome.NONE:
-		return SimCommand.CommandResult.OUTCOME_REACHED
-	if not (_spawner is WaveDirector) or state.phase != SimState.Phase.WAVE:
-		return SimCommand.CommandResult.NOT_NIGHT
+	var result := can_debug_end_night()
+	if result != SimCommand.CommandResult.OK:
+		return result
 	_ctx.log_command([state.tick, "debug_end_night"])
 	(_spawner as WaveDirector).debug_fire_all(self)
 	_spawn.clear_pack_queue()
@@ -465,59 +478,87 @@ func beam_directions(alpha: float) -> Array[Vector2]:
 	return _light.beam_directions(alpha)
 
 
-## LT-36: the argument types of each command_log entry name, after [tick, name]; the order
-## of the public command's parameters. TYPE_STRING also takes a StringName, TYPE_FLOAT an int.
-const REPLAY_ARGS: Dictionary[String, Array] = {
-	"build": [TYPE_STRING, TYPE_VECTOR2I],
-	"sell": [TYPE_INT],
-	"upgrade": [TYPE_INT, TYPE_STRING],
-	"set_target_priority": [TYPE_INT, TYPE_STRING],
-	"call_wave": [],
-	"buy_sanity": [],
-	"sell_relics": [TYPE_STRING],
-	"debug_set_sanity": [TYPE_FLOAT],
-	"upgrade_lighthouse": [],
-	"buy_oil": [],
-	"fire_flare": [],
-	"debug_end_night": [],
+## LT-107 (LT-36): one entry per player command. Key = the command_log entry name (entry[1]);
+## the order is the old REPLAY_ARGS order. "args": the types of entry[2..], the order of the
+## public command's parameters (TYPE_STRING also takes a StringName, TYPE_FLOAT an int).
+## "can": the Simulation check (same params, changes nothing). "apply": the public command
+## (checks "can" first, logs itself on OK). "text": key into CommandText.BY_COMMAND, "" = the
+## shared refusal text only.
+const COMMANDS: Dictionary[String, Dictionary] = {
+	"build": {"args": [TYPE_STRING, TYPE_VECTOR2I], "can": &"can_build", "apply": &"build_tower", "text": ""},
+	"sell": {"args": [TYPE_INT], "can": &"can_sell_tower", "apply": &"sell_tower", "text": ""},
+	"upgrade": {"args": [TYPE_INT, TYPE_STRING], "can": &"can_upgrade", "apply": &"upgrade_tower", "text": ""},
+	"set_target_priority": {"args": [TYPE_INT, TYPE_STRING], "can": &"can_set_target_priority",
+		"apply": &"set_target_priority", "text": ""},
+	"call_wave": {"args": [], "can": &"can_call_wave", "apply": &"call_wave", "text": ""},
+	"buy_sanity": {"args": [], "can": &"can_buy_sanity", "apply": &"buy_sanity", "text": ""},
+	"sell_relics": {"args": [TYPE_STRING], "can": &"can_sell_relics", "apply": &"sell_relics", "text": ""},
+	"debug_set_sanity": {"args": [TYPE_FLOAT], "can": &"can_debug_set_sanity",
+		"apply": &"debug_set_sanity", "text": ""},
+	"upgrade_lighthouse": {"args": [], "can": &"can_upgrade_lighthouse", "apply": &"upgrade_lighthouse",
+		"text": ""},
+	"buy_oil": {"args": [], "can": &"can_buy_oil", "apply": &"buy_oil", "text": ""},
+	"fire_flare": {"args": [], "can": &"can_fire_flare", "apply": &"fire_flare", "text": ""},
+	"debug_end_night": {"args": [], "can": &"can_debug_end_night", "apply": &"debug_end_night", "text": ""},
 }
+
+
+## LT-107: runs the command `name` with `args` through its public method (so it is checked
+## and logged as a direct call). UNKNOWN_COMMAND (and an error) for a name not in COMMANDS;
+## BAD_ARGS (and an error) when args do not match its "args" in count and type; a refused
+## call changes nothing.
+func issue(name: String, args: Array) -> SimCommand.CommandResult:
+	var r := _check(name, args)
+	if r != SimCommand.CommandResult.OK:
+		push_error("Simulation.issue: %s %s %s" % [SimCommand.CommandResult.find_key(r), name, args])
+		return r
+	return callv(COMMANDS[name].apply, args)
+
+
+## LT-107: the command's "can" check for `name` with `args`; changes nothing. Bad input as
+## in issue (UNKNOWN_COMMAND / BAD_ARGS and an error).
+func can_issue(name: String, args: Array) -> SimCommand.CommandResult:
+	var r := _check(name, args)
+	if r != SimCommand.CommandResult.OK:
+		push_error("Simulation.can_issue: %s %s %s" % [SimCommand.CommandResult.find_key(r), name, args])
+		return r
+	return callv(COMMANDS[name].can, args)
 
 
 ## LT-34: re-applies one command_log entry [tick, name, args...] now (the caller steps the
 ## sim to entry[0] first) through the same public command, so it is logged again.
 ## UNKNOWN_COMMAND (and an error) for an entry naming no command; BAD_ARGS (and an error)
-## for a known name whose args do not match REPLAY_ARGS in count and type (LT-36). Never
+## for a known name whose args do not match COMMANDS in count and type (LT-36). Never
 ## raises a script error, and a refused entry changes nothing.
 func replay_command(entry: Array) -> SimCommand.CommandResult:
 	var cmd: Variant = entry[1] if entry.size() > 1 else ""
-	if typeof(cmd) not in [TYPE_STRING, TYPE_STRING_NAME] or not REPLAY_ARGS.has(String(cmd)):
+	var args := entry.slice(2)
+	var r := _check(cmd, args)
+	if r == SimCommand.CommandResult.UNKNOWN_COMMAND:
 		push_error("Simulation.replay_command: unknown entry %s" % [entry])
-		return SimCommand.CommandResult.UNKNOWN_COMMAND
-	if not _replay_args_ok(entry, REPLAY_ARGS[String(cmd)]):
+		return r
+	if r == SimCommand.CommandResult.BAD_ARGS:
 		push_error("Simulation.replay_command: bad args %s" % [entry])
+		return r
+	return callv(COMMANDS[String(cmd)].apply, args)
+
+
+## LT-107: UNKNOWN_COMMAND unless `cmd` is a String/StringName naming a COMMANDS entry;
+## BAD_ARGS unless `args` match its "args"; else OK. No side effect, no error.
+func _check(cmd: Variant, args: Array) -> SimCommand.CommandResult:
+	if typeof(cmd) not in [TYPE_STRING, TYPE_STRING_NAME] or not COMMANDS.has(String(cmd)):
+		return SimCommand.CommandResult.UNKNOWN_COMMAND
+	if not _args_ok(args, COMMANDS[String(cmd)].args):
 		return SimCommand.CommandResult.BAD_ARGS
-	match String(cmd):
-		"build": return build_tower(entry[2], entry[3])
-		"sell": return sell_tower(entry[2])
-		"upgrade": return upgrade_tower(entry[2], entry[3])
-		"set_target_priority": return set_target_priority(entry[2], entry[3])
-		"call_wave": return call_wave()
-		"buy_sanity": return buy_sanity()
-		"sell_relics": return sell_relics(entry[2])
-		"debug_set_sanity": return debug_set_sanity(entry[2])
-		"upgrade_lighthouse": return upgrade_lighthouse()
-		"buy_oil": return buy_oil()
-		"fire_flare": return fire_flare()
-		"debug_end_night": return debug_end_night()
-	return SimCommand.CommandResult.UNKNOWN_COMMAND  # unreachable: every REPLAY_ARGS key has an arm
+	return SimCommand.CommandResult.OK
 
 
-## Whether entry[2..] has exactly types.size() values, each of the matching type.
-func _replay_args_ok(entry: Array, types: Array) -> bool:
-	if entry.size() != 2 + types.size():
+## Whether args has exactly types.size() values, each of the matching type.
+func _args_ok(args: Array, types: Array) -> bool:
+	if args.size() != types.size():
 		return false
 	for i in types.size():
-		var t := typeof(entry[2 + i])
+		var t := typeof(args[i])
 		var want: int = types[i]
 		if t == want or (want == TYPE_STRING and t == TYPE_STRING_NAME) \
 				or (want == TYPE_FLOAT and t == TYPE_INT):

@@ -55,6 +55,27 @@ func _dps(s: TowerDef.Level) -> float:
 	return s.damage / s.fire_interval * maxf(1.0, _e(s, "banish_targets"))
 
 
+## LT-89: the cooldown the sim sets for `interval_s` seconds: whole ticks (the interval x
+## TICK_RATE rounded, at least 1).
+func _ticks(interval_s: float) -> int:
+	return maxi(1, roundi(interval_s * SimTime.TICK_RATE))
+
+
+## LT-89: the Every cell for `interval_s`: its whole ticks in seconds.
+func _every(interval_s: float) -> String:
+	return TowerText.every_text(_ticks(interval_s) / float(SimTime.TICK_RATE))
+
+
+## LT-89: a mundane fire-rate percent at multiplier `m`: base ticks / ticks at m - 1.
+func _rate(interval_s: float, m: float) -> float:
+	return (float(_ticks(interval_s)) / _ticks(interval_s * m) - 1.0) * 100.0
+
+
+## LT-89: a shooter's DPS at fire interval multiplier `m` as the sim deals it.
+func _ticked_dps(s: TowerDef.Level, m: float) -> float:
+	return s.damage / (_ticks(s.fire_interval * m) / float(SimTime.TICK_RATE))
+
+
 # --- §1: the row set ------------------------------------------------------------------------
 
 func test_rows_are_the_ten_rows_of_the_note_in_order() -> void:
@@ -93,7 +114,7 @@ func test_dash_rule_for_every_tower_level_and_branch() -> void:
 				_eq(v["damage"], DASH, tag + " damage")
 			else:
 				assert_str(v["damage"]).override_failure_message(tag).is_not_equal(DASH)
-			_eq(v["every"], _n(s.fire_interval) if acts else DASH, tag + " every")
+			_eq(v["every"], _every(s.fire_interval) if acts else DASH, tag + " every")
 			if _dps(s) > 0.0:
 				assert_str(v["dps"]).override_failure_message(tag).is_not_equal(DASH)
 			else:
@@ -199,11 +220,11 @@ func test_range_shows_the_dead_zone_and_hits_follow_targets_or_flying_units() ->
 
 # --- §1 In beam, §5 lit ---------------------------------------------------------------------
 
-## "+25%" = 1 / fire_interval_mult - 1 for a mundane shooter, "−30%" = power_mult - 1 for
-## every occult tower (the circle included); a config edit changes it.
+## "+25%" = base ticks / ticks at fire_interval_mult - 1 for a mundane shooter (LT-89),
+## "−30%" = power_mult - 1 for every occult tower (the circle included); a config edit
+## changes it.
 func test_beam_row_comes_from_the_beam_config_and_follows_an_edit() -> void:
 	var b := _cfg.economy.beam
-	var up := "+%s%%" % _n(roundf((1.0 / b.mundane_fire_interval_mult - 1.0) * 100.0))
 	var down := MINUS + "%s%%" % _n(roundf((1.0 - b.occult_power_mult) * 100.0))
 	for id: String in _cfg.towers:
 		var def := _def(id)
@@ -212,7 +233,7 @@ func test_beam_row_comes_from_the_beam_config_and_follows_an_edit() -> void:
 		if def.kind == "occult":
 			want = down
 		elif s.damage > 0.0:
-			want = up
+			want = "+%s%%" % _n(roundf(_rate(s.fire_interval, b.mundane_fire_interval_mult)))
 		_eq(TowerText.row_values(def, s, _cfg)["beam"], want, id)
 	b.occult_power_mult = 0.5
 	b.mundane_fire_interval_mult = 0.5
@@ -222,7 +243,8 @@ func test_beam_row_comes_from_the_beam_config_and_follows_an_edit() -> void:
 		"+100%", "edited mundane")
 
 
-## §5: lit mundane Every x fire_interval_mult, DPS / it ("0.56*", "25*" at Rifleman L2).
+## §5: lit mundane Every and DPS at fire_interval_mult over its whole ticks (LT-89: 0.56 s
+## fires every 17 ticks, "0.5666*" and "24.7*" at Rifleman L2).
 func test_lit_mundane_shooter_every_and_dps_carry_the_mark() -> void:
 	var m := _cfg.economy.beam.mundane_fire_interval_mult
 	for id: String in _cfg.towers:
@@ -238,11 +260,104 @@ func test_lit_mundane_shooter_every_and_dps_carry_the_mark() -> void:
 				continue
 			assert_array(lit.keys()).override_failure_message(tag) \
 				.contains_exactly_in_any_order(["every", "dps"])
-			_eq(lit["every"], _n(s.fire_interval * m) + STAR, tag + " every")
-			_eq(lit["dps"], _d1(_dps(s) / m) + STAR, tag + " dps")
+			_eq(lit["every"], _every(s.fire_interval * m) + STAR, tag + " every")
+			_eq(lit["dps"], _d1(_ticked_dps(s, m)) + STAR, tag + " dps")
 	var r2 := _def("rifleman").levels[1]
 	assert_str(TowerText.lit_values(_def("rifleman"), r2, _cfg)["every"]) \
-		.is_equal(_n(r2.fire_interval * m) + STAR)
+		.is_equal(_every(r2.fire_interval * m) + STAR)
+
+
+## LT-89: a table cell's number without the "*" mark.
+func _cell_float(text: String, tag: String) -> float:
+	var t := text.trim_suffix(STAR)
+	assert_bool(t.is_valid_float()).override_failure_message("%s: '%s'" % [tag, text]).is_true()
+	return t.to_float()
+
+
+## LT-89 (owner: "4 знака, отбрасывание"): for every shooter cell (tower x level x branch,
+## neutral, lit and shadowed; a gate and a circle excluded: their DPS counts targets / units)
+## the shown Damage / the shown Every rounds (one decimal) to the shown DPS, because Every is
+## cut, not rounded (Rifleman L3b shadowed: 7 / 0.2666 -> 26.3, the exact 26.25 tie).
+func test_damage_over_every_rounds_to_the_dps_cell_for_every_shooter_cell() -> void:
+	var full := _cfg.sanity.max_sanity  # a Resonator's DPS cell is one number at a given sanity
+	var checked := 0
+	for id: String in _cfg.towers:
+		var def := _def(id)
+		for st: Array in _states(def):
+			var s: TowerDef.Level = st[1]
+			if s.damage <= 0.0 or s.is_banish() or s.is_summon():
+				continue
+			var row := TowerText.row_values(def, s, _cfg, full)
+			for arm: Array in [["neutral", {}], ["lit", TowerText.lit_values(def, s, _cfg, full)],
+					["shadow", TowerText.lit_values(def, s, _cfg, full, true)]]:
+				var tag := "%s %s %s" % [id, st[0], arm[0]]
+				var v: Dictionary = row.merged(arm[1], true)
+				var damage := _cell_float(v["damage"], tag + " damage")
+				var every := _cell_float(v["every"], tag + " every")
+				var dps := v["dps"].trim_suffix(STAR) as String
+				_eq(_d1(damage / every), dps, "%s: %s / %s" % [tag, v["damage"], v["every"]])
+				# Every has at most 4 decimals.
+				assert_float(every * 10000.0).override_failure_message(tag) \
+					.is_equal_approx(roundf(every * 10000.0), 1e-6)
+				checked += 1
+	assert_int(checked).is_greater(40)
+
+
+## LT-89: Every is the sim's period cut (not rounded) to 4 decimals, trailing zeros dropped.
+func test_every_text_cuts_the_period_to_four_decimals() -> void:
+	var rate := float(SimTime.TICK_RATE)
+	_eq(TowerText.every_text(17 / rate), "0.5666", "17 ticks")
+	_eq(TowerText.every_text(5 / rate), "0.1666", "5 ticks")
+	_eq(TowerText.every_text(8 / rate), "0.2666", "8 ticks")
+	_eq(TowerText.every_text(20 / rate), "0.6666", "20 ticks, not 0.6667")
+	_eq(TowerText.every_text(19 / rate), "0.6333", "19 ticks")
+	_eq(TowerText.every_text(1 / rate), "0.0333", "1 tick")
+	_eq(TowerText.every_text(24 / rate), "0.8", "24 ticks")
+	_eq(TowerText.every_text(90 / rate), "3", "90 ticks")
+	# Live data (LT-89 owner example): a lit 0.7 s Rifleman L2 fires every 17 ticks.
+	var rifle := _def("rifleman")
+	_eq(TowerText.lit_values(rifle, rifle.levels[1], _cfg)["every"], "0.5666" + STAR, "rifle L2 lit")
+	_eq(TowerText.row_values(rifle, rifle.levels[1], _cfg)["every"], "0.7", "rifle L2")
+
+
+## LT-89: the In light / In shadow fire-rate percent is base ticks / ticks at the multiplier
+## - 1 (Rifleman L3b, 0.2 s = 6 ticks: lit 5 ticks +20%, shadowed 8 ticks −25%; the decimal
+## 1 / 0.8 - 1 would read +25% and 1 / 1.25 - 1 −20%), in the rows and the status lines.
+func test_rifleman_l3b_fire_rate_percent_comes_from_ticks() -> void:
+	var rifle := _def("rifleman")
+	var b := rifle.branches["b"]
+	var v := TowerText.row_values(rifle, b, _cfg)
+	_eq(v["beam"], "+20%", "In light")
+	_eq(v["shadow"], MINUS + "25%", "In shadow")
+	assert_str(TowerText.lit_line(rifle, b, _cfg)).contains("fire +20%")
+	assert_str(TowerText.lit_line(rifle, b, _cfg, true)).contains("fire %s25%%" % MINUS)
+
+
+## LT-89 / LT-105 Q4: an interval_mult on a gate's or a circle's channel changes neither its
+## Every nor its DPS (the cast / summon cooldown ignores it); a shooter's does change.
+func test_an_interval_mult_modifier_leaves_gate_and_circle_every_and_dps() -> void:
+	for id: String in ["silver_key", "summoning_circle"]:
+		var def := _def(id)
+		for st: Array in _states(def):
+			var s: TowerDef.Level = st[1]
+			for m: float in [0.5, 2.0]:
+				var tag := "%s %s x%s" % [id, st[0], m]
+				var fx := {"power_mult": 1.0, "interval_mult": m, "miss_add": 0.0,
+					"ignore_miss": false, "disabled": false}
+				var got := TowerStatsModel.lit_numbers(def, s, _cfg, -1.0, false, fx)
+				assert_bool(got.has("every") or got.has("dps")).override_failure_message(tag) \
+					.is_false()
+				var now := TowerRules.effective_with(s, _cfg, fx)
+				var plain := TowerRules.effective(def, s, _cfg)
+				assert_float(now["interval"]).override_failure_message(tag) \
+					.is_equal(plain["interval"])
+				assert_float(now["dps"]).override_failure_message(tag).is_equal(plain["dps"])
+				_eq(TowerText.row_values(def, s, _cfg)["every"], _n(s.fire_interval), tag + " every")
+	var rifle := _def("rifleman")
+	var fx2 := {"power_mult": 1.0, "interval_mult": 2.0, "miss_add": 0.0, "ignore_miss": false,
+		"disabled": false}
+	assert_bool(TowerStatsModel.lit_numbers(rifle, rifle.levels[0], _cfg, -1.0, false, fx2) \
+		.has("every")).is_true()
 
 
 ## §5: lit occult Damage and DPS x power_mult with "*"; an aura has neither; a circle's unit
@@ -320,8 +435,8 @@ func test_lit_effects_scale_the_aura_gate_and_circle_effects() -> void:
 ## circle too), "" for a mundane support tower.
 func test_lit_line_per_kind() -> void:
 	var b := _cfg.economy.beam
-	var fire := "* In the beam now: fire +%s%%" % _n(roundf((1.0 / b.mundane_fire_interval_mult
-		- 1.0) * 100.0))
+	var fire := "* In the beam now: fire +%s%%" % _n(roundf(_rate(
+		_def("rifleman").levels[0].fire_interval, b.mundane_fire_interval_mult)))
 	var power := "* In the beam now: %s%s%% power" % [MINUS, _n(roundf((1.0 - b.occult_power_mult)
 		* 100.0))]
 	assert_bool(b.mundane_ignore_miss).is_true()
@@ -374,7 +489,8 @@ func test_upgrade_path_names_the_l2_price_and_both_branches() -> void:
 func test_the_shadow_row_reads_the_shadow_block() -> void:
 	var sh := _cfg.economy.shadow
 	var rifle := _def("rifleman")
-	var fire := "%s%s%%" % [MINUS, _n(roundf((1.0 - 1.0 / sh.mundane_fire_interval_mult) * 100.0))]
+	var fire := "%s%s%%" % [MINUS, _n(roundf(absf(_rate(rifle.levels[0].fire_interval,
+		sh.mundane_fire_interval_mult))))]
 	var power := "+%s%%" % _n(roundf((sh.occult_power_mult - 1.0) * 100.0))
 	assert_str(TowerText.row_values(rifle, rifle.levels[0], _cfg)["shadow"]).is_equal(fire)
 	var necro := _def("necronomicon_reader")
@@ -394,8 +510,8 @@ func test_shadowed_values_use_the_shadow_multipliers_with_the_mark() -> void:
 	var rifle := _def("rifleman")
 	var s := rifle.levels[0]
 	var v := TowerText.lit_values(rifle, s, _cfg, -1.0, true)
-	_eq(v["every"], _n(s.fire_interval * sh.mundane_fire_interval_mult) + STAR, "every")
-	_eq(v["dps"], _d1(_dps(s) / sh.mundane_fire_interval_mult) + STAR, "dps")
+	_eq(v["every"], _every(s.fire_interval * sh.mundane_fire_interval_mult) + STAR, "every")
+	_eq(v["dps"], _d1(_ticked_dps(s, sh.mundane_fire_interval_mult)) + STAR, "dps")
 	var necro := _def("necronomicon_reader")
 	var n := necro.levels[0]
 	var nv := TowerText.lit_values(necro, n, _cfg, _cfg.sanity.max_sanity, true)

@@ -35,10 +35,16 @@ const STATIC_OK: PackedStringArray = [
 	"tower:^UpgradeInfo_L2$",
 	# The stats table: its container, rows and row names are per def; of the value cells only
 	# the upgrade-preview columns this game never changed while their row was on screen.
+	# LT-89: beam/shadow Label#3 too. The percents come from whole cooldown ticks, so a
+	# row splits into columns only when a level's ticks round differently; of the towers this
+	# game builds only the Rifleman does, and its L2 card always previews L3b (0.2 s: lit
+	# 5 ticks +20%, shadowed 8 ticks -25%), so the cell exists but never changes. The
+	# percent per level is pinned by stats_rows_test.
 	"tower:^Stats(/Head(/Label#\\d)?)?$",
 	"tower:^Stats/Row_\\w+(/Label#0)?$",
-	"tower:^Stats/Row_(attack/Label#[23]|beam/Label#1|damage/Label#3|dps/Label#3|every/Label#3"
-		+ "|hits/Label#1|kill/Label#1|range/Label#3|reserve/Label#3|shadow/Label#1)$",
+	"tower:^Stats/Row_(attack/Label#[23]|beam/Label#[13]|damage/Label#3|dps/Label#3"
+		+ "|every/Label#3|hits/Label#1|kill/Label#1|range/Label#3|reserve/Label#3"
+		+ "|shadow/Label#[13])$",
 ]
 
 var _vp: SubViewport

@@ -67,7 +67,8 @@ const BANISH_REACH := 0.3  ## the thread from the gate fades out over this long
 const BANISH_FOLD := 0.45  ## the old spot collapses in this long; the new ring opens after
 
 ## Short-lived effects: {kind, from, to, ttl, ...} in cell units. Attack effects (LT-25)
-## also carry tower, end, hits, hit_pos, miss, astray, dur (initial ttl), seed.
+## also carry tower, end, hits, hit_pos, miss, astray, dur (initial ttl), seed; a leak
+## carries the lighthouse `cell` its frame outlines (LT-108 F4).
 var effects: Array[Dictionary] = []
 ## LT-90 F1: per primitive kind _draw_warmup warms, true once an effect drew it for real.
 ## Only effect draws (shots) set them: those come after the window is up, while board draws
@@ -129,7 +130,7 @@ func on_event(ev: SimEvent) -> void:
 		SimEvent.Type.LEAKED:
 			var lh := game.sim.state.map.lighthouse
 			effects.append({"kind": "leak", "from": game.sim.state.map.grid.centre(lh),
-				"ttl": FLASH_SECONDS})
+				"cell": lh, "ttl": FLASH_SECONDS})
 
 
 
@@ -336,9 +337,7 @@ func _draw_effects() -> void:
 				draw_arc(view.cell_to_world(fx["from"]), view.cells_to_px(0.35), 0, TAU, 24,
 					COLOR_DISSOLVE, 2.0)
 			"leak":
-				draw_rect(Rect2(view.cell_to_world(fx["from"] - Vector2(0.5, 0.5)),
-					Vector2.ONE * view.cells_to_px(1.0)),
-					Board.COLOR_LEAK, false, 4.0)
+				view.outline_cell(self, fx["cell"], Board.COLOR_LEAK, 4.0)  # LT-108 F4
 
 
 ## A wavering bolt from the tower to an empty spot, ending in a small fading ring; from a
