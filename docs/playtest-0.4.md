@@ -360,3 +360,43 @@ Reading:
 - Waves 4-5 are the lever: 1.0 -> 0.5 moves early ok from 52% to 100% and adds 0.9 mean waves; 1.0 -> 2.0 drops it to 2%.
 - Proposed bisect (not run): `hp_mult` of waves 4-5 = 0.7 (between `/2` = meets 10/10 and `lt72_b` at 1.0 =
   meets 4/10); if 0.7 still meets >= 8/10, try 0.85, else 0.6. The late waves 6-10 stay at the `lt72_b` values.
+
+## More waves (LT-72), round 3: owner's pick "4-5 ×0.7 + (4-5 ÷2 & 6-10 ÷2)"
+
+Variants: `lt72_b_early_07` = `lt72_b` with `hp_mult` of waves 4-5 = 0.7 (waves 6-10 as `lt72_b`: 1.6/1.85/2.0/2.4/2.7);
+`lt72_b_early_d2_late_d2` = `lt72_b_early_d2` (waves 4-5 = 0.5) with waves 6-10 halved (0.8/0.925/1.0/1.2/1.35, as `lt72_b_late_d2`).
+20 seeds, all 10 strategies, flare on, `--jobs=5`, target >= 10/20 losses and survive waves 1..5 in >= 15/20.
+Machine: `uptime` at start `19:58 load averages: 3.68 4.31 12.65`, at end `20:17 load 4.63 11.34 14.52`;
+`/usr/bin/time -p`: real 1169.23, user 4603.01, sys 28.78 (user/real 3.9 over 5 processes: CPU-bound, no waiting; no timeouts).
+
+Cells (wins/losses, `eN` = survived waves 1..5):
+
+| variant | mundane | occult | mixed | madness | demolition | battery | resonator | gate | circle | light | met |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| early_07 | 0/20 e20 yes | 0/20 e20 yes | 0/20 e18 yes | 0/20 e20 yes | 0/20 e20 yes | 0/20 e20 yes | 0/20 e20 yes | 0/20 e16 yes | 0/20 e20 yes | 1/19 e20 yes | 10/10 |
+| early_d2_late_d2 | 0/20 e20 yes | 0/20 e20 yes | 0/20 e20 yes | 0/20 e20 yes | 2/18 e20 yes | 0/20 e20 yes | 0/20 e20 yes | 0/20 e20 yes | 0/20 e20 yes | 20/0 e20 no | 9/10 |
+
+Where runs end (losses in wave 1..10, mean waves survived in brackets):
+
+| variant | mundane | occult | mixed | madness | demolition | battery | resonator | gate | circle | light | all losses by wave | early ok |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| early_07 | 0.0.0.0.0.17.2.1.0.0 (5.2) | 0.0.0.0.0.0.19.1.0.0 (6.0) | 0.0.0.0.2.10.7.1.0.0 (5.3) | 0.0.0.0.0.8.12.0.0.0 (5.6) | 0.0.0.0.0.14.3.3.0.0 (5.5) | 0.0.0.0.0.15.4.1.0.0 (5.3) | 0.0.0.0.0.18.2.0.0.0 (5.1) | 0.0.0.1.3.16.0.0.0.0 (4.8) | 0.0.0.0.0.19.1.0.0.0 (5.0) | 0.0.0.0.0.17.1.1.0.0 (5.4) | 0.0.0.1.5.134.51.8.0.0 | 194/200 (97%) |
+| early_d2_late_d2 | 0.0.0.0.0.0.0.2.18.0 (7.9) | 0.0.0.0.0.0.0.20.0.0 (7.0) | 0.0.0.0.0.0.12.8.0.0 (6.4) | 0.0.0.0.0.2.17.1.0.0 (6.0) | 0.0.0.0.0.0.0.1.8.9 (8.6) | 0.0.0.0.0.0.0.0.14.6 (8.3) | 0.0.0.0.0.0.0.4.9.7 (8.2) | 0.0.0.0.0.0.20.0.0.0 (6.0) | 0.0.0.0.0.0.0.20.0.0 (7.0) | no losses, 20 wins (10.0) | 0.0.0.0.0.2.49.56.49.22 | 200/200 (100%) |
+
+Lighthouse HP left (mean/median): all 0.0/0.0 except early_07 `light` 0.1/0.0 and early_d2_late_d2 demolition 0.7/0.0, `light` 16.6/17.0
+(the only arm where the metric separates anything: `light` wins with HP to spare).
+Totals: early_07 1 win / 199 losses, mean waves survived 5.32 (mean of the 10 strategy means), early ok 97%, target met 10/10;
+early_d2_late_d2 22 wins / 178 losses, mean waves 7.54, early ok 100%, target met 9/10 (`light` wins 20/20).
+
+Reading: with the early waves tamed, `early_07` still ends 85% of runs in waves 6-7 (134/51 of 199) and has
+one win, so it is a close-to-minimal fix: the two-part target for every strategy, gate is the weakest early
+(e16, 3 deaths in wave 5, 1 in wave 4). `early_d2_late_d2` pushes deaths to waves 7-10 (every wave 7-10 has
+22-56 losses, wave 10 reached by 22 runs) but `light` is unbeatable (20/20 wins) and demolition wins 2.
+
+### Proposed shipped list (lab proposes, owner picks)
+
+- Waves 4-5 `hp_mult` 0.7, waves 6-10 as `lt72_b` (1.6/1.85/2.0/2.4/2.7) = `lt72_b_early_07`: meets the two-part target for
+  10/10 strategies, 97% early ok, but only 1 win in 200 runs, deaths concentrated in waves 6-7 (the "some wins" part is thin).
+- Suggested middle value to measure next (not run): `lt72_b_early_07` with waves 6-10 `hp_mult` x0.8 (1.28/1.48/1.6/1.92/2.16), between
+  `early_07` (1 win, mean 5.3 waves) and `early_d2_late_d2` (22 wins, 20 of them `light`, mean 7.5 waves): it should
+  give a few wins for several strategies and reach waves 8-10 without handing `light` a free win. If the owner wants no further run, ship `early_07`.
