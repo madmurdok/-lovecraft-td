@@ -589,3 +589,86 @@ func _waves3_config() -> GameConfig:
 	DirAccess.remove_absolute(WAVES3_DIR)
 	assert_bool(r.ok).override_failure_message("\n".join(r.errors)).is_true()
 	return r.config
+
+
+# --- LT-112: --bot-strategies=<path> (a balance-lab variant's patched copy) ----------------------
+
+## Writes `raw` as JSON to an absolute path under this checkout's test dir (the lab passes an
+## absolute OS path) and returns that path.
+func _write_table(name: String, raw: Variant) -> String:
+	var path := ProjectSettings.globalize_path(TestUserDir.path(name))
+	DirAccess.make_dir_recursive_absolute(path.get_base_dir())
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	f.store_string(raw if raw is String else JSON.stringify(raw))
+	f.close()
+	return path
+
+
+## The file's table is loaded and validated, its names are played and the policy plays it: a
+## build_first changed only in the file makes the harness's policy upgrade after two towers.
+func test_bot_strategies_flag_plays_the_file_and_its_tunables() -> void:
+	var raw := _shipped_json()
+	raw.tunables.build_first = 2
+	raw.strategies.append({"name": "probe", "cycle": [RIFLE], "branches": {RIFLE: "a"}})
+	var path := _write_table("lt112_bot_strategies.json", raw)
+	var shipped := Table.load_file()
+	var b := _run_main(shipped, ["--seeds=1", "--strategies=probe,mundane",
+		"--bot-strategies=" + path])
+	DirAccess.remove_absolute(path)
+	assert_int(b.get("_test_exit")).override_failure_message(str(b.get("_test_errors"))).is_equal(0)
+	assert_array(b.get("_test_played")).is_equal(["mundane", "probe"])
+	var st: Strategies = b.call("_policy")
+	assert_object(st.table).is_not_same(shipped)
+	assert_int(st.table.build_first).is_equal(2)
+	# Behaviour: two riflemen's worth of gold plus one upgrade; build_first 2 buys the upgrade.
+	b.set("_lighthouse", false)
+	var cfg := real_config()
+	var oil := cfg.economy.oil
+	var topup := maxi(0, cfg.economy.flare.cost_oil - oil.start) * oil.price
+	var gold: int = 2 * cfg.towers[RIFLE].cost + cfg.towers[RIFLE].levels[1].upgrade_cost + topup
+	var sim := _sim(gold)
+	st.act(sim, "probe", 0, {})
+	assert_array(sim.state.towers.map(func(x: SimTower) -> int: return x.level)).is_equal([1, 0])
+	# Without the flag the same harness plays the shipped table (build_first 5): no upgrade, and
+	# the file's extra row is unknown.
+	var plain := _run_main(shipped, ["--seeds=1", "--strategies=mundane"])
+	assert_int(plain.get("_test_exit")).is_equal(0)
+	plain.set("_lighthouse", false)
+	var st0: Strategies = plain.call("_policy")
+	assert_object(st0.table).is_same(shipped)
+	var sim0 := _sim(gold)
+	st0.act(sim0, "mundane", 0, {})
+	for x: SimTower in sim0.state.towers:
+		assert_int(x.level).is_equal(0)
+	assert_int(_run_main(shipped, ["--seeds=1", "--strategies=probe"]).get("_test_exit")).is_equal(1)
+
+
+## An empty or missing path, or a file the loader rejects, quits 1 with the error before any
+## run (an empty path is not the shipped default).
+func test_bot_strategies_flag_with_a_bad_path_or_file_quits_1() -> void:
+	var raw := _shipped_json()
+	raw.strategies[0]["colour"] = "red"
+	var bad := _write_table("lt112_bad_strategies.json", raw)
+	var cases := {"--bot-strategies=": "file not found",
+		"--bot-strategies=/no/such/lt112.json": "/no/such/lt112.json",
+		"--bot-strategies=" + bad: "colour"}
+	for arg: String in cases:
+		var b := _run_main(Table.load_file(), ["--seeds=1", arg])
+		assert_int(b.get("_test_exit")).override_failure_message(arg).is_equal(1)
+		assert_array(b.get("_test_played")).override_failure_message(arg).is_empty()
+		assert_str(b.get("_test_errors")).contains("strategies.json errors:")
+		assert_str(b.get("_test_errors")).override_failure_message(arg + ": " \
+			+ str(b.get("_test_errors"))).contains(cases[arg])
+	DirAccess.remove_absolute(bad)
+
+
+## The real script and exit code: an empty --bot-strategies= quits 1 before any game runs.
+func test_empty_bot_strategies_path_exits_1_as_a_process() -> void:
+	var out: Array = []
+	var code := OS.execute(OS.get_executable_path(), ["--headless", "--path",
+		ProjectSettings.globalize_path("res://"), "-s", BOT_PATH, "--", "--seeds=1",
+		"--bot-strategies="], out, true)
+	var text := "\n".join(PackedStringArray(out))
+	assert_int(code).override_failure_message("exit %d:\n%s" % [code, text]).is_equal(1)
+	assert_str(text).contains("file not found")
+	assert_bool(text.contains("RUN ")).override_failure_message(text).is_false()

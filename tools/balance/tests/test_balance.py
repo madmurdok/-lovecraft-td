@@ -253,16 +253,169 @@ class LoadVariantTest(TempDirs):
         }
         for flag in balance.RESERVED_FLAGS:
             cases["reserved" + flag.strip("-=")] = {"flags": [flag + "x"]}
-        self.assertEqual(len([c for c in cases if c.startswith("reserved")]), 4)
+        self.assertEqual(len([c for c in cases if c.startswith("reserved")]), 5)
         for name, body in cases.items():
             self.write(self.variants, name + ".json", body)
             with self.subTest(name), self.assertRaises(PatchError):
                 balance.load_variant(name)
 
+    def test_bot_key_must_be_an_object_and_defaults_to_empty(self):
+        self.write(self.variants, "nobot.json", {"patch": {}})
+        self.assertEqual(balance.load_variant("nobot")["bot"], {})
+        self.write(self.variants, "withbot.json", {"bot": {"tunables": {"build_first": 2}}})
+        self.assertEqual(balance.load_variant("withbot")["bot"], {"tunables": {"build_first": 2}})
+        for name, bot in {"list": [1], "string": "x", "number": 3, "null": None}.items():
+            self.write(self.variants, "bot_" + name + ".json", {"bot": bot})
+            with self.subTest(name), self.assertRaises(PatchError) as cm:
+                balance.load_variant("bot_" + name)
+            self.assertIn("'bot' must be an object", str(cm.exception))
+
+    def test_bot_strategies_flag_is_reserved(self):
+        self.write(self.variants, "own.json", {"flags": ["--bot-strategies=/tmp/x.json"]})
+        with self.assertRaises(PatchError) as cm:
+            balance.load_variant("own")
+        self.assertIn("--bot-strategies=", str(cm.exception))
+
     def test_missing_variant_file(self):
         with self.assertRaises(PatchError) as cm:
             balance.load_variant("ghost")
         self.assertIn("ghost", str(cm.exception))
+
+
+# --- LT-112: a variant's "bot" key patches a copy of tools/bot/strategies.json --------------
+
+class BotPatchTest(TempDirs):
+    TABLE = {"tunables": {"build_first": 5, "flare_min_live": 4},
+             "strategies": [
+                 {"name": "mundane", "about": "m", "cycle": ["rifleman", "rifleman", "harpooner"],
+                  "branches": {"rifleman": "a", "harpooner": "a"}},
+                 {"name": "occult", "about": "o", "prefix": ["rifleman"],
+                  "cycle": ["elder_sign"], "branches": {"rifleman": "a"}, "cap_floor": 30,
+                  "on_blocked": "fallback", "fallback": "rifleman", "fallback_max": 3,
+                  "buy_sanity": True}]}
+
+    def setUp(self):
+        super().setUp()
+        self.src = os.path.join(self.tmp, "strategies.json")
+        self.write(self.tmp, "strategies.json", self.TABLE)
+        p = mock.patch.object(balance, "STRATEGIES_FILE", self.src)
+        p.start()
+        self.addCleanup(p.stop)
+        self.dest = os.path.join(self.tmp, "bot_v.json")
+
+    def bot(self, patch):
+        balance.materialize_bot({"name": "v", "bot": patch}, self.dest)
+        with open(self.dest) as f:
+            return json.load(f)
+
+    def err(self, patch):
+        before = self.read(self.src)
+        with self.assertRaises(PatchError) as cm:
+            balance.materialize_bot({"name": "v", "bot": patch}, self.dest)
+        self.assertEqual(self.read(self.src), before)
+        msg = str(cm.exception)
+        self.assertTrue(msg.startswith("variant v: bot:"), msg)
+        return msg
+
+    def test_patch_goes_to_a_copy_and_the_repo_file_is_untouched(self):
+        before = self.read(self.src)
+        out = self.bot({"tunables": {"build_first": 2}})
+        self.assertEqual(self.read(self.src), before)
+        self.assertEqual(out["tunables"], {"build_first": 2, "flare_min_live": 4})
+        self.assertEqual(out["strategies"], self.TABLE["strategies"])
+
+    def test_arrays_replace_and_objects_merge(self):
+        out = self.bot({"strategies": {"name=mundane": {"cycle": ["harpooner"],
+                                                        "branches": {"rifleman": "b"}}}})
+        row = out["strategies"][0]
+        self.assertEqual(row["cycle"], ["harpooner"])  # replaced, not merged by index
+        self.assertEqual(row["branches"], {"rifleman": "b", "harpooner": "a"})
+        self.assertEqual(out["strategies"][1], self.TABLE["strategies"][1])
+
+    def test_optional_row_fields_and_any_tower_id_in_branches_may_be_added(self):
+        out = self.bot({"strategies": {"0": {"cap_floor": 20, "on_blocked": "skip",
+                                             "buy_sanity": True,
+                                             "branches": {"searchlight": "b"}}}})
+        row = out["strategies"][0]
+        self.assertEqual((row["cap_floor"], row["on_blocked"], row["buy_sanity"]),
+                         (20, "skip", True))
+        self.assertEqual(row["branches"]["searchlight"], "b")
+        self.assertNotIn("searchlight", out["strategies"][1]["branches"])
+
+    def test_types_are_checked(self):
+        cases = {
+            "cycle not a list": ({"strategies": {"0": {"cycle": "rifleman"}}}, "cycle"),
+            "tunable a string": ({"tunables": {"build_first": "2"}}, "build_first"),
+            "branch pick a number": ({"strategies": {"0": {"branches": {"rifleman": 1}}}},
+                                     "rifleman"),
+            "added branch a number": ({"strategies": {"0": {"branches": {"gate": 1}}}}, "gate"),
+            "added cap_floor a string": ({"strategies": {"0": {"cap_floor": "30"}}}, "cap_floor"),
+            "added buy_sanity a number": ({"strategies": {"0": {"buy_sanity": 1}}}, "buy_sanity"),
+        }
+        for name, (patch, frag) in cases.items():
+            with self.subTest(name):
+                self.assertIn(frag, self.err(patch))
+
+    def test_unknown_strategy_and_unknown_keys_are_refused(self):
+        cases = {
+            "unknown strategy": ({"strategies": {"name=nosuch": {"cycle": ["x"]}}}, "nosuch"),
+            "index out of range": ({"strategies": {"5": {"cycle": ["x"]}}}, "out of range"),
+            "unknown row key": ({"strategies": {"0": {"colour": "red"}}}, "no such key"),
+            "unknown tunable": ({"tunables": {"build_last": 3}}, "no such key"),
+            "unknown root key": ({"towers": {}}, "no such key"),
+        }
+        for name, (patch, frag) in cases.items():
+            with self.subTest(name):
+                self.assertIn(frag, self.err(patch))
+
+    def test_any_key_in_branches_does_not_loosen_other_places(self):
+        # "*" accepts any key with a string value under strategies.*.branches only.
+        for patch in ({"strategies": {"0": {"colour": "a"}}}, {"tunables": {"colour": "a"}},
+                      {"colour": "a"}):
+            with self.subTest(json.dumps(patch)):
+                self.assertIn("no such key", self.err(patch))
+        # A data/ patch is not loosened either: waves.json adds only its multipliers, other
+        # files nothing, also next to a "bot" key.
+        self.write(self.data, "waves.json", OptionalKeysTest.WAVES)
+        self.write(self.data, "towers.json", {"branches": {"a": "x"}})
+        for i, (f, p) in enumerate((("waves.json", {"waves": {"0": {"branches": "a"}}}),
+                                    ("waves.json", {"colour": "a"}),
+                                    ("towers.json", {"branches": {"gate": "a"}}))):
+            with self.subTest(f + json.dumps(p)):
+                with self.assertRaises(PatchError) as cm:
+                    balance.materialize(
+                        {"name": "v", "patch": {f: p}, "flags": [],
+                         "bot": {"strategies": {"0": {"branches": {"gate": "a"}}}}},
+                        os.path.join(self.tmp, "out%d" % i))
+                self.assertIn("no such key", str(cm.exception))
+
+    def test_a_strategy_rename_is_refused(self):
+        for patch in ({"strategies": {"0": {"name": "plain"}}},
+                      {"strategies": [{"name": "occult", "cycle": ["x"]},
+                                      {"name": "mundane", "cycle": ["x"]}]},
+                      {"strategies": [{"name": "mundane", "cycle": ["x"]}]}):
+            with self.subTest(json.dumps(patch)):
+                self.assertIn("name may not change", self.err(patch))
+
+    def test_a_whole_array_with_the_same_names_is_accepted(self):
+        rows = [{"name": "mundane", "cycle": ["harpooner"]}, {"name": "occult", "cycle": ["x"]}]
+        self.assertEqual(self.bot({"strategies": rows})["strategies"], rows)
+
+    def test_non_object_strategy_rows_are_a_bad_variant(self):
+        for rows in ([1, 2], ["mundane", "occult"], [{"name": "mundane"}, None]):
+            with self.subTest(json.dumps(rows)):
+                self.assertIn("list of objects", self.err({"strategies": rows}))
+
+    def test_real_strategies_file_patches(self):
+        with mock.patch.object(balance, "STRATEGIES_FILE",
+                               os.path.join(balance.REPO, "tools", "bot", "strategies.json")):
+            out = self.bot({"tunables": {"flare_min_live": 8},
+                            "strategies": {"name=light": {"branches": {"gate": "b"}}}})
+            names = balance.bot_strategies()
+        self.assertEqual(out["tunables"]["flare_min_live"], 8)
+        light = [r for r in out["strategies"] if r["name"] == "light"][0]
+        self.assertEqual(light["branches"]["gate"], "b")
+        self.assertEqual([r["name"] for r in out["strategies"]], names)
 
 
 # --- 11: strategies from the bot ----------------------------------------------------------
@@ -715,6 +868,35 @@ class MainTest(TempDirs):
         self.assertEqual(rc, 0, err)
         self.assertEqual(peak[0], 1)
 
+
+    def test_bot_flag_only_for_a_variant_with_a_bot_key(self):
+        self.write(self.variants, "baseline.json", {"patch": {}, "flags": ["--flare=0"]})
+        self.write(self.variants, "botv.json",
+                   {"flags": ["--flare=0"], "bot": {"tunables": {"build_first": 2}}})
+        rc, out, err = self.main("baseline", "botv", "--strategies=s1", "--seeds=1",
+                                 "--work=" + self.work)
+        self.assertEqual(rc, 0, err)
+        flags = {j["variant"]: j["flags"] for j in self.started}
+        self.assertEqual(flags["baseline"], ["--flare=0"])
+        path = os.path.join(self.work, "bot_botv.json")
+        self.assertEqual(flags["botv"], ["--flare=0", "--bot-strategies=" + path])
+        with open(path) as f:
+            self.assertEqual(json.load(f)["tunables"]["build_first"], 2)
+        self.assertFalse(os.path.exists(os.path.join(self.work, "bot_baseline.json")))
+
+    def test_bad_bot_patches_exit_2_without_a_traceback(self):
+        self.write(self.variants, "rows.json", {"bot": {"strategies": [1, 2]}})
+        self.write(self.variants, "rename.json", {"bot": {"strategies": {"0": {"name": "x"}}}})
+        self.write(self.variants, "typo.json", {"bot": {"tunables": {"build_frist": 2}}})
+        self.write(self.variants, "notobj.json", {"bot": [1]})
+        rc, out, err = self.main("good", "rows", "rename", "typo", "notobj", "--check",
+                                 "--work=" + self.work)
+        self.assertEqual(rc, 2)
+        self.assertEqual(self.started, [])
+        self.assertNotIn("Traceback", err)
+        for s in ("variant rows: bot:", "list of objects", "variant rename: bot:",
+                  "name may not change", "build_frist", "'bot' must be an object"):
+            self.assertIn(s, err)
 
 if __name__ == "__main__":
     unittest.main()
