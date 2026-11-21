@@ -90,33 +90,53 @@ immutable and has no trig. `R = 1 / sqrt(3.0)` and `H = sqrt(3.0) / 2` are compu
 constructor, and `sqrt` is exact-rounded, so the values are deterministic. Map data cannot
 select it (`"grid": "hex"` stays a config error), so golden, balance and play do not change.
 Tests and the verify probe build it directly. Registering it later is the one factory line.
-- **Orientation and id (Q7):** pointy-top, odd-r offset ids. The id `(x, y)` is the column and
-  row of the `rows` text, and odd rows shift right by half a cell. MapDef's row loop,
-  `Vector2i(x, y)` for S/L and `_kinds` work unchanged, which meets the "one class + data +
-  factory line" acceptance. LT-77 §3 sketched axial ids; offset is the deviation that Q7 asks
-  about.
+- **Id (owner, Q7 "Axial id"):** axial `(q, r)` in `Vector2i`, as in LT-77 §3. Text cell
+  (column x, row y) maps to `q = x - (y - (y & 1)) / 2` and `r = y` (odd-r rows, so the `rows`
+  text keeps its shape). GDScript `/` on ints truncates toward zero, but `y - (y & 1)` is even
+  and ≥ 0, so the division is exact.
+- **Orientation: pointy-top.** This is stated, not a new question. Axial ids work with either
+  orientation, but only pointy-top keeps the `rows` text's rows as straight horizontal rows of
+  hexes. Flat-top would make every text row zig-zag and would need a different map format,
+  which is a map-format decision for LT-64/LT-18, not this task. This is also LT-77 §3's sketch.
 - **Size:** the LT-77 unit, so neighbour centres are 1 apart and the flat-to-flat width is 1
   (40 px). The apothem is 0.5, so F2's inset formula holds unchanged. The circumradius is `R`
   and the row pitch is `H`. `range`, `speed` and `reach` keep their meaning (LT-77 §1).
-- `kind()`: `"hex"`. `centre(c)`: `(c.x + 0.5 + 0.5 * (c.y & 1), R + c.y * H)`.
-- `neighbours(c)`: the fixed order E, NE, NW, W, SW, SE (screen counter-clockwise from east),
-  in bounds only. On even rows the offsets are (+1,0) (0,-1) (-1,-1) (-1,0) (-1,+1) (0,+1). On
-  odd rows they are (+1,0) (+1,-1) (0,-1) (-1,0) (0,+1) (+1,+1).
+- `kind()`: `"hex"`. `centre(c)`: `(c.x + 0.5 * c.y + 0.5, R + c.y * H)`. For axial ids this
+  equals the odd-r offset layout: `(r - (r & 1)) / 2 + (r & 1) / 2 = r / 2`.
+- `neighbours(c)`: the fixed axial offsets in the order E, NE, NW, W, SW, SE (screen
+  counter-clockwise from east): (+1,0) (+1,-1) (0,-1) (-1,0) (-1,+1) (0,+1). No parity is
+  involved. Only in-bounds cells are returned.
 - `distance`: Euclidean distance between centres, using 64-bit scalars like SquareGrid.
-  `steps`: convert offset to axial (`q = x - (y - (y & 1)) / 2`, `r = y`), then
-  `(|dq| + |dr| + |dq + dr|) / 2`.
+  `steps`: `(|dq| + |dr| + |dq + dr|) / 2`.
 - `polygon(c)`: 6 corners, screen-clockwise from the top: `(cx, cy - R)`,
   `(cx + 0.5, cy - R/2)`, `(cx + 0.5, cy + R/2)`, `(cx, cy + R)`, `(cx - 0.5, cy + R/2)`,
   `(cx - 0.5, cy - R/2)`.
-- `cell_at(p)`: shift by the (0, 0) centre `(0.5, R)`, then fractional axial
-  `q = x - y / sqrt3`, `r = y * 2 / sqrt3` (the constants come from the constructor). Then cube
-  rounding, with ties broken by the fixed rule "re-derive the component with the largest
-  rounding error". Finally convert axial back to offset. The result may be outside the board,
-  as in SquareGrid.
-- `contains`, `cells` (row-major), `index` (`y * w + x`), `cell_count`: the same as square.
+- `cell_at(p)`: shift by the (0, 0) centre `(0.5, R)`, then compute fractional axial
+  `q = x - y / sqrt3` and `r = y * 2 / sqrt3` (constants from the constructor). Cube rounding
+  follows, with the fixed tie rule "re-derive the component with the largest rounding error".
+  The result may be outside the board, as in SquareGrid.
+- Storage goes through the text cell: `contains(c)` means the text cell is inside `w x h`.
+  `cells()` lists axial ids in text row-major order. `index(c)` is `y * w + x` of the text cell,
+  and `cell_count` is `w * h`.
 - `bounds()`: `Rect2(0, 0, w + (0.5 if h > 1 else 0.0), (h - 1) * H + 2 * R)`.
 - G3 (one cell centre) gains a second home: `G3_HOME` becomes a list
-  `[square_grid.gd, hex_grid.gd]` with 3 home hits (square x and y, hex x).
+  `[square_grid.gd, hex_grid.gd]`. The code slice sets the home-hit count to what the two files
+  actually contain (square: 2).
+
+**F6. MapDef reads the text through the topology** (follows from Q7). Two non-abstract methods
+go on `GridTopology`, with identity defaults, so SquareGrid does not change:
+`cell_of_text(x: int, y: int) -> Vector2i` and `text_of(cell) -> Vector2i` (column, row). HexGrid
+overrides both with the odd-r <-> axial maps above and uses them in `contains` and `index`.
+MapDef changes in two places:
+- The `parse` rows loop (`map_def.gd:40-59`) stores `_kinds` and the S/L cells under
+  `grid.cell_of_text(x, y)`. It is moved into `MapDef._read_rows(r, rows)` so a test can run it
+  on a hand-set HexGrid (hex cannot come from data, since it is not in `MAKERS`).
+- The five `_derive_path` errors (`:81-112`) print `grid.text_of(cell)` for the row and the
+  column instead of `cell.y`/`cell.x`. On square the identity keeps every message byte for
+  byte.
+
+So a hex map is the same `rows` text plus `"grid": "hex"`, once registered. Square gets the
+same cells, `_kinds`, path and error texts, and golden does not change.
 
 **F4. Leak frame from the lighthouse polygon.** `LEAKED` stores `"cell": lighthouse` in the
 effect. The draw becomes `outline_cell(self, fx["cell"], COLOR_LEAK, 4.0)`. The primitive moves
@@ -207,15 +227,21 @@ check only, since the hex map is not playable.
    exactly the area of `inset - w/2` minus `inset + w/2`, with no pairwise overlap
    (`Geometry2D.intersect_polygons` is empty). Control: swap inner and outer.
 5. `tests/hex_grid_test.gd`, mirroring `square_grid_test.gd`:
-   - interior neighbours are 6, in the pinned order, for an even row and an odd row;
-     neighbourhood is symmetric; edge and corner cells stay in bounds;
+   - interior neighbours are the 6 axial offsets in the pinned order; neighbourhood is
+     symmetric; edge and corner cells stay in bounds;
    - `distance` to every neighbour ≈ 1 (1e-9); `steps` equals hex hops (hand-checked pairs);
    - `polygon` has 6 corners in the pinned order;
    - `cell_at(centre(c)) == c` for every cell, and points nudged 0.4 toward each neighbour
      centre land in that neighbour;
-   - row-major `cells`/`index`, `bounds`, and `kind() == "hex"`.
-   Controls: swap the even-row and odd-row offset tables; drop the `(c.y & 1)` shift in
-   `centre`.
+   - `text_of(cell_of_text(x, y)) == (x, y)` for every text cell; hand-checked pairs on even
+     and odd rows (for example text (0, 1) -> axial (0, 1), text (0, 2) -> axial (-1, 2));
+   - `cells()` is text row-major, `index` inverts it, and `bounds` and `kind() == "hex"` hold.
+   Controls: drop the `(y & 1)` term in `cell_of_text`; replace `0.5 * c.y` with 0 in `centre`.
+5b. MapDef on hex: `_read_rows` on a hand-set `HexGrid.new(4, 3)` with a 3-row text whose path
+   is only connected under hex adjacency. `kind_at`, `spawn` and `lighthouse` are axial, the
+   path is derived, and an orphan path cell's error names the text column. On square, the
+   existing `map_def_test` errors stay unchanged. Control: store under `Vector2i(x, y)` in the
+   loop.
 6. Hex drawing geometry: with `view.grid = HexGrid.new(5, 4)`, each `cell_polygon` has
    6 points, neighbour tiles intersect with area 0, the polygon areas sum to
    `cell_count * (sqrt(3) / 2) * TILE²` (each hex is `sqrt(3)/2` cell units²), and the inset apothem
@@ -227,8 +253,8 @@ check only, since the hex map is not playable.
    group): put back the `fx_layer.gd` `from - Vector2(0.5, 0.5)` rect, and separately a
    `view.cell_rect(` call in phantom_layer, so that both forms fail.
 
-Controls chosen (8): items 1, 2, 3, 4, 5 (the parity swap), 6, 7, 9. Items 5's second control
-and item 8 are reverted only if the verify budget allows.
+Controls chosen (8): items 1, 2, 3, 4, 5 (the `cell_of_text` parity), 5b, 6, 9. Item 5's second
+control and items 7-8 are reverted only if the verify budget allows.
 
 Not pinned by a test: the draw calls themselves (render-only, §5 screenshots) and MapLayer's
 fill-then-outline order (checked by screenshot).
@@ -252,7 +278,11 @@ fill-then-outline order (checked by screenshot).
 Edit:
 - `sim/rules/grid_factory.gd` (new): F1.
 - `sim/rules/hex_grid.gd` (new): F5. Model it on `sim/rules/square_grid.gd:1-76`.
+- `sim/rules/grid_topology.gd` (after `:56`): `cell_of_text`/`text_of` with identity defaults
+  (F6).
 - `sim/defs/map_def.gd:28-31` (`parse`): factory call, error text from `kinds()`, fallback.
+  `:40-59`: rows loop -> `_read_rows`, using `grid.cell_of_text`. `:75-112` (`_derive_path`):
+  error coordinates via `grid.text_of` (F6).
 - `scenes/board/board_view.gd:66-81`: `cell_polygon(cell, inset_px)`, `cell_centre`,
   `outline_quads`, static `fill_cell`/`outline_cell`; **delete `cell_rect` (`:74-81`)**; update
   the header comment `:12-13`.
@@ -266,7 +296,7 @@ Edit:
 - `tests/architecture_guard_test.gd`: G3 home list (`:118`, home count `:144`); G10 home count
   (`:291`); new G15 after G10 (`:297`).
 - `tests/board_view_test.gd:5` (header), `:172-196` (§4 rewritten on `cell_polygon`), `:268`.
-- New tests: `tests/hex_grid_test.gd`, plus GridFactory, inset, outline and hex-drawing tests
+- New tests: `tests/hex_grid_test.gd`, the hex case in `tests/map_def_test.gd` (5b), plus GridFactory, inset, outline and hex-drawing tests
   in `board_view_test.gd` or a new `grid_factory_test.gd` (the tests slice decides).
 
 Read for context: `sim/rules/grid_topology.gd:1-56`, `sim/rules/square_grid.gd:44-53`
@@ -280,7 +310,7 @@ Not touched (LT-109/LT-110 stay open): path derivation and `_ground_route`. Laye
 widths and insets, so LT-110 can move the cell -> world map behind a transform inside BoardView
 without revisiting the call sites.
 
-## 9. Open questions for the owner (1-6 answered in §10; 7 is new)
+## 9. Open questions for the owner (all answered in §10)
 
 1. **Factory shape.** **A: `GridFactory` file with `MAKERS` (Recommended).** Benefit: hex is one
    line, and the error text and G10 count follow the table. Risk: one more small file.
@@ -322,4 +352,7 @@ without revisiting the call sites.
    G15 bans `cell_rect` everywhere (§2 F2, §4, §6 item 3).
 5. Square tolerance: "Заливки 1:1, контуры ≤1 px (Recommended)".
 6. Hex proof: "HexGrid сейчас, без MAKERS". A real `sim/rules/hex_grid.gd` ships unregistered
-   (§2 F5, §6 items 5-6). Its orientation and id are open as Q7.
+   (§2 F5, §6 items 5-6).
+7. Hex orientation and cell id: "Axial id". HexGrid uses axial ids (LT-77 §3) and is
+   pointy-top (§2 F5). MapDef converts the text through `GridTopology.cell_of_text`/`text_of`
+   (§2 F6); square is unchanged.
