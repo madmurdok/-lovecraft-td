@@ -15,10 +15,10 @@ func _draw() -> void:
 		return
 	var sel := board.selection
 	if game.sim.state.map.grid.contains(sel.cell):
-		draw_rect(view.cell_rect(sel.cell), COLOR_SELECT, false, 2.0)
+		view.outline_cell(self, sel.cell, COLOR_SELECT, 2.0)
 		if not sel.glyph.is_empty():  # LT-61 §7: placed like EntityLayer._draw_tower's letter
-			var g := view.cell_rect(sel.cell).grow(-6)
-			draw_string(ThemeDB.fallback_font, g.position + Vector2(8, 20), sel.glyph,
+			draw_string(ThemeDB.fallback_font,
+				view.cell_centre(sel.cell) + EntityLayer.GLYPH_OFFSET, sel.glyph,
 				HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(COLOR_SELECT, GHOST_GLYPH_ALPHA))
 		if sel.range_cells > 0.0:
 			var sc := view.cell_to_world(game.sim.state.map.grid.centre(sel.cell))

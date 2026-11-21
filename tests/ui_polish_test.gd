@@ -14,7 +14,7 @@ const BAR_NAMES := ["GoldLabel", "RelicsLabel", "SellRelicsButton", "PhaseLabel"
 const LABEL_BASELINE_BELOW_MIDDLE := 5.0
 const LABEL_FONT_SIZE := 14
 ## Mirrors EntityLayer._draw_tower: the letter's origin in the tile, 16 px text, the tile inset.
-const LETTER_ORIGIN := Vector2(8, 20)
+const LETTER_ORIGIN := EntityLayer.GLYPH_OFFSET  ## from the cell centre (LT-108 F3)
 const LETTER_FONT_SIZE := 16
 const TILE_INSET := 6.0
 const FRAME := 2.0  ## the tile's outline width
@@ -178,7 +178,9 @@ func test_sanity_ticks_stay_out_of_the_label_band() -> void:
 
 func test_the_tower_letter_sits_on_a_dark_plate_inside_its_tile() -> void:
 	var tile := BoardView.new().cells_to_px(1.0) - 2.0 * TILE_INSET
-	var inside := Rect2(Vector2(FRAME, FRAME), Vector2(tile, tile) - Vector2(2, 2) * FRAME)
+	# the plate's inside, from the cell centre (LT-108 F3: marks anchor to the centre)
+	var inside := Rect2(Vector2(-tile, -tile) * 0.5 + Vector2(FRAME, FRAME),
+		Vector2(tile, tile) - Vector2(2, 2) * FRAME)
 	assert_bool(inside.encloses(EntityLayer.LETTER_PLATE)) \
 		.override_failure_message("plate %s, tile inside %s" % [EntityLayer.LETTER_PLATE, inside]) \
 		.is_true()
@@ -197,12 +199,42 @@ func test_the_tower_letter_sits_on_a_dark_plate_inside_its_tile() -> void:
 	var start := src.find("func _draw_tower(")
 	assert_int(start).is_greater(-1)
 	var body := src.substr(start, src.find("\nfunc ", start + 1) - start)
-	var tile_at := body.find("draw_rect(r, plate_color(")  # LT-70 §5: the tinted plate
+	var tile_at := body.find("fill_cell(self, t.cell, plate_color(")  # LT-70 §5: the tinted plate
+	# the plate rect is the "plate" anchor and the letter sits at "glyph" (both pinned by
+	# test_tower_anchors_are_the_pre_lt108_square_offsets_from_the_cell_centre)
 	var plate_at := RegEx.create_from_string(
-		"(?m)^\\s*draw_rect\\([^\\n]*LETTER_PLATE[^\\n]*COLOR_LETTER_PLATE\\)").search(body)
-	var letter_at := body.find("draw_string(")
+		"(?m)^\\s*draw_rect\\(\\s*at\\[\"plate\"\\]\\s*,\\s*COLOR_LETTER_PLATE\\s*\\)") \
+		.search(body)
+	var letter_at := body.find("draw_string(ThemeDB.fallback_font, at[\"glyph\"], t.def.glyph,")
 	assert_int(tile_at).is_greater(-1)
-	assert_object(plate_at).override_failure_message("no plate draw_rect in _draw_tower") \
-		.is_not_null()
+	assert_int(letter_at).override_failure_message("no letter draw_string at at[\"glyph\"]") \
+		.is_greater(-1)
+	assert_object(plate_at).override_failure_message(
+		"no draw_rect(at[\"plate\"], COLOR_LETTER_PLATE) in _draw_tower").is_not_null()
 	if plate_at != null:
 		assert_int(plate_at.get_start()).is_between(tile_at, letter_at)
+
+
+## LT-108 §6 item 7: tower_anchors(centre) puts each mark where _draw_tower put it before
+## LT-108, from the square tile inset by 6 (r = cell_rect(c).grow(-6), a 28 px plate).
+func test_tower_anchors_are_the_pre_lt108_square_offsets_from_the_cell_centre() -> void:
+	var view := BoardView.new()
+	view.grid = SquareGrid.new(7, 5)
+	for c: Vector2i in [Vector2i(0, 0), Vector2i(3, 2), Vector2i(6, 4)]:
+		var tile := view.cells_to_px(1.0)
+		var r := Rect2(Vector2(c) * tile, Vector2(tile, tile)).grow(-TILE_INSET)
+		var at := EntityLayer.tower_anchors(view.cell_centre(c))
+		assert_array(at.keys()).contains_exactly_in_any_order(
+			["plate", "glyph", "mark", "pip", "branch"])
+		assert_object(at["plate"]).override_failure_message(str(c)) \
+			.is_equal(Rect2(r.position + Vector2(4, 4), Vector2(15, 19)))
+		assert_object(at["glyph"]).override_failure_message(str(c)) \
+			.is_equal(r.position + Vector2(8, 20))
+		assert_object(at["mark"]).override_failure_message(str(c)) \
+			.is_equal(r.position + Vector2(r.size.x - 6, 6))
+		assert_object(at["pip"]).override_failure_message(str(c)) \
+			.is_equal(r.position + Vector2(3, r.size.y - 6))
+		assert_object(at["branch"]).override_failure_message(str(c)) \
+			.is_equal(r.position + Vector2(r.size.x - 9, 11))
+	assert_float(EntityLayer.PIP_STEP).is_equal(6.0)  # pip i at 3 + 6 * i
+	assert_float(EntityLayer.PLATE_INSET).is_equal(TILE_INSET)

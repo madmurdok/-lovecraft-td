@@ -31,7 +31,15 @@ const COLOR_HP_BACK := Color(0.2, 0, 0)
 const COLOR_HP := Color(0.9, 0.2, 0.2)
 const COLOR_DEBUG_FAKE := Color(1, 0, 1)  ## debug outline (--reveal-fakes), LT-12 §1
 const COLOR_LETTER_PLATE := Color(0.06, 0.05, 0.08)  ## LT-28: contrast plate under the letter
-const LETTER_PLATE := Rect2(4, 4, 15, 19)  ## in the tower tile, under the 16 px letter
+## LT-108 F3: tower marks are offsets from the cell centre (square: today's positions in the
+## 28 px plate, the tile inset by PLATE_INSET). Whether they suit a hex plate is LT-64's.
+const PLATE_INSET := 6.0  ## the tower plate inside its tile, px
+const LETTER_PLATE := Rect2(-10, -10, 15, 19)  ## from the centre, under the 16 px letter
+const GLYPH_OFFSET := Vector2(-6, 6)  ## the tower letter's baseline (and the ghost's)
+const STATE_MARK_OFFSET := Vector2(8, -8)  ## the lit / shadowed corner dot
+const PIP_OFFSET := Vector2(-11, 8)  ## the first 4x4 level pip; each next one PIP_STEP right
+const PIP_STEP := 6.0
+const BRANCH_OFFSET := Vector2(5, -3)  ## the L3 branch letter
 const WARD_COLOR := Color(0.9, 2.0, 1.6)
 const WARD_IDLE_ALPHA := 0.25
 const WARD_PULSE_LOW := 0.75  ## active ring pulses between this and WARD_ACTIVE_ALPHA
@@ -127,33 +135,41 @@ static func state_border(t: SimTower, preview := "") -> Color:
 	return Color.TRANSPARENT
 
 
+## LT-108 F3: where a tower's text and marks sit, from its cell centre in world pixels:
+## "plate" (the letter plate rect), "glyph", "mark" (lit / shadow dot), "pip" (the first
+## level pip's top-left; pip i is PIP_STEP * i to the right) and "branch".
+static func tower_anchors(centre: Vector2) -> Dictionary:
+	return {"plate": Rect2(centre + LETTER_PLATE.position, LETTER_PLATE.size),
+		"glyph": centre + GLYPH_OFFSET, "mark": centre + STATE_MARK_OFFSET,
+		"pip": centre + PIP_OFFSET, "branch": centre + BRANCH_OFFSET}
+
+
 func _draw_tower(t: SimTower) -> void:
-	var r := view.cell_rect(t.cell).grow(-6)
+	var at := tower_anchors(view.cell_centre(t.cell))
 	var c := attack_color(Board.shot_kind(t))
 	var preview := board.overlay_layer.preview_cast(t)
-	draw_rect(r, plate_color(t, preview))
+	view.fill_cell(self, t.cell, plate_color(t, preview), PLATE_INSET)
 	var border := state_border(t, preview)
 	if border.a > 0.0:  # LT-70 §5: outside the attack-colour frame, inside the cell
 		var w := STATE_BORDER if preview.is_empty() else PREVIEW_BORDER
-		draw_rect(r.grow(w * 0.5 + 1.0), border, false, w)
-	draw_rect(r, c, false, 2.0)
+		view.outline_cell(self, t.cell, border, w, PLATE_INSET - (w * 0.5 + 1.0))
+	view.outline_cell(self, t.cell, c, 2.0, PLATE_INSET)
 	# LT-28: a dark plate under the letter keeps it readable where the beam washes the
 	# light tile out (the plate stays dark under the light; the letter's colour is over 1).
-	draw_rect(Rect2(r.position + LETTER_PLATE.position, LETTER_PLATE.size), COLOR_LETTER_PLATE)
-	draw_string(ThemeDB.fallback_font, r.position + Vector2(8, 20), t.def.glyph,
+	draw_rect(at["plate"], COLOR_LETTER_PLATE)
+	draw_string(ThemeDB.fallback_font, at["glyph"], t.def.glyph,
 		HORIZONTAL_ALIGNMENT_LEFT, -1, 16, c)
 	# LT-30: a lit tower (a beam sweeps its centre) gets a small bright corner mark.
 	if t.lit:
-		draw_circle(r.position + Vector2(r.size.x - 6, 6), 3.5, LIT_MARK_COLOR)
+		draw_circle(at["mark"], 3.5, LIT_MARK_COLOR)
 	elif t.shadowed:  # LT-70 §5: the same corner, a dark violet dot with a pale rim
-		var m := r.position + Vector2(r.size.x - 6, 6)
-		draw_circle(m, 3.5, SHADOW_MARK_COLOR)
-		draw_arc(m, 3.5, 0, TAU, 12, SHADOW_MARK_RIM, 1.0)
+		draw_circle(at["mark"], 3.5, SHADOW_MARK_COLOR)
+		draw_arc(at["mark"], 3.5, 0, TAU, 12, SHADOW_MARK_RIM, 1.0)
 	# LT-24 level mark: one pip per level along the bottom, the branch letter at L3.
 	for i in t.level + 1:
-		draw_rect(Rect2(r.position + Vector2(3 + i * 6, r.size.y - 6), Vector2(4, 4)), Color.BLACK)
+		draw_rect(Rect2(at["pip"] + Vector2(PIP_STEP * i, 0), Vector2(4, 4)), Color.BLACK)
 	if not t.branch.is_empty():
-		draw_string(ThemeDB.fallback_font, r.position + Vector2(r.size.x - 9, 11), t.branch,
+		draw_string(ThemeDB.fallback_font, at["branch"], t.branch,
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color.BLACK)
 
 
