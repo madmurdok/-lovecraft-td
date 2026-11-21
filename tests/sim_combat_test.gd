@@ -21,6 +21,22 @@ var _ally: AllySystem
 var _spawn: SpawnSystem
 
 
+## LT-89: a SpyCombat whose shots never miss and never crit, so the damage it records per
+## second is the stats card's DPS figure (no misses, crits or bleed in it).
+class SureCombat:
+	extends SpyCombat
+
+	func _init(ctx: SimContext, light: LightSystem, sanity: SanitySystem,
+			economy: EconomySystem, spawn: SpawnSystem) -> void:
+		super(ctx, light, sanity, economy, spawn)
+
+	func _roll_miss(_extra := 0.0) -> bool:
+		return false
+
+	func _roll_crit(_chance: float) -> bool:
+		return false
+
+
 ## Counts the calls AllySystem makes to its Combat peer.
 class SpyCombat:
 	extends CombatSystem
@@ -580,6 +596,205 @@ func test_dismiss_marks_a_towers_units_gone_in_id_order_and_compact_drops_them()
 	_ctx.state.allies.clear()
 	_ally.compact()  # an empty list is fine
 	assert_array(_ctx.state.allies).is_empty()
+
+
+# --- LT-89: the card's DPS is the damage the sim deals ----------------------------------------
+
+const MEASURE_SHOTS := 5
+const MEASURE_LIMIT := 1200  ## ticks; 40 s, far above five of the slowest shooter's shots
+
+
+## [label, level index, branch] of every level of `def` (L1, L2, each branch).
+func _cells(def: TowerDef) -> Array:
+	var out := []
+	for i in def.levels.size():
+		out.append(["L%d" % (i + 1), i, ""])
+	for b: String in def.branches:
+		out.append([b.to_upper(), TowerDef.LEVEL_COUNT, b])
+	return out
+
+
+## A fresh standalone CombatSystem (SureCombat) on `cfg` at full sanity (sanity factor 1).
+func _fresh_combat(cfg: GameConfig) -> void:
+	_ctx = SimContext.new(cfg, SEED)
+	_ctx.state.map = cfg.map
+	_ctx.state.sanity = cfg.sanity.max_sanity
+	_build(SureCombat)
+
+
+## An enemy of the throwaway `sim` moved into the standalone state, parked `cells` along
+## the route with `hp` and base_max_hp `base`.
+func _park(sim: Simulation, cells: float, base := HUGE_HP) -> SimEnemy:
+	var e := put(sim, "hybrid", cells)
+	sim.state.enemies.erase(e)  # its id changes: the throwaway sim must not find it again
+	e.base_max_hp = base
+	e.id = _ctx.state.next_id
+	_ctx.state.next_id += 1
+	_ctx.state.enemies.append(e)
+	return e
+
+
+## A tower `def_id` at level / branch with the modifiers `fx` (power_mult, interval_mult).
+func _modified_tower(def_id: String, level: int, branch: String, fx: Dictionary) -> SimTower:
+	var t := _tower(def_id)
+	t.level = level
+	t.branch = branch
+	t.power_mult = fx["power_mult"]
+	t.interval_mult = fx["interval_mult"]
+	return t
+
+
+## The damage per second a shooter (or a support tower) deals to one parked target in the
+## sim: MEASURE_SHOTS shots (blasts settled), damage per shot over the ticks between the
+## first and the last shot. Also checks every cooldown is `want_ticks`. 0 with no shot.
+func _measured_shooter_dps(sim: Simulation, t: SimTower, want_ticks: int, tag: String) -> float:
+	var s := t.stats()
+	# Directly above the tower (1 cell), or just past a dead zone.
+	var d := s.min_range + 0.5 if s.min_range > 0.0 else 1.0
+	assert_float(s.range_cells).override_failure_message(tag + " range").is_greater_equal(d)
+	var e := _park(sim, 7.0 + sqrt(d * d - 1.0))
+	var park := e.distance
+	var shots: Array[int] = []
+	var tick := 0
+	while shots.size() < MEASURE_SHOTS and tick < MEASURE_LIMIT:
+		tick += 1
+		_ctx.state.tick = tick
+		_combat.fire_towers()
+		for ev in _drain():
+			if ev.type == T.SHOT:
+				shots.append(tick)
+				assert_int(t.cooldown_ticks).override_failure_message(tag + " cooldown") \
+					.is_equal(want_ticks)
+		_combat.settle_blasts()
+		e.distance = park  # a pull may not move the target out of range
+		e.prev_distance = park
+	while not _ctx.state.blasts.is_empty():  # the last fuses burn out
+		tick += 1
+		_ctx.state.tick = tick
+		_combat.settle_blasts()
+	var spy := _combat as SpyCombat
+	if shots.is_empty():
+		assert_array(spy.damage_calls).override_failure_message(tag).is_empty()
+		return 0.0
+	assert_int(shots.size()).override_failure_message(tag + " shots").is_equal(MEASURE_SHOTS)
+	for i in range(1, shots.size()):
+		assert_int(shots[i] - shots[i - 1]).override_failure_message(tag + " gap") \
+			.is_equal(want_ticks)
+	var total := 0.0
+	for c: Array in spy.damage_calls:
+		assert_int(c[0]).override_failure_message(tag + " target").is_equal(e.id)
+		total += c[1]
+	var seconds := float(shots[-1] - shots[0]) / SimTime.TICK_RATE / (shots.size() - 1)
+	return total / shots.size() / seconds
+
+
+## A gate's damage per second in the sim: one cast on banish_targets banishable enemies,
+## its damage over the cooldown it sets (`want_ticks` checked).
+func _measured_gate_dps(sim: Simulation, t: SimTower, want_ticks: int, tag: String) -> float:
+	var s := t.stats()
+	for i in s.banish_targets():
+		_park(sim, 7.0, 1.0)
+	_ctx.state.tick = 1
+	_combat.fire_towers()
+	var casts := _drain().filter(func(ev: SimEvent) -> bool: return ev.type == T.SHOT)
+	assert_int(casts.size()).override_failure_message(tag + " picks").is_equal(s.banish_targets())
+	assert_int(t.cooldown_ticks).override_failure_message(tag + " cooldown").is_equal(want_ticks)
+	var total := 0.0
+	for c: Array in (_combat as SpyCombat).damage_calls:
+		total += c[1]
+	return total / (float(t.cooldown_ticks) / SimTime.TICK_RATE)
+
+
+## LT-89: effective().dps (the card, picker and panel DPS) equals the damage per second the
+## sim deals, for every tower x level x branch, neutral, lit and shadowed, over the live
+## data: a shooter measured over five shots at one parked target (no miss, no crit: the
+## card counts neither), a gate over one cast (it needs banish_targets banishable foes and
+## banish immunity stops a second cast on them), a support tower 0 (it never shoots). A
+## circle's card DPS is summon_max x the unit_dps a summoned unit gets (its units, not the
+## tower, deal it): pinned as that product and as the unit the sim spawns, and its cooldown.
+func test_effective_dps_is_the_damage_per_second_the_sim_deals() -> void:
+	var cfg := _ctx.config
+	var sim := Simulation.new(cfg, SEED)
+	var checked := 0
+	for id: String in cfg.towers:
+		var def: TowerDef = cfg.towers[id]
+		for cell: Array in _cells(def):
+			for st: Array in [["neutral", false, false], ["lit", true, false],
+					["shadow", false, true]]:
+				var tag := "%s %s %s" % [id, cell[0], st[0]]
+				var fx := TowerRules.light_effect(def, cfg, st[1], st[2])
+				_fresh_combat(cfg)
+				var t := _modified_tower(id, cell[1], cell[2], fx)
+				var s := t.stats()
+				var card := TowerRules.effective(def, s, cfg, st[1], st[2])
+				var ticks := TowerRules.shot_ticks(s, fx["interval_mult"])
+				var got: float
+				if s.is_summon():
+					_wire()
+					_combat.fire_towers()
+					var units := _ally.allies_of(t.id)
+					assert_int(units.size()).override_failure_message(tag).is_equal(1)
+					assert_float(units[0].dps).override_failure_message(tag + " unit") \
+						.is_equal_approx(card["unit_dps"], 1e-9)
+					assert_int(t.cooldown_ticks).override_failure_message(tag + " cooldown") \
+						.is_equal(ticks)
+					got = units[0].dps * s.summon_max()
+				elif s.is_banish():
+					got = _measured_gate_dps(sim, t, ticks, tag)
+				else:
+					got = _measured_shooter_dps(sim, t, ticks, tag)
+				assert_float(card["dps"]).override_failure_message(
+					"%s: card %f, sim %f" % [tag, card["dps"], got]).is_equal_approx(got, 1e-6)
+				checked += 1
+	assert_int(checked).is_greater(100)  # every tower x 4 levels x 3 states was walked
+
+
+## LT-89 / LT-105 Q4: a gate's cast and a circle's summon set their cooldown from the bare
+## fire_interval whatever interval_mult the tower's channel carries (shot_ticks ignores it).
+func test_gate_and_circle_cooldowns_ignore_an_interval_mult_modifier() -> void:
+	var cfg := _ctx.config
+	var sim := Simulation.new(cfg, SEED)
+	for id: String in ["silver_key", SC]:
+		var def: TowerDef = cfg.towers[id]
+		for cell: Array in _cells(def):
+			for m: float in [0.5, 2.0]:
+				var tag := "%s %s x%s" % [id, cell[0], m]
+				_fresh_combat(cfg)
+				var t := _modified_tower(id, cell[1], cell[2], {"power_mult": 1.0,
+					"interval_mult": m})
+				var s := t.stats()
+				var bare := TowerRules.cooldown_ticks(s.fire_interval)
+				assert_int(TowerRules.shot_ticks(s, m)).override_failure_message(tag).is_equal(bare)
+				if s.is_banish():
+					_measured_gate_dps(sim, t, bare, tag)
+				else:
+					_wire()
+					_combat.fire_towers()
+					assert_int(_ally.allies_of(t.id).size()).override_failure_message(tag) \
+						.is_equal(1)
+					assert_int(t.cooldown_ticks).override_failure_message(tag).is_equal(bare)
+
+
+## LT-89: a shooter's cooldown after a shot is TowerRules.shot_ticks at its interval_mult,
+## the whole ticks of fire_interval x it (a lit 0.7 s Rifleman L2: 0.56 s = 16.8 -> 17).
+func test_a_shooters_cooldown_after_a_shot_is_shot_ticks_at_its_interval_mult() -> void:
+	var cfg := _ctx.config
+	var sim := Simulation.new(cfg, SEED)
+	var rifle: TowerDef = cfg.towers["rifleman"]
+	for m: float in [cfg.economy.beam.mundane_fire_interval_mult,
+			cfg.economy.shadow.mundane_fire_interval_mult, 0.5, 1.0]:
+		for cell: Array in _cells(rifle):
+			var tag := "rifleman %s x%s" % [cell[0], m]
+			_fresh_combat(cfg)
+			var t := _modified_tower("rifleman", cell[1], cell[2], {"power_mult": 1.0,
+				"interval_mult": m})
+			var s := t.stats()
+			var want := maxi(1, roundi(s.fire_interval * m * SimTime.TICK_RATE))
+			assert_int(TowerRules.shot_ticks(s, m)).override_failure_message(tag).is_equal(want)
+			_park(sim, 7.0)
+			_ctx.state.tick = 1
+			_combat.fire_towers()
+			assert_int(t.cooldown_ticks).override_failure_message(tag).is_equal(want)
 
 
 # --- Facade forwarders ----------------------------------------------------------------------------------

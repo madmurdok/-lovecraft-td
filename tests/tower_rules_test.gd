@@ -3,7 +3,7 @@ extends GdUnitTestSuite
 ## LT-76 (LT-65 §3.2): TowerRules values on small hand-checked cases. The light / shadow
 ## multipliers are set on the loaded config to distinct round numbers, so every arm (lit,
 ## shadowed, neither) reads a different value and the arithmetic is checkable by hand.
-## Levels are built in code; DPS from whole cooldown ticks is LT-89, not pinned here.
+## Levels are built in code; DPS from whole cooldown ticks (LT-89) has its own section.
 
 const LIT_POWER := 0.5
 const SHADOW_POWER := 3.0
@@ -200,6 +200,62 @@ func test_effective_circle_unit_dps_takes_the_power_mult() -> void:
 	var plain := TowerRules.effective(def, s, _cfg)
 	assert_float(plain["unit_dps"]).is_equal(10.0)
 	assert_float(plain["dps"]).is_equal(20.0)
+
+
+# --- LT-89: whole 30 Hz ticks ------------------------------------------------------------
+
+func _fx(interval_mult: float, power_mult := 1.0) -> Dictionary:
+	return {"power_mult": power_mult, "interval_mult": interval_mult}
+
+
+## LT-89: shot_ticks is fire_interval x interval_mult in whole ticks (rounded, at least 1),
+## shot_period those ticks in seconds.
+func test_shot_ticks_rounds_the_interval_times_the_mult_to_whole_ticks() -> void:
+	var r2 := _lvl(14.0, 0.7)
+	assert_int(TowerRules.shot_ticks(r2, 1.0)).is_equal(21)
+	assert_int(TowerRules.shot_ticks(r2, 0.8)).is_equal(17)  # 0.56 s = 16.8 ticks
+	assert_int(TowerRules.shot_ticks(r2, 1.25)).is_equal(26)  # 0.875 s = 26.25 ticks
+	var r3b := _lvl(7.0, 0.2)
+	assert_int(TowerRules.shot_ticks(r3b, 0.8)).is_equal(5)  # 0.16 s = 4.8 ticks
+	assert_int(TowerRules.shot_ticks(r3b, 1.25)).is_equal(8)  # 0.25 s = 7.5 ticks
+	assert_int(TowerRules.shot_ticks(_lvl(1.0, 0.01), 0.5)).is_equal(1)  # never below one
+	assert_float(TowerRules.shot_period(r2, 0.8)).is_equal(17.0 / SimTime.TICK_RATE)
+	assert_float(TowerRules.shot_period(r3b, 1.25)).is_equal(8.0 / SimTime.TICK_RATE)
+
+
+## LT-89: effective()'s interval, ticks and dps are the shot_ticks period, not the decimal
+## interval x mult (a 7 dmg 0.2 s shooter x0.8 deals 42/s, not 43.75; x1.25 26.25, not 28).
+func test_effective_dps_and_interval_follow_the_whole_ticks() -> void:
+	var s := _lvl(7.0, 0.2)
+	var lit := TowerRules.effective_with(s, _cfg, _fx(0.8))
+	assert_int(lit["interval_ticks"]).is_equal(5)
+	assert_float(lit["interval"]).is_equal(5.0 / SimTime.TICK_RATE)
+	assert_float(lit["dps"]).is_equal_approx(42.0, 1e-9)
+	var dark := TowerRules.effective_with(s, _cfg, _fx(1.25))
+	assert_int(dark["interval_ticks"]).is_equal(8)
+	assert_float(dark["dps"]).is_equal_approx(26.25, 1e-9)
+	# x power after the ticks: 42 x 2
+	assert_float(TowerRules.effective_with(s, _cfg, _fx(0.8, 2.0))["dps"]) \
+		.is_equal_approx(84.0, 1e-9)
+
+
+## LT-89 / LT-105 Q4: a gate's cast and a circle's summon ignore interval_mult in shot_ticks
+## and in effective() (interval, ticks and dps), unlike a shooter of the same numbers.
+func test_gate_and_circle_ignore_interval_mult_in_ticks_and_effective() -> void:
+	var gate := _lvl(6.0, 2.0, {"banish_cells": 4.0, "banish_targets": 3.0})
+	var circle := _lvl(0.0, 10.0, {"summon_max": 2.0, "summon_dps": 10.0})
+	for m: float in [0.5, 0.8, 2.0]:
+		var tag := "x%s" % m
+		assert_int(TowerRules.shot_ticks(gate, m)).override_failure_message(tag).is_equal(60)
+		assert_int(TowerRules.shot_ticks(circle, m)).override_failure_message(tag).is_equal(300)
+		var g := TowerRules.effective_with(gate, _cfg, _fx(m))
+		assert_float(g["interval"]).override_failure_message(tag).is_equal(2.0)
+		assert_int(g["interval_ticks"]).override_failure_message(tag).is_equal(60)
+		assert_float(g["dps"]).override_failure_message(tag).is_equal(9.0)  # 6 / 2 x 3
+		var c := TowerRules.effective_with(circle, _cfg, _fx(m))
+		assert_float(c["interval"]).override_failure_message(tag).is_equal(10.0)
+		assert_float(c["dps"]).override_failure_message(tag).is_equal(20.0)
+	assert_int(TowerRules.shot_ticks(_lvl(6.0, 2.0), 0.5)).is_equal(30)  # a shooter does not
 
 
 # --- dead zone ----------------------------------------------------------------------------
