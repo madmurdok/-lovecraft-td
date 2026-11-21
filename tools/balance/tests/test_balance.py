@@ -412,6 +412,63 @@ class ReportTest(unittest.TestCase):
         self.assertIn("| 1/2 |", row)
 
 
+class HpTableTest(unittest.TestCase):
+    """LT-116: lighthouse HP left at run end."""
+
+    def results(self, cells):
+        return {(v, s): {"runs": r, "times": {}} for v, row in cells.items() for s, r in row.items()}
+
+    def test_hp_cell_mean_and_median_to_one_decimal(self):
+        runs_ = [{"lighthouse_hp": h} for h in (0, 1, 8)]
+        self.assertEqual(balance.hp_cell(runs_), "3.0/1.0")  # mean 3.0, median 1
+        # even count: median = average of the two middle values
+        runs_ = [{"lighthouse_hp": h} for h in (0, 1, 2, 10)]
+        self.assertEqual(balance.hp_cell(runs_), "3.2/1.5")  # 13 / 4 = 3.25 -> 3.2
+
+    def test_hp_cell_skips_runs_without_the_field(self):
+        runs_ = [{"lighthouse_hp": 4}, {"outcome": "lost"}, {"lighthouse_hp": 6}]
+        self.assertEqual(balance.hp_cell(runs_), "5.0/5.0")  # not (4 + 0 + 6) / 3
+
+    def test_hp_cell_dash_without_any_data(self):
+        self.assertEqual(balance.hp_cell([]), "-")
+        self.assertEqual(balance.hp_cell([{"outcome": "lost"}]), "-")
+
+    def test_hp_table_empty_without_data(self):
+        variants = [{"name": "v", "description": "", "flags": []}]
+        res = self.results({"v": {"a": [{"outcome": "lost"}]}})
+        self.assertEqual(balance.hp_table(variants, ["a"], res), [])
+
+    def test_hp_table_row_per_variant_column_per_strategy(self):
+        variants = [{"name": n, "description": "", "flags": []} for n in ("v2", "v1")]
+        res = self.results({
+            "v2": {"a": [{"lighthouse_hp": 2}], "b": [{"outcome": "lost"}]},
+            "v1": {"a": [{"lighthouse_hp": 0}, {"lighthouse_hp": 4}], "b": [{"lighthouse_hp": 7}]},
+        })
+        lines = balance.hp_table(variants, ["a", "b"], res)
+        self.assertIn("| variant | a | b |", lines)
+        rows = [l for l in lines if l.startswith("| v")]
+        self.assertEqual(rows[1:], ["| v2 | 2.0/2.0 | - |", "| v1 | 2.0/2.0 | 7.0/7.0 |"])
+
+    def test_report_appends_hp_table_after_waves_table(self):
+        def r(ws, hp=None):
+            d = {"outcome": "lost", "waves_survived": ws}
+            if hp is not None:
+                d["lighthouse_hp"] = hp
+            return d
+        variants = [{"name": "v", "description": "", "flags": []}]
+        with_hp = self.results({"v": {"a": [r(1, 3), r(2, 5)]}})
+        without = self.results({"v": {"a": [r(1), r(2)]}})
+        md = balance.report(variants, ["a"], with_hp, 2, 0.5, META)
+        old = balance.report(variants, ["a"], without, 2, 0.5, META)
+        self.assertLess(md.index("Where runs end"), md.index("Lighthouse HP left"))
+        self.assertLess(md.index("Lighthouse HP left"), md.index("Variants:"))
+        self.assertIn("| v | 4.0/4.0 |", md)
+        # old logs: no hp table, and the rest of the report is the same
+        self.assertNotIn("Lighthouse HP", old)
+        self.assertEqual(md.split("\nLighthouse HP left")[0].rstrip("\n"),
+                         old.split("\nVariants:")[0].rstrip("\n"))
+
+
 # --- 13: run_job ---------------------------------------------------------------------------
 
 def fake_proc(stdout_lines, rc=0, real=4.0, user=2.0, calls=None):

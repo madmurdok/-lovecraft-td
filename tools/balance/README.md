@@ -103,6 +103,12 @@ Shipped examples reproduce LT-30 S13 arms: `baseline` (A), `beam_off` (B), `flar
   by `.` (e.g. `0.0.3.12.5`: 3 runs lost in wave 3, 12 in wave 4, 5 in wave 5), then the mean
   waves survived in brackets. `all losses by wave` sums the row; `early ok` is the share of all
   runs in the row that survived the first half of the waves (waves 1..3 of 5).
+- A third table, "Lighthouse HP left" (LT-116), shows per variant and strategy the `mean/median`
+  of `lighthouse_hp` at run end (e.g. `7.4/8.0`; 0 for a lost run). It separates variants that
+  both win every run (how close the wins were); a lost run is always 0, so variants that both lose
+  every run show `0.0/0.0` here and are told apart by "Where runs end" (wave reached).
+  Runs whose RUN line lacks `lighthouse_hp` (old logs) are left out of the statistic, not counted
+  as 0; `-` when none carry it, and the table is omitted when no run does.
 - Per-run detail (all RUN fields: flares, lighthouse level, gold, sanity, ...) is in
   `<work>/logs/<variant>.<strategy>.log`, one `RUN {json}` line per run.
 
