@@ -208,7 +208,10 @@ def materialize_bot(variant, dest):
         apply_patch(doc, variant["bot"], optional=BOT_OPTIONAL_KEYS)
     except PatchError as e:
         raise PatchError(f"variant {variant['name']}: bot: {e}")
-    if [r.get("name") for r in doc["strategies"]] != names:
+    rows = doc.get("strategies")
+    if not isinstance(rows, list) or not all(isinstance(r, dict) for r in rows):
+        raise PatchError(f"variant {variant['name']}: bot: strategies must be a list of objects")
+    if [r.get("name") for r in rows] != names:
         raise PatchError(f"variant {variant['name']}: bot: a strategy name may not change "
                          "(the lab plays the names of tools/bot/strategies.json)")
     with open(dest, "w", encoding="utf-8") as out:
