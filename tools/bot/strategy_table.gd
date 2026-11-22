@@ -1,6 +1,7 @@
 extends RefCounted
 ## LT-101: the bot's strategies as data. Loads and validates tools/bot/strategies.json: the
-## shared tunables (`build_first`, `flare_min_live`) and one row per strategy (build order as
+## shared tunables (`build_first`, `flare_min_live`; optional `crew_reserve`, `post_min_live`,
+## LT-32) and one row per strategy (build order as
 ## `prefix` + `cycle`, L3 `branches`, cap guard `cap_floor` with its `on_blocked` policy,
 ## `buy_sanity`). Read by tools/bot/bot_strategies.gd (the interpreter), tools/bot_runs.gd
 ## (the strategy list), tests/golden_runs.gd and tools/balance/balance.py (by json.load).
@@ -12,6 +13,9 @@ const DEFAULT_PATH := "res://tools/bot/strategies.json"
 const ROW_KEYS := ["name", "about", "prefix", "cycle", "branches", "cap_floor", "on_blocked",
 	"fallback", "fallback_max", "buy_sanity"]
 const TUNABLE_KEYS := ["build_first", "flare_min_live"]
+## LT-32 §5: optional tunables -> their default when the file omits them (so older strategy
+## texts stay valid). crew_reserve 0 plays exactly as with crew off.
+const OPTIONAL_TUNABLES := {"crew_reserve": 0, "post_min_live": 4}
 const ON_BLOCKED := ["skip", "fallback"]
 ## A strategy name: lower-case letters, digits and "_", starting with a letter (it is a
 ## --strategies= item, a balance.py log file name part and the golden key bot/<name>/<seed>).
@@ -26,6 +30,10 @@ var errors: Array[String] = []
 var build_first := 0
 ## Live enemies (reals and fakes) on the map that make the bot fire the flare (LT-57, LT-69).
 var flare_min_live := 0
+## LT-32: crew the bot holds in the reserve by day (all kinds together); 0 never hires.
+var crew_reserve := 0
+## LT-32: live enemies on the map that make the bot deploy its reserve as posts at night.
+var post_min_live := 4
 
 
 ## Parses and validates `text` (validation 1-5 of the design); `errors` lists every problem.
@@ -115,11 +123,18 @@ func _read_tunables(v: Variant) -> void:
 		errors.append("tunables: must be an object")
 		return
 	for k in v:
-		if k not in TUNABLE_KEYS:
+		if k not in TUNABLE_KEYS and k not in OPTIONAL_TUNABLES:
 			errors.append("tunables: unknown key \"%s\"" % k)
 	for k in TUNABLE_KEYS:
 		if not v.has(k):
 			errors.append("tunables.%s: missing" % k)
+		elif not _is_count(v[k]):
+			errors.append("tunables.%s: must be an integer >= 0" % k)
+		else:
+			set(k, int(v[k]))
+	for k: String in OPTIONAL_TUNABLES:
+		if not v.has(k):
+			set(k, OPTIONAL_TUNABLES[k])
 		elif not _is_count(v[k]):
 			errors.append("tunables.%s: must be an integer >= 0" % k)
 		else:

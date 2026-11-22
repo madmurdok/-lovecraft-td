@@ -47,31 +47,34 @@ func cap_allows(sim: Simulation, strat: String, delta: float) -> bool:
 	return sim.state.sanity_cap - delta >= floor_cap
 
 
-## At night (a wave) only tries buy_sanity() (rows with `buy_sanity`: occult, mixed). By day
-## sells every relic, buys as many purchases (builds, then upgrades per the header) as
-## affordable, and in BUILD then calls the wave. Returns the new build-order index.
+## At night (a wave) only tries buy_sanity() (rows with `buy_sanity`: occult, mixed), fires
+## the flare and deploys reserve posts (LT-32). By day sells every relic, buys as many
+## purchases (builds, then upgrades per the header) as affordable, tops the crew reserve up
+## to the table's crew_reserve (LT-32) and in BUILD then calls the wave. Returns the new
+## build-order index.
 func act(sim: Simulation, strat: String, idx: int, built: Dictionary) -> int:
 	if table.row(strat).buy_sanity:
 		sim.buy_sanity()  # refused unless exit_rule is "buyout" and state is MADNESS
 	if sim.state.phase == SimState.Phase.WAVE:
 		night_flare(sim)
+		night_posts(sim)
 		return idx  # LT-27 §3: night; builds, upgrades and sales are day only
 	sim.sell_relics()  # refused with an empty stash
 	var lighthouse_refused := false  # a refused lighthouse buy falls through to the builds
 	var build_first := table.build_first
 	var topped := not flare  # LT-57: the oil reserve comes after the build_first towers
 	while true:
-		if not topped and sim.state.towers.size() >= build_first:
+		if not topped and tower_count(sim) >= build_first:
 			topped = true
 			while sim.state.oil < bot_oil_target(sim) \
 					and sim.buy_oil() == SimCommand.CommandResult.OK:
 				pass  # refused: no oil block, full, or too poor
 		if upgrades and lighthouse and not lighthouse_refused \
-				and sim.state.towers.size() >= build_first and lighthouse_next(sim, strat):
+				and tower_count(sim) >= build_first and lighthouse_next(sim, strat):
 			if sim.upgrade_lighthouse() != SimCommand.CommandResult.OK:
 				lighthouse_refused = true
 			continue
-		if upgrades and sim.state.towers.size() >= build_first:
+		if upgrades and tower_count(sim) >= build_first:
 			var up := next_upgrade(sim, strat)
 			if not up.is_empty():
 				if sim.upgrade_tower(up[0], up[1]) != SimCommand.CommandResult.OK:
@@ -97,6 +100,7 @@ func act(sim: Simulation, strat: String, idx: int, built: Dictionary) -> int:
 			shadowed_builds += 1
 		built[id] = built.get(id, 0) + 1
 		idx += 1
+	hire_reserve(sim)
 	if sim.state.phase == SimState.Phase.BUILD:
 		sim.call_wave()
 	return idx
@@ -125,12 +129,66 @@ static func bot_oil_target(sim: Simulation) -> int:
 func night_flare(sim: Simulation) -> void:
 	if not flare:
 		return
+	if live_count(sim) >= table.flare_min_live:
+		sim.fire_flare()
+
+
+## LT-32 §5: real towers on the board (reserve posts are not towers; by day none stand).
+static func tower_count(sim: Simulation) -> int:
+	var n := 0
+	for t in sim.state.towers:
+		if not t.post:
+			n += 1
+	return n
+
+
+## Live enemies (reals and fakes, as a player sees them) on the map.
+static func live_count(sim: Simulation) -> int:
 	var live := 0
 	for e in sim.state.enemies:
 		if e.is_live():
 			live += 1
-	if live >= table.flare_min_live:
-		sim.fire_flare()
+	return live
+
+
+## LT-32 §5, night: when at least the table's `post_min_live` live enemies are on the map,
+## deploys the reserve as posts: crew kinds in crew.json order, each while its reserve holds
+## a post's crew, at the rifleman's best free cell (a post fights as a rifleman), until a
+## deploy is refused. No-op with crew off or an empty reserve (crew_reserve 0).
+func night_posts(sim: Simulation) -> void:
+	if not cfg.crew_on() or sim.crew_reserve().is_empty():
+		return
+	if live_count(sim) < table.post_min_live:
+		return
+	for kind: String in cfg.crew.crews:
+		while sim.crew_reserve().get(kind, 0) >= cfg.crew.post_of(kind).crew:
+			var cell := Placement.best_cell(cfg, sim, "rifleman", score_cache)
+			if cell.x < 0 or sim.deploy(kind, cell) != SimCommand.CommandResult.OK:
+				return
+
+
+## LT-32 §5, day (after the purchases): hires the cheapest crew kind (ties: crew.json order;
+## a post is the same whoever stands there) while the whole reserve is below the table's
+## `crew_reserve` and the hire is accepted. No-op with crew off or crew_reserve 0.
+func hire_reserve(sim: Simulation) -> void:
+	if table.crew_reserve <= 0 or not cfg.crew_on():
+		return
+	var cheapest := ""
+	for kind: String in cfg.crew.crews:
+		if cheapest == "" or cfg.crew.crews[kind].hire < cfg.crew.crews[cheapest].hire:
+			cheapest = kind
+	if cheapest == "":
+		return
+	while _reserve_total(sim) < table.crew_reserve \
+			and sim.hire(cheapest) == SimCommand.CommandResult.OK:
+		pass
+
+
+static func _reserve_total(sim: Simulation) -> int:
+	var n := 0
+	for kind: String in sim.crew_reserve():
+		n += int(sim.crew_reserve()[kind])
+	return n
 
 
 ## The bot's next upgrade as [tower_id, branch], or [] when no tower can go further for it:
@@ -143,6 +201,8 @@ func next_upgrade(sim: Simulation, strat: String) -> Array:
 	var best: Array = []
 	var best_cost := 0
 	for t in sim.state.towers:
+		if t.post:
+			continue  # LT-32: a reserve post is not a tower (none stand by day)
 		var branches := sim.upgrade_branches(t)
 		if branches.is_empty():
 			continue

@@ -29,7 +29,8 @@ const LT23_KEYS := ["min_sanity", "final_cap", "cap_per_wave", "madness_tick", "
 const LT27_KEYS := ["relics_sold", "drops", "star_stones", "wage"]
 ## RUN keys LT-30 §3.4 appends to every line, upgrades on or off.
 const LT30_KEYS := ["lighthouse_level", "flares", "oil_bought", "oil_gold", "lit_shots",
-	"lit_tower_ticks", "shadow_tower_ticks", "shadowed_mundane_builds"]  # LT-70 §6 appended
+	"lit_tower_ticks", "shadow_tower_ticks", "shadowed_mundane_builds",  # LT-70 §6 appended
+	"crew_hired", "crew_gold", "posts", "post_shots"]  # LT-32 §5 appended
 
 var _bot_script: GDScript
 var _bots: Array[Object] = []
