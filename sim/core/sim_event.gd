@@ -22,7 +22,13 @@ enum Type {SPAWNED, LEAKED, DIED, OUTCOME, TOWER_BUILT, TOWER_SOLD, GOLD_CHANGED
 		## LT-52 (P10), id = the ally: {tower, source, at, hp, flying, expires_tick} when
 		## spawn_ally places it; {tower, reason: "killed" | "expired" | "dismissed", by
 		## (killed only: the enemy id)} when it is gone (removed at the end of the tick)
-		ALLY_SUMMONED, ALLY_GONE}
+		ALLY_SUMMONED, ALLY_GONE,
+		## LT-32 §2.3, id 0: {kind, reserve, delta, reason: "hire" | "build" | "sell" |
+		## "deploy" | "dawn"} when a crew kind's reserve changes
+		CREW_CHANGED,
+		## LT-32, id = the post: {kind, cell, crew} when deployed; {kind, cell, reason: "dawn"}
+		## when removed (posts never emit TOWER_BUILT / TOWER_SOLD)
+		POST_DEPLOYED, POST_REMOVED}
 
 var type: Type
 var tick: int

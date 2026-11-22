@@ -489,6 +489,9 @@ const BAD_ENTRIES := {
 	"buy_oil": [[0, "buy_oil", 1], [0, "buy_oil", null]],
 	"fire_flare": [[0, "fire_flare", ""], [0, "fire_flare", 1, 2]],
 	"debug_end_night": [[0, "debug_end_night", 1], [0, "debug_end_night", null]],
+	"hire": [[0, "hire"], [0, "hire", 1], [0, "hire", "rifleman", 1]],
+	"deploy": [[0, "deploy"], [0, "deploy", "rifleman"], [0, "deploy", "rifleman", Vector2(3, 1)],
+		[0, "deploy", 1, Vector2i(3, 1)], [0, "deploy", "rifleman", Vector2i(3, 1), 1]],
 }
 
 

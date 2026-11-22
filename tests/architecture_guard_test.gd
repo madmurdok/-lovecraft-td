@@ -382,7 +382,9 @@ func test_g11_the_sim_is_trig_free() -> void:
 ## B6 pins the gating). G6d: scenes/game.gd calls `.refresh()` on no panel except the one
 ## `hud.refresh()` in `_ready`.
 const G6_DRAIN_HOMES := ["res://scenes/game.gd"]
-const UNCONSUMED_OK: PackedStringArray = ["SPAWNED", "ALLY_SUMMONED", "ALLY_GONE"]
+## LT-32: CREW_CHANGED / POST_DEPLOYED / POST_REMOVED until the crew UI (LT-32 S3) consumes them.
+const UNCONSUMED_OK: PackedStringArray = ["SPAWNED", "ALLY_SUMMONED", "ALLY_GONE",
+	"CREW_CHANGED", "POST_DEPLOYED", "POST_REMOVED"]
 const PROCESS_OK: PackedStringArray = ["res://ui/sanity_bar.gd"]
 const G6_PROCESS := "\\bfunc\\s+_(physics_)?process\\s*\\("
 const G6_REFRESH := "\\b(hud|picker|tower_panel|lighthouse_panel)\\.refresh\\(\\)"
@@ -592,8 +594,9 @@ const G4B_OWNERS := {
 	"blasts": ["core/systems/combat_system.gd"],
 	"next_blast_id": ["core/systems/combat_system.gd"],
 	"allies": ["core/systems/ally_system.gd"],
-	"towers": ["core/simulation.gd"],
-	"tower_at": ["core/simulation.gd"],
+	"towers": ["core/simulation.gd", "core/systems/crew_system.gd"],  # LT-32: posts
+	"tower_at": ["core/simulation.gd", "core/systems/crew_system.gd"],
+	"crew": ["core/systems/crew_system.gd"],
 }
 
 

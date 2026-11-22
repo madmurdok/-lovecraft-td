@@ -33,4 +33,7 @@ enum CommandResult {
 	NO_FLARE,  ## fire_flare / buy_oil: no lighthouse.flare / lighthouse.oil block (LT-30)
 	NO_OIL,  ## fire_flare: less oil in stock than flare.cost_oil (LT-30)
 	OIL_FULL,  ## buy_oil: the stock is at oil.cap (LT-30)
+	NO_CREW,  ## hire / deploy: crew is off, or the kind has no crew (LT-32)
+	RESERVE_SHORT,  ## deploy: the kind's reserve is below the post's crew (LT-32)
+	NOT_A_TOWER,  ## sell / upgrade: the id is a reserve post, not a tower (LT-32 Q3)
 }
