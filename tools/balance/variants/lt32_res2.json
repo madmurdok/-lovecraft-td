@@ -1,0 +1,8 @@
+{
+  "description": "LT-32: bot holds 2 crew men by day (crew_reserve 2)",
+  "bot": {
+    "tunables": {
+      "crew_reserve": 2
+    }
+  }
+}
