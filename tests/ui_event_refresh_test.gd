@@ -100,11 +100,22 @@ func _buildable_cells() -> Array[Vector2i]:
 func _counters() -> Array:
 	return [_game.hud.refresh_count, _game.picker.refresh_count,
 		_game.tower_panel.refresh_count, _game.lighthouse_panel.refresh_count,
-		_game.hud.sanity_bar.redraw_count]
+		_game.hud.sanity_bar.redraw_count, _game.crew_panel.refresh_count]
+
+
+## LT-32: the golden config with the shipped data/crew.json (crew on), parsed into it.
+func _crew_config() -> GameConfig:
+	var cfg := GoldenRuns.golden_config()
+	var root: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://data/crew.json"))
+	var r := ConfigReader.new("crew.json")
+	cfg.crew = CrewConfig.parse(r, root)
+	assert_array(r.errors).is_empty()
+	assert_bool(cfg.crew_on()).is_true()
+	return cfg
 
 
 ## Opens `view` ("picker", "tower", "lighthouse") the way a click on its cell does; builds
-## a tower first for "tower".
+## a tower first for "tower". "crew" (LT-32) is the HUD crew button's view.
 func _open(view: String) -> void:
 	var cells := _buildable_cells()
 	match view:
@@ -115,6 +126,8 @@ func _open(view: String) -> void:
 			_game._on_cell_clicked(cells[1])
 		"lighthouse":
 			_game._on_cell_clicked(_game.sim.state.map.lighthouse)
+		"crew":
+			_game.open_crew_panel()
 	_game.advance(0.0)
 
 
@@ -124,16 +137,19 @@ func _view_node(view: String) -> Control:
 			return _game.picker
 		"tower":
 			return _game.tower_panel
+		"crew":
+			return _game.crew_panel
 	return _game.lighthouse_panel
 
 
 # ---- B1 ------------------------------------------------------------------------------
 
-## B1: with the picker, the tower panel or the lighthouse panel open, idle frames (paused,
-## and unpaused with a zero delta) rebuild no group and redraw nothing.
+## B1: with the picker, the tower panel, the lighthouse panel or (LT-32, crew on) the crew
+## panel open, idle frames (paused, and unpaused with a zero delta) rebuild no group and
+## redraw nothing.
 func test_b1_idle_frames_do_no_panel_work() -> void:
-	for view in ["picker", "tower", "lighthouse"]:
-		await _start()
+	for view in ["picker", "tower", "lighthouse", "crew"]:
+		await _start(_crew_config() if view == "crew" else _config)
 		_open(view)
 		assert_bool(_view_node(view).visible).override_failure_message(view).is_true()
 		assert_int(_game.sim.state.sanity_state).is_equal(SimState.SanityState.LUCID)
@@ -157,7 +173,7 @@ func test_b1_idle_frames_do_no_panel_work() -> void:
 		assert_array(_counters()).override_failure_message(
 			"%s, advance(0.0): %s -> %s" % [view, unpaused, _counters()]).is_equal(unpaused)
 		assert_bool(_game.hud.sanity_bar.is_processing()).is_false()
-		assert_int(before.size()).is_equal(5)
+		assert_int(before.size()).is_equal(6)
 		_game.queue_free()
 		await get_tree().process_frame
 
@@ -368,7 +384,7 @@ func test_b2_every_field_follows_its_events() -> void:
 
 func _panels() -> Dictionary:
 	return {"hud": _game.hud, "picker": _game.picker, "tower": _game.tower_panel,
-		"lighthouse": _game.lighthouse_panel}
+		"lighthouse": _game.lighthouse_panel, "crew": _game.crew_panel}
 
 
 ## One snapshot-refresh-snapshot check of every visible panel.
@@ -575,6 +591,110 @@ func _script_whole_game() -> void:
 	_click(cells[2], "tower night 2b")
 	_frames(100, 1.0 / 20.0, "tower night 2b")
 	_until(func() -> bool: return s.phase != SimState.Phase.WAVE, 3000, 1.0 / 20.0, "night 2")
+
+
+# ---- B2, LT-32 crew ------------------------------------------------------------------
+
+## LT-32 crew fields that never change through flush while their view stays open, with the
+## reason (same form as STATIC_OK): the crew view's title, note and cancel button are fixed
+## text; a post's "Not a tower" note is fixed per opened tower, and a post's view is only
+## reached by a click (which resyncs), so it is pinned by crew_ui_test instead.
+const CREW_STATIC_OK: PackedStringArray = [
+	"crew:^(\\.|Title|Note|CancelButton)$",
+	"tower:^PostNote$",
+]
+## Paths the crew B2 run must cover: the crew view, the HUD crew button, the picker's post
+## section and the post note.
+const CREW_PATHS := "^(crew:|hud:Footer/CrewButton$|picker:Posts|tower:PostNote$)"
+
+
+## B2 with crew on (golden data + the shipped crew.json): hires with the crew view open,
+## a crewed build and sale (on duty), the picker's price following the reserve, the night
+## post rows as posts are deployed (one from the picker row), the crew view at night, a
+## post's view, dawn, and a hire on the next day: no stale field anywhere, and every crew
+## field changes through flush at least once.
+func test_b2_crew_fields_follow_their_events() -> void:
+	await _start(_crew_config())
+	await _script_crew()
+	assert_array(_stale).override_failure_message(
+		"stale fields (first 12 of %d):\n%s" % [_stale.size(), "\n".join(_stale.slice(0, 12))]
+	).is_empty()
+	var re := RegEx.create_from_string(CREW_PATHS)
+	var covered := 0
+	var unexercised: Array[String] = []
+	for key: String in _seen:
+		if re.search(key) == null:
+			continue
+		covered += 1
+		var ok := _changed.has(key)
+		for entry in CREW_STATIC_OK:
+			var panel := entry.get_slice(":", 0)
+			var pre := RegEx.create_from_string(entry.substr(panel.length() + 1))
+			if key.begins_with(panel + ":") and pre.search(key.substr(panel.length() + 1)) != null:
+				ok = true
+		if not ok:
+			unexercised.append(key)
+	unexercised.sort()
+	assert_int(covered).override_failure_message("crew paths seen: %d" % covered).is_greater(10)
+	assert_array(unexercised).override_failure_message(
+		"crew node paths never changed through flush and not in CREW_STATIC_OK:\n"
+		+ "\n".join(unexercised) + "\nresults: " + ", ".join(_results)).is_empty()
+
+
+func _open_crew(label: String) -> void:
+	_game.open_crew_panel()
+	_prev.clear()  # opening syncs from the truth; only what changes afterwards counts
+	_check("open " + label)
+
+
+func _script_crew() -> void:
+	var sim := _game.sim
+	var s := sim.state
+	var c := _game.commands
+	var cells := _buildable_cells()
+	var kinds: Array = sim.config.crew.crews.keys()
+	var men: int = sim.config.crew.post.crew
+	_check("start")
+	_hook("rich", func() -> void: sim._add_gold(3000, "test", 0))
+	# Day 1, crew view open: hire a post's worth of every kind (two for riflemen), then a
+	# crewed build takes its men (on duty) and its sale returns them.
+	_open_crew("crew")
+	_frames(3, 1.0 / 60.0, "crew idle")
+	for kind: String in kinds:
+		for i in men * (2 if kind == RIFLE else 1):
+			_cmd("hire " + kind, func() -> int: return c.hire(kind))
+	var t := _build(RIFLE, cells[1])
+	_cmd("sell crewed", func() -> int: return c.sell(t))
+	# Picker open: the rifleman's price follows the reserve.
+	_click(cells[0], "picker")
+	_build(RIFLE, cells[1])
+	_build(RIFLE, cells[2])
+	for k in men * 2:  # one post from the commands, one from the picker row
+		_cmd("hire rifleman %d" % k, func() -> int: return c.hire(RIFLE))
+	# Night 1 with the picker open: post rows follow each deploy, then one from the row.
+	_cmd("call wave", func() -> int: return c.call_wave())
+	_frames(5, 1.0 / 20.0, "night picker")
+	var i := 3
+	for kind: String in kinds:
+		var cell := cells[i]
+		_cmd("deploy " + kind, func() -> int: return c.deploy(kind, cell))
+		i += 1
+	assert_bool(_game.picker.post_buttons[RIFLE].disabled).is_false()
+	_cmd("post row", func() -> int:
+		_game.picker.post_buttons[RIFLE].pressed.emit()
+		return SimCommand.CommandResult.OK)
+	assert_bool(s.tower_at.has(cells[0])).override_failure_message("no post from the row").is_true()
+	# The crew view at night (hire refused), then a post's view until dawn removes it.
+	_open_crew("crew night")
+	_frames(5, 1.0 / 20.0, "crew night")
+	_click(cells[3], "post view")
+	_frames(5, 1.0 / 20.0, "post view")
+	_open_crew("crew to dawn")
+	_hook("end night", func() -> void: sim.debug_end_night())
+	_until(func() -> bool: return s.phase != SimState.Phase.WAVE, 400, 1.0 / 20.0, "to dawn")
+	assert_int(s.phase).is_not_equal(SimState.Phase.WAVE)
+	_frames(5, 1.0 / 20.0, "day 2")
+	_cmd("hire day 2", func() -> int: return c.hire(HARPOON))
 
 
 func _script_buyout() -> void:
