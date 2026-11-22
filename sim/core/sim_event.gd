@@ -23,6 +23,9 @@ enum Type {SPAWNED, LEAKED, DIED, OUTCOME, TOWER_BUILT, TOWER_SOLD, GOLD_CHANGED
 		## spawn_ally places it; {tower, reason: "killed" | "expired" | "dismissed", by
 		## (killed only: the enemy id)} when it is gone (removed at the end of the tick)
 		ALLY_SUMMONED, ALLY_GONE,
+		## LT-117, id = the tower: {from, to, by (the gaunt id), ticks (disabled for)} when a
+		## night-gaunt lifts it; to == from when no free cell was found (it stays, disabled)
+		TOWER_LIFTED,
 		## LT-32 §2.3, id 0: {kind, reserve, delta, reason: "hire" | "build" | "sell" |
 		## "deploy" | "dawn"} when a crew kind's reserve changes
 		CREW_CHANGED,

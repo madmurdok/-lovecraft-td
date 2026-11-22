@@ -65,6 +65,9 @@ const BANISH_GHOST := Color(0.75, 0.8, 1.0)
 const BANISH_SECONDS := 0.9
 const BANISH_REACH := 0.3  ## the thread from the gate fades out over this long
 const BANISH_FOLD := 0.45  ## the old spot collapses in this long; the new ring opens after
+const LIFT_COLOR := Color(0.55, 0.5, 0.7)  ## LT-117: a night-gaunt carries a tower off
+const LIFT_SECONDS := 0.5
+const LIFT_ARC_CELLS := 0.8  ## how high the carry arc bulges over the chord
 
 ## Short-lived effects: {kind, from, to, ttl, ...} in cell units. Attack effects (LT-25)
 ## also carry tower, end, hits, hit_pos, miss, astray, dur (initial ttl), seed; a leak
@@ -127,6 +130,13 @@ func on_event(ev: SimEvent) -> void:
 			if board.last_pos.has(ev.id):
 				effects.append({"kind": "dissolve", "from": board.last_pos[ev.id],
 					"ttl": FLASH_SECONDS})
+		SimEvent.Type.TOWER_LIFTED:
+			# LT-117: an arc from the old to the new cell centre; a Resonator beam keeps its
+			# origin in the effect, so it is dropped (the tower is off for a while anyway).
+			var grid := game.sim.state.map.grid
+			effects.append({"kind": "lift", "from": grid.centre(ev.data["from"]),
+				"to": grid.centre(ev.data["to"]), "ttl": LIFT_SECONDS, "dur": LIFT_SECONDS})
+			_drop_beam(ev.id)
 		SimEvent.Type.LEAKED:
 			var lh := game.sim.state.map.lighthouse
 			effects.append({"kind": "leak", "from": game.sim.state.map.grid.centre(lh),
@@ -338,6 +348,8 @@ func _draw_effects() -> void:
 					COLOR_DISSOLVE, 2.0)
 			"leak":
 				view.outline_cell(self, fx["cell"], Board.COLOR_LEAK, 4.0)  # LT-108 F4
+			"lift":
+				_draw_lift(fx)
 
 
 ## A wavering bolt from the tower to an empty spot, ending in a small fading ring; from a
@@ -632,6 +644,24 @@ func _draw_charge(fx: Dictionary) -> void:
 		_draw_stick(b, Vector2.RIGHT.rotated(0.35), false, lying, col)
 		draw_circle(b + Vector2(0, -view.cells_to_px(0.3) * dk), view.cells_to_px(0.15 + 0.2 * dk),
 			Color(DYN_SMOKE, 0.6 * (1.0 - dk)))
+
+
+## LT-117: the carry arc from the old cell to the new one, drawn up to the carried point,
+## and a ring where it lands; a lift onto its own cell (no free cell) is a ring only.
+func _draw_lift(fx: Dictionary) -> void:
+	var k := clampf(_elapsed(fx) / float(fx["dur"]), 0.0, 1.0)
+	var a: Vector2 = view.cell_to_world(fx["from"])
+	var b: Vector2 = view.cell_to_world(fx["to"])
+	var fade := Color(LIFT_COLOR, 1.0 - k)
+	if a.distance_to(b) > 1.0:
+		var h := _arc_lift(a, b) * view.cells_to_px(LIFT_ARC_CELLS)
+		var pts := PackedVector2Array()
+		var n := 12
+		for i in n + 1:
+			pts.append(_arc_point(a, b, h, k * float(i) / n))
+		draw_polyline(pts, fade, 2.0)
+		_polyline_drawn = true
+	draw_arc(b, view.cells_to_px(0.2 + 0.3 * k), 0, TAU, 24, fade, 2.0)
 
 
 ## A point of the throw arc at k in [0, 1]: the chord a -> b lifted by a parabola whose

@@ -52,7 +52,7 @@ func _init(p_config: GameConfig, run_seed: int) -> void:
 	_combat.set_ally_hooks(_ally.spawn, _ally.allies_of)
 	_spawn.set_ally_compact(_ally.compact)
 	# LT-106 T5: the enemy traits' one API, after the systems it reaches (method Callables).
-	var host := TraitHost.new(_ctx, _spawn.queue_pack_member)
+	var host := TraitHost.new(_ctx, _spawn.queue_pack_member, _lift_tower)
 	_spawn.set_trait_host(host)
 	_combat.set_trait_host(host)
 	_traits = TraitSystem.new(_ctx, host)
@@ -84,7 +84,8 @@ func step() -> void:
 	# 2. Effect systems: the lighthouse beam first (LT-30: turn, `lit` of towers and enemies),
 	# LT-105 D2: tower channel writers in this fixed order, all before apply_auras (the first
 	# reader): light (update_beam), LT-106 enemy traits (near_tower, id order, then catalog
-	# order). LT-32 posts are channel readers only (their weakness is in their own stats).
+	# order; LT-117 lifts move towers here), the LT-117 lift-timer pass (disable). LT-32 posts
+	# are channel readers only (their weakness is in their own stats).
 	# then Elder Sign auras (LT-11; Corrupted Seal's armor strip, LT-29), the madness buff
 	# (LT-23 §3) and the flare's slow; then enemy status timers (LT-29 P6: bleed pulses see
 	# this tick's auras and buff; pull immunity counts down) and the LT-106 enemy trait ticks;
@@ -237,6 +238,21 @@ func sell_tower(tower_id: int) -> SimCommand.CommandResult:
 	_sanity.change_reserve(t, -reserve, "sell")
 	_crew.release(t, "sell")
 	return SimCommand.CommandResult.OK
+
+
+## LT-117: a night-gaunt lift (TraitHost.lift_tower). Moves `t` (same object and id) to
+## `to`: cell, pos and tower_at in one place (the one tower_at writer); to == t.cell leaves
+## it where it is. Starts its disable timer (`ticks`, TraitSystem.near_tower counts it down)
+## and emits TOWER_LIFTED {from, to, by, ticks}. Level, branch, spent, cooldown, targeting
+## and the sanity reserve are untouched (the tower still stands).
+func _lift_tower(t: SimTower, to: Vector2i, ticks: int, by: int) -> void:
+	var from := t.cell
+	state.tower_at.erase(from)
+	t.cell = to
+	t.pos = state.map.grid.centre(to)
+	state.tower_at[to] = t.id
+	t.lift_ticks_left = ticks
+	_emit(SimEvent.Type.TOWER_LIFTED, t.id, {"from": from, "to": to, "by": by, "ticks": ticks})
 
 
 ## Branches upgrade_tower accepts for `t` now (LT-24 §2): [""] at L1, ["a", "b"] at L2,

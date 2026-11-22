@@ -34,6 +34,7 @@ const REFRESH_ON: Dictionary[SimEvent.Type, int] = {
 	SimEvent.Type.POST_REMOVED: G_GONE,  # LT-32: a post leaves at dawn
 	SimEvent.Type.TOWER_UPGRADED: G_ALL,
 	SimEvent.Type.TOWER_LIT: G_TABLE,
+	SimEvent.Type.TOWER_LIFTED: G_TABLE,  ## LT-117: moved and disabled (on_event moves the selection)
 	SimEvent.Type.TARGET_PRIORITY_SET: G_PRIORITY,
 	SimEvent.Type.SANITY_CHANGED: G_TABLE,
 	SimEvent.Type.SANITY_CAP_CHANGED: G_TABLE | G_UPGRADE,
@@ -153,6 +154,9 @@ func refresh() -> void:
 ## LT-78 §1: marks the groups `ev` may change; flush() rebuilds them once per drain.
 func on_event(ev: SimEvent) -> void:
 	_dirty |= REFRESH_ON.get(ev.type, 0)
+	# LT-117: the open tower was lifted: the selection (and its range ring) follows it.
+	if ev.type == SimEvent.Type.TOWER_LIFTED and visible and ev.id == tower_id:
+		game.selection.set_cell(ev.data["to"])
 
 
 ## LT-78 §1: rebuilds the marked groups; a hidden view drops the marks (open_for syncs it).

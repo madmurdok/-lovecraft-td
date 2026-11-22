@@ -1,0 +1,6 @@
+{
+  "description": "LT-117: night_gaunt tower_lift never active (from_wave 11 > 10 waves); arm B of the lift A/B",
+  "patch": {
+    "enemies.json": { "enemies": { "night_gaunt": { "traits": { "tower_lift": { "from_wave": 11 } } } } }
+  }
+}

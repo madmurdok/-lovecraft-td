@@ -55,6 +55,7 @@ extends SceneTree
 ## and "shadowed_mundane_builds" (mundane towers the bot placed inside a shadow caster's radius).
 ## LT-70 §6: placement is light/shadow-aware for every strategy (`Placement.cast_term`, CAST_WEIGHT);
 ## the `light` strategy builds the Searchlight.
+## LT-117: RUN lines add "lifts" (count of TOWER_LIFTED events, night-gaunt tower_lift).
 ## Loot is random (seeded LOOT stream): compare strategies over the default 10 seeds.
 ## RUN lines add "relics_sold" ($ from sales), "drops" (real relics credited per kind, config
 ## order), "star_stones" and "wage" ($ of dawn wages).
@@ -205,6 +206,7 @@ func _play(strat: String, run_seed: int) -> Dictionary:
 	var wage := 0
 	var drops := {}
 	var flares := 0
+	var lifts := 0
 	var oil_bought := 0
 	var oil_gold := 0
 	var lit_shots := 0
@@ -282,6 +284,8 @@ func _play(strat: String, run_seed: int) -> Dictionary:
 				post_ids[ev.id] = true
 			elif ev.type == SimEvent.Type.FLARE_FIRED:
 				flares += 1
+			elif ev.type == SimEvent.Type.TOWER_LIFTED:
+				lifts += 1
 			elif ev.type == SimEvent.Type.OIL_CHANGED and ev.data["reason"] == "buy":
 				oil_bought += ev.data["delta"]
 			elif ev.type == SimEvent.Type.RELICS_CHANGED and ev.data["reason"] == "kill":
@@ -320,7 +324,7 @@ func _play(strat: String, run_seed: int) -> Dictionary:
 		"reserve_peak": snappedf(reserve_peak, 0.1), "free_reserve": snappedf(free_reserve, 0.1),
 		"hp_lost_per_wave": hp_lost_per_wave, "towers_final": towers_final,
 		"relics_sold": relics_sold, "drops": drops, "star_stones": drops.get("star_stone", 0),
-		"wage": wage, "lighthouse_level": st.lighthouse_level, "flares": flares,
+		"wage": wage, "lighthouse_level": st.lighthouse_level, "flares": flares, "lifts": lifts,
 		"oil_bought": oil_bought, "oil_gold": oil_gold, "lit_shots": lit_shots,
 		"lit_tower_ticks": lit_tower_ticks, "shadow_tower_ticks": shadow_tower_ticks,
 		"shadowed_mundane_builds": _policy().shadowed_builds,
