@@ -227,6 +227,8 @@ func _play(strat: String, run_seed: int) -> Dictionary:
 			idx = _policy().act(sim, strat, idx, built)
 		sim.step()
 		for t in st.towers:
+			if t.post:
+				continue  # LT-32: tower ticks count real towers only, as towers_final
 			if t.lit:
 				lit_tower_ticks += 1
 			if t.shadowed:

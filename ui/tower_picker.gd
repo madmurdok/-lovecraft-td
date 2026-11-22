@@ -44,6 +44,7 @@ const REFRESH_ON: Dictionary[SimEvent.Type, int] = {
 	SimEvent.Type.CREW_CHANGED: G_ROWS,  # LT-32: build_price and the post rows
 	SimEvent.Type.POST_DEPLOYED: G_ROWS,
 	SimEvent.Type.POST_REMOVED: G_ROWS,
+	SimEvent.Type.TOWER_LIFTED: G_ROWS,  # LT-117: a dropped tower may occupy the open cell
 }
 const FONT_SIZE := 12
 const HEAD_FONT_SIZE := 11  ## group titles and column heads
