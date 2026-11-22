@@ -443,3 +443,44 @@ target met 10/10. Lighthouse HP left: 0.0 everywhere except `light` 2.6/0.0. Nob
 Mean waves are as the lab reports them (over lost runs, round-1 rows) or per-strategy means averaged (rounds 2-4); compare
 within a round, not across. Proposal: `lt72_b_early_07_late_08` is the only arm that meets the two-part target for 10/10
 strategies, has wins (6, all `light`) and ends runs in waves 6-9; the owner picks the shipped numbers.
+
+## LT-117 tower_lift (0.11.0)
+
+Night gaunts lift a tower and drop it 2 cells away, disabled for 3 s (`night_gaunt.traits.tower_lift`, from wave 6; gaunts first appear in wave 7, 56 of them in waves 7-10). Playtest 0.4 is still the open lab log (its last section is LT-72 round 4), so the table goes here. Plan: `docs/design/LT-117-tower-lift.md` §8.
+
+Arms: `baseline` (shipped data, lift on) vs `lt117_lift_off` (`from_wave: 11`, never active in 10 waves). `python3 tools/balance/balance.py baseline lt117_lift_off --seeds=20 --jobs=6`, seeds 1000..1019, 10 strategies, flare on, commit `cb12597`. RUN lines carry the new `lifts` field (count of `TOWER_LIFTED`).
+
+Control: mean `lifts` is 0.00 in every `lt117_lift_off` row and above 0 in baseline for 5 of 10 strategies (below), so the arms differ. The other 5 strategies (occult, madness, resonator, gate, circle) are lifted 0 times in 20 runs each: they build nothing under the gaunts' flight line, or die before wave 7 reaches them.
+
+| strategy | wins/losses (on / off) | mean waves survived (on / off) | lighthouse HP mean/median (on / off) | mean lifts per run (on) |
+|---|---|---|---|---|
+| mundane | 0/20 / 0/20 | 5.9 / 6.0 | 0.0/0.0 / 0.0/0.0 | 1.10 |
+| occult | 0/20 / 0/20 | 6.2 / 6.2 | 0.0/0.0 / 0.0/0.0 | 0.00 |
+| mixed | 0/20 / 0/20 | 5.4 / 5.4 | 0.0/0.0 / 0.0/0.0 | 0.65 |
+| madness | 0/20 / 0/20 | 5.9 / 5.9 | 0.0/0.0 / 0.0/0.0 | 0.00 |
+| demolition | 0/20 / 0/20 | 7.0 / 7.0 | 0.0/0.0 / 0.0/0.0 | 2.45 |
+| battery | 0/20 / 0/20 | 6.9 / 6.9 | 0.0/0.0 / 0.0/0.0 | 1.60 |
+| resonator | 0/20 / 0/20 | 5.7 / 5.7 | 0.0/0.0 / 0.0/0.0 | 0.00 |
+| gate | 0/20 / 0/20 | 4.8 / 4.8 | 0.0/0.0 / 0.0/0.0 | 0.00 |
+| circle | 0/20 / 0/20 | 5.3 / 5.3 | 0.0/0.0 / 0.0/0.0 | 0.00 |
+| light | 5/15 / 6/14 | 7.5 / 7.7 | 2.2/0.0 / 2.6/0.0 | 2.75 |
+| all | 5/195 / 6/194 | 6.06 / 6.09 | | 0.86 |
+
+Losses per wave (waves 1..10, on / off, all strategies summed; waves 1-5 are 0.0.0.1.5 in both):
+
+| wave | 6 | 7 | 8 | 9 | 10 |
+|---|---|---|---|---|---|
+| deaths, lift on | 61 | 76 | 39 | 12 | 1 |
+| deaths, lift off | 61 | 75 | 39 | 13 | 0 |
+
+Per strategy, rows differ only in `mundane` (wave 7/8: 8/5 on, 7/6 off) and `light` (waves 8-10: 10/0/1 on, 9/1/0 off); the other 8 strategies have identical rows.
+
+Machine state: wall 2867 s for 400 runs, `/usr/bin/time -p` real 2867.47, user 5307.33, sys 47.39 (user/real 1.85 over 6 jobs); uptime at start `load averages: 26.10 16.15 10.57`, load peaked above 500 during the run (other agents), end `109.14 158.22 225.69`. Timings (s/run 38.1 vs 23.7) are not comparable between arms; the outcomes are seeded and do not depend on load.
+
+Reading:
+
+- The lift is lab-invisible: losses 195 vs 194 of 200, mean waves survived 6.06 vs 6.09, both inside the ±2-3 noise. The one-run shifts (`mundane` wave 8 vs 7, `light` wave 10 vs 8) are the only differences, and they are the strategies that get lifted most often besides `demolition` and `battery`.
+- Lifts do happen (0.86 per run on average, 2.75 for `light`, 2.45 for `demolition`), but gaunts arrive when most runs are already dying in waves 6-8 (150 of 195 losses), and a 3 s disable of one tower does not change the outcome of a run.
+- Lighthouse HP does not separate the arms either: only `light` ever wins, 2.2 vs 2.6 mean.
+- Caveat from the plan: the bot rebuilds into a slot a lift emptied, which softens the effect on the lab; a player who must react by hand may feel it more.
+- No re-tune from the lab. If the owner wants the lift to bite, the lab proposal is "double or halve X", not a nudge: `disable_seconds` 3 -> 6 (x2) with 1.5 as the weak arm, then `drop_cells` 2 -> 4 / 1; bisect after the first pair. Inertness control against a pre-LT-117 build (2 seeds, byte-identical RUN lines) was not run in this slice.

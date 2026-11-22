@@ -18,6 +18,8 @@ const SHADOW_TINT := Color(0.5, 0.28, 0.95)
 const LIT_BORDER := Color(2.8, 1.7, 0.35)
 const SHADOW_BORDER := Color(1.5, 0.7, 3.2)
 const PREVIEW_TINT_WEIGHT := 0.55
+## LT-117: a disabled tower's plate (t.disabled, e.g. a night-gaunt lift) is darkened by this.
+const DISABLED_DIM := 0.6
 const STATE_BORDER := 3.0
 const PREVIEW_BORDER := 2.0
 const SHADOW_MARK_COLOR := Color(0.22, 0.12, 0.4)  ## LT-70 §5: the shadowed corner dot
@@ -107,7 +109,13 @@ static func attack_color(kind: String) -> Color:
 ## LT-70 §5: the tower plate colour from the net sim flags: amber when lit, violet when
 ## shadowed (never both: cancelled is neither), else COLOR_TOWER; with neither flag, a
 ## `preview` "light" / "shadow" (preview_cast) mixes the same tint in at PREVIEW_TINT_WEIGHT.
+## LT-117: a disabled tower (the channel's last-tick value) gets that colour DISABLED_DIM darker.
 static func plate_color(t: SimTower, preview := "") -> Color:
+	var c := _plate_tint(t, preview)
+	return c.darkened(DISABLED_DIM) if t.disabled else c
+
+
+static func _plate_tint(t: SimTower, preview: String) -> Color:
 	if t.lit:
 		return LIT_TINT
 	if t.shadowed:

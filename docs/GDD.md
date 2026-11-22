@@ -194,7 +194,7 @@ Not planned; candidates for later towers or branches.
 | Cultist of Dagon | 60 | 1.0 | 0 | 1 | bone | Stops at an adjacent tower for 2 s and halves its fire rate for 5 s |
 | Innsmouth Hybrid | 210 | 0.9 | 2 | 1 | bone, amber, idol | Armored mid-tier walker |
 | Deep One | 135 | 1.6 | 0 | 1 | bone, amber | Spawns in packs of 4–6 |
-| Night-gaunt | 165 | 1.3 | 0 | 2 | amber, bone, idol | Flies straight to the lighthouse ignoring the path; from wave 6 on it may lift a tower and drop it 2 cells away (disabled 3 s) |
+| Night-gaunt | 165 | 1.3 | 0 | 2 | amber, bone, idol | Flies straight to the lighthouse ignoring the path; from wave 6, lifts the first tower it flies over and drops it 2 cells away; the tower is off for 3 s (LT-117) |
 | Shoggoth | 3600 | 0.5 | 5 | 5 | idol | Horror drain 0.5/s; regenerates 1% HP/s |
 | Dagon (boss) | 6000 | 0.4 | 8 | 20 | — | Horror drain 0.6/s; every 15 s summons 3 Deep Ones; leaking = instant loss |
 
