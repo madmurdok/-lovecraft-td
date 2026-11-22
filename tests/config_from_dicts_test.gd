@@ -104,7 +104,7 @@ func test_an_optional_file_absent_is_off_without_error() -> void:
 	var parse := func(_r: ConfigReader, _root: Dictionary, _c: GameConfig,
 			_ctx: Dictionary) -> void:
 		calls["n"] = 1
-	rows.append(["crew.json", parse, false])
+	rows.append(["extra.json", parse, false])
 	var r := GameConfig.from_dicts(parsed_roots(), {}, rows)
 	assert_array(r.errors).is_empty()
 	assert_bool(r.ok).is_true()
@@ -113,6 +113,6 @@ func test_an_optional_file_absent_is_off_without_error() -> void:
 		"optional parser ran with no root").is_false()
 	# The same row with a root is parsed: the test above is not vacuous.
 	var roots := parsed_roots()
-	roots["crew.json"] = {}
+	roots["extra.json"] = {}
 	assert_bool(GameConfig.from_dicts(roots, {}, rows).ok).is_true()
 	assert_bool(calls.has("n")).is_true()

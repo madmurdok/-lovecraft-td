@@ -29,7 +29,7 @@ func _file_order(r: ConfigLoadResult) -> Array[String]:
 
 
 func test_registry_lists_every_config_file_once_in_load_order() -> void:
-	assert_array(_registry_files()).contains_exactly([E, T, W, EC, S, M])
+	assert_array(_registry_files()).contains_exactly([E, T, W, EC, S, M, "crew.json"])
 
 
 func test_errors_follow_registry_order_across_all_six_files() -> void:
@@ -41,7 +41,9 @@ func test_errors_follow_registry_order_across_all_six_files() -> void:
 	var r := ConfigLoader.load_dir(dir)
 	assert_bool(r.ok).is_false()
 	assert_object(r.config).is_null()
-	assert_array(_file_order(r)).contains_exactly(_registry_files())
+	# crew.json (LT-32) is the optional seventh row and is not in make_dir's copy.
+	assert_array(_file_order(r)).contains_exactly(_registry_files().filter(
+		func(f: String) -> bool: return FILES.has(f)))
 	for e in r.errors:
 		assert_bool(e.contains("root must be an object")).override_failure_message(
 			"unexpected error: %s" % e).is_true()
@@ -73,7 +75,10 @@ func test_drops_cross_check_skipped_when_economy_is_broken() -> void:
 
 
 func test_missing_required_file_keeps_old_error_text() -> void:
-	for f: String in _registry_files():
+	for row: Array in GameConfig._sections():
+		if not row[1 + 1]:
+			continue  # optional rows (crew.json, LT-32) may be absent
+		var f: String = row[0]
 		var dir := make_dir()
 		DirAccess.remove_absolute(dir.path_join(f))
 		var r := ConfigLoader.load_dir(dir)
@@ -145,10 +150,10 @@ func test_a_stray_key_is_reported_once_and_alone_on_valid_data() -> void:
 
 # --- optional rows (injected through load_dir's `sections`) -------------------------
 
-const CREW := "crew.json"
+const CREW := "extra.json"
 
 
-## The shipped rows plus one optional crew.json row whose parser records each call in
+## The shipped rows plus one optional extra.json row whose parser records each call in
 ## `calls` and requires a "size" field.
 func _rows_with_crew(calls: Dictionary) -> Array[Array]:
 	var rows := GameConfig._sections()
@@ -201,5 +206,5 @@ func test_optional_row_present_but_bad_field_reports_its_error() -> void:
 	write_file(dir, CREW, "{\"crew\": 1}")
 	var r := ConfigLoader.load_dir(dir, _rows_with_crew(calls))
 	assert_bool(r.ok).is_false()
-	assert_array(r.errors).contains_exactly(["crew.json: size: missing required field"])
+	assert_array(r.errors).contains_exactly(["extra.json: size: missing required field"])
 	assert_int(calls.get("n", 0)).is_equal(1)

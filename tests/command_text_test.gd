@@ -99,9 +99,14 @@ func _gd_files(dir: String) -> Array[String]:
 # --- LT-107: per-command overrides (BY_COMMAND) ----------------------------------------------
 
 func test_reason_with_any_existing_command_equals_the_shared_text() -> void:
-	assert_int(Simulation.COMMANDS.size()).is_equal(12)
+	assert_int(Simulation.COMMANDS.size()).is_equal(14)
 	for cmd: String in Simulation.COMMANDS:
 		for name: String in R.keys():
+			var over: Dictionary = CommandText.BY_COMMAND.get(cmd, {})
+			if over.has(R[name]):  # LT-32: hire / deploy override one result each
+				assert_str(CommandText.reason(R[name], cmd)).override_failure_message(
+					"%s %s" % [cmd, name]).is_equal(over[R[name]])
+				continue
 			assert_str(CommandText.reason(R[name], cmd)).override_failure_message(
 				"%s %s" % [cmd, name]).is_equal(CommandText.reason(R[name]))
 	# An unknown command name falls back too.
@@ -109,7 +114,7 @@ func test_reason_with_any_existing_command_equals_the_shared_text() -> void:
 		CommandText.reason(R.NOT_NIGHT))
 
 
-## A planted override table (the const BY_COMMAND is empty): the override wins for its own
+## A planted override table (not the shipped BY_COMMAND): the override wins for its own
 ## key and mapped result only; other keys, unmapped results and the empty key read TEXT.
 func test_a_planted_override_wins_only_for_its_command_and_result() -> void:
 	var planted := {"deploy": {R.NOT_NIGHT: "only at night"},
