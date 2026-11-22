@@ -147,8 +147,10 @@ ids, `_lift_tower` is the one place to move them.
 - RNG: only `host.randi_range(e, SimRng.Stream.LIFT, ...)` (seeded sim RNG; G4a bans
   `RandomNumberGenerator.new` in traits). `LIFT` is appended to `SimRng.Stream`
   (`sim_rng.gd:11`), so existing streams keep their seeds (`STREAM_SEED_STRIDE` 16 leaves room).
-  Fakes never reach the draw (they never lift), so `SANITY` is untouched. One draw per lift
-  whenever the chosen ring has n >= 1 candidates (also n == 1: one rule, no special case).
+  Fakes never reach the draw (they never lift), so `SANITY` is untouched. One
+  `randi_range(0, n-1)` call per lift whenever the chosen ring has n >= 1 candidates; with
+  n == 1 Godot's `randi_range(0, 0)` leaves the stream state unchanged (probed on 4.7.2, LT-117
+  review), which is still deterministic across platforms and replays.
 - Tick order: slot 2, `near_tower` pass: light (update_beam) -> enemy traits in enemy id order
   (the lift) -> tower lift-timer pass (disable writes) -> [LT-32 crew] -> `apply_auras`. Two
   gaunts lifting in one tick: the lower id goes first, the second sees the updated `tower_at`.
