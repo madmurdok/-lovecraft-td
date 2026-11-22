@@ -263,18 +263,32 @@ func test_hook_order_is_enemy_id_then_catalog_order() -> void:
 ## TraitSystem reads the defs' hook bits once, at construction: a pass whose bit no def had
 ## then is skipped whole (the event hooks, dispatched per enemy, still run).
 func test_trait_passes_skip_when_no_def_had_their_hook_at_construction() -> void:
-	# LT-117: night_gaunt's tower_lift carries NEAR_TOWER in the data, so that pass always runs
-	# at construction now; only ON_TICK's skip is pinned here.
-	var probe := _probe("probe", EnemyTrait.ON_TICK | EnemyTrait.ON_DAMAGED)
-	var sim := tsim()
+	_probe("probe", EnemyTrait.ON_TICK | EnemyTrait.NEAR_TOWER | EnemyTrait.ON_DAMAGED)
+	# LT-117: night_gaunt's tower_lift carries NEAR_TOWER in the data; without it no def has
+	# that bit at construction, so the near_tower pass (and its lift-timer pass) is skipped.
+	var cfg := tconfig()
+	var gaunt: EnemyDef = cfg.enemies["night_gaunt"]
+	gaunt.traits.erase("tower_lift")
+	gaunt.build_hooks()
+	for id: String in cfg.enemies:
+		assert_int((cfg.enemies[id] as EnemyDef).hooks & EnemyTrait.NEAR_TOWER) \
+			.override_failure_message("%s has NEAR_TOWER" % id).is_zero()
+	var sim := Simulation.new(cfg, SEED)
+	sim.state.gold = 1000000
+	var tower := build(sim, "searchlight", TOWER)
+	tower.lift_ticks_left = 5
 	var d: EnemyDef = sim.config.enemies[CARRIER]
 	d.traits["probe"] = {"tag": 0.0}
 	d.build_hooks()
 	assert_int(d.hooks & EnemyTrait.ON_TICK).is_not_zero()
+	assert_int(d.hooks & EnemyTrait.NEAR_TOWER).is_not_zero()
 	var e := put(sim, CARRIER, 3.0)
 	run(sim, 3)
 	sim.apply_damage(e.id, 1.0, "hit")
 	assert_array(_seen()).is_equal([["probe", "on_damaged", e.id]])
+	assert_int(tower.lift_ticks_left).override_failure_message("the lift-timer pass ran") \
+		.is_equal(5)
+	assert_bool(tower.disabled).is_false()
 
 
 # --- behaviour 7: the catalog ------------------------------------------------------------------
