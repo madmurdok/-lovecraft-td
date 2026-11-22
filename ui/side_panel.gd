@@ -4,9 +4,10 @@ extends PanelContainer
 ## the board's right edge to the base viewport's right edge, from below the HUD bar to the
 ## bottom. Laid out in base viewport units, so canvas_items stretch scales it with the
 ## window and it never covers the board. One view at a time inside a vertical scroll:
-## idle text, the tower view (TowerPanel), the lighthouse view, or (LT-61 §1) while the
-## build list (TowerPicker, above the scroll) is open the hovered tower's L1 card, or
-## "Pick a tower to build" with no hover.
+## idle text, the tower view (TowerPanel), the lighthouse view, the crew view (LT-32), or
+## (LT-61 §1) while the
+## build list (TowerPicker, above the scroll) is open the hovered tower's L1 card (LT-32: or
+## the hovered reserve post's card), or "Pick a tower to build" with no hover.
 
 const FONT_SIZE := 14  ## panel text (tunable; LT-28 owns the polish)
 const MARGIN := 8
@@ -31,6 +32,8 @@ var card_kind: Label
 var card_path: Label
 var card_id := ""  ## def id the card shows, "" while hidden
 var lighthouse_panel: LighthousePanel  ## LT-30
+var crew_panel: CrewPanel  ## LT-32 §4
+var card_upgrades: Label  ## the card's "Upgrades" head (hidden for a reserve post)
 
 
 ## A word-wrapping label at the panel width.
@@ -107,16 +110,25 @@ func _ready() -> void:
 	lighthouse_panel.name = "LighthousePanel"
 	lighthouse_panel.game = game
 	views.add_child(lighthouse_panel)
+	crew_panel = CrewPanel.new()
+	crew_panel.name = "CrewPanel"
+	crew_panel.game = game
+	views.add_child(crew_panel)
 	lighthouse_panel.visibility_changed.connect(_update_idle)
+	crew_panel.visibility_changed.connect(_update_idle)
 	tower_panel.visibility_changed.connect(_update_idle)
 	picker.visibility_changed.connect(_update_idle)
 	picker.hovered_changed.connect(show_card)
 	_update_idle()
 
 
-## LT-43 §3: shows the L1 card of tower `def_id` ("" hides it).
+## LT-43 §3: shows the L1 card of tower `def_id` ("" hides it). LT-32: an id
+## TowerPicker.POST_PREFIX + crew kind shows that kind's reserve post instead.
 func show_card(def_id: String) -> void:
-	var def: TowerDef = game.sim.config.towers.get(def_id)
+	var post_kind := def_id.trim_prefix(TowerPicker.POST_PREFIX) \
+		if def_id.begins_with(TowerPicker.POST_PREFIX) else ""
+	var def: TowerDef = game.sim.post_def(post_kind) if not post_kind.is_empty() \
+		else game.sim.config.towers.get(def_id)
 	card_id = def_id if def != null else ""
 	if def != null:
 		var s: TowerDef.Level = def.levels[0]
@@ -132,6 +144,11 @@ func show_card(def_id: String) -> void:
 		card_kind.text = "\n".join(TowerText.kind_lines(def, s, game.sim.config.sanity))
 		card_kind.visible = not card_kind.text.is_empty()
 		card_path.text = TowerText.upgrade_path_text(def)
+		card_upgrades.visible = post_kind.is_empty()
+		if not post_kind.is_empty():
+			card_role.text = TowerPicker.post_crew_text(game.sim, post_kind)
+			card_role.visible = true
+			card_path.text = "Not a tower: no upgrades, no sale. Returns to the reserve at dawn."
 	_update_idle()
 
 
@@ -154,9 +171,9 @@ func _make_card(views: VBoxContainer) -> void:
 	card_kind = make_label("CardKind", StatsTable.COLOR_LABEL)
 	card_kind.add_theme_font_size_override("font_size", StatsTable.FONT_SIZE)
 	card.add_child(card_kind)
-	var up := make_label("CardUpgradesTitle")
-	up.text = "Upgrades"
-	card.add_child(up)
+	card_upgrades = make_label("CardUpgradesTitle")
+	card_upgrades.text = "Upgrades"
+	card.add_child(card_upgrades)
 	card_path = make_label("CardPath", COLOR_INFO)
 	card_path.add_theme_font_size_override("font_size", StatsTable.FONT_SIZE)
 	card.add_child(card_path)
@@ -169,5 +186,5 @@ func _update_idle() -> void:
 	card.visible = picking and not card_id.is_empty()
 	idle_label.text = PICK_TEXT if picking else IDLE_TEXT
 	idle_label.visible = not card.visible and not tower_panel.visible \
-		and not lighthouse_panel.visible
+		and not lighthouse_panel.visible and not crew_panel.visible
 	scroll.scroll_vertical = 0
