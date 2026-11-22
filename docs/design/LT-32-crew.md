@@ -391,8 +391,8 @@ is a prefix:
   `sim_tower.gd:15`; LT-117 owns that change). LT-117 does not remove towers; if it ever does,
   it must call `CrewSystem.release(t, reason)` through the facade (crew back to the reserve,
   no money) and add the reason to CREW_CHANGED.
-- **Posts (Q3b, recommended a):** `tower_lift` never targets a post: LT-117's target choice
-  skips `t.post`. Posts are not structures (Q3), so nothing is lifted, moved or disabled.
+- **Posts (Q3b, owner decision a):** `tower_lift` never targets a post: LT-117's target choice
+  (`TowerLiftTrait.near_tower`) skips `t.post`. Posts are not structures (Q3), so nothing is lifted, moved or disabled.
   If the owner picks Q3b (b) instead: a lifted post moves and is disabled like a tower, its
   `crew` / `crew_kind` stay with it, and at dawn it is removed and returns its men as any post.
 - Other tower-targeting traits (LT-106 `tower_harass`) see posts as shooters (they write the
@@ -550,4 +550,4 @@ Follow-up backlog candidates (not in LT-32):
   резервистов/экипажа будем строить в маяке отдельные помещения, возможно там будут апгрейды
   для резервистов, типа тренировочных комнат, или мастерских алхимика и тп". Applied in Q3 (a).
 - Q4: dawn removal and return to the reserve kept; no post-to-tower path.
-- Open: Q3b (posts and `tower_lift`), recommended (a) immune.
+- Q3b: (a), posts are immune to `tower_lift` (§7).

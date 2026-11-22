@@ -40,12 +40,13 @@ func parse_params(r: ConfigReader, p: Dictionary, path: String) -> Dictionary:
 
 ## Gates first (fake, used, wave), so below from_wave nothing is read, drawn or emitted.
 ## One LIFT draw per lift whose ring has candidates (SimRng.randi_range(0, 0) draws nothing,
-## so a one-cell ring consumes no state).
+## so a one-cell ring consumes no state). LT-32 Q3b: a night post is never a target (the
+## gaunt keeps its one lift for a tower).
 func near_tower(host: TraitHost, e: SimEnemy, p: Dictionary) -> void:
 	if e.is_fake or e.status.has(DONE) or host.wave() < int(p["from_wave"]):
 		return
 	var t := host.tower_under(e)
-	if t == null or t.lift_ticks_left > 0:
+	if t == null or t.post or t.lift_ticks_left > 0:
 		return
 	e.status[DONE] = true
 	var to := t.cell
