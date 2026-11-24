@@ -173,3 +173,47 @@ func test_hud_jitter_shader_eases_between_steps() -> void:
 	var code := _game.sanity_fx.ui_jitter_material.shader.code
 	assert_str(code).contains("mix(step_offset(s), step_offset(s + 1.0), smoothstep(0.0, 1.0, fract(t)))")
 	assert_str(code).contains("uniform float rate")
+
+
+# ---- LT-40/S15: vignette, madness rim and aberration are centred on the board -----------
+# Source-text pins (the shader is not run headless): each of the three reads `board_edge` /
+# the rect's own UV, and no SCREEN_UV-based edge (`from_centre`, `float edge`) feeds them.
+# They do not prove the look on screen.
+
+
+func _line_with(code: String, needle: String) -> String:
+	var at := code.find(needle)
+	assert_int(at).override_failure_message("shader has no '%s'" % needle).is_greater(-1)
+	return code.substr(at, code.find("\n", at) - at)
+
+
+func test_vignette_uses_the_board_centred_edge() -> void:
+	await _start(BASE, Vector2i.ZERO)
+	var code := _game.sanity_fx.screen_material.shader.code
+	var line := _line_with(code, "float vig =")
+	assert_str(line).contains("smoothstep(0.35, 1.15, board_edge)")
+
+
+func test_madness_rim_uses_the_board_centred_edge() -> void:
+	await _start(BASE, Vector2i.ZERO)
+	var code := _game.sanity_fx.screen_material.shader.code
+	var line := _line_with(code, "col += vec3(0.30, 0.0, 0.03)")
+	assert_str(line).contains("smoothstep(0.55, 1.2, board_edge)")
+
+
+func test_aberration_direction_and_reach_are_centred_on_the_board_rect() -> void:
+	await _start(BASE, Vector2i.ZERO)
+	var code := _game.sanity_fx.screen_material.shader.code
+	var line := _line_with(code, "vec2 split")
+	assert_str(line).contains("normalize(UV - vec2(0.5)")
+	assert_str(line).contains("(0.3 + board_edge)")
+
+
+func test_no_screen_uv_based_edge_is_left_in_the_shader() -> void:
+	await _start(BASE, Vector2i.ZERO)
+	var code := _game.sanity_fx.screen_material.shader.code
+	assert_int(code.find("from_centre")).is_equal(-1)
+	assert_int(code.find("float edge")).is_equal(-1)
+	# board_edge itself is the only edge measure and is built from UV, not SCREEN_UV
+	assert_str(_line_with(code, "float board_edge")).contains("(UV - vec2(0.5))")
+	assert_str(_line_with(code, "float board_edge")).not_contains("uv")
