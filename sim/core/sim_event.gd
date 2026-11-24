@@ -25,7 +25,13 @@ enum Type {SPAWNED, LEAKED, DIED, OUTCOME, TOWER_BUILT, TOWER_SOLD, GOLD_CHANGED
 		ALLY_SUMMONED, ALLY_GONE,
 		## LT-117, id = the tower: {from, to, by (the gaunt id), ticks (disabled for)} when a
 		## night-gaunt lifts it; to == from when no free cell was found (it stays, disabled)
-		TOWER_LIFTED}
+		TOWER_LIFTED,
+		## LT-32 §2.3, id 0: {kind, reserve, delta, reason: "hire" | "build" | "sell" |
+		## "deploy" | "dawn"} when a crew kind's reserve changes
+		CREW_CHANGED,
+		## LT-32, id = the post: {kind, cell, crew} when deployed; {kind, cell, reason: "dawn"}
+		## when removed (posts never emit TOWER_BUILT / TOWER_SOLD)
+		POST_DEPLOYED, POST_REMOVED}
 
 var type: Type
 var tick: int

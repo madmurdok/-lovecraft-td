@@ -17,6 +17,14 @@ var level := 0  ## 0 = L1, 1 = L2 (indices into def.levels), 2 = L3 (def.branche
 var branch := ""  ## "" below L3; "a" or "b" at L3
 var spent := 0  ## total gold paid for this tower (build + upgrades); the sell refund base
 var build_tick := 0
+## LT-32 §2.2: men on board (a crewed tower's per_tower, a post's post.crew); 0 when crew
+## is off or the tower needs no crew. Returned to the reserve on sell and (posts) at dawn.
+var crew := 0
+## LT-32: whose men stand on a post (a crew kind); "" on towers (their kind is def.id).
+var crew_kind := ""
+## LT-32 Q3 (a): a reserve post, not a tower: def is the synthetic CrewConfig.POST_ID def,
+## never sold or upgraded (NOT_A_TOWER), removed at dawn. Fights like any shooter.
+var post := false
 ## Ticks until the tower may fire again; 0 = ready. A new tower is ready at once.
 var cooldown_ticks := 0
 ## One of TARGET_PRIORITIES; whom _fire_towers picks among the live enemies in range.

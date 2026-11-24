@@ -9,6 +9,9 @@ extends VBoxContainer
 ## Simulation.sell_refund reports now. Buttons are disabled with the reason whenever
 ## Simulation.can_upgrade refuses them. LT-78: a field group is rebuilt only when a sim
 ## event marks it (REFRESH_ON, flush); refresh() syncs every group on open.
+## LT-32 §4: a reserve post (SimTower.post, not a tower) shows "Reserve post", its crew
+## ("2 Harpooners, fighting as riflemen"), the stats and the target priority, and "Returns
+## to the reserve at dawn" in place of the upgrade rows, "Max level" and Sell.
 ## `visible` is "the tower view is shown"; SidePanel shows its idle text otherwise.
 
 const MADNESS_WARNING := TowerText.MADNESS_WARNING
@@ -28,6 +31,7 @@ const _PH := G_UPGRADE | G_SELL  ## phase events: day-only commands
 ## about another tower only costs a rebuild).
 const REFRESH_ON: Dictionary[SimEvent.Type, int] = {
 	SimEvent.Type.TOWER_SOLD: G_GONE,
+	SimEvent.Type.POST_REMOVED: G_GONE,  # LT-32: a post leaves at dawn
 	SimEvent.Type.TOWER_UPGRADED: G_ALL,
 	SimEvent.Type.TOWER_LIT: G_TABLE,
 	SimEvent.Type.TOWER_LIFTED: G_TABLE,  ## LT-117: moved and disabled (on_event moves the selection)
@@ -57,6 +61,7 @@ var max_label: Label
 var upgrade_buttons: Dictionary[String, Button] = {}
 var upgrade_infos: Dictionary[String, Label] = {}
 var sell_button: Button
+var post_label: Label  ## LT-32: "Returns to the reserve at dawn", a post only; crew on only
 var priority_title: Label
 ## SimTower.TARGET_PRIORITIES mode -> its button; the current mode is marked and disabled.
 var priority_buttons: Dictionary[String, Button] = {}
@@ -110,6 +115,11 @@ func _ready() -> void:
 		priority_buttons[mode] = pb
 	sell_button = SidePanel.make_button("SellButton", _on_sell_pressed)
 	add_child(sell_button)
+	if game != null and game.sim.config.crew_on():  # LT-32: posts exist only with crew on
+		post_label = SidePanel.make_label("PostNote", SidePanel.COLOR_INFO)
+		post_label.text = "Not a tower: no upgrades, no sale. Returns to the reserve at dawn."
+		post_label.visible = false
+		add_child(post_label)
 	add_child(SidePanel.make_button("CancelButton", close, "Cancel"))
 	if game != null and game.side_panel != null and game.side_panel.scroll != null:
 		game.side_panel.scroll.resized.connect(_on_scroll_resized)
@@ -180,6 +190,9 @@ func _rebuild(mask: int) -> void:
 		if at_max:
 			title_label.text += " · " + s.name
 		role_label.text = s.role if at_max else t.def.role
+		if t.post:  # LT-32: one level, no "L1"; the role line names the men
+			title_label.text = t.def.name
+			role_label.text = TowerPicker.post_crew_text(game.sim, t.crew_kind)
 		role_label.visible = not role_label.text.is_empty()
 	if mask & G_TABLE:
 		refresh_count += 1
@@ -190,7 +203,7 @@ func _rebuild(mask: int) -> void:
 	if mask & G_UPGRADE:
 		refresh_count += 1
 		upgrade_title.visible = not branches.is_empty()
-		max_label.visible = branches.is_empty()
+		max_label.visible = branches.is_empty() and not t.post
 		for branch: String in upgrade_buttons:
 			var b := upgrade_buttons[branch]
 			var info := upgrade_infos[branch]
@@ -203,6 +216,9 @@ func _rebuild(mask: int) -> void:
 			_refresh_upgrade(b, info, t, s, branch, target)
 	if mask & G_SELL:
 		refresh_count += 1
+		sell_button.visible = not t.post  # LT-32: a post is not sold
+		if post_label != null:
+			post_label.visible = t.post
 		# LT-27 §3: towers are sold by day only.
 		var sell := game.sim.can_sell_tower(t.id)
 		sell_button.disabled = sell != SimCommand.CommandResult.OK

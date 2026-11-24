@@ -12,6 +12,12 @@ extends VBoxContainer
 ## the reason and dims the rows; a reserve that would take the sanity cap to 0 (LT-23 Q3)
 ## marks the Trait cell red with "!". Past LIST_MAX_ROWS rows the rows scroll under the
 ## pinned first group line. Cancel, Esc, or a click elsewhere on the board closes it.
+## LT-32 §4 (crew on): by day a row's cost is Simulation.build_price (the reserve covers
+## crew) and its tooltip says how many men it takes from the reserve; at night a post
+## section above the rows lists one "Post: 2 Harpooners (4 in reserve)" row per crew kind,
+## enabled when Simulation.can_deploy accepts it; a click deploys that reserve post (not a
+## tower: no glyph ghost, its hover card is the post's). The title then reads "Deploy a
+## reserve post" while some post can be deployed; otherwise it keeps the towers' refusal.
 ## `visible` is "the build view is shown".
 
 signal hovered_changed(def_id: String)  ## "" when no row is hovered
@@ -21,6 +27,8 @@ const STATUS_COLOR := Color(0.95, 0.55, 0.45)  ## refusal reason, unaffordable c
 const DIM := Color(1, 1, 1, 0.5)  ## a refused row's cells (an unaffordable cost excepted)
 const MAD_MARK := "!"  ## after the Trait's reserve when building drives you mad
 const TITLE_TEXT := "Build here"
+const POST_TITLE_TEXT := "Deploy a reserve post"  ## LT-32 §4: the title at night, crew on
+const POST_PREFIX := "post:"  ## LT-32: hover id of a post row (+ crew kind), see show_card
 const G_ROWS := 1  ## LT-78: the one field group (rows 28-33 of the design note's §3)
 ## LT-78 §3: sim events that may change can_build or would_drive_mad_build for some row.
 const REFRESH_ON: Dictionary[SimEvent.Type, int] = {
@@ -33,6 +41,10 @@ const REFRESH_ON: Dictionary[SimEvent.Type, int] = {
 	SimEvent.Type.TOWER_SOLD: G_ROWS,
 	SimEvent.Type.SANITY_CAP_CHANGED: G_ROWS,
 	SimEvent.Type.SANITY_STATE_CHANGED: G_ROWS,
+	SimEvent.Type.CREW_CHANGED: G_ROWS,  # LT-32: build_price and the post rows
+	SimEvent.Type.POST_DEPLOYED: G_ROWS,
+	SimEvent.Type.POST_REMOVED: G_ROWS,
+	SimEvent.Type.TOWER_LIFTED: G_ROWS,  # LT-117: a dropped tower may occupy the open cell
 }
 const FONT_SIZE := 12
 const HEAD_FONT_SIZE := 11  ## group titles and column heads
@@ -78,6 +90,8 @@ var hovered := ""  ## def id of the hovered row, "" for none
 var title_label: Label  ## "Build here", or the refusal every row shares
 var cancel_button: Button  ## right of the title
 var rows_scroll: ScrollContainer  ## the rows (and later group lines) below the pinned line
+var post_box: VBoxContainer  ## LT-32: the night post section (crew on only), above the rows
+var post_buttons: Dictionary[String, Button] = {}  ## LT-32: crew kind -> its post row
 var _traits: Dictionary[String, String] = {}  ## def id -> trait_text of its L1
 var refresh_count := 0  ## LT-78 §8 B1: row rebuilds so far (refresh and flush)
 var _dirty := 0  ## LT-78: G_ROWS when an event marked the rows since the last flush
@@ -102,6 +116,8 @@ func _ready() -> void:
 	cancel_button.alignment = HORIZONTAL_ALIGNMENT_CENTER
 	cancel_button.autowrap_mode = TextServer.AUTOWRAP_OFF
 	title_line.add_child(cancel_button)
+	if game.sim.config.crew_on():
+		_make_posts()
 
 	var towers := game.sim.config.towers
 	var groups: Array[Array] = []  ## [kind, ids]
@@ -144,6 +160,34 @@ func _ready() -> void:
 	sep.custom_minimum_size.y = SEPARATOR_H
 	add_child(sep)
 	_fit_names(bar_w)
+
+
+## LT-32 §4: the post section, one row per crew kind (crew.json order), hidden by day.
+func _make_posts() -> void:
+	post_box = _vbox("Posts")
+	post_box.visible = false
+	add_child(post_box)
+	for kind: String in game.sim.config.crew.crews:
+		var b := Button.new()
+		b.name = "Post_" + kind
+		b.focus_mode = Control.FOCUS_NONE
+		b.custom_minimum_size.y = ROW_H
+		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		b.clip_text = true
+		b.add_theme_color_override("font_color", StatsTable.kind_color("mundane"))
+		b.pressed.connect(_on_post_pressed.bind(kind))
+		var id := POST_PREFIX + kind
+		b.mouse_entered.connect(_on_hover.bind(id, true))
+		b.mouse_exited.connect(_on_hover.bind(id, false))
+		_frame(b, false)
+		post_buttons[kind] = b
+		post_box.add_child(b)
+
+
+## LT-32 §4: "2 Harpooners, fighting as riflemen" (the post card's role line).
+static func post_crew_text(sim: Simulation, kind: String) -> String:
+	return "%d %s, fighting as riflemen" % [sim.config.crew.post_of(kind).crew,
+		sim.config.crew.crews[kind].name]
 
 
 ## A group line: the kind's title, and (`with_heads`) the column heads with tooltips.
@@ -264,6 +308,8 @@ func refresh() -> void:
 			shared = r
 		any_ok = any_ok or not b.disabled
 		var cost := costs[id]
+		var price := game.sim.build_price(id)  # LT-32: def.cost unless the reserve has crew
+		cost.text = TowerText.cost_text(price)
 		cost.add_theme_color_override("font_color",
 			STATUS_COLOR if poor else StatsTable.COLOR_VALUE)
 		var mad := not b.disabled and game.sim.would_drive_mad_build(id)
@@ -277,7 +323,11 @@ func refresh() -> void:
 			cells[id][key].modulate = dim
 		names[id].modulate = dim
 		cost.modulate = Color.WHITE if poor else dim
-		var tip := def.name + TowerText.DASH + TowerText.cost_text(def.cost)
+		var tip := def.name + TowerText.DASH + TowerText.cost_text(price)
+		var from_reserve := _from_reserve(id)
+		if from_reserve > 0:
+			tip += "\nuses %d %s from the reserve" % [from_reserve,
+				game.sim.config.crew.crews[id].name]
 		if b.disabled:
 			tip += " (%s)" % CommandText.reason(r)
 		elif mad:
@@ -292,10 +342,54 @@ func refresh() -> void:
 		shared = SimCommand.CommandResult.NOT_BUILD_PHASE \
 			if game.sim.state.phase == SimState.Phase.WAVE \
 			else SimCommand.CommandResult.NOT_ENOUGH_GOLD
+	# LT-32: once some post can be deployed the title invites it; otherwise it keeps the
+	# towers' refusal ("Only by day") and each dimmed post row says its own in the tooltip.
+	var title := TITLE_TEXT
+	if _refresh_posts() == SimCommand.CommandResult.OK:
+		shared = SimCommand.CommandResult.OK
+		title = POST_TITLE_TEXT
 	var refused := shared != SimCommand.CommandResult.OK
 	var why := CommandText.reason(shared)
-	title_label.text = why.left(1).to_upper() + why.substr(1) if refused else TITLE_TEXT
+	title_label.text = why.left(1).to_upper() + why.substr(1) if refused else title
 	title_label.add_theme_color_override("font_color", STATUS_COLOR if refused else Color.WHITE)
+
+
+## LT-32 §4: men of crewed tower `def_id` a build would take from the reserve now (0 when
+## crew is off or the def needs none).
+func _from_reserve(def_id: String) -> int:
+	var need := game.sim.crew_need(def_id)
+	if need == 0:
+		return 0
+	return mini(need, game.sim.crew_reserve().get(def_id, 0))
+
+
+## LT-32 §4: shows the post rows at night (crew on) and re-evaluates them against
+## Simulation.can_deploy; returns OK when some post can be deployed, else the first row's
+## refusal, or -1 when the section is hidden (by day, crew off).
+func _refresh_posts() -> int:
+	var night := post_box != null and game.sim.state.phase == SimState.Phase.WAVE
+	if post_box != null:
+		post_box.visible = night
+	if not night:
+		return -1
+	var first := -1
+	var reserve := game.sim.crew_reserve()
+	for kind: String in post_buttons:
+		var b := post_buttons[kind]
+		var r := game.sim.can_deploy(kind, cell)
+		var crew: CrewConfig.CrewKind = game.sim.config.crew.crews[kind]
+		b.text = "Post: %d %s (%d in reserve)" % [game.sim.config.crew.post_of(kind).crew,
+			crew.name, reserve.get(kind, 0)]
+		b.disabled = r != SimCommand.CommandResult.OK
+		b.modulate = DIM if b.disabled else Color.WHITE
+		b.tooltip_text = post_crew_text(game.sim, kind) + ", until dawn"
+		if b.disabled:
+			b.tooltip_text += " (%s)" % CommandText.reason(r, "deploy")
+		if r == SimCommand.CommandResult.OK:
+			first = SimCommand.CommandResult.OK
+		elif first == -1:
+			first = r
+	return first
 
 
 ## The full words of a trait tag ("Blind 2" -> "Blind 2: can't fire within 2 cells").
@@ -325,6 +419,12 @@ func _on_tower_pressed(def_id: String) -> void:
 		close()
 
 
+## LT-32 §4: deploys a reserve post of crew `kind` on the picker's cell.
+func _on_post_pressed(kind: String) -> void:
+	if game.commands.deploy(kind, cell) == SimCommand.CommandResult.OK:
+		close()
+
+
 func _on_hover(def_id: String, entered: bool) -> void:
 	if entered:
 		_set_hovered(def_id)
@@ -337,13 +437,17 @@ func _on_hover(def_id: String, entered: bool) -> void:
 func _set_hovered(def_id: String) -> void:
 	if def_id == hovered:
 		return
-	if buttons.has(hovered):
-		_frame(buttons[hovered], false)
+	if _row_button(hovered) != null:
+		_frame(_row_button(hovered), false)
 	hovered = def_id
 	var r := 0.0
 	var glyph := ""
 	var cast := ""
-	if buttons.has(def_id):
+	var post_kind := def_id.trim_prefix(POST_PREFIX) if def_id.begins_with(POST_PREFIX) else ""
+	if post_buttons.has(post_kind):  # LT-32: a post shows its range, no tower glyph ghost
+		_frame(post_buttons[post_kind], true)
+		r = game.sim.post_def(post_kind).levels[0].range_cells
+	elif buttons.has(def_id):
 		_frame(buttons[def_id], true)
 		var def: TowerDef = game.sim.config.towers[def_id]
 		r = def.levels[0].range_cells
@@ -352,6 +456,13 @@ func _set_hovered(def_id: String) -> void:
 	if visible:
 		game.selection.set_preview(r, glyph, cast)  # redraws only when it changed
 	hovered_changed.emit(def_id)
+
+
+## The row button of hover id `id` (a tower def id or POST_PREFIX + crew kind), or null.
+func _row_button(id: String) -> Button:
+	if id.begins_with(POST_PREFIX):
+		return post_buttons.get(id.trim_prefix(POST_PREFIX))
+	return buttons.get(id)
 
 
 ## LT-61 §7: a hovered row is a 1 px gold frame over a faint gold fill; any other row has

@@ -59,6 +59,16 @@ extends SceneTree
 ## Loot is random (seeded LOOT stream): compare strategies over the default 10 seeds.
 ## RUN lines add "relics_sold" ($ from sales), "drops" (real relics credited per kind, config
 ## order), "star_stones" and "wage" ($ of dawn wages).
+## Crew (LT-32 §5, data/crew.json): the build price hires a tower's missing crew, so with an
+## empty reserve the bot pays what it paid before crew. Two optional tunables in
+## tools/bot/strategies.json (patched through a balance variant's "bot" key, no CLI flag):
+## `crew_reserve` (default 0): by day, after the purchases, the bot hires the cheapest crew
+## kind until the reserve holds that many men; `post_min_live` (default 4): at night, with at
+## least that many live enemies on the map, it deploys every post the reserve allows (crew.json
+## kind order, the rifleman's best free cell). With crew_reserve 0 no man is hired and no post
+## deployed, so every RUN line equals the crew-off run's. RUN lines add "crew_hired" (men),
+## "crew_gold" ($ of hires), "posts" (posts deployed) and "post_shots" (shots by a post);
+## "towers_final" lists real towers only.
 ## A run is capped at 6 simulated minutes per wave of the config (LT-101 §7; 30 minutes for
 ## 5 waves; outcome "timeout").
 
@@ -202,6 +212,12 @@ func _play(strat: String, run_seed: int) -> Dictionary:
 	var lit_shots := 0
 	var lit_tower_ticks := 0
 	var shadow_tower_ticks := 0
+	# LT-32 §5 metrics.
+	var crew_hired := 0
+	var crew_gold := 0
+	var posts := 0
+	var post_shots := 0
+	var post_ids := {}  ## ids of deployed posts (a post may be gone at dawn by the drain)
 	_policy().shadowed_builds = 0
 	for kind in _cfg.economy.relic_ids():
 		drops[kind] = 0
@@ -211,6 +227,8 @@ func _play(strat: String, run_seed: int) -> Dictionary:
 			idx = _policy().act(sim, strat, idx, built)
 		sim.step()
 		for t in st.towers:
+			if t.post:
+				continue  # LT-32: tower ticks count real towers only, as towers_final
 			if t.lit:
 				lit_tower_ticks += 1
 			if t.shadowed:
@@ -243,6 +261,8 @@ func _play(strat: String, run_seed: int) -> Dictionary:
 				free_reserve += ev.data["delta"]  # negative: the part paid from sanity
 			elif ev.type == SimEvent.Type.SHOT:
 				shots += 1
+				if post_ids.has(ev.id):
+					post_shots += 1
 				var shooter := sim.tower_by_id(ev.id)
 				if shooter != null and shooter.lit and _beam_lit(sim, shooter):
 					lit_shots += 1
@@ -257,6 +277,13 @@ func _play(strat: String, run_seed: int) -> Dictionary:
 					wage += ev.data["delta"]
 				elif ev.data["reason"] == "oil":
 					oil_gold -= ev.data["delta"]
+				elif ev.data["reason"] == "hire":
+					crew_gold -= ev.data["delta"]
+			elif ev.type == SimEvent.Type.CREW_CHANGED and ev.data["reason"] == "hire":
+				crew_hired += ev.data["delta"]
+			elif ev.type == SimEvent.Type.POST_DEPLOYED:
+				posts += 1
+				post_ids[ev.id] = true
 			elif ev.type == SimEvent.Type.FLARE_FIRED:
 				flares += 1
 			elif ev.type == SimEvent.Type.TOWER_LIFTED:
@@ -280,6 +307,8 @@ func _play(strat: String, run_seed: int) -> Dictionary:
 		hp_lost_per_wave.append(hp_before - st.lighthouse_hp)  # the wave it ended in
 	var towers_final := {}  ## "<def>_L1" / "<def>_L2" / "<def>_<branch>" -> standing count
 	for t in st.towers:
+		if t.post:
+			continue  # LT-32: a run lost at night would list its reserve posts
 		var key := "%s_%s" % [t.def.id, t.branch if t.level >= TowerDef.LEVEL_COUNT \
 			else "L%d" % (t.level + 1)]
 		towers_final[key] = towers_final.get(key, 0) + 1
@@ -301,6 +330,8 @@ func _play(strat: String, run_seed: int) -> Dictionary:
 		"oil_bought": oil_bought, "oil_gold": oil_gold, "lit_shots": lit_shots,
 		"lit_tower_ticks": lit_tower_ticks, "shadow_tower_ticks": shadow_tower_ticks,
 		"shadowed_mundane_builds": _policy().shadowed_builds,
+		"crew_hired": crew_hired, "crew_gold": crew_gold, "posts": posts,
+		"post_shots": post_shots,
 	}
 	if _upgrades:
 		run["upgrades"] = upgrades

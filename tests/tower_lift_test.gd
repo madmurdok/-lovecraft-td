@@ -360,6 +360,58 @@ func test_a_lift_keeps_the_towers_progress_and_refund() -> void:
 		sim.state.sanity_cap, sim.sell_refund(t)]).is_equal(before)
 
 
+# --- LT-32 §7 contract: reserve posts are never lifted; crew travels with a lifted tower ----
+
+var _crew_cfg: GameConfig
+
+
+## The NARROW board with the shipped data/crew.json (crew on), from_wave reached.
+func _crew_sim() -> Simulation:
+	if _crew_cfg == null:
+		var r := load_edited(func(dir: String) -> void:
+			_apply_edits(dir, NARROW, -1, {})
+			write_file(dir, "crew.json", FileAccess.get_file_as_string("res://data/crew.json")))
+		assert_bool(r.ok).override_failure_message("\n".join(r.errors)).is_true()
+		_crew_cfg = r.config
+	var sim := Simulation.new(_crew_cfg, SEED)
+	sim.state.gold = 1000000
+	sim.state.wave_index = 6
+	return sim
+
+
+## A gaunt over a night post does not lift it (the post stays, is not disabled, LIFT does not
+## move, no TOWER_LIFTED) and keeps its one lift: parked over a real tower it lifts it. The
+## lifted tower keeps its crew; the reserve does not change.
+func test_a_post_is_never_lifted_and_the_gaunt_keeps_its_lift_for_a_tower() -> void:
+	var sim := _crew_sim()
+	var b := build(sim, SHOOTER, Vector2i(2, 0))
+	var men := b.crew
+	assert_int(men).is_greater(0)
+	sim.state.phase = SimState.Phase.WAVE
+	sim.state.crew[SHOOTER] = _crew_cfg.crew.post.crew
+	assert_int(sim.deploy(SHOOTER, NARROW_AT)).is_equal(SimCommand.CommandResult.OK)
+	var post := sim.tower_by_id(sim.state.tower_at[NARROW_AT])
+	assert_bool(post.post).is_true()
+	var reserve := sim.crew_reserve()
+	sim.drain_events()
+	var g := _gaunt(sim, NARROW_AT.x)
+	var lift := _lift_state(sim)
+	assert_array(_lifts(run(sim, 3))).override_failure_message("a post was lifted").is_empty()
+	assert_object(post.cell).is_equal(NARROW_AT)
+	assert_int(sim.state.tower_at[NARROW_AT]).is_equal(post.id)
+	assert_int(post.lift_ticks_left).is_equal(0)
+	assert_bool(post.disabled).is_false()
+	assert_int(_lift_state(sim)).is_equal(lift)
+	_park(g, 2)
+	var lifts := _lifts(run(sim, 1))
+	assert_int(lifts.size()).is_equal(1)
+	assert_int(lifts[0].id).is_equal(b.id)
+	assert_int(lifts[0].data["by"]).is_equal(g.id)
+	assert_object(b.cell).is_not_equal(Vector2i(2, 0))
+	assert_int(b.crew).is_equal(men)
+	assert_dict(sim.crew_reserve()).is_equal(reserve)
+
+
 # --- §7.12: two lifts in one tick ----------------------------------------------------------
 
 ## Lower gaunt id first, against the board it left: A takes (4,0), so B's ring 2 is full and

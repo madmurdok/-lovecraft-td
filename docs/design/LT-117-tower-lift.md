@@ -142,6 +142,9 @@ writer slot after the traits ("[LT-32 crew posts]", `simulation.gd:84-86`); a cr
 reads `t.cell` per tick follows the move for free. If LT-32 ties crew to cells rather than tower
 ids, `_lift_tower` is the one place to move them.
 
+**Posts (LT-32 Q3b, owner decision (a)):** a night post (`t.post`) is never a lift target;
+`TowerLiftTrait.near_tower` returns before marking the gaunt DONE, so it keeps its lift.
+
 ## 3. Determinism
 
 - RNG: only `host.randi_range(e, SimRng.Stream.LIFT, ...)` (seeded sim RNG; G4a bans

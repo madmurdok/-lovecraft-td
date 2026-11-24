@@ -41,6 +41,7 @@ var side_panel: SidePanel  ## LT-24: fixed right panel holding the two views bel
 var picker: TowerPicker  ## LT-61: the build list at the top of side_panel, its card below
 var tower_panel: TowerPanel  ## tower view of side_panel
 var lighthouse_panel: LighthousePanel  ## LT-30: lighthouse view of side_panel
+var crew_panel: CrewPanel  ## LT-32 §4: crew view of side_panel (opened from the HUD)
 var end_screen: EndScreen
 
 
@@ -100,6 +101,7 @@ func _ready() -> void:
 	picker = side_panel.picker  # LT-61 §1: the build list is in the side panel
 	tower_panel = side_panel.tower_panel
 	lighthouse_panel = side_panel.lighthouse_panel
+	crew_panel = side_panel.crew_panel
 	end_screen = EndScreen.new()
 	end_screen.name = "EndScreen"
 	ui.add_child(end_screen)
@@ -201,6 +203,7 @@ func _consume_events() -> int:
 		picker.on_event(ev)
 		tower_panel.on_event(ev)
 		lighthouse_panel.on_event(ev)
+		crew_panel.on_event(ev)
 		if ev.type == SimEvent.Type.RELICS_CHANGED and ev.data.get("reason", "") == "kill" \
 				and ev.data.get("kind", "") == RelicTokens.STAR_STONE:
 			star_stones_found += 1
@@ -208,6 +211,7 @@ func _consume_events() -> int:
 			picker.close()
 			tower_panel.close()
 			lighthouse_panel.close()
+			crew_panel.close()
 			side_panel.visible = false
 			end_screen.show_result(ev.data.get("result", "") == "won", sim.state,
 				star_stones_found)
@@ -221,6 +225,7 @@ func _flush_ui() -> void:
 	picker.flush()
 	tower_panel.flush()
 	lighthouse_panel.flush()
+	crew_panel.flush()
 
 
 ## LT-28: closes the build and tower views (a click on a cell, or one off the grid).
@@ -228,6 +233,14 @@ func close_panels() -> void:
 	picker.close()
 	tower_panel.close()
 	lighthouse_panel.close()
+	crew_panel.close()
+
+
+## LT-32 §4: the HUD's crew button: the crew view replaces whatever the side panel shows.
+func open_crew_panel() -> void:
+	close_panels()
+	if sim.state.outcome == SimState.Outcome.NONE:
+		crew_panel.open()
 
 
 func _on_cell_clicked(cell: Vector2i) -> void:

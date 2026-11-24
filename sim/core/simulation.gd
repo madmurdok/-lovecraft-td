@@ -22,6 +22,7 @@ var _spawner: SimSpawner
 ## LT-80 (B5): shared plumbing and the systems split out of this facade; built in _init.
 var _ctx: SimContext
 var _economy: EconomySystem
+var _crew: CrewSystem
 var _sanity: SanitySystem
 var _light: LightSystem
 var _combat: CombatSystem
@@ -40,6 +41,7 @@ func _init(p_config: GameConfig, run_seed: int) -> void:
 	# Construction writes start values (gold; sanity, cap, state; oil, beam) but emits and
 	# draws nothing, so this order changes no output (LT-80 §3).
 	_economy = EconomySystem.new(_ctx)
+	_crew = CrewSystem.new(_ctx, _economy)  # LT-32: the reserve (empty when crew is off)
 	_sanity = SanitySystem.new(_ctx, _economy)
 	_light = LightSystem.new(_ctx, _economy)
 	# LT-82: Ally holds Combat; Combat spawns through method Callables (object id, no ref).
@@ -82,8 +84,8 @@ func step() -> void:
 	# 2. Effect systems: the lighthouse beam first (LT-30: turn, `lit` of towers and enemies),
 	# LT-105 D2: tower channel writers in this fixed order, all before apply_auras (the first
 	# reader): light (update_beam), LT-106 enemy traits (near_tower, id order, then catalog
-	# order; LT-117 lifts move towers here), the LT-117 lift-timer pass (disable), [LT-32 crew
-	# posts].
+	# order; LT-117 lifts move towers here), the LT-117 lift-timer pass (disable). LT-32 posts
+	# are channel readers only (their weakness is in their own stats).
 	# then Elder Sign auras (LT-11; Corrupted Seal's armor strip, LT-29), the madness buff
 	# (LT-23 §3) and the flare's slow; then enemy status timers (LT-29 P6: bleed pulses see
 	# this tick's auras and buff; pull immunity counts down) and the LT-106 enemy trait ticks;
@@ -163,7 +165,7 @@ func can_build(def_id: String, cell: Vector2i) -> SimCommand.CommandResult:
 		return SimCommand.CommandResult.NOT_BUILDABLE
 	if state.tower_at.has(cell):
 		return SimCommand.CommandResult.OCCUPIED
-	if state.gold < def.cost:
+	if state.gold < _crew.build_price(def_id):  # LT-32: def.cost with no crew or an empty reserve
 		return SimCommand.CommandResult.NOT_ENOUGH_GOLD
 	return _ctx.day_only()  # last: keeps "first failing reason in SimCommand.CommandResult order" (LT-27 §3)
 
@@ -173,35 +175,43 @@ func can_build(def_id: String, cell: Vector2i) -> SimCommand.CommandResult:
 ## tick, and TOWER_BUILT + GOLD_CHANGED are emitted. Its L1 sanity_reserve then lowers the
 ## cap (_change_reserve "build", LT-23 §1.2); a cap taken to 0 empties sanity and so starts
 ## MADNESS. Only gold is checked. Day only (LT-27 §3): refused at night with NOT_BUILD_PHASE.
+## LT-32 (crew on, crewed def): the price is build_price (frame + the crew the reserve does
+## not cover; def.cost with an empty reserve), `spent` is the frame only (the refund base),
+## and the tower takes its crew from the reserve (CREW_CHANGED "build" after GOLD_CHANGED).
 func build_tower(def_id: String, cell: Vector2i) -> SimCommand.CommandResult:
 	var result := can_build(def_id, cell)
 	if result != SimCommand.CommandResult.OK:
 		return result
 	var def: TowerDef = config.towers[def_id]
+	var price := _crew.build_price(def_id)
 	var t := SimTower.new()
 	t.id = _ctx.next_id()
 	t.def = def
 	t.cell = cell
 	t.pos = state.map.grid.centre(cell)
-	t.spent = def.cost
+	t.spent = _crew.frame_price(def_id)
 	t.build_tick = state.tick
 	state.towers.append(t)
 	state.tower_at[cell] = t.id
 	_ctx.log_command([state.tick, "build", def_id, cell])
-	_emit(SimEvent.Type.TOWER_BUILT, t.id, {"def": def_id, "cell": cell, "cost": def.cost})
-	_economy.add_gold(-def.cost, "build", t.id)
+	_emit(SimEvent.Type.TOWER_BUILT, t.id, {"def": def_id, "cell": cell, "cost": price})
+	_economy.add_gold(-price, "build", t.id)
+	_crew.take_for_build(t)
 	_sanity.change_reserve(t, _sanity.reserve_of(t), "build")
 	return SimCommand.CommandResult.OK
 
 
 ## Whether sell_tower(tower_id) would be applied now; OK or the first failing reason in this
-## order: OUTCOME_REACHED, NO_SUCH_TOWER, NOT_BUILD_PHASE (at night, LT-27 §3). Changes
-## nothing.
+## order: OUTCOME_REACHED, NO_SUCH_TOWER, NOT_A_TOWER (a reserve post, LT-32 Q3),
+## NOT_BUILD_PHASE (at night, LT-27 §3). Changes nothing.
 func can_sell_tower(tower_id: int) -> SimCommand.CommandResult:
 	if state.outcome != SimState.Outcome.NONE:
 		return SimCommand.CommandResult.OUTCOME_REACHED
-	if tower_by_id(tower_id) == null:
+	var t := tower_by_id(tower_id)
+	if t == null:
 		return SimCommand.CommandResult.NO_SUCH_TOWER
+	if t.post:
+		return SimCommand.CommandResult.NOT_A_TOWER
 	return _ctx.day_only()
 
 
@@ -209,7 +219,9 @@ func can_sell_tower(tower_id: int) -> SimCommand.CommandResult:
 ## on it, build and upgrades (rounded once, on the total) and frees its cell. Emits
 ## TOWER_SOLD + GOLD_CHANGED, then the cap rises by the tower's reserve (_change_reserve
 ## "sell", LT-23 Q4); current sanity does not change, in MADNESS too. Day only (LT-27 §3):
-## OUTCOME_REACHED, NO_SUCH_TOWER, then NOT_BUILD_PHASE at night.
+## OUTCOME_REACHED, NO_SUCH_TOWER, NOT_A_TOWER, then NOT_BUILD_PHASE at night. LT-32: the
+## crew on board returns to the reserve last (CREW_CHANGED "sell"); `spent` holds no crew
+## money, so the refund is a share of frame + upgrades.
 func sell_tower(tower_id: int) -> SimCommand.CommandResult:
 	var result := can_sell_tower(tower_id)
 	if result != SimCommand.CommandResult.OK:
@@ -224,6 +236,7 @@ func sell_tower(tower_id: int) -> SimCommand.CommandResult:
 	_emit(SimEvent.Type.TOWER_SOLD, t.id, {"def": t.def.id, "cell": t.cell, "refund": refund})
 	_economy.add_gold(refund, "sell", t.id)
 	_sanity.change_reserve(t, -reserve, "sell")
+	_crew.release(t, "sell")
 	return SimCommand.CommandResult.OK
 
 
@@ -243,9 +256,9 @@ func _lift_tower(t: SimTower, to: Vector2i, ticks: int, by: int) -> void:
 
 
 ## Branches upgrade_tower accepts for `t` now (LT-24 §2): [""] at L1, ["a", "b"] at L2,
-## [] at L3.
+## [] at L3 and (LT-32) for a reserve post, so upgrade_target never indexes its missing L2.
 func upgrade_branches(t: SimTower) -> PackedStringArray:
-	if t.level >= TowerDef.LEVEL_COUNT:
+	if t.post or t.level >= TowerDef.LEVEL_COUNT:
 		return PackedStringArray()
 	if t.level == TowerDef.LEVEL_COUNT - 1:
 		return TowerDef.BRANCH_IDS
@@ -263,7 +276,8 @@ func upgrade_target(t: SimTower, branch := "") -> TowerDef.Level:
 
 
 ## Whether upgrade_tower(tower_id, branch) would be applied now; OK or the first failing
-## reason in this order: OUTCOME_REACHED, NO_SUCH_TOWER, MAX_LEVEL, NEED_BRANCH,
+## reason in this order: OUTCOME_REACHED, NO_SUCH_TOWER, NOT_A_TOWER (LT-32: a post has one
+## level and no branches), MAX_LEVEL, NEED_BRANCH,
 ## BAD_BRANCH, NOT_BUILD_PHASE (at night, _day_only), NOT_ENOUGH_GOLD. Only gold is checked,
 ## not the sanity cap. Changes nothing.
 func can_upgrade(tower_id: int, branch := "") -> SimCommand.CommandResult:
@@ -272,6 +286,8 @@ func can_upgrade(tower_id: int, branch := "") -> SimCommand.CommandResult:
 	var t := tower_by_id(tower_id)
 	if t == null:
 		return SimCommand.CommandResult.NO_SUCH_TOWER
+	if t.post:
+		return SimCommand.CommandResult.NOT_A_TOWER
 	if t.level >= TowerDef.LEVEL_COUNT:
 		return SimCommand.CommandResult.MAX_LEVEL
 	if t.level == TowerDef.LEVEL_COUNT - 1 and branch.is_empty():
@@ -516,6 +532,9 @@ const COMMANDS: Dictionary[String, Dictionary] = {
 	"buy_oil": {"args": [], "can": &"can_buy_oil", "apply": &"buy_oil", "text": ""},
 	"fire_flare": {"args": [], "can": &"can_fire_flare", "apply": &"fire_flare", "text": ""},
 	"debug_end_night": {"args": [], "can": &"can_debug_end_night", "apply": &"debug_end_night", "text": ""},
+	"hire": {"args": [TYPE_STRING], "can": &"can_hire", "apply": &"hire", "text": "hire"},
+	"deploy": {"args": [TYPE_STRING, TYPE_VECTOR2I], "can": &"can_deploy", "apply": &"deploy",
+		"text": "deploy"},
 }
 
 
@@ -607,7 +626,42 @@ func on_dawn(n: int) -> int:
 	var bonus := award_wave_bonus(n)
 	award_wave_sanity()  # LT-10: regen.between_waves, also for the last wave
 	auto_restore_sanity()  # LT-13: exit rule auto_restore; regen above is 0 in madness
+	_crew.on_dawn()  # LT-32 Q4: posts leave, their men return to the reserve
 	return bonus
+
+
+# --- LT-32: crew (CrewSystem forwarders) ------------------------------------------------
+
+func crew_need(def_id: String) -> int:
+	return _crew.crew_need(def_id)
+
+
+func build_price(def_id: String) -> int:
+	return _crew.build_price(def_id)
+
+
+func can_hire(kind: String) -> SimCommand.CommandResult:
+	return _crew.can_hire(kind)
+
+
+func hire(kind: String) -> SimCommand.CommandResult:
+	return _crew.hire(kind)
+
+
+func can_deploy(kind: String, cell: Vector2i) -> SimCommand.CommandResult:
+	return _crew.can_deploy(kind, cell)
+
+
+func deploy(kind: String, cell: Vector2i) -> SimCommand.CommandResult:
+	return _crew.deploy(kind, cell)
+
+
+func crew_reserve() -> Dictionary:
+	return _crew.reserve()
+
+
+func post_def(kind: String) -> TowerDef:
+	return _crew.post_def(kind)
 
 
 ## 1.0 without a WaveDirector (the director is the facade's, so it is passed in).

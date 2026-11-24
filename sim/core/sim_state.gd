@@ -35,6 +35,9 @@ var allies: Array[SimAlly] = []
 var night_luck := 1.0  ## LT-27 §1.2: set by call_wave, reset to 1.0 at dawn
 var towers: Array[SimTower] = []  ## id order
 var tower_at: Dictionary[Vector2i, int] = {}  ## occupied cell -> tower id
+## LT-32 §2.2: crew kind -> men in the reserve (not on a tower or post); empty when crew is
+## off. Changes only through CrewSystem (hire, build, sell, deploy, dawn).
+var crew: Dictionary[String, int] = {}
 var phase := Phase.NONE
 var wave_index := 0  ## 1-based number of the current or last started wave; 0 before wave 1
 var waves_total := 0  ## number of waves in waves.json (0 without a WaveDirector)

@@ -32,11 +32,17 @@ const TEXT := {
 	SimCommand.CommandResult.NO_FLARE: GENERIC,
 	SimCommand.CommandResult.NO_OIL: GENERIC,
 	SimCommand.CommandResult.OIL_FULL: "tank full",
+	SimCommand.CommandResult.NO_CREW: "no crew for this",
+	SimCommand.CommandResult.RESERVE_SHORT: "not enough crew",
+	SimCommand.CommandResult.NOT_A_TOWER: "a post, not a tower",
 }
 
 ## LT-107: per-command overrides of TEXT, {Simulation.COMMANDS[cmd].text: {CommandResult: text}}.
-## Empty for the existing commands (every shown string is TEXT's); LT-32 adds e.g. "deploy".
-const BY_COMMAND: Dictionary = {}
+## Empty for the older commands (every shown string is TEXT's); LT-32 adds "deploy" / "hire".
+const BY_COMMAND: Dictionary = {
+	"deploy": {SimCommand.CommandResult.NOT_NIGHT: "only at night"},
+	"hire": {SimCommand.CommandResult.NOT_BUILD_PHASE: "hire by day"},
+}
 
 ## Results the lighthouse panel names on its own button line (owner on LT-75: one table, the
 ## panel capitalises). Any other result shows no reason line there.

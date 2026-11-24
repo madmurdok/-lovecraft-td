@@ -1,0 +1,15 @@
+{
+  "description": "LT-32: crew_reserve 2, post.range 5",
+  "bot": {
+    "tunables": {
+      "crew_reserve": 2
+    }
+  },
+  "patch": {
+    "crew.json": {
+      "post": {
+        "range": 5
+      }
+    }
+  }
+}
