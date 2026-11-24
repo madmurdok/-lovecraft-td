@@ -10,7 +10,8 @@ const CS := " (coming soon)"
 var _cfg: GameConfig
 
 
-func before() -> void:
+## A fresh config per test: some tests below edit it (LT-122), none may leak into another.
+func before_test() -> void:
 	var r := ConfigLoader.load_dir("res://data")
 	assert_bool(r.ok).override_failure_message("\n".join(r.errors)).is_true()
 	_cfg = r.config
