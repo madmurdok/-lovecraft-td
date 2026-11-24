@@ -23,8 +23,11 @@ void fragment() {
 	float t = TIME;
 	vec2 from_centre = uv - vec2(0.5);
 	float edge = length(from_centre * vec2(1.0, 0.75)) * 2.0;  // ~0 centre, ~1 corners
-	// LT-40 W1: the board centre, where play happens, stays still; only the rim wobbles.
-	float amount = distortion * (1.0 + 2.0 * pulse) * smoothstep(0.25, 0.9, edge);
+	// LT-40 W1: the board centre, where play happens, stays still; only the board rim
+	// wobbles. Measured in this rect's own UV (the rect is exactly the board), not
+	// SCREEN_UV: the board is off-centre in the viewport (HUD column on the right).
+	float board_edge = length((UV - vec2(0.5)) * vec2(1.0, 0.75)) * 2.0;
+	float amount = distortion * (1.0 + 2.0 * pulse) * smoothstep(0.25, 0.9, board_edge);
 	vec2 wave = vec2(
 		sin(uv.y * 23.0 + t * 1.9) + 0.6 * sin(uv.y * 61.0 - t * 3.1),
 		cos(uv.x * 17.0 + t * 1.4) + 0.6 * cos(uv.x * 47.0 + t * 2.3));

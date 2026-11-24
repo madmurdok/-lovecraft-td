@@ -153,7 +153,7 @@ func test_madness_uniform_is_zero_outside_madness_and_one_in_it() -> void:
 func test_screen_wave_is_scaled_by_the_edge_mask_computed_before_it() -> void:
 	await _start(BASE, Vector2i.ZERO)
 	var code := _game.sanity_fx.screen_material.shader.code
-	var edge_at := code.find("float edge")
+	var edge_at := code.find("float board_edge")
 	var amount_at := code.find("float amount")
 	var wave_at := code.find("uv += wave")
 	assert_int(edge_at).is_greater(-1)
@@ -161,7 +161,10 @@ func test_screen_wave_is_scaled_by_the_edge_mask_computed_before_it() -> void:
 	assert_int(edge_at).is_less(amount_at)
 	assert_int(amount_at).is_less(wave_at)
 	var amount_line := code.substr(amount_at, code.find("\n", amount_at) - amount_at)
-	assert_str(amount_line).contains("* smoothstep(0.25, 0.9, edge)")
+	assert_str(amount_line).contains("* smoothstep(0.25, 0.9, board_edge)")
+	# LT-40/S9: the mask is centred on the board rect (its own UV), not the viewport.
+	var edge_line := code.substr(edge_at, code.find("\n", edge_at) - edge_at)
+	assert_str(edge_line).contains("(UV - vec2(0.5))")
 	assert_str(amount_line).contains("distortion")
 
 
