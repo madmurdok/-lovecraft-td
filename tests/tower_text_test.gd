@@ -107,7 +107,7 @@ func test_elder_sign_is_support_with_aura_and_effects_and_no_kind_line() -> void
 	assert_array(_special(l1)).is_equal([
 		"Slows enemies %s%%" % _n(l1.effects["slow"] * 100.0),
 		"Foes take +%s%% damage" % _n((l1.effects["damage_taken_multiplier"] - 1.0) * 100.0),
-		"Shadows nearby towers",  # LT-70 §5
+		"Shadows towers at night",  # LT-70 §5
 	])
 	assert_array(Array(TowerText.kind_lines(_def("elder_sign"), l1, _cfg.sanity))).is_empty()
 

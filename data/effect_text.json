@@ -21,7 +21,7 @@
     {"keys": ["damage_taken_multiplier"], "defaults": {"damage_taken_multiplier": 1},
      "text": "Foes take +{damage_taken_multiplier|pct_over1}% damage"},
     {"keys": ["casts_light"], "text": "Lights towers and foes"},
-    {"keys": ["casts_shadow"], "text": "Shadows nearby towers"},
+    {"keys": ["casts_shadow"], "text": "Shadows towers at night"},
     {"keys": ["crit_chance", "crit_multiplier"],
      "text": "{crit_chance|pct}% crit, x{crit_multiplier} damage"},
     {"keys": ["burst_targets"], "text": "Spreads fire over {burst_targets} foes"},
