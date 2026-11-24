@@ -39,7 +39,7 @@ var _rng := RandomNumberGenerator.new()  ## presentation-only
 
 func _ready() -> void:
 	custom_minimum_size = SIZE
-	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	mouse_filter = Control.MOUSE_FILTER_PASS  # LT-120: hovered for the Hud's tooltip
 	set_process(false)  # LT-78 Q3: the Hud turns the animation on (set_distorted)
 
 

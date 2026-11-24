@@ -327,6 +327,7 @@ func _refresh_sanity() -> void:
 	var s := game.sim.state
 	sanity_bar.set_distorted(s.sanity_state >= SimState.SanityState.FRAYING)
 	sanity_bar.redraw()
+	sanity_bar.tooltip_text = sanity_tooltip(game.sim)  # LT-120: what drains and restores it
 	hostile_label.visible = s.sanity_state == SimState.SanityState.MADNESS
 	if hostile_label.visible:
 		var text := hostile_text(game.sim.config.sanity.madness)
@@ -460,14 +461,54 @@ static func recover_text(cfg: SanityConfig, target: float) -> String:
 	if target <= 0.0:
 		return "No room to recover: sell an occult tower"
 	var head := "Recover at %d sanity" % roundi(target)
+	var parts := regen_parts(cfg)
+	if parts.is_empty():
+		return head
+	return head + ": " + ", ".join(parts)
+
+
+## The regen sources, "+12 each dawn", "+0.5 per mundane kill" (a source is left out when
+## it is 0); shared by the recover line and the sanity tooltip.
+static func regen_parts(cfg: SanityConfig) -> PackedStringArray:
 	var parts := PackedStringArray()
 	if cfg.regen_between_waves > 0.0:
 		parts.append("+%s each dawn" % ConfigReader.fmt(cfg.regen_between_waves))
 	if cfg.regen_mundane_kill > 0.0:
 		parts.append("+%s per mundane kill" % ConfigReader.fmt(cfg.regen_mundane_kill))
-	if parts.is_empty():
-		return head
-	return head + ": " + ", ".join(parts)
+	return parts
+
+
+## LT-120: the sanity bar's tooltip, what drains sanity and what restores it, from config:
+##   Drains sanity:
+##   · occult towers hold part of it (the hatched end): 30 now
+##   · Shoggoth within 3 cells of a tower: −2.5 per s
+##   Restores: +12 each dawn, +0.5 per mundane kill
+##   At 0: madness until sanity is back to 20
+## The "now" part only while a reserve stands; a horror line per enemy with horror_drain in
+## config order; the last line names the recover target under exit_rule "recover" only.
+static func sanity_tooltip(sim: Simulation) -> String:
+	var cfg := sim.config.sanity
+	var lines := PackedStringArray(["Drains sanity:"])
+	var occult := "· occult towers hold part of it (the hatched end)"
+	var held := cfg.max_sanity - sim.state.sanity_cap
+	if held > 0.0:
+		occult += ": %s now" % ConfigReader.fmt(roundf(held))
+	lines.append(occult)
+	for e: EnemyDef in sim.config.enemies.values():
+		if e.horror_drain > 0.0:
+			lines.append("· %s within %s cells of a tower: %s%s per s" % [e.name,
+				ConfigReader.fmt(cfg.horror_radius_cells), TowerText.MINUS,
+				ConfigReader.fmt(e.horror_drain)])
+	var parts := regen_parts(cfg)
+	if not parts.is_empty():
+		lines.append("Restores: " + ", ".join(parts))
+	if not sim.recover_rule():
+		lines.append("At 0: madness")
+	elif sim.exit_target() > 0.0:
+		lines.append("At 0: madness until sanity is back to %d" % roundi(sim.exit_target()))
+	else:
+		lines.append("At 0: madness, with no way back while occult towers hold it all")
+	return "\n".join(lines)
 
 
 ## LT-27 §4: "Day 3 — night falls in 31 s" (day n comes before night n), "Night 3 of 5",
