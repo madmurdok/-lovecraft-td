@@ -42,7 +42,10 @@ they are `@export`s on the presentation scripts and one shader uniform default.
   `dip > 0.5`) and `PhantomLayer._draw` (`scenes/board/phantom_layer.gd:24-25`, key -1).
 - Proposal **F1 (recommended): ease between steps.** `flicker_dip` returns
   `lerp(dip(step), dip(step + 1), smoothstep(frac))` with the same hash, rate 13, same
-  `max_flicker` 0.85. Same average dip and ghost share, no one-frame jumps.
+  `max_flicker` 0.85. Same average dip, no one-frame jumps. Ghost share is unchanged in
+  Madness (~27 % of frames) but drops to 16-23 % in Fraying (flicker 0.55-0.7), since eased
+  values spend less time above 0.5 (S6 review); the ghost fades in over dip 0.5..0.7
+  instead of popping in at alpha 0.35.
 - Alternative F2: eased at 20/s with `max_flicker` 0.65 (busier, softer).
 - **Not recommended: higher rate + lower amplitude with steps** (e.g. 30/s, 0.5): at 30/s
   the step is shorter than a frame at <= 30 fps, so every frame jumps (19.9 % of frames

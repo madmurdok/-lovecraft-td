@@ -302,7 +302,8 @@ func _draw_enemies(s: SimState) -> void:
 		color.a *= 1.0 - dip
 		if dip > 0.5:  # a torn frame: a faint double a few pixels off
 			var ghost := color
-			ghost.a = 0.35
+			# LT-40: fade the double in over dip 0.5..0.7 instead of popping in at full alpha.
+			ghost.a = 0.35 * clampf((dip - 0.5) / 0.2, 0.0, 1.0)
 			draw_circle(px + Vector2(view.cells_to_px(0.15), 0), view.cells_to_px(body), ghost)
 		var marks := e.markers()
 		if marks.has("slow"):  # ground ring under the body
