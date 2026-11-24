@@ -477,6 +477,45 @@ func test_shot_split_missing_part_reports_only_the_missing_field() -> void:
 	assert_bool(has_error(r, S, "madness.shot_split", "sum to 1")).is_false()
 
 
+# --- LT-121: exit_rule "recover" and exit_sanity ------------------------------------------
+
+func test_recover_is_an_exit_rule_and_exit_sanity_is_read() -> void:
+	var r := load_json_edit(S, func(d: Dictionary) -> void:
+		d["madness"]["exit_rule"] = "recover"
+		d["madness"]["exit_sanity"] = 35)
+	assert_bool(r.ok).override_failure_message("\n".join(r.errors)).is_true()
+	assert_str(r.config.sanity.madness.exit_rule).is_equal("recover")
+	assert_float(r.config.sanity.madness.exit_sanity).is_equal(35.0)
+
+
+func test_recover_rejects_an_exit_sanity_that_is_not_above_zero() -> void:
+	for c: Array in [[0, "must be > 0"], [-5, "must be >="]]:
+		var r := load_json_edit(S, func(d: Dictionary) -> void:
+			d["madness"]["exit_rule"] = "recover"
+			d["madness"]["exit_sanity"] = c[0])
+		assert_rejected(r, S, "madness.exit_sanity", c[1])
+
+
+func test_exit_sanity_above_max_or_not_a_number_is_rejected() -> void:
+	var over := load_json_edit(S, func(d: Dictionary) -> void:
+		d["madness"]["exit_rule"] = "recover"
+		d["madness"]["exit_sanity"] = d["max"] + 1)
+	assert_rejected(over, S, "madness.exit_sanity", "must be <=")
+	var text := load_json_edit(S, func(d: Dictionary) -> void:
+		d["madness"]["exit_sanity"] = "x")
+	assert_rejected(text, S, "madness.exit_sanity", "expected number")
+
+
+func test_a_missing_exit_sanity_means_20_under_every_rule() -> void:
+	for rule in ["recover", "permanent"]:
+		var r := load_json_edit(S, func(d: Dictionary) -> void:
+			d["madness"]["exit_rule"] = rule
+			d["madness"].erase("exit_sanity"))
+		assert_bool(r.ok).override_failure_message("%s: %s" % [rule, "\n".join(r.errors)]) \
+			.is_true()
+		assert_float(r.config.sanity.madness.exit_sanity).is_equal(20.0)
+
+
 # --- LT-13: restore_sanity 0 cannot exit madness ------------------------------------
 
 func test_restore_sanity_zero_is_rejected_when_the_exit_rule_restores() -> void:

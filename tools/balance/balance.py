@@ -376,6 +376,44 @@ def hp_table(variants, strategies, results):
     return lines
 
 
+def madness_cell(runs):
+    """LT-121: 'mean/median' seconds in madness over the runs that carry seconds.madness (old
+    logs lack it: skipped, not counted as 0), then ' xN' with the summed madness_exits when
+    any of those runs carries it. '-' when none carry seconds."""
+    rs = [r for r in runs if isinstance(r.get("seconds"), dict)
+          and isinstance(r["seconds"].get("madness"), (int, float))]
+    if not rs:
+        return "-"
+    secs = sorted(r["seconds"]["madness"] for r in rs)
+    mid = len(secs) // 2
+    med = secs[mid] if len(secs) % 2 else (secs[mid - 1] + secs[mid]) / 2
+    cell = f"{sum(secs) / len(secs):.1f}/{med:.1f}"
+    exits = [r["madness_exits"] for r in rs if isinstance(r.get("madness_exits"), int)]
+    if exits:
+        cell += f" x{sum(exits)}"
+    return cell
+
+
+def madness_table(variants, strategies, results):
+    """LT-121: seconds in madness per run, per variant x strategy, as 'mean/median xN' (N = the
+    exits from madness summed over the runs). Empty when no run carries seconds."""
+    if not any(isinstance(r.get("seconds"), dict) for v in variants for s in strategies
+               for r in results[(v["name"], s)]["runs"]):
+        return []
+    lines = [
+        "",
+        "Seconds in madness per run (LT-121): mean/median over the runs, xN = exits from "
+        "madness summed over them; '-' = no data (old logs).",
+        "",
+        "| variant | " + " | ".join(strategies) + " |",
+        "|---|" + "---|" * len(strategies),
+    ]
+    for v in variants:
+        row = [madness_cell(results[(v["name"], s)]["runs"]) for s in strategies]
+        lines.append(f"| {v['name']} | " + " | ".join(row) + " |")
+    return lines
+
+
 def report(variants, strategies, results, seeds, target, meta):
     need = math.ceil(target * seeds - 1e-9)
     early = early_waves(results)
@@ -418,6 +456,7 @@ def report(variants, strategies, results, seeds, target, meta):
                      + f" | {met}/{len(strategies)} | {spr} | {ur} |")
     lines += waves_table(variants, strategies, results)
     lines += hp_table(variants, strategies, results)
+    lines += madness_table(variants, strategies, results)
     lines += ["", "Variants:", ""]
     for v in variants:
         extra = f" flags: `{' '.join(v['flags'])}`" if v["flags"] else ""

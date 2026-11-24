@@ -88,16 +88,22 @@ class Madness:
 	extends RefCounted
 
 	const MADNESS_FIELDS := ["damage_multiplier", "shot_split", "exit_rule", "restore_sanity",
-		"buyout_cost", "enemy_speed_multiplier", "enemy_damage_taken_multiplier"]
+		"buyout_cost", "enemy_speed_multiplier", "enemy_damage_taken_multiplier", "exit_sanity"]
 	const SPLIT_FIELDS := ["real", "fake", "empty"]
-	const EXIT_RULES: PackedStringArray = ["permanent", "buyout", "auto_restore"]
+	const EXIT_RULES: PackedStringArray = ["permanent", "buyout", "auto_restore", "recover"]
+	## The exit rules that set sanity to restore_sanity.
+	const RESTORING_RULES: PackedStringArray = ["buyout", "auto_restore"]
+	## LT-121 §2: exit_sanity when the key is missing (the frozen golden fixture has none).
+	const DEFAULT_EXIT_SANITY := 20.0
 	const SPLIT_TOLERANCE := 1e-6
 
 	var damage_multiplier: float  ## occult damage in madness, > 0
 	var shot_real: float  ## share of astray shots hitting a random real enemy in range
 	var shot_fake: float  ## ... a fake enemy
 	var shot_empty: float  ## ... an empty cell; the three sum to 1
-	var exit_rule: String  ## "permanent" | "buyout" | "auto_restore"
+	var exit_rule: String  ## "permanent" | "buyout" | "auto_restore" | "recover"
+	## LT-121: under "recover", MADNESS ends once sanity >= min(exit_sanity, cap); (0, max].
+	var exit_sanity: float
 	var restore_sanity: float  ## sanity after buyout / auto restore, 0..max
 	var buyout_cost: int  ## gold, >= 0
 	## LT-23 §3: every live enemy's per-tick modifiers while in MADNESS; > 0, default 1.0 (off).
@@ -123,12 +129,19 @@ class Madness:
 		var n_restore := r.errors.size()
 		m.restore_sanity = r.req_number(obj, "restore_sanity", path, 0.0, top)
 		# Restoring to 0 would leave the player in madness: buyout would only take gold.
-		if r.errors.size() == n_restore and m.exit_rule in EXIT_RULES \
-				and m.exit_rule != "permanent" and m.restore_sanity <= 0.0:
+		# "permanent" and "recover" (LT-121) never restore, so restore_sanity is unused there.
+		if r.errors.size() == n_restore and m.exit_rule in RESTORING_RULES \
+				and m.restore_sanity <= 0.0:
 			r.error(ConfigReader.join(path, "restore_sanity"),
 				"must be > 0 when exit_rule is %s, got %s"
 				% [m.exit_rule, ConfigReader.fmt(m.restore_sanity)])
 		m.buyout_cost = r.req_int(obj, "buyout_cost", path, 0)
+		var n_exit := r.errors.size()
+		m.exit_sanity = r.opt_number(obj, "exit_sanity", path, DEFAULT_EXIT_SANITY, 0.0, top)
+		# An exit at 0 would end madness the moment it starts.
+		if r.errors.size() == n_exit and m.exit_rule == "recover" and m.exit_sanity <= 0.0:
+			r.error(ConfigReader.join(path, "exit_sanity"),
+				"must be > 0 when exit_rule is recover, got %s" % ConfigReader.fmt(m.exit_sanity))
 		m.enemy_speed_multiplier = r.opt_number(obj, "enemy_speed_multiplier", path, 1.0,
 			0.0, INF, true)
 		m.enemy_damage_taken_multiplier = r.opt_number(obj, "enemy_damage_taken_multiplier",

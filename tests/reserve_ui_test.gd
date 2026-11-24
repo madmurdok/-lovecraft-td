@@ -67,6 +67,7 @@ func test_cap_ratio_is_cap_over_max() -> void:
 
 func test_label_shows_the_cap_only_while_it_is_below_max() -> void:
 	await _start_game()
+	_config.sanity.madness.exit_rule = "permanent"  # LT-121: the shipped default "recover" changes the madness text / lets debug through
 	var bar := _game.hud.sanity_bar
 	var top := _config.sanity.max_sanity
 	assert_str(bar.label_text()).is_equal("Sanity %d  Lucid" % roundi(top))
@@ -104,6 +105,7 @@ func test_hostile_text_follows_the_config_and_leaves_out_a_part_at_one() -> void
 
 func test_hostile_label_is_visible_only_in_madness() -> void:
 	await _start_game()
+	_config.sanity.madness.exit_rule = "permanent"  # LT-121: the shipped default "recover" changes the madness text / lets debug through
 	var label := _game.hud.hostile_label
 	_game.hud.refresh()
 	assert_bool(label.visible).is_false()
@@ -115,3 +117,65 @@ func test_hostile_label_is_visible_only_in_madness() -> void:
 	assert_str(label.text).is_equal(Hud.hostile_text(_config.sanity.madness))
 	_set_sanity(30.0)  # out again (an exit rule)
 	assert_bool(label.visible).is_false()
+
+
+# --- LT-121: the way out of madness ---------------------------------------------------------
+
+## Rule "recover", exit_sanity 20 and the regen set here; MADNESS at sanity `v` (the state is
+## set by hand: sanity_state_for(v) is MADNESS only at 0).
+func _recovering(v: float) -> void:
+	var cfg := _config.sanity
+	cfg.madness.exit_rule = "recover"
+	cfg.madness.exit_sanity = 20.0
+	cfg.regen_between_waves = 12.0
+	cfg.regen_mundane_kill = 0.5
+	_game.sim.state.sanity = v
+	_game.sim.state.sanity_state = SimState.SanityState.MADNESS
+	_game.hud.refresh()
+
+
+func test_recover_text_names_the_target_and_the_regen_from_config() -> void:
+	var cfg := _config.sanity
+	cfg.regen_between_waves = 12.0
+	cfg.regen_mundane_kill = 0.5
+	assert_str(Hud.recover_text(cfg, 20.0)).is_equal(
+		"Recover at 20 sanity: +12 each dawn, +0.5 per mundane kill")
+	assert_str(Hud.recover_text(cfg, 8.0)).is_equal(
+		"Recover at 8 sanity: +12 each dawn, +0.5 per mundane kill")
+	cfg.regen_mundane_kill = 0.0
+	assert_str(Hud.recover_text(cfg, 20.0)).is_equal("Recover at 20 sanity: +12 each dawn")
+	assert_str(Hud.recover_text(cfg, 0.0)).is_equal("No room to recover: sell an occult tower")
+
+
+func test_sanity_bar_shows_the_exit_mark_and_label_only_while_recovering() -> void:
+	await _start_game()
+	var bar := _game.hud.sanity_bar
+	_recovering(7.0)
+	assert_float(bar.exit_ratio()).is_equal_approx(20.0 / _config.sanity.max_sanity, 0.0001)
+	assert_str(bar.label_text()).is_equal("Sanity 7 / 20 to recover")
+	# Not mad, or mad under another rule: no mark, the ordinary label.
+	_config.sanity.madness.exit_rule = "permanent"
+	assert_float(bar.exit_ratio()).is_equal(0.0)
+	assert_str(bar.label_text()).is_equal("Sanity 7  Madness")
+	_recovering(7.0)
+	_game.sim.state.sanity = 50.0
+	_game.sim.state.sanity_state = _game.sim.sanity_state_for(50.0)
+	assert_float(bar.exit_ratio()).is_equal(0.0)
+	assert_bool(bar.label_text().contains("to recover")).is_false()
+
+
+func test_the_madness_line_adds_the_recover_line_and_at_cap_zero_the_sell_hint() -> void:
+	await _start_game()
+	var label := _game.hud.hostile_label
+	_recovering(7.0)
+	assert_bool(label.visible).is_true()
+	assert_str(label.text).is_equal(Hud.hostile_text(_config.sanity.madness) + "\n"
+		+ "Recover at 20 sanity: +12 each dawn, +0.5 per mundane kill")
+	# Cap 0: reserves fill the bar, so there is nothing to climb to.
+	_build_reserve(_config.sanity.max_sanity)
+	assert_float(_game.sim.state.sanity_cap).is_equal(0.0)
+	_recovering(0.0)
+	assert_str(label.text).is_equal(Hud.hostile_text(_config.sanity.madness) + "\n"
+		+ "No room to recover: sell an occult tower")
+	assert_float(_game.hud.sanity_bar.exit_ratio()).is_equal(0.0)
+	assert_bool(_game.hud.sanity_bar.label_text().contains("to recover")).is_false()

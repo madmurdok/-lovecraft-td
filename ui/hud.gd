@@ -329,7 +329,11 @@ func _refresh_sanity() -> void:
 	sanity_bar.redraw()
 	hostile_label.visible = s.sanity_state == SimState.SanityState.MADNESS
 	if hostile_label.visible:
-		hostile_label.text = hostile_text(game.sim.config.sanity.madness)
+		var text := hostile_text(game.sim.config.sanity.madness)
+		if game.sim.recover_applies():  # LT-121: the way out, as a second line
+			text += "\n" + recover_text(game.sim.config.sanity, game.sim.exit_target())
+		hostile_label.text = text
+		hostile_label.size = Vector2.ZERO  # shrink back to one line after a recovery
 		_place_hostile()
 
 
@@ -447,6 +451,23 @@ static func hostile_text(m: SanityConfig.Madness) -> String:
 	if parts.is_empty():
 		return "The world turns hostile"
 	return "The world turns hostile: enemies " + ", ".join(parts)
+
+
+## LT-121 §3: "Recover at 20 sanity: +12 each dawn, +0.5 per mundane kill" from the recover
+## target and the regen config (a source is left out when it is 0); at target 0 (cap 0) "No
+## room to recover: sell an occult tower".
+static func recover_text(cfg: SanityConfig, target: float) -> String:
+	if target <= 0.0:
+		return "No room to recover: sell an occult tower"
+	var head := "Recover at %d sanity" % roundi(target)
+	var parts := PackedStringArray()
+	if cfg.regen_between_waves > 0.0:
+		parts.append("+%s each dawn" % ConfigReader.fmt(cfg.regen_between_waves))
+	if cfg.regen_mundane_kill > 0.0:
+		parts.append("+%s per mundane kill" % ConfigReader.fmt(cfg.regen_mundane_kill))
+	if parts.is_empty():
+		return head
+	return head + ": " + ", ".join(parts)
 
 
 ## LT-27 §4: "Day 3 — night falls in 31 s" (day n comes before night n), "Night 3 of 5",
