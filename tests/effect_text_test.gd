@@ -158,3 +158,65 @@ func test_an_unknown_key_falls_back_to_key_colon_value() -> void:
 	assert_array(Array(TowerText.effect_lines({"frost_multiplier": 1.0}))).is_empty()
 	assert_array(Array(TowerText.effect_lines({"frost_multiplier": 1.5}))) \
 		.is_equal(["frost_multiplier: 1.5"])
+
+
+# --- LT-122: tips (the hover explanation of a line) -----------------------------------------
+
+const _TIP_VALUES := {"shadow_occult_power_mult": 1.4, "shadow_mundane_fire_interval_mult": 1.6,
+	"shadow_mundane_miss_chance_add": 0.3}
+
+
+func test_the_real_file_has_a_casts_shadow_line_and_tip() -> void:
+	var t := _real()
+	assert_str(EffectText.line_text(_line_of(t, "casts_shadow"), {"casts_shadow": 1.0})) \
+		.is_equal("Shadows towers at night")
+	var keys := []
+	for entry: Dictionary in t["tips"]:
+		keys.append(entry["key"])
+	assert_array(keys).contains(["casts_shadow"])
+
+
+## A tip applies only while its key is active: not for other keys, nor for the neutral value.
+func test_tip_text_is_empty_unless_its_key_is_active() -> void:
+	EffectText.use(null)
+	assert_str(EffectText.tip_text({"casts_shadow": 1.0}, _TIP_VALUES)).is_not_empty()
+	assert_str(EffectText.tip_text({"slow": 0.2, "casts_light": 1.0}, _TIP_VALUES)).is_empty()
+	assert_str(EffectText.tip_text({}, _TIP_VALUES)).is_empty()
+	assert_str(EffectText.tip_text({"casts_shadow": 0.0}, _TIP_VALUES)).is_empty()
+
+
+## The numbers are the ones passed in, not a literal in the template.
+func test_tip_text_formats_the_values_it_is_given() -> void:
+	EffectText.use(null)
+	var s := EffectText.tip_text({"casts_shadow": 1.0}, _TIP_VALUES)
+	assert_str(s).contains("×1.4").contains("+60% fire interval").contains("+30% misses")
+	assert_str(s).not_contains("1.15")
+
+
+## A tip naming a value that `values` lacks is left out whole (no "0" stand-ins).
+func test_tip_text_is_empty_when_a_value_is_missing() -> void:
+	EffectText.use(null)
+	var partial := _TIP_VALUES.duplicate()
+	partial.erase("shadow_mundane_miss_chance_add")
+	assert_str(EffectText.tip_text({"casts_shadow": 1.0}, partial)).is_empty()
+	assert_str(EffectText.tip_text({"casts_shadow": 1.0}, {})).is_empty()
+
+
+func test_validate_rejects_a_tip_placeholder_that_is_not_a_tip_value() -> void:
+	var t := _real()
+	t["tips"][0]["text"] = "Shadow x{shadow_power}, slow {slow|pct}%"
+	var errs := EffectText.validate(t)
+	assert_bool(_has_error(errs, "\"shadow_power\" is not a tip value")).is_true()
+	assert_bool(_has_error(errs, "\"slow\" is not a tip value")).is_true()
+
+
+func test_validate_rejects_two_tips_for_one_key_and_an_unknown_tip_key() -> void:
+	var t := _real()
+	t["tips"].append({"key": "casts_shadow", "text": "again"})
+	assert_bool(_has_error(EffectText.validate(t), "\"casts_shadow\" has another tip")).is_true()
+	var t2 := _real()
+	t2["tips"][0]["key"] = "frost"
+	assert_bool(_has_error(EffectText.validate(t2), "\"frost\" is not an effect key")).is_true()
+	var t3 := _real()
+	t3["tips"] = "no"
+	assert_bool(_has_error(EffectText.validate(t3), "tips: must be an array")).is_true()

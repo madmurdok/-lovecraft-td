@@ -665,3 +665,67 @@ func test_lit_line_light_heads_stay_empty_at_zero_percent() -> void:
 		assert_str(TowerText.lit_line(necro, necro.levels[0], _cfg, false,
 			_channel(1.0, 1.0, 0.1), head)).override_failure_message("necro '%s'" % head) \
 			.is_empty()
+
+
+# --- LT-122: the shadow line and its hover tip -----------------------------------------------
+
+## Every (def, level) of live data that casts shadow, and every one that does not.
+func _shadow_levels(casters: bool) -> Array:
+	var out := []
+	for id: String in _cfg.towers:
+		var td := _def(id)
+		var all: Array = Array(td.levels)
+		for b: TowerDef.Level in td.branches.values():
+			all.append(b)
+		for lv: TowerDef.Level in all:
+			if TowerStatsModel.is_active(lv.effects, "casts_shadow") == casters:
+				out.append(lv)
+	return out
+
+
+func test_every_level_that_casts_shadow_gets_the_night_line() -> void:
+	var casters := _shadow_levels(true)
+	assert_int(casters.size()).is_greater(0)
+	for lv: TowerDef.Level in casters:
+		assert_array(Array(TowerText.effect_lines(lv.effects))).contains(["Shadows towers at night"])
+		assert_array(_special(lv)).contains(["Shadows towers at night"])
+
+
+func test_a_level_that_does_not_cast_shadow_has_neither_line_nor_tip() -> void:
+	var others := _shadow_levels(false)
+	assert_int(others.size()).is_greater(0)
+	for lv: TowerDef.Level in others:
+		for line in TowerText.special_lines(lv):
+			assert_str(line).override_failure_message(line).not_contains("Shadow")
+		assert_str(TowerText.special_tip(lv.effects, _cfg)).is_empty()
+
+
+func test_the_tip_explains_the_shadow_with_the_numbers_of_the_config() -> void:
+	var sh := _cfg.economy.shadow
+	var fx: Dictionary = _shadow_levels(true)[0].effects
+	var tip := TowerText.special_tip(fx, _cfg)
+	assert_str(tip).contains("×" + _n(sh.occult_power_mult)) \
+		.contains("+" + _n((sh.mundane_fire_interval_mult - 1.0) * 100.0) + "% fire interval") \
+		.contains("+" + _n(sh.mundane_miss_chance_add * 100.0) + "% misses")
+
+
+## LT-122: changed config values, not the shipped ones, reach the text.
+func test_the_tip_follows_a_changed_config() -> void:
+	var sh := _cfg.economy.shadow
+	sh.occult_power_mult = 1.5
+	sh.mundane_fire_interval_mult = 1.75
+	sh.mundane_miss_chance_add = 0.35
+	assert_dict(TowerText.tip_values(_cfg)).is_equal({"shadow_occult_power_mult": 1.5,
+		"shadow_mundane_fire_interval_mult": 1.75, "shadow_mundane_miss_chance_add": 0.35})
+	var tip := TowerText.special_tip(_shadow_levels(true)[0].effects, _cfg)
+	assert_str(tip).contains("×1.5").contains("+75% fire interval").contains("+35% misses")
+	assert_str(tip).not_contains("1.15")
+
+
+## No shadow block in economy.json: the sim applies no shadow, so the card explains none.
+func test_no_tip_without_the_shadow_block() -> void:
+	_cfg.economy.shadow = null
+	assert_dict(TowerText.tip_values(_cfg)).is_empty()
+	var fx: Dictionary = _shadow_levels(true)[0].effects
+	assert_str(TowerText.special_tip(fx, _cfg)).is_empty()
+	assert_array(_special(_shadow_levels(true)[0])).contains(["Shadows towers at night"])
