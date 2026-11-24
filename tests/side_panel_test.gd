@@ -280,6 +280,24 @@ func test_no_role_line_when_the_role_is_empty() -> void:
 	assert_bool(_game.tower_panel.role_label.visible).is_false()
 
 
+## LT-122: the hover card of a shadow caster carries the shadow tooltip on its special label
+## (numbers from the config); the next card of a non-caster clears it.
+func test_card_special_tooltip_explains_the_shadow_only_for_a_caster() -> void:
+	var id := ""
+	for k: String in _config.towers:
+		if TowerStatsModel.is_active(_config.towers[k].levels[0].effects, "casts_shadow"):
+			id = k
+	assert_str(id).is_not_empty()
+	await _start_game()
+	_game.side_panel.show_card(id)
+	var tip := _game.side_panel.card_special.tooltip_text
+	assert_str(tip).is_equal(TowerText.special_tip(_config.towers[id].levels[0].effects, _config))
+	assert_str(tip).is_not_empty().contains(
+		"×" + TowerText.num(_config.economy.shadow.occult_power_mult))
+	_game.side_panel.show_card(RIFLE)
+	assert_str(_game.side_panel.card_special.tooltip_text).is_empty()
+
+
 # --- 20, 24: tower view per level -------------------------------------------------------------
 
 func test_l1_view_shows_only_the_l2_upgrade() -> void:

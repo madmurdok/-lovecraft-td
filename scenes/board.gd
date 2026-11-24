@@ -168,10 +168,19 @@ func flicker_strength() -> float:
 	return game.sanity_fx.flicker if game != null and game.sanity_fx != null else 0.0
 
 
-## 0..1 dip for one flicker step; seeded by step and `key`, so each enemy twitches on
-## its own beat. Uses only the id and time: real and fake enemies flicker alike.
+## 0..1 flicker dip; seeded by step and `key`, so each enemy twitches on its own beat.
+## LT-40 F1: eases from one step's dip to the next (smoothstep), so there are no one-frame
+## jumps; at a step boundary it equals that step's dip. Uses only the id and time: real
+## and fake enemies flicker alike.
 func flicker_dip(key: int) -> float:
-	var step := floori(time * flicker_rate)
+	var t := time * flicker_rate
+	var step := floori(t)
+	return lerpf(_flicker_step_dip(step, key), _flicker_step_dip(step + 1, key),
+		smoothstep(0.0, 1.0, t - float(step)))
+
+
+## 0..1 dip of one flicker step: 28 % of steps dip fully, the rest dip up to 0.35.
+func _flicker_step_dip(step: int, key: int) -> float:
 	var h := absf(sin(float(step) * 12.9898 + float(key) * 78.233) * 43758.5453)
 	h -= floorf(h)
 	return 1.0 if h > 0.72 else h * 0.35

@@ -563,6 +563,6 @@ func test_effect_lines_and_special_short_name_the_casters() -> void:
 	assert_array(Array(TowerText.effect_lines(sl.levels[0].effects))) \
 		.contains(["Lights towers and foes"])
 	assert_array(Array(TowerText.effect_lines(sign.levels[0].effects))) \
-		.contains(["Shadows nearby towers"])
+		.contains(["Shadows towers at night"])
 	assert_str(TowerText.special_short(sl.levels[0])).contains("lights")
 	assert_str(TowerText.special_short(sign.levels[0])).contains("shadows")

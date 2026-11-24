@@ -86,6 +86,7 @@ func _ready() -> void:
 	add_child(stats_table)
 	special_label = SidePanel.make_label("Special", SidePanel.COLOR_INFO)
 	special_label.add_theme_font_size_override("font_size", StatsTable.FONT_SIZE)
+	special_label.mouse_filter = Control.MOUSE_FILTER_PASS  # LT-122: Labels ignore the mouse by default; PASS shows the tooltip
 	add_child(special_label)
 	kind_label = SidePanel.make_label("Kind", StatsTable.COLOR_LABEL)
 	kind_label.add_theme_font_size_override("font_size", StatsTable.FONT_SIZE)
@@ -308,6 +309,11 @@ func _refresh_table(t: SimTower, s: TowerDef.Level, branches: PackedStringArray)
 			lines.append("%s: %s" % [heads[i + 1], line])
 	special_label.text = "\n".join(lines)
 	special_label.visible = not lines.is_empty()
+	# LT-122: the hover explanation of a line here (Now's or an upgrade column's).
+	var tip_fx := s.effects.duplicate()
+	for target in targets:
+		tip_fx.merge(target.effects)
+	special_label.tooltip_text = TowerText.special_tip(tip_fx, cfg)
 	kind_label.text = "\n".join(TowerText.kind_lines(t.def, s, cfg.sanity, mods["ignore_miss"],
 		mods["miss_add"]))
 	kind_label.visible = not kind_label.text.is_empty()

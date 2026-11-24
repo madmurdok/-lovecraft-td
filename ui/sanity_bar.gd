@@ -27,8 +27,8 @@ const STATE_COLORS: Array[Color] = [
 ]
 const SLICES := 12
 ## Visual tunables for the Fraying look.
-@export var tear_px := 3.0  ## vertical slice offset
-@export var edge_wobble_px := 9.0  ## fill edge wobble
+@export var tear_px := 1.5  ## vertical slice offset
+@export var edge_wobble_px := 4.5  ## fill edge wobble
 @export var glitch_rate := 9.0  ## new glitch pattern per second
 
 var game: Game

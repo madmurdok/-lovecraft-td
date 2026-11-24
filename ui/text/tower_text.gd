@@ -326,6 +326,24 @@ static func special_lines(s: TowerDef.Level, effects: Variant = null) -> PackedS
 	return effect_lines(e)
 
 
+## LT-122: the numbers EffectText tips read (EffectText.TIP_VALUES), from
+## TowerStatsModel.shadow_numbers (the values the sim applies); none without a shadow block.
+static func tip_values(cfg: GameConfig) -> Dictionary:
+	var out := {}
+	var n := TowerStatsModel.shadow_numbers(cfg)
+	if not n.is_empty():
+		out["shadow_occult_power_mult"] = n["occult_power_mult"]
+		out["shadow_mundane_fire_interval_mult"] = n["mundane_interval_mult"]
+		out["shadow_mundane_miss_chance_add"] = n["mundane_miss_add"]
+	return out
+
+
+## LT-122: the hover text of the special lines of `effects` (EffectText.tip_text over
+## tip_values): what casts_shadow does, with the numbers the sim uses; "" when no tip applies.
+static func special_tip(effects: Dictionary, cfg: GameConfig) -> String:
+	return EffectText.tip_text(effects, tip_values(cfg))
+
+
 ## LT-43 §3: a tower's upgrade path for the picker card, "L2 $70 · then A Demolition man or
 ## B Shrapnel charges".
 static func upgrade_path_text(def: TowerDef) -> String:
