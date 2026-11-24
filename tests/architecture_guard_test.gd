@@ -977,8 +977,11 @@ const G12_FIELDS := "\\b(power_mult|interval_mult|miss_add|ignore_miss)" + G12_W
 ## a write through a tower (a SimTower alias of the file, or a tower lookup chain).
 const G12_DISABLED := "\\bdisabled" + G12_WRITE_OP
 ## LT-85: TowerRecord copies `disabled` into its own field (a read-only snapshot for
-## presentation, never a SimTower); the four channel names stay banned there too.
+## presentation, never a SimTower). Only that one statement is exempt in that file: any other
+## `disabled` write there (`t.disabled = false` in from_tower) still fires, and the four
+## channel names stay banned there too.
 const G12_DISABLED_COPY := "res://sim/view/tower_record.gd"
+const G12_DISABLED_COPY_STMT := "^\\s*r\\.disabled\\s*=\\s*t\\.disabled\\s*$"
 const G12_TOWER_CHAIN := "(?:\\b(?:tower_by_id|tower_at_cell)\\([^()]*\\)|\\btowers\\[[^\\]]*\\])" \
 	+ "\\.disabled" + G12_WRITE_OP
 ## Names that hold a SimTower: typed `: SimTower`, `var x := ...tower_by_id(..)` /
@@ -998,6 +1001,11 @@ func _g12_hits(scan: SimBoundaryTest, file: String, text: String) -> Array[Strin
 	if file.begins_with("res://sim/"):
 		if file != G12_DISABLED_COPY:
 			hits.append_array(_find_joined(scan, file, text, G12_DISABLED))
+		else:
+			var copy_re := RegEx.create_from_string(G12_DISABLED_COPY_STMT)
+			var rest := _statements(scan, text).filter(
+				func(st: Array) -> bool: return copy_re.search(st[1]) == null)
+			hits.append_array(scan._find(file, rest, G12_DISABLED))
 		return hits
 	hits.append_array(_find_joined(scan, file, text, G12_TOWER_CHAIN))
 	var alias_re := RegEx.create_from_string(G12_ALIAS)
@@ -1129,10 +1137,21 @@ const G16_DENY := "\\.state\\b" \
 	+ "|\\b(enemy_by_id|enemy_position|ally_by_id|ally_position|allies_of|tower_by_id" \
 	+ "|tower_at_cell|enemies_in_range|enemies_near|debug_is_fake)\\s*\\(" \
 	+ "|\\b(upgrade_branches|upgrade_target|has_targeting|sell_refund)\\s*\\("
+## The same names reached by name (review N1): `get("state")`, `get(&"state")`,
+## `x["state"]`, `call("enemy_by_id", id)`, `Callable(sim, "tower_by_id")`,
+## `get_indexed("state:gold")`. Scanned with strings kept (comments blanked).
+const G16_NAMES := "(?:state|enemy_by_id|enemy_position|ally_by_id|ally_position|allies_of" \
+	+ "|tower_by_id|tower_at_cell|enemies_in_range|enemies_near|debug_is_fake|upgrade_branches" \
+	+ "|upgrade_target|has_targeting|sell_refund)"
+const G16_DENY_BY_NAME := "\\b(?:get|get_indexed|call|callv|call_deferred|Callable)\\s*\\(" \
+	+ "[^()]*?&?[\"']" + G16_NAMES + "[\"':]" \
+	+ "|\\[\\s*&?[\"']" + G16_NAMES + "[\"']\\s*\\]"
 
 
 func _g16_hits(scan: SimBoundaryTest, file: String, text: String) -> Array[String]:
-	return scan._find(file, scan._code_lines(text), G16_DENY)
+	var hits := scan._find(file, scan._code_lines(text), G16_DENY)
+	hits.append_array(scan._find(file, scan._code_lines(text, true), G16_DENY_BY_NAME))
+	return hits
 
 
 func test_g16_presentation_reads_only_the_snapshot() -> void:

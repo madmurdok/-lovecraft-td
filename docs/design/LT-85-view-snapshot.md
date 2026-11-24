@@ -136,7 +136,7 @@ kind, so a real enemy and a fake of the same kind share them.
 | `base_speed` | float | `base_units_per_tick * TICK_RATE / UNITS_PER_CELL` | card: speed with the wave multiplier, no per-tick modifiers |
 | `armor` | float | `maxf(0, def.armor + armor_bonus)` (the combat formula) | card |
 | `markers` | PackedStringArray | `e.markers()` | marker drawing (replaces the per-frame call) |
-| `madness_buffed` | bool | `sanity_state == MADNESS`, multipliers != 1, not `madness_buff_blocked(e)` | card |
+| `madness_buffed` | bool | `SimEnemy.madness_buffed`: set by `apply_madness_buff` in slot 2 (MADNESS, multipliers != 1, not `madness_buff_blocked(e)`), reset in slot 1; so it agrees with `speed` on the tick sanity enters or leaves MADNESS (S12, review SF1) | card |
 | `lit` | bool | `e.lit` | card (optional), future view |
 | `revealed` | bool | `e.revealed` | revealed-fake look (a game rule: a revealed fake is shown) |
 | `prev_distance`, `distance` | int | live | interpolation |
@@ -227,7 +227,7 @@ quiet machine (record `uptime` and `/usr/bin/time -p` with it), and the LT-62 bo
 median within noise of the baseline (`-- --mute`).
 
 `snapshot()` must be pure: no RNG draw, no state write, no event. It reads
-`SanitySystem.madness_buff_blocked` (pure) and `SimEnemy.markers()` (pure).
+`SimEnemy.madness_buffed` (a field) and `SimEnemy.markers()` (pure).
 
 ## 5. Enforcing "no fake leak" by shape
 
@@ -413,7 +413,7 @@ sim and need nothing. `debug_is_fake(e)` and the SimTower forms of the tower que
 | 1 | Record property sets equal the pinned allowlists; no `fake` name, no live-object class | add `var src: SimEnemy` (or `var is_fake`) to `EnemyRecord` |
 | 2 | A real and a fake of one kind spawned on one tick have equal records except `id`, every tick, through slow, MADNESS and lit ticks | in `from_enemy`, `revealed = e.revealed or e.is_fake` |
 | 3 | `EnemyRecord.position(alpha)` equals `Simulation.enemy_position(e, alpha)` for alpha 0, 0.5, 1 across a route corner; `pos` equals alpha 1 | interpolate `prev_pos.lerp(pos, alpha)` instead of along the route |
-| 4 | `madness_buffed` is true for live unlit enemies in MADNESS (real and fake), false when lit with `cancel_madness_buff`, false outside MADNESS; `speed`/`armor` match the combat formulas | drop the `madness_buff_blocked` clause |
+| 4 | `madness_buffed` is true for live unlit enemies in MADNESS (real and fake), false when lit with `cancel_madness_buff`, false outside MADNESS; `speed`/`armor` match the combat formulas | drop `e.madness_buffed = true` in `apply_madness_buff`, or derive the flag from `state.sanity_state` at build time (fails on the tick MADNESS starts) |
 | 5 | `snapshot()` is pure: a seeded run calling it every tick has the same state digest, command log and event sequence as one that never calls it | call `_sanity.apply_madness_buff()` inside `snapshot()` |
 | 6 | `game.snapshot` reflects a command at once, before the panels flush: after a build through `Game`, `snapshot.gold` drops and `snapshot.tower_at(cell)` is set without a step, and the HUD money label shows the new gold. After `advance`, it shows the post-step state | remove the rebuild from `_after_command` |
 | 7 | G16 fires on each planted probe (`game.sim.state.gold`, `var s := game.sim.state`, `: SimState`, `: SimEnemy`, `enemy_by_id(`, `sell_refund(t)`), stays quiet on the allowed forms, and is clean on the tree | restore `game.sim.state.gold` in `Hud._refresh_purse` |

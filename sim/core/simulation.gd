@@ -803,16 +803,13 @@ func enemy_position(e: SimEnemy, alpha: float) -> Vector2:
 ## LT-85 (D1-D3, §3-§4): a fresh read-only copy of what presentation reads: live enemies,
 ## towers and live allies as records (id order) plus the SimState scalars. Pure: no RNG
 ## draw, no state write, no event, and no cache (the caller, Game, keeps one per changed
-## frame). EnemyRecord.madness_buffed follows SanitySystem.apply_madness_buff's conditions.
+## frame). EnemyRecord.madness_buffed copies what slot 2 applied this tick (SimEnemy.madness_buffed),
+## not the sanity state at build time, which can move later in the tick or between ticks.
 func snapshot() -> SimSnapshot:
 	var snap := SimSnapshot.new()
-	var m := config.sanity.madness
-	var mad := state.sanity_state == SimState.SanityState.MADNESS \
-		and (m.enemy_speed_multiplier != 1.0 or m.enemy_damage_taken_multiplier != 1.0)
 	for e in state.enemies:
 		if e.is_live():
-			snap.enemies.append(EnemyRecord.from_enemy(e,
-				mad and not _sanity.madness_buff_blocked(e)))
+			snap.enemies.append(EnemyRecord.from_enemy(e))
 	for t in state.towers:
 		snap.towers.append(TowerRecord.from_tower(t))
 	for a in state.allies:

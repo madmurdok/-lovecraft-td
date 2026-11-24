@@ -30,6 +30,9 @@ var dissolved := false  ## fake gone at the lighthouse or at wave end (LT-12)
 var speed_mult := 1.0
 var damage_taken_mult := 1.0
 var armor_bonus := 0.0
+## LT-85 SF1: SanitySystem.apply_madness_buff applied the MADNESS buff to it this tick (slot 2);
+## what EnemyRecord.madness_buffed copies, so the record agrees with speed_mult.
+var madness_buffed := false
 ## LT-30, LT-70 §2.4: lit this tick (slot 2, night only): inside a lighthouse beam, the
 ## flare or a casts_light tower's radius (Searchlight). Enemies have no shadow.
 var lit := false
@@ -46,6 +49,7 @@ func reset_modifiers() -> void:
 	speed_mult = 1.0
 	damage_taken_mult = 1.0
 	armor_bonus = 0.0
+	madness_buffed = false
 	lit = false
 
 

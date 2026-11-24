@@ -13,7 +13,7 @@ var speed: float  ## cells/s this tick: the units it moves by (wave multiplier, 
 var base_speed: float  ## cells/s with the wave multiplier, no per-tick modifiers
 var armor: float  ## effective armor, the apply_damage formula: max(0, def.armor + bonus)
 var markers: PackedStringArray  ## SimEnemy.markers() at build time
-var madness_buffed: bool  ## gets the MADNESS buff this tick (SanitySystem.apply_madness_buff)
+var madness_buffed: bool  ## got the MADNESS buff this tick (SimEnemy.madness_buffed, slot 2)
 var lit: bool
 var revealed: bool  ## a revealed fake (LT-12): a game rule, shown on the board
 var prev_distance: int  ## route distance before the last tick's move (interpolation)
@@ -22,9 +22,8 @@ var pos: Vector2  ## cell units at alpha 1 (= position(1.0))
 var _route: SimRoute  ## shared immutable route; read only by position()
 
 
-## The only code that reads a live SimEnemy for presentation. `buffed` is decided by the
-## Simulation (it needs the sanity state and config).
-static func from_enemy(e: SimEnemy, buffed: bool) -> EnemyRecord:
+## The only code that reads a live SimEnemy for presentation.
+static func from_enemy(e: SimEnemy) -> EnemyRecord:
 	var r := EnemyRecord.new()
 	r.id = e.id
 	r.def = e.def
@@ -35,7 +34,7 @@ static func from_enemy(e: SimEnemy, buffed: bool) -> EnemyRecord:
 	r.base_speed = e.base_units_per_tick * float(SimTime.TICK_RATE) / SimTime.UNITS_PER_CELL
 	r.armor = maxf(0.0, e.def.armor + e.armor_bonus)
 	r.markers = e.markers()
-	r.madness_buffed = buffed
+	r.madness_buffed = e.madness_buffed
 	r.lit = e.lit
 	r.revealed = e.revealed
 	r.prev_distance = e.prev_distance
