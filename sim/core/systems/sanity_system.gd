@@ -44,8 +44,13 @@ func buyout_applies() -> bool:
 ## to exit_target(). The HUD shows the exit mark and the recover line exactly while this is
 ## true. Changes nothing.
 func recover_applies() -> bool:
-	return _config.sanity.madness.exit_rule == "recover" \
-		and _state.sanity_state == SimState.SanityState.MADNESS
+	return recover_rule() and _state.sanity_state == SimState.SanityState.MADNESS
+
+
+## LT-120: whether madness ends by climbing back to exit_target() (exit_rule "recover"),
+## whatever the state now. Changes nothing.
+func recover_rule() -> bool:
+	return _config.sanity.madness.exit_rule == "recover"
 
 
 ## Whether buy_sanity() would be applied now; OK or the first failing reason, in this

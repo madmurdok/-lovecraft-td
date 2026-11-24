@@ -429,6 +429,11 @@ func recover_applies() -> bool:
 	return _sanity.recover_applies()
 
 
+## LT-120: madness ends under exit_rule "recover", in any state (SanitySystem.recover_rule).
+func recover_rule() -> bool:
+	return _sanity.recover_rule()
+
+
 func can_buy_sanity() -> SimCommand.CommandResult:
 	return _sanity.can_buy_sanity()
 
