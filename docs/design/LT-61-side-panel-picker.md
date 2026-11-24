@@ -132,8 +132,8 @@ are N and C, and the card title shows the full name on hover. Owner (Q2): "Reade
 
 ## 5. More than 10 towers
 
-**Change:** the list grows with the roster up to `LIST_MAX_ROWS = 14` rows (list 315 px, card
-area 269 px; taller cards scroll in `Scroll`). Past 14 the rows go into the list's own
+**Change:** the list grows with the roster up to `LIST_MAX_ROWS` rows (LT-113: 10, was 14; see
+below). Past that the rows go into the list's own
 `ScrollContainer` (mouse wheel), the header line pins above it, and the name column gives up
 the scrollbar's width (14 px): names then shrink 12 → 10 px to fit (LT-43 `_fit_names` rule),
 then end in an ellipsis.
@@ -141,9 +141,19 @@ then end in an ellipsis.
 ![14 rows in a 12-row viewport: scrollbar, names shrunk](LT-61/panel-list-14-towers.png)
 
 (The 14-row render duplicates 4 shipped towers to fake a larger roster, and uses a 12-row
-viewport to show the scroll.) + 10 shipped towers and up to 4 more never scroll. − Past 14 the
+viewport to show the scroll.) + 10 shipped towers never scroll. − Past `LIST_MAX_ROWS` the
 names shrink and the longest ("Searchlight") is cut; acceptable for a future roster. (The
 14-row render predates the Q1 trait column; the scroll mechanics are the same.)
+
+**LT-113 (owner: "Список не выше 10 строк, дальше прокрутка (Recommended)"; night posts:
+"Решить в LT-113"):** at 14 rows the card area was 295 px and the tallest live card
+(Summoning Circle, 353 px) scrolled the panel. `LIST_MAX_ROWS` is now 10 (list 196 px, card
+area 367 px), so the shipped 10-tower layout is unchanged. By night the crew post rows (one
+`ROW_H` per crew kind, above the list) take list slots: the list shows `LIST_MAX_ROWS` minus
+the shown post rows, at least `LIST_MIN_ROWS = 4`, and scrolls past that, so the picker keeps
+one height by day and night and the card never scrolls the panel. The relayout
+(`_layout_rows`) runs in `_ready` and on every `refresh`, adding or removing the pinned heads'
+scrollbar spacer.
 
 ## 6. Row states (refusal, cost, madness)
 
