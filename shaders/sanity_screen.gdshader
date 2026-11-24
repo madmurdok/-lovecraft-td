@@ -21,21 +21,26 @@ void fragment() {
 	vec2 uv = SCREEN_UV;
 	vec2 px = SCREEN_PIXEL_SIZE;
 	float t = TIME;
-	float amount = distortion * (1.0 + 2.0 * pulse);
+	// LT-40: every edge effect is measured from the board centre, in this rect's own UV
+	// (the rect is exactly the board), not SCREEN_UV: the board is off-centre in the
+	// viewport (HUD column on the right). ~0 centre, ~1 corners.
+	// W1: the board centre, where play happens, stays still; only the board rim wobbles.
+	float board_edge = length((UV - vec2(0.5)) * vec2(1.0, 0.75)) * 2.0;
+	float amount = distortion * (1.0 + 2.0 * pulse) * smoothstep(0.25, 0.9, board_edge);
 	vec2 wave = vec2(
 		sin(uv.y * 23.0 + t * 1.9) + 0.6 * sin(uv.y * 61.0 - t * 3.1),
 		cos(uv.x * 17.0 + t * 1.4) + 0.6 * cos(uv.x * 47.0 + t * 2.3));
 	uv += wave * 0.5 * amount * px;
 
-	vec2 from_centre = uv - vec2(0.5);
-	float edge = length(from_centre * vec2(1.0, 0.75)) * 2.0;  // ~0 centre, ~1 corners
-	vec2 split = normalize(from_centre + vec2(1e-5)) * aberration * (0.3 + edge) * px;
+	// The split points away from the board centre; its length is in screen pixels (px), so
+	// the samples still read SCREEN_TEXTURE around this pixel.
+	vec2 split = normalize(UV - vec2(0.5) + vec2(1e-5)) * aberration * (0.3 + board_edge) * px;
 	vec3 col;
 	col.r = texture(screen_tex, uv + split).r;
 	col.g = texture(screen_tex, uv).g;
 	col.b = texture(screen_tex, uv - split).b;
 
-	float vig = smoothstep(0.35, 1.15, edge) * clamp(vignette + 0.3 * pulse, 0.0, 1.0);
+	float vig = smoothstep(0.35, 1.15, board_edge) * clamp(vignette + 0.3 * pulse, 0.0, 1.0);
 	col = mix(col, vignette_color.rgb, vig);
 
 	if (madness > 0.0) {
@@ -43,7 +48,7 @@ void fragment() {
 		vec3 graded = vec3(lum) * madness_tint.rgb * 1.5;
 		col = mix(col, graded, madness * 0.6);
 		float throb = 0.65 + 0.35 * sin(t * 2.6);
-		col += vec3(0.30, 0.0, 0.03) * smoothstep(0.55, 1.2, edge) * madness * throb;
+		col += vec3(0.30, 0.0, 0.03) * smoothstep(0.55, 1.2, board_edge) * madness * throb;
 	}
 
 	COLOR = vec4(col, 1.0);

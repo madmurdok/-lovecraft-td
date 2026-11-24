@@ -19,7 +19,8 @@ const JITTER_SHADER := preload("res://shaders/ui_jitter.gdshader")
 const SCREEN_LAYER := 1  ## the HUD CanvasLayer sits above it (Game.UI_LAYER)
 ## LT-62 P3: the screen copy reaches this far (base px) past the board, so the wave and the
 ## aberration near the board edge still sample fresh pixels. Peak offset is ~21 px:
-## wave 0.5 * 1.6 * max_distortion_px * 3 (pulse) + aberration max_aberration_px * 1.55.
+## wave 0.5 * 1.6 * max_distortion_px * 3 (pulse) * edge mask (<= 1, LT-40 W1)
+## + aberration max_aberration_px * 1.55.
 const COPY_MARGIN := 32.0
 
 ## Effect level per threshold state (0..1); within Whispers / Fraying the level slides
@@ -29,6 +30,7 @@ const COPY_MARGIN := 32.0
 @export var max_aberration_px := 6.0
 @export var max_vignette := 0.7
 @export var max_ui_jitter_px := 2.5
+@export var ui_jitter_rate := 11.0  ## HUD sway steps per second (LT-40: eased between steps)
 @export var max_flicker := 0.85  ## enemy alpha dip at full strength (Fraying low end, Madness)
 @export var level_speed := 1.5  ## displayed level change per second (smooths jumps)
 @export var pulse_seconds := 0.8  ## jolt after a threshold change
@@ -157,6 +159,7 @@ func _apply() -> void:
 		0.0, 1.0) if fraying else 0.0
 	ui_jitter_material.set_shader_parameter("jitter_px",
 		max_ui_jitter_px * (0.6 + 0.4 * level) if whispers else 0.0)
+	ui_jitter_material.set_shader_parameter("rate", ui_jitter_rate)
 	# The screen shader works in real screen pixels; the *_px tunables are base-viewport
 	# pixels, so they grow with the window stretch (LT-22).
 	var px := screen_scale()
