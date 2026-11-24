@@ -499,15 +499,18 @@ func _tallest_card_id() -> String:
 	return best
 
 
-## LT-98: with a full list (LIST_MAX_ROWS rows) the tallest live card, shown below it, fits
-## the side panel without scrolling. Skipped: it does not fit today (the owner's decision on
-## LT-98, a backlog task fixes the layout).
-func test_every_card_fits_below_the_list_without_scrolling(do_skip := true,
-		skip_reason := "picker card does not fit at LIST_MAX_ROWS rows; backlog task 'Side panel: tower card fits below a full picker list'") -> void:
+## LT-98, LT-113: with a full list (LIST_MAX_ROWS rows) every card, the tallest live one
+## included, fits the side panel below the picker without a scrollbar.
+func test_every_card_fits_below_the_list_without_scrolling() -> void:
 	var tallest: String = await _tallest_card_id()
 	await _start_game(_total_config(TowerPicker.LIST_MAX_ROWS, 0, tallest))
 	_game.sim.state.gold = 10000
 	await _open_picker()
+	await _assert_cards_fit()
+
+
+## Every def's card, shown below the picker, sits under it inside the panel, no scrollbar.
+func _assert_cards_fit() -> void:
 	var sp := _game.side_panel
 	for id: String in _config.towers:
 		sp.show_card(id)
@@ -519,6 +522,118 @@ func test_every_card_fits_below_the_list_without_scrolling(do_skip := true,
 			_game.picker.get_global_rect().end.y)
 		assert_bool(SidePanel.panel_rect(_game.sim.state.map).encloses(sp.card.get_global_rect())) \
 			.override_failure_message("%s card %s" % [id, sp.card.get_global_rect()]).is_true()
+
+
+## LT-113: night, crew on (res://data, LIST_MAX_ROWS towers) with the post rows shown.
+func _open_picker_at_night() -> void:
+	assert_int(_config.towers.size()).override_failure_message("fixture needs >= LIST_MAX_ROWS towers") \
+		.is_greater_equal(TowerPicker.LIST_MAX_ROWS)
+	_game.sim.state.gold = 10000
+	assert_int(_game.commands.call_wave()).is_equal(SimCommand.CommandResult.OK)
+	_game.advance(0.0)
+	assert_int(_game.sim.state.phase).is_equal(SimState.Phase.WAVE)
+	_game._on_cell_clicked(_buildable_cell())
+	await get_tree().process_frame
+	await get_tree().process_frame
+	assert_bool(_game.picker.visible).is_true()
+	assert_bool(_game.picker.post_box.visible).is_true()
+
+
+## LT-113: at night with the post rows shown every card still fits without a panel scrollbar.
+func test_every_card_fits_at_night_with_the_posts_shown() -> void:
+	await _start_game(_data_config())
+	await _open_picker_at_night()
+	assert_int(_game.picker.post_box.get_child_count()).is_greater(0)
+	await _assert_cards_fit()
+
+
+## LT-113: the picker is as tall by night as by day (each post row takes one list slot).
+func test_night_picker_is_as_tall_as_by_day() -> void:
+	await _start_game(_data_config())
+	_game.sim.state.gold = 10000
+	await _open_picker()
+	await get_tree().process_frame
+	var day_h := _game.picker.get_combined_minimum_size().y
+	_game.picker.close()
+	await _open_picker_at_night()
+	assert_float(_game.picker.get_combined_minimum_size().y).override_failure_message(
+		"day %.1f, night %.1f" % [day_h, _game.picker.get_combined_minimum_size().y]) \
+		.is_equal_approx(day_h, 0.5)
+
+
+## LT-113: the picker open by day, then the night comes and the picker refreshes: the list
+## shrinks by the post rows (the relayout runs at the end of refresh). At dawn the list is
+## LIST_MAX_ROWS rows again and the scrollbar spacer of the pinned heads is gone.
+func test_the_list_follows_the_phase_through_refresh() -> void:
+	await _start_game(_data_config())
+	_game.sim.state.gold = 10000
+	await _open_picker()
+	await get_tree().process_frame
+	var pk := _game.picker
+	var pinned: Control = pk.get_node("Group_mundane")
+	var heads_n := 1 + TowerPicker.HEADS.size()
+	var full_h := float(TowerPicker.LIST_MAX_ROWS * TowerPicker.ROW_H + TowerPicker.GROUP_H)
+	assert_int(pk.list_rows).is_equal(TowerPicker.LIST_MAX_ROWS)
+	assert_float(pk.rows_scroll.custom_minimum_size.y).is_equal(full_h)
+	assert_int(pinned.get_child_count()).is_equal(heads_n)
+	# Night.
+	assert_int(_game.commands.call_wave()).is_equal(SimCommand.CommandResult.OK)
+	_game.advance(0.0)
+	pk.refresh()
+	await get_tree().process_frame
+	var posts := pk.post_box.get_child_count()
+	assert_bool(pk.post_box.visible).is_true()
+	var cap := maxi(TowerPicker.LIST_MAX_ROWS - posts, TowerPicker.LIST_MIN_ROWS)
+	assert_int(cap).is_less(TowerPicker.LIST_MAX_ROWS)
+	assert_int(pk.list_rows).is_equal(cap)
+	assert_float(pk.rows_scroll.custom_minimum_size.y).is_equal(float(
+		cap * TowerPicker.ROW_H + TowerPicker.GROUP_H))
+	assert_int(pinned.get_child_count()).is_equal(heads_n + 1)  # the scrollbar spacer
+	# Dawn (the picker reads the phase).
+	_game.sim.state.phase = SimState.Phase.BUILD
+	pk.refresh()
+	await get_tree().process_frame
+	assert_bool(pk.post_box.visible).is_false()
+	assert_int(pk.list_rows).is_equal(TowerPicker.LIST_MAX_ROWS)
+	assert_float(pk.rows_scroll.custom_minimum_size.y).is_equal(full_h)
+	assert_int(pinned.get_child_count()).is_equal(heads_n)
+
+
+## LT-113: however many post rows show, the list keeps LIST_MIN_ROWS rows. The rows are padded
+## with extra children of the post box (the data has fewer crew kinds than that takes).
+func test_the_list_never_shrinks_below_the_minimum_with_many_posts() -> void:
+	await _start_game(_data_config())
+	await _open_picker_at_night()
+	var pk := _game.picker
+	for i in TowerPicker.LIST_MAX_ROWS:
+		var pad := Control.new()
+		pk.post_box.add_child(pad)
+	assert_int(pk.post_box.get_child_count()).is_greater(
+		TowerPicker.LIST_MAX_ROWS - TowerPicker.LIST_MIN_ROWS)
+	pk.refresh()
+	await get_tree().process_frame
+	assert_int(pk.list_rows).is_equal(TowerPicker.LIST_MIN_ROWS)
+	assert_float(pk.rows_scroll.custom_minimum_size.y).is_equal(float(
+		TowerPicker.LIST_MIN_ROWS * TowerPicker.ROW_H + TowerPicker.GROUP_H))
+
+
+## LT-113: at night with crew on the crew marks are hidden, so every name has the whole
+## column less the scrollbar: no crew-mark room reserved, the text fits its label.
+func test_names_fit_whole_at_night_with_crew_on() -> void:
+	await _start_game(_data_config())
+	await _open_picker_at_night()
+	var pk := _game.picker
+	assert_int(pk.crew_marks.size()).is_greater(0)
+	var avail := float(TowerPicker.NAME_W - pk.scrollbar_w())
+	for id: String in pk.names:
+		var l: Label = pk.names[id]
+		var fs := _font_of(l)
+		assert_str(l.text).is_equal(_config.towers[id].short_name)
+		assert_float(l.get_theme_stylebox("normal").get_minimum_size().x) \
+			.override_failure_message("%s reserves room at night" % id).is_equal(0.0)
+		assert_float(_name_w(l, fs)).override_failure_message(
+			"%s '%s' %.1f px at %d > %.1f" % [id, l.text, _name_w(l, fs), fs, avail]) \
+			.is_less_equal(avail)
 
 
 ## Exactly LIST_MAX_ROWS rows do not scroll: no scrollbar, no spacer in the pinned heads.
