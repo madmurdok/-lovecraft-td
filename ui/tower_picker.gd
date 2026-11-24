@@ -112,6 +112,7 @@ var _traits: Dictionary[String, String] = {}  ## def id -> trait_text of its L1
 var refresh_count := 0  ## LT-78 §8 B1: row rebuilds so far (refresh and flush)
 var _dirty := 0  ## LT-78: G_ROWS when an event marked the rows since the last flush
 var list_rows := 0  ## LT-113: rows the list shows unscrolled now (LIST_MAX_ROWS less posts)
+var _marks_shown := true  ## LT-113: crew marks show (by day); names reserve their room only then
 var _n_rows := 0  ## tower rows in the list
 var _inner_groups := 0  ## group lines inside the scrolled body
 var _pinned: HBoxContainer  ## the first group line, pinned above the rows
@@ -181,9 +182,11 @@ func _ready() -> void:
 func _layout_rows() -> void:
 	var posts := post_box.get_child_count() if post_box != null and post_box.visible else 0
 	var cap := maxi(LIST_MAX_ROWS - posts, LIST_MIN_ROWS)
-	if cap == list_rows:
+	var marks := game.sim.state.phase != SimState.Phase.WAVE  # as refresh() shows them
+	if cap == list_rows and marks == _marks_shown:
 		return
 	list_rows = cap
+	_marks_shown = marks
 	rows_scroll.custom_minimum_size.y = mini(_n_rows, cap) * ROW_H + _inner_groups * GROUP_H
 	# Past `cap` the rows lose the scrollbar's width; the pinned heads do too.
 	var bar_w := scrollbar_w() if _n_rows > cap else 0
@@ -301,7 +304,9 @@ func _fit_names(bar_w: int) -> void:
 	for id: String in names:
 		var l := names[id]
 		var avail := NAME_W - bar_w
-		if crew_marks.has(id):
+		if crew_marks.has(id) and not _marks_shown:  # LT-113: by night the name takes it all
+			l.add_theme_stylebox_override("normal", StyleBoxEmpty.new())
+		elif crew_marks.has(id):
 			var m := crew_marks[id]
 			var need := game.sim.crew_need(id)
 			var widest := crew_mark_text(maxi(need - 1, 0), mini(need, 1))
