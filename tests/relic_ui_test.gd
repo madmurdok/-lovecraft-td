@@ -45,6 +45,7 @@ func _kill(def_id: String, fake := false) -> int:
 func _steps(n: int) -> void:
 	for i in n:
 		_game.sim.step()
+	GameFixture.sync(_game)  # LT-85: stepped on the sim directly
 
 
 func _texts() -> Array[String]:

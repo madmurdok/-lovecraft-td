@@ -46,7 +46,7 @@ func tick(delta: float) -> void:
 ## A random walk that leaves the real path sideways and wanders over non-path cells.
 func _new_phantom() -> Array[Vector2i]:
 	var out: Array[Vector2i] = []
-	var s := game.sim.state
+	var s := game.snapshot
 	var m := s.map
 	var path_cells: Array[Vector2i] = []
 	for c in m.grid.cells():
@@ -64,7 +64,7 @@ func _new_phantom() -> Array[Vector2i]:
 			dir = _random_step(m.grid, cur)
 		var nxt := cur + dir
 		if not m.grid.contains(nxt) or m.kind_at(nxt) == MapDef.Kind.PATH \
-				or s.tower_at.has(nxt) or out.has(nxt):
+				or s.tower_at(nxt) != null or out.has(nxt):
 			dir = _random_step(m.grid, cur)
 			continue
 		out.append(nxt)

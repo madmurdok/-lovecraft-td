@@ -28,9 +28,9 @@ func _start_game() -> void:
 	_game.sim.state.gold = 10000
 
 
-func _tower(lit: bool, shadowed: bool) -> SimTower:
-	var t := SimTower.new()
-	t.pos = SquareGrid.new(1, 1).centre(t.cell)
+func _tower(lit: bool, shadowed: bool) -> TowerRecord:
+	var t := TowerRecord.new()
+	t.centre = SquareGrid.new(1, 1).centre(t.cell)
 	t.lit = lit
 	t.shadowed = shadowed
 	return t
@@ -47,9 +47,9 @@ func _cells(n: int) -> Array[Vector2i]:
 	return out
 
 
-func _place(def_id: String, cell: Vector2i) -> SimTower:
+func _place(def_id: String, cell: Vector2i) -> TowerRecord:
 	assert_int(_game.commands.build(def_id, cell) as int).is_equal(SimCommand.CommandResult.OK)
-	return _game.sim.tower_by_id(_game.sim.state.tower_at[cell])
+	return _game.snapshot.tower_at(cell)  # LT-85: a command rebuilds the snapshot
 
 
 func test_plate_color_is_warm_when_lit_violet_when_shadowed_plain_otherwise() -> void:
@@ -130,6 +130,8 @@ func test_no_preview_at_night() -> void:
 	b.selection.range_cells = 50.0
 	assert_str(b.overlay_layer.preview_cast(t)).is_equal("light")  # BUILD: the arms differ
 	_game.sim.state.phase = SimState.Phase.WAVE
+	GameFixture.sync(_game)
 	assert_str(b.overlay_layer.preview_cast(t)).is_equal("")
 	_game.sim.state.phase = SimState.Phase.NONE
+	GameFixture.sync(_game)
 	assert_str(b.overlay_layer.preview_cast(t)).is_equal("")

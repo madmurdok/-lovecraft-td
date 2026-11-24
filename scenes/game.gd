@@ -2,7 +2,7 @@ class_name Game
 extends Node2D
 ## One run (LT-7): owns the Simulation, its WaveDirector and the SimClock, steps the sim
 ## from _process and hands the frame's events to the board and the HUD.
-## Scenes only read `sim.state` and call sim commands; no game rules live here.
+## Scenes only read `snapshot` (LT-85) and call sim commands; no game rules live here.
 
 signal restart_requested
 signal speed_changed  ## LT-78: chosen_speed or paused changed (the HUD's speed group)
@@ -11,6 +11,10 @@ const SKIP_KEY := KEY_N
 const UI_LAYER := 2  ## above SanityFx.SCREEN_LAYER, so the HUD is never distorted
 
 var sim: Simulation
+## LT-85 §4: the one shared read-only copy of the sim that presentation reads, rebuilt on
+## frames where the sim changed (a step or a command). Tests that poke the sim's state directly
+## call refresh_snapshot() (GameFixture.sync) before reading presentation.
+var snapshot: SimSnapshot
 var clock := SimClock.new()
 var chosen_speed := 1  ## x1 / x2; the clock runs at 0 while paused
 var paused := false
@@ -55,7 +59,7 @@ func setup(
 		config = config.sandboxed(DebugArgs.SANDBOX_GOLD)
 	sim = Simulation.new(config, p_seed)
 	sim.set_spawner(WaveDirector.new(config.waves))
-	# LT-12 §1: debug builds only; the board then marks fakes via sim.debug_is_fake.
+	# LT-12 §1: debug builds only; the board then marks fakes via sim.debug_is_fake_id.
 	sim.debug_reveal_fakes = OS.is_debug_build() and debug.reveal_fakes
 	DebugArgs.apply_mute(args)
 	if debug.sanity >= 0.0:
@@ -63,6 +67,13 @@ func setup(
 	if debug.frame_stats:
 		frame_stats = FrameStats.new()
 	commands = GameCommands.new(sim, debug, _after_command)
+	refresh_snapshot()  # LT-85 §4: built before any child's _ready reads it
+
+
+## LT-85 §4: rebuilds `snapshot` from the sim. Game calls it after steps and commands;
+## tests call it (GameFixture.sync) after poking sim state directly.
+func refresh_snapshot() -> void:
+	snapshot = sim.snapshot()
 
 
 func _ready() -> void:
@@ -126,7 +137,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 ## state, live enemies, towers, board effects, window focus and the events consumed in the
 ## previous frame (the one whose process + draw the spike interval covers). Read-only.
 func spike_context(now_usec: int) -> Dictionary:
-	var st := sim.state
+	var st := snapshot
 	var win: Window = get_window() if is_inside_tree() else null
 	return {
 		"t": "%.2fs" % (now_usec / 1000000.0),
@@ -154,6 +165,8 @@ func advance(delta: float) -> void:
 	var steps := clock.advance(delta)
 	for i in steps:
 		sim.step()
+	if steps > 0:
+		refresh_snapshot()  # LT-85 §4: before the events reach their consumers
 	# LT-78 §1: panels change only when events (or a running timer, on stepped frames) say so.
 	if _consume_events() > 0 or steps > 0:
 		_flush_ui()
@@ -183,6 +196,7 @@ func _apply_speed() -> void:
 
 ## Commands apply between ticks; show their effect without waiting for the next frame.
 func _after_command() -> void:
+	refresh_snapshot()  # LT-85 §4: before the events and the panel flush read it
 	_consume_events()
 	board.queue_redraw()
 	_flush_ui()
@@ -239,17 +253,17 @@ func close_panels() -> void:
 ## LT-32 §4: the HUD's crew button: the crew view replaces whatever the side panel shows.
 func open_crew_panel() -> void:
 	close_panels()
-	if sim.state.outcome == SimState.Outcome.NONE:
+	if snapshot.outcome == SimState.Outcome.NONE:
 		crew_panel.open()
 
 
 func _on_cell_clicked(cell: Vector2i) -> void:
 	close_panels()
-	if sim.state.outcome != SimState.Outcome.NONE:
+	if snapshot.outcome != SimState.Outcome.NONE:
 		return
-	if cell == sim.state.map.lighthouse:
+	if cell == snapshot.map.lighthouse:
 		lighthouse_panel.open()
-	elif sim.state.tower_at.has(cell):
-		tower_panel.open_for(sim.state.tower_at[cell])
-	elif sim.state.map.is_buildable(cell):
+	elif snapshot.tower_at(cell) != null:
+		tower_panel.open_for(snapshot.tower_at(cell).id)
+	elif snapshot.map.is_buildable(cell):
 		picker.open_for(cell)

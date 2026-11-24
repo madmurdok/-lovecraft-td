@@ -8,14 +8,14 @@ extends Node2D
 ## hits drawn off-target into an empty spot. Its randomness is presentation-only.
 ## LT-25: each attack kind has its own look, chosen from the tower's current stats
 ## (shot_kind): rifle tracer, piercing harpoon, Elder Sign ward aura, Necronomicon dark
-## wave; slow, damage-taken and (LT-29) bleed markers on enemies (SimEnemy.markers), a longer
+## wave; slow, damage-taken and (LT-29) bleed markers on enemies (EnemyRecord.markers), a longer
 ## hit spark on a crit and a dashed chain for a pull. LT-47: the Dynamite crew's lobbed
 ## charge (an arc, then a sputtering fuse on the ground until the BLAST event, sim time) and
 ## its blast ring. Nothing here tells a fake from a real enemy: every look depends only on
 ## SHOT / BLAST fields and aura state. LT-104: the looks themselves (colour, effect, area,
 ## cap; enemy body) are rows of LookCatalog, derived from the attack mode or overridden per
 ## tower / enemy def id by data/looks.json. LT-49: the Searchlight's aura is a lit disc with a
-## sweeping beam; a fake its aura revealed (`SimEnemy.revealed`, sim state)
+## sweeping beam; a fake its aura revealed (`EnemyRecord.revealed`, a game rule)
 ## is drawn as a ghost-grey body with an amber ring and slash.
 ## LT-70 §5: a lit tower's plate is tinted warm, a shadowed one cold violet (plate_color),
 ## each with its corner dot; by day (BUILD) the selected caster previews its radius with a
@@ -115,9 +115,9 @@ func _add_layer(layer: BoardLayer, layer_name: String) -> BoardLayer:
 
 ## Hands the sim's current map to the map layer; it redraws only if the map changed.
 func sync_map() -> void:
-	if game != null and game.sim != null and map_layer != null:
-		view.grid = game.sim.state.map.grid
-		map_layer.set_map(game.sim.state.map)
+	if game != null and game.snapshot != null and map_layer != null:
+		view.grid = game.snapshot.map.grid
+		map_layer.set_map(game.snapshot.map)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -141,7 +141,7 @@ func on_event(ev: SimEvent) -> void:
 ## LT-25 §1: the attack look from the tower's current stats (so upgrades and branches
 ## change it). LT-104: LookCatalog.tower_look (a data/looks.json override, else the mode
 ## ladder, LookCatalog.derived_tower_look).
-static func shot_kind(t: SimTower) -> String:
+static func shot_kind(t: TowerRecord) -> String:
 	return LookCatalog.tower_look(t)
 
 

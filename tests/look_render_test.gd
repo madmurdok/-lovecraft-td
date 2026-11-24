@@ -73,12 +73,26 @@ func _enemy(def_id := "cultist", fake := false, cells := 2.0) -> SimEnemy:
 	return e
 
 
+## LT-85: the record of live tower `t` in a fresh snapshot (the test pokes the sim directly).
+func _rec(t: SimTower) -> TowerRecord:
+	GameFixture.sync(_game)
+	return _game.snapshot.tower(t.id)
+
+
+## LT-85: the record of live enemy `e` in a fresh snapshot.
+func _erec(e: SimEnemy) -> EnemyRecord:
+	GameFixture.sync(_game)
+	return _game.snapshot.enemy(e.id)
+
+
 func _shoot(t: SimTower, to: Vector2) -> void:
+	GameFixture.sync(_game)  # LT-85: FxLayer reads the tower from the snapshot
 	_game.board.on_event(SimEvent.new(SimEvent.Type.SHOT, 0, t.id, {"def": t.def.id,
 		"target": 0, "hits": [], "to": to, "miss": false, "astray": false}))
 
 
 func _banish(t: SimTower, i: int) -> void:
+	GameFixture.sync(_game)
 	_game.board.on_event(SimEvent.new(SimEvent.Type.SHOT, 0, t.id, {"def": t.def.id,
 		"target": 0, "hits": [], "from": Vector2(1.5 + i, 2.5), "to": Vector2(0.5 + i, 2.5)}))
 
@@ -98,6 +112,7 @@ func _fx_of(tower_id: int) -> Array[Dictionary]:
 
 
 func _frame() -> void:
+	GameFixture.sync(_game)  # LT-85: the layers draw the snapshot
 	_game.board.queue_redraw()
 	await get_tree().process_frame
 	await get_tree().process_frame
@@ -128,11 +143,11 @@ func test_a_variant_from_looks_json_reaches_the_shot_effect_and_tower_colour() -
 	var t := _tower("rifleman")
 	_shoot(t, Vector2(4.5, 2.5))
 	var fx: Dictionary = _game.board.fx_layer.effects.back()
-	assert_str(Board.shot_kind(t)).is_equal("pale_tracer")
+	assert_str(Board.shot_kind(_rec(t))).is_equal("pale_tracer")
 	assert_str(fx["kind"]).is_equal("tracer")  # the built-in builder and renderer
 	assert_str(fx["look"]).is_equal("pale_tracer")
 	assert_bool(fx["color"] == Color(1.2, 2.0, 2.4)).is_true()
-	assert_bool(EntityLayer.attack_color(Board.shot_kind(t)) == Color(1.2, 2.0, 2.4)).is_true()
+	assert_bool(EntityLayer.attack_color(Board.shot_kind(_rec(t))) == Color(1.2, 2.0, 2.4)).is_true()
 	# A built-in look assigned to another tower: the coast battery fires tracers.
 	var c := _tower("coast_battery")
 	_shoot(c, Vector2(5.5, 2.5))
@@ -226,9 +241,9 @@ func test_a_real_and_a_fake_of_one_def_get_its_override_and_draw_with_every_mark
 	var real := _enemy("shoggoth", false, 2.0)
 	var fake := _enemy("shoggoth", true, 3.0)
 	var plain := _enemy("cultist", false, 4.0)
-	assert_str(LookCatalog.enemy_look(real)).is_equal("big_body")
-	assert_str(LookCatalog.enemy_look(fake)).is_equal("big_body")
-	assert_str(LookCatalog.enemy_look(plain)).is_equal("enemy")
+	assert_str(LookCatalog.enemy_look(_erec(real))).is_equal("big_body")
+	assert_str(LookCatalog.enemy_look(_erec(fake))).is_equal("big_body")
+	assert_str(LookCatalog.enemy_look(_erec(plain))).is_equal("enemy")
 	for e: SimEnemy in [real, fake, plain]:
 		e.status["bleed_ticks"] = 100
 		e.status["banish_immune_ticks"] = 100

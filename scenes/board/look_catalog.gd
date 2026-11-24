@@ -141,10 +141,10 @@ static func derived_enemy_look(_def: EnemyDef) -> String:
 ## The tower's look: its looks.json override when the override draws the current level's
 ## mode (an upgrade that changes mode falls back there), else the derived look. Not cached:
 ## level and branch change on upgrade.
-static func tower_look(t: SimTower) -> String:
+static func tower_look(t: TowerRecord) -> String:
 	if not _loaded:
 		table()
-	var s := t.stats()
+	var s := t.stats
 	var o: String = _tower_over.get(t.def.id, "")
 	if not o.is_empty() and s.mode() in _rows[o]["modes"]:
 		return o
@@ -152,7 +152,7 @@ static func tower_look(t: SimTower) -> String:
 
 
 ## The enemy's look: its looks.json override, else the derived one.
-static func enemy_look(e: SimEnemy) -> String:
+static func enemy_look(e: EnemyRecord) -> String:
 	if not _loaded:
 		table()
 	var o: String = _enemy_over.get(e.def.id, "")

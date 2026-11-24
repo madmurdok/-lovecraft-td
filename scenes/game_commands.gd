@@ -28,7 +28,7 @@ func issue(name: String, args: Array) -> SimCommand.CommandResult:
 func skip_ahead() -> SimCommand.CommandResult:
 	if not debug.sandbox:
 		return SimCommand.CommandResult.NOT_BUILD_PHASE
-	if sim.state.phase == SimState.Phase.WAVE:
+	if sim.snapshot().phase == SimState.Phase.WAVE:  # LT-85: a fresh copy (debug key only)
 		var r := sim.debug_end_night()
 		after.call()
 		return r
@@ -48,7 +48,7 @@ func upgrade(tower_id: int, branch := "") -> SimCommand.CommandResult:
 	return issue("upgrade", [tower_id, branch])
 
 
-## LT-31: mode is one of SimTower.TARGET_PRIORITIES; allowed in any phase.
+## LT-31: mode is one of TowerRecord.TARGET_PRIORITIES; allowed in any phase.
 func set_target_priority(tower_id: int, mode: String) -> SimCommand.CommandResult:
 	return issue("set_target_priority", [tower_id, mode])
 

@@ -17,6 +17,7 @@ var alpha: float:  ## render interpolation between the last two ticks
 		return board.alpha
 
 
-## True when there is a sim to draw (the board's own _draw has the same guard).
+## True when there is a sim to draw (the board's own _draw has the same guard). LT-85: the
+## layers read its snapshot, built in Game.setup.
 func has_sim() -> bool:
-	return game != null and game.sim != null
+	return game != null and game.sim != null and game.snapshot != null

@@ -1,7 +1,7 @@
 class_name SanityFx
 extends Node
 ## LT-14 sanity feedback (GDD §5.3 table, §9, §9a), presentation only: reads
-## `game.sim.state.sanity` / `sanity_state` and the sanity.json thresholds, never changes
+## `game.snapshot.sanity` / `sanity_state` and the sanity.json thresholds, never changes
 ## the sim. Owns the board-wide distortion layer (between the world and the HUD), the
 ## shared UI jitter material and the whisper audio. Board and HUD read `state`, `level`,
 ## `flicker` and `ui_jitter_material` from here.
@@ -93,7 +93,7 @@ func _process(delta: float) -> void:
 
 ## One frame of smoothing, then pushes the values to the shaders and the audio.
 func tick(delta: float) -> void:
-	var s := game.sim.state
+	var s := game.snapshot
 	state = s.sanity_state
 	level = move_toward(level, target_level(), level_speed * delta)
 	var mad_target := 1.0 if state == SimState.SanityState.MADNESS else 0.0
@@ -104,7 +104,7 @@ func tick(delta: float) -> void:
 
 ## Jumps straight to the current target (start of a run, tests, screenshots).
 func _snap() -> void:
-	state = game.sim.state.sanity_state
+	state = game.snapshot.sanity_state
 	level = target_level()
 	madness = 1.0 if state == SimState.SanityState.MADNESS else 0.0
 	_apply()
@@ -112,7 +112,7 @@ func _snap() -> void:
 
 ## The level the current sanity asks for (GDD §5.3 table, thresholds from sanity.json).
 func target_level() -> float:
-	var s := game.sim.state
+	var s := game.snapshot
 	var i := int(s.sanity_state)
 	if i <= SimState.SanityState.LUCID:
 		return state_levels[0]

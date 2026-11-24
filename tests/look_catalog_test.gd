@@ -28,16 +28,16 @@ func after_test() -> void:
 # --- helpers -----------------------------------------------------------------------------
 
 ## A tower of def `id` at `slot` ([level, branch]); the catalog reads only def and stats.
-func _tower(id: String, slot: Array) -> SimTower:
+func _tower(id: String, slot: Array) -> TowerRecord:
 	var t := SimTower.new()
 	t.def = _config.towers[id]
 	t.level = slot[0]
 	t.branch = slot[1]
-	return t
+	return TowerRecord.from_tower(t)
 
 
-func _enemy(id: String) -> SimEnemy:
-	var e := SimEnemy.new()
+func _enemy(id: String) -> EnemyRecord:
+	var e := EnemyRecord.new()  # LT-85: the catalog reads only def
 	e.def = _config.enemies[id]
 	return e
 
@@ -82,7 +82,7 @@ func test_with_no_override_every_shipped_tower_slot_gets_its_derived_look() -> v
 			for slot: Array in SLOTS:
 				var t := _tower(id, slot)
 				assert_str(Board.shot_kind(t)).override_failure_message("%s %s" % [id, slot]) \
-					.is_equal(LookCatalog.derived_tower_look(t.stats()))
+					.is_equal(LookCatalog.derived_tower_look(t.stats))
 				n += 1
 		assert_int(n).is_equal(_config.towers.size() * 4)
 

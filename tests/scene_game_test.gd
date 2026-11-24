@@ -304,6 +304,7 @@ func test_end_screen_appears_on_outcome_and_closes_panels() -> void:
 	assert_bool(_game.end_screen.visible).is_false()
 	_game.sim.state.lighthouse_hp = 0
 	_game.sim.step()
+	GameFixture.sync(_game)
 	_game.advance(0.0)
 	assert_bool(_game.end_screen.visible).is_true()
 	assert_str(_game.end_screen.result_label.text).contains("fallen")

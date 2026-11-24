@@ -115,6 +115,7 @@ func test_a_new_map_in_the_sim_redraws_the_layer_on_the_next_board_draw() -> voi
 	var map_draws := _count_draws(layer)
 	var fresh := _copy_map(_game.sim.state.map)
 	_game.sim.state.map = fresh
+	GameFixture.sync(_game)
 	_game.board.queue_redraw()
 	await _frames(3)
 	assert_object(layer.map).is_same(fresh)

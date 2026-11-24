@@ -4,9 +4,9 @@ extends BoardLayer
 ## and below the effects: aura discs (Elder Sign ward, Searchlight sweep), towers (plate
 ## tinted by lit / shadow state and the BUILD preview, OverlayLayer.preview_cast), enemies
 ## (interpolated by the clock alpha, flicker, markers, HP bars) and summoned allies. LT-32:
-## a reserve post (SimTower.post) is not a tower: its men are drawn as small rifleman
+## a reserve post (TowerRecord.post) is not a tower: its men are drawn as small rifleman
 ## figures (_draw_post), with no plate, letter, border or level pips. Reads
-## sim state only. Writes `board.last_pos` (enemy id -> drawn position), which the ward
+## the snapshot only (LT-85). Writes `board.last_pos` (enemy id -> drawn position), which the ward
 ## pulse, FxLayer's hit positions and astray spots read.
 
 const LIT_MARK_COLOR := Color(1.0, 0.95, 0.6)  ## LT-30: tower inside a beam
@@ -89,7 +89,7 @@ const BANISH_LID_CELLS := 0.33
 func _draw() -> void:
 	if not has_sim():
 		return
-	var s := game.sim.state
+	var s := game.snapshot
 	_draw_auras(s)
 	for t in s.towers:
 		_draw_tower(t)
@@ -100,9 +100,9 @@ func _draw() -> void:
 ## LT-25 §1.3: the ward ring's alpha: idle while no drawn enemy (`board.last_pos`, real or fake
 ## alike) is inside its radius, pulsing between WARD_PULSE_LOW and WARD_ACTIVE_ALPHA while
 ## one is.
-func ward_alpha(t: SimTower) -> float:
-	var c := t.centre()
-	var r := t.stats().range_cells
+func ward_alpha(t: TowerRecord) -> float:
+	var c := t.centre
+	var r := t.stats.range_cells
 	for p: Vector2 in board.last_pos.values():
 		if p.distance_to(c) <= r:
 			var k := 0.5 + 0.5 * sin(board.time * TAU * WARD_PULSE_HZ)
@@ -120,12 +120,12 @@ static func attack_color(kind: String) -> Color:
 ## shadowed (never both: cancelled is neither), else COLOR_TOWER; with neither flag, a
 ## `preview` "light" / "shadow" (preview_cast) mixes the same tint in at PREVIEW_TINT_WEIGHT.
 ## LT-117: a disabled tower (the channel's last-tick value) gets that colour DISABLED_DIM darker.
-static func plate_color(t: SimTower, preview := "") -> Color:
+static func plate_color(t: TowerRecord, preview := "") -> Color:
 	var c := _plate_tint(t, preview)
 	return c.darkened(DISABLED_DIM) if t.disabled else c
 
 
-static func _plate_tint(t: SimTower, preview: String) -> Color:
+static func _plate_tint(t: TowerRecord, preview: String) -> Color:
 	if t.lit:
 		return LIT_TINT
 	if t.shadowed:
@@ -140,7 +140,7 @@ static func _plate_tint(t: SimTower, preview: String) -> Color:
 
 ## LT-70 §5: the state border around the tile: LIT_BORDER / SHADOW_BORDER (over 1) for the
 ## net flags, the plain tint for a preview, transparent for none.
-static func state_border(t: SimTower, preview := "") -> Color:
+static func state_border(t: TowerRecord, preview := "") -> Color:
 	if t.lit:
 		return LIT_BORDER
 	if t.shadowed:
@@ -162,7 +162,7 @@ static func tower_anchors(centre: Vector2) -> Dictionary:
 		"pip": centre + PIP_OFFSET, "branch": centre + BRANCH_OFFSET}
 
 
-func _draw_tower(t: SimTower) -> void:
+func _draw_tower(t: TowerRecord) -> void:
 	if t.post:
 		_draw_post(t)
 		return
@@ -197,7 +197,7 @@ func _draw_tower(t: SimTower) -> void:
 ## LT-32 §4: a reserve post: `t.crew` small figures side by side (head, body, legs and a
 ## musket held up at a slant) in its attack colour, no plate, letter, border or pips; the
 ## lit / shadowed corner dot as on a tower, so the beam's effect still reads.
-func _draw_post(t: SimTower) -> void:
+func _draw_post(t: TowerRecord) -> void:
 	var centre := view.cell_centre(t.cell)
 	var c := attack_color(Board.shot_kind(t))
 	var glow := Color(c.r * POST_GLOW, c.g * POST_GLOW, c.b * POST_GLOW, 1.0)
@@ -235,7 +235,7 @@ func _draw_post(t: SimTower) -> void:
 ## dashes; brighter and pulsing while a drawn enemy is inside. LT-70 §5: a sign that casts
 ## shadow gets a faint dark fill, the opposite of the Searchlight's lit disc.
 ## LT-104: dispatched on the look row's `area`; the colour is the row's.
-func _draw_auras(s: SimState) -> void:
+func _draw_auras(s: SimSnapshot) -> void:
 	for t in s.towers:
 		var look := LookCatalog.row(Board.shot_kind(t))
 		var area: String = look["area"]
@@ -245,11 +245,11 @@ func _draw_auras(s: SimState) -> void:
 		if area != "ward":
 			continue
 		var wc: Color = look["color"]
-		var c := view.cell_to_world(t.centre())
-		var r := view.cells_to_px(t.stats().range_cells)
+		var c := view.cell_to_world(t.centre)
+		var r := view.cells_to_px(t.stats.range_cells)
 		var a := ward_alpha(t)
 		var bright := a > WARD_IDLE_ALPHA
-		if t.stats().casts_shadow():
+		if t.stats.casts_shadow():
 			draw_circle(c, r, WARD_SHADOW_FILL)
 		draw_arc(c, r, 0, TAU, 64, Color(wc, a), 4.0 if bright else 2.0)
 		var rot := board.time * TAU / WARD_TURN_SECONDS
@@ -261,9 +261,9 @@ func _draw_auras(s: SimState) -> void:
 ## LT-49: the Searchlight's aura: a faint disc and rim at the radius, and a beam wedge
 ## from the tower to the rim turning once per SEARCH_SWEEP_SECONDS (decoration: what is
 ## revealed is the whole disc, sim state). `sc`: the look's colour (LT-104).
-func _draw_searchlight(t: SimTower, sc: Color) -> void:
-	var c := view.cell_to_world(t.centre())
-	var r := view.cells_to_px(t.stats().range_cells)
+func _draw_searchlight(t: TowerRecord, sc: Color) -> void:
+	var c := view.cell_to_world(t.centre)
+	var r := view.cells_to_px(t.stats.range_cells)
 	var a := ward_alpha(t)
 	draw_circle(c, r, Color(sc, SEARCH_DISC_ALPHA * (1.0 + a)))
 	draw_arc(c, r, 0, TAU, 64, Color(sc, a * 0.8), 2.0)
@@ -280,15 +280,13 @@ func _draw_searchlight(t: SimTower, sc: Color) -> void:
 
 ## LT-104: body colour, radius and rim from the enemy's look row (LookCatalog.enemy_look);
 ## every marker radius and the HP bar move out by the radius above the built-in 0.25 cell.
-func _draw_enemies(s: SimState) -> void:
+func _draw_enemies(s: SimSnapshot) -> void:
 	board.last_pos.clear()
 	var fl := board.flicker_strength()
 	# LT-23 Q10: the smoothed madness grade tints and outlines every enemy alike.
 	var mad := game.sanity_fx.madness if game.sanity_fx != null else 0.0
 	for e in s.enemies:
-		if not e.is_live():
-			continue
-		var p := game.sim.enemy_position(e, alpha)
+		var p := e.position(alpha)
 		board.last_pos[e.id] = p
 		var px := view.cell_to_world(p)
 		var look := LookCatalog.enemy_row(LookCatalog.enemy_look(e))
@@ -305,7 +303,7 @@ func _draw_enemies(s: SimState) -> void:
 			# LT-40: fade the double in over dip 0.5..0.7 instead of popping in at full alpha.
 			ghost.a = 0.35 * clampf((dip - 0.5) / 0.2, 0.0, 1.0)
 			draw_circle(px + Vector2(view.cells_to_px(0.15), 0), view.cells_to_px(body), ghost)
-		var marks := e.markers()
+		var marks := e.markers
 		if marks.has("slow"):  # ground ring under the body
 			var sc := Color(WARD_COLOR, color.a)
 			for i in 6:
@@ -332,7 +330,7 @@ func _draw_enemies(s: SimState) -> void:
 			draw_arc(px, view.cells_to_px(REVEALED_RING_CELLS + dr), 0, TAU, 24, mc, 3.0)
 			var d := view.cell_to_world(Vector2(1, -1).normalized()) * REVEALED_SLASH_CELLS
 			draw_line(px - d, px + d, mc, 3.0)
-		if game.sim.debug_is_fake(e):
+		if game.sim.debug_is_fake_id(e.id):
 			draw_arc(px, view.cells_to_px(0.3 + dr), 0, TAU, 24, COLOR_DEBUG_FAKE, 2.0)
 		var w := view.cells_to_px(0.6)
 		var bar := Rect2(px + Vector2(-w * 0.5, -view.cells_to_px(0.4 + dr)), Vector2(w, 4))
@@ -346,17 +344,15 @@ func _draw_enemies(s: SimState) -> void:
 ## flies) and its HP bar below the body.
 ## LT-104: the ring where the tower's look row has area "summon_ring", in that row's colour;
 ## a unit's colour is its tower def's SUMMON look (LookCatalog.ally_color, survives a sale).
-func _draw_allies(s: SimState) -> void:
+func _draw_allies(s: SimSnapshot) -> void:
 	for t in s.towers:
 		var look := LookCatalog.row(Board.shot_kind(t))
 		if look["area"] == "summon_ring":
 			var rc: Color = look["color"]
-			draw_arc(view.cell_to_world(t.centre()), view.cells_to_px(t.stats().summon_leash()), 0,
+			draw_arc(view.cell_to_world(t.centre), view.cells_to_px(t.stats.summon_leash()), 0,
 				TAU, 64, Color(rc, SUMMON_RING_ALPHA), 1.0)
 	for a in s.allies:
-		if not a.is_live():
-			continue
-		var px := view.cell_to_world(game.sim.ally_position(a, alpha))
+		var px := view.cell_to_world(a.position(alpha))
 		var ac := LookCatalog.ally_color(a.source)
 		if a.held_id >= 0 and board.last_pos.has(a.held_id):
 			draw_line(px, view.cell_to_world(board.last_pos[a.held_id]), Color(ac, 0.9), 2.0)
