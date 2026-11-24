@@ -326,16 +326,15 @@ static func special_lines(s: TowerDef.Level, effects: Variant = null) -> PackedS
 	return effect_lines(e)
 
 
-## LT-122: the numbers EffectText tips read (EffectText.TIP_VALUES), asked of TowerRules for
-## a shadowed occult / mundane tower (the values the sim applies; G1: no copies here); none
-## when the economy has no shadow block.
+## LT-122: the numbers EffectText tips read (EffectText.TIP_VALUES), from
+## TowerStatsModel.shadow_numbers (the values the sim applies); none without a shadow block.
 static func tip_values(cfg: GameConfig) -> Dictionary:
 	var out := {}
-	if cfg.economy.shadow != null:
-		out["shadow_occult_power_mult"] = TowerRules.power_mult("occult", cfg, false, true)
-		out["shadow_mundane_fire_interval_mult"] = TowerRules.interval_mult(
-			"mundane", cfg, false, true)
-		out["shadow_mundane_miss_chance_add"] = TowerRules.miss_add("mundane", cfg, true)
+	var n := TowerStatsModel.shadow_numbers(cfg)
+	if not n.is_empty():
+		out["shadow_occult_power_mult"] = n["occult_power_mult"]
+		out["shadow_mundane_fire_interval_mult"] = n["mundane_interval_mult"]
+		out["shadow_mundane_miss_chance_add"] = n["mundane_miss_add"]
 	return out
 
 
