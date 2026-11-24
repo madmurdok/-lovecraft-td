@@ -1,7 +1,8 @@
-# LT-92: the two heavy frames before the first wave (diagnosis, slice S1)
+# LT-92: the heavy frames before and at the first wave (diagnosis, slices S1 and S5)
 
-Status: diagnosis only. No production code changed. One throwaway probe (`probe92.gd` in the
-worktree root, source in the appendix) was removed at the end of the slice.
+Status: diagnosis only. No production code changed. S1 diagnosed frames A and B with a throwaway
+probe (`probe92.gd`); S5 diagnosed frame C with its extension `probe92c.gd` (source in the
+appendix, a superset of S1's). Both were removed at the end of their slice.
 
 Build: branch `fix/LT-92-startup-frames` at 0c6f17b (0.13.0), Godot 4.7.2, GL Compatibility,
 "OpenGL API 4.1 INTEL-24.5.8, Intel Iris Plus Graphics" (MacBookPro16,2, 8 threads), Retina
@@ -41,10 +42,12 @@ nothing in either one.
    boot-fit resize changes nothing either (`nofit` matches `base`). The window takes focus
    right after frame A is presented (`focus_in` 2.08-2.43 s in fast runs), which is why LT-90
    linked the two.
-4. **A third frame turned up, outside this task:** 138-537 ms, all in `draw`, about 1 s after
-   the wave call (night 0.81-0.83, one enemy on the board). It appears in every run that calls
-   a wave, including `botwarm`, so the light warm-up does not cover it. Suggested follow-up
-   task: "first-night third frame (~150 ms) ~1 s after the first wave call".
+4. **Frame C (S5): the board's own first-use warm-up, lit for the first time.** 146-569 ms,
+   95-99% in `draw`, ~1.0-1.3 s after the wave call. The FxLayer warm-up draws in the board
+   corner unlit from the first frame. The turning beam's light rect reaches that corner at
+   rotation ≈ -2.69, and the lit variants of the warm-up's primitive kinds compile then. A
+   small light over that corner in the first 3 frames removes C **and B** (one mechanism);
+   a board-wide warm light does not work (see Frame C).
 
 ## How it was measured
 
@@ -112,7 +115,8 @@ nothing in either one.
   scene setup (config load, `Game._ready`, UI build) runs before the first frame: `first_proc`
   is 254-325 ms after `_initialize` in fast runs, against 27-48 ms for `nomain`. That time does
   not count as a frame interval in the spike log.
-- Hiding the UI layer or Lighting/SanityFx (fog shader, lights) leaves frame A where it is. The
+- (S5: S1's `noui`/`nofx` arms were no-ops, see Frame C. Re-run properly in S5 they confirm
+  this bullet.) Hiding the UI layer or Lighting/SanityFx (fog shader, lights) leaves frame A where it is. The
   cost belongs to the board and entity canvas items as a group, not to one node. No single node
   can be cut to remove it.
 - A window that draws (almost) nothing has a 4-73 ms first frame. So the window and its first
@@ -148,12 +152,79 @@ nothing in either one.
   the first night. All lights are `PointLight2D`s with a texture, `BLEND_MODE_ADD` and no
   shadows (`_light`, 224-235).
 
-### Frame C (outside this task)
+### Frame C: the beam's light rect reaches the FxLayer warm-up corner (slice S5)
 
-At night 0.81-0.83 (about 1 s after the wave call; enemy count 1): 138-162 ms in fast runs and
-307-537 ms in slow runs, 95-99% in `draw`. It shows in every arm that calls a wave, including
-`botwarm` (335-438 ms), so it is a different first use (probably the first enemy reaching a lit
-or newly drawn area). Not diagnosed here.
+**Cause.** The LT-62/LT-90 warm-up in `FxLayer._draw_warmup()` (`scenes/board/fx_layer.gd`
+313-321) draws a width-2 line, a width-3 polyline and a coloured polygon at alpha 0.01 in the
+board's top-left corner, at board-local (2,2)-(6,8). This runs on every frame until a shot
+has drawn each of those kinds. That corner sits under the HUD bar and outside every light,
+so those draws only ever compile the **unlit** variants. Godot's GL canvas renderer marks an
+item as lit when the item's rect meets a light's bounding rect (the AABB of the rotated
+light texture), not where the light is bright. The first beam is a 1280 px texture
+(`beam_half=640`) on the lighthouse at (860,420), so its AABB spans 640·(|cos r|+|sin r|)
+each way. That reaches x ≤ 8 for the first time at beam rotation r ≈ -2.69/-2.70. In that
+frame FxLayer is drawn lit for the first time, and the driver compiles the lit variants of
+the warm-up's primitive kinds. The frame is ~1.0-1.3 s after the wave call. `night` is
+~0.81 then only because both the night fade and the beam's turn follow the same clock.
+
+So frame C does not come from the enemy, the night level or the UI. It comes from the
+warm-up itself: the corner meant to pay a first-use cost early pays the lit half of it late,
+once the turning beam's rect reaches it.
+
+**Evidence** (S5 batch: 13 arms × 3 rounds, round-robin, all `--wave` unless noted,
+`--probe-secs=7`, every window `--mute`; C = a > 100 ms frame at beam rotation -2.72..-2.66;
+"after B" = the worst frame after the wave-call frame):
+
+| arm | what differs (control: cheap observation) | F1 ms | B ms | C ms (night) | worst after B | verdict |
+|---|---|---|---|---|---|---|
+| wave | baseline | 287, 681, 555 | 535, 986, 1245 | 146, 351, 273 (0.815-0.816) | = C | C present 3/3 |
+| bot | LT-90 bot (3 towers) | 396, 504, 439 | 614, 821, 718 | 238, 308, 238 (0.811-0.818) | = C | C present 3/3 |
+| hideent | EntityLayer hidden (`ent_vis=false`) | 1005, 609, 499 | 1269, 1083, 763 | 383, 346, 229 | = C | **not the enemy draw** |
+| nolitent | EntityLayer `light_mask=0` (`ent_mask=0`) | 820, 425, 664 | 1447, 767, 1028 | 436, 569, 294 | = C | **not the enemy being lit** |
+| night1 | `night` jumps to 1.0 at the call (`n=1.000` in B) | 1058*, 540, 579 | 1736*, 761, 831 | 559*, 333, 292 (night 1.000) | = C | **not a night threshold**; same rotation |
+| noui | UI CanvasLayer hidden (`ui_vis=false`) | 409, 385, 302 | 997, 812, 923 | 300, 247, 227 | = C | not the UI |
+| nofx | Lighting + SanityFx layers hidden (`light_vis=false`) | 459, 385, 358 | 26, 18, 21 | - | 45, 35, 27 | no lights: no B, no C |
+| **nowarmup** | FxLayer warm-up off (`_*_drawn = true`, `fxwarm=false`) | 346, 375, 557 | 877, 782, 1057 | **-** | 77, 36, 41 | **C gone 3/3, B stays** |
+| **cornerlight** | a 25 px PointLight2D over the warm-up corner, frames 1-3 (`wl=true`) | 865, 2009, 3155 | **28, 36, 27** | **-** | 29, 49, 171** | **B and C gone 3/3**, F1 grows |
+| warmlight | a board-covering PointLight2D, frames 1-3 | 1299, 1528, 2053 | 27, 26, 40 | - | 28, 34, 75 | B and C gone, **but a new 129-215 ms frame #4** right after the light is freed (3/3) |
+| botwl | bot + board-covering light | 1251, 1450, 2003 | 30, 35, 38 | - | 25, 50, 47 | same; frame #4 119-146 ms (3/3) |
+| warmkit | `night=0.01` frames 1-3 (glow + beam lit) + a node at the lighthouse drawing circle, arcs, line, polyline, polygon, rect, string | 1134, 1374, 1621 | 29, 29, 25 | - | 24, 34, 34 | B and C gone 3/3, no post-warm frame |
+| kitunlit | the same node, lights not warmed | 431, 450, 516 | 658, 699, 874 | 209, 279, 337 | = C | the kit drawn **unlit** fixes nothing: it is the lit variant |
+
+\* night1 r1 ran at load 194 (another agent's burst) and is excluded from comparisons.
+\*\* cornerlight r2 ran slow (`F1` 3155 ms, 55 frames in 7 s) with 100-170 ms frames spread
+over the whole run at every beam angle (12 of them), not one frame at -2.69: load, not C.
+
+- Every C frame across the 21 runs that have one is at beam rotation -2.68..-2.70, where the beam AABB's left
+  edge (`bxmin` in the summary) is 2-8 px, at the warm-up corner. 95-99% of it is in `draw`,
+  and it does not depend on night, enemies, towers or the UI.
+- **Control that tells the arms apart:** `nowarmup` and `cornerlight` both remove C. They
+  touch only the corner, from opposite sides: no corner draws, or corner draws lit early.
+  `kitunlit` draws the same kinds unlit and keeps C. So the cost is the lit variant of the
+  warm-up's kinds, compiled the first time a light's rect meets them.
+- **Frame B is mostly the same lit variants.** A light over just the corner in frames 1-3
+  also removes B (27-36 ms in the wave-call frame against 535-1245 ms), and F1 grows by about
+  B's size. B1 and the C fix are one warm-up: one small light over the warm-up corner.
+- **Do not light the whole board.** A board-covering warm light leaves nothing unlit in
+  frames 1-3, so the unlit variants then compile on the first frame without it (#4,
+  119-215 ms, 6/6 runs). The corner light and `warmkit` light only a small part of the
+  board, so both variant sets compile inside frame A (no such frame in the 5 runs at normal
+  load).
+- Correction to S1: its `noui` and `nofx` arms never applied. `main.game` is still null
+  inside the probe's `_initialize` (`P92_MAIN game=false` in all six logs), and
+  `sanity_fx.visible` does not exist on a Node. S5 applies those options on the first
+  `_process`, before the first draw (`ui_vis=false`, `light_vis=false` in `P92_LIGHTS`).
+  S1's conclusion still holds: frame A is 302-409 ms with no UI and 358-459 ms with no
+  lights/fog, against 287-681 ms in `wave` in the same batch.
+- Machine state: `uptime` 8.81 / 6.66 / 4.54 at the start and 5.51 / 14.29 / 25.85 at the
+  end (another agent's headless tests ran in between). Per-run 1-min load before/after was
+  5.9-10 in 30 of 39 runs. The others: 15-46 (marked by their slower F1) and one 194
+  (excluded). `/usr/bin/time -p` real/user/sys 9.4-21.1 / 4.7-10.8 / 1.7-3.3 s; user+sys is
+  0.6-0.85 of real, so the process was busy. The verdicts above hold in every run, in both
+  speed classes. The B/C sizes vary with load; their presence does not. Scratchpad:
+  `lt92c/run.sh`, `summarize.py`, `summary.txt`, `runs.txt`, one log per run.
+- Not measured: the first tower shot. No bot run fired within 7 s (0 `SHOT` events). The
+  measure slice runs long enough to cover the first shot and the first kill at night.
 
 ## Effect on a future menu or intro
 
@@ -192,38 +263,106 @@ or newly drawn area). Not diagnosed here.
   the same amount (fast class ~300 -> ~700 ms), so total startup is unchanged. A one- or
   two-frame tint is possible if the warm uses `night` (0.01 is invisible). The warm must cover
   the variants the night really uses. The probe warmed the glow and the beam; tower lights are
-  the same light type. It does not fix frame C.
+  the same light type. S5 refines this: the warm light should sit over the FxLayer warm-up
+  corner, not the lighthouse. That removes B and C together (Frame C, edit map).
 - **B2: accept.** Benefit: no code. Risk: a visible stall on every run's first wave call, on
   this hardware.
 
-## Edit map for B1 (code slice)
+## Edit map (one code slice: loading frame for A, warm light for B and C)
 
-- `scenes/lighting.gd`:
-  - A new `const WARM_FRAMES := 3` next to the other constants (around line 44) and
-    `var _warm_left := WARM_FRAMES`.
-  - `_ready()` (83-104): create one dedicated `WarmLight` with `_light("WarmLight",
-    _glow_texture(), BEAM_COLOR, WARM_ENERGY, <glow scale>)` at the lighthouse centre,
-    visible. `WARM_ENERGY` is about 0.01 (the code slice checks whether 0.0 still selects the
-    lit variant; if it does, use 0.0).
-  - `_process()` (107-112): count `_warm_left` down and `queue_free()` the warm light at 0.
-  - Do **not** reuse the beam/glow visibility for this. `tests/lighting_test.gd:93` asserts
-    `beam.visible == false` by day after one awaited frame, and a dedicated node keeps every
-    current day/night rule unchanged.
-- Test (new, in `tests/lighting_test.gd`): after setup a `WarmLight` child exists, is visible,
-  and is gone after `WARM_FRAMES` processed frames; beam and glow stay invisible by day
-  throughout. Control: `WARM_FRAMES := 0` (or skip the node) makes it fail.
-- Before/after measure: this slice's probe (appendix) with `--bot`, against the base commit
-  and the fix commit, each from its own worktree, 4 runs per arm, interleaved, load gate as
-  here. Pass: no frame over 150 ms in the frame after the wave call, in 4/4 fix runs (a draw
-  step under 100 ms). Expected: base shows frame B in 4/4, and the fix's F1 grows by about
-  frame B's size (that growth is the control that the warm drew).
+**1. Loading frame (A).** `scenes/main.gd`:
+- `_ready()` (24-50): config loading and the three refusal checks stay synchronous, so a
+  refusal never shows "Loading" and `main_boot_test` is unchanged. After
+  `config = result.config` and the print, show the loading frame and start the game one frame
+  later, instead of calling `start_game()` directly:
+  - new `_show_loading()`: a `CanvasLayer` (layer above the game's UI layer) named
+    `Loading`, holding a centred `Label` "Loading..." (plain theme font, no custom
+    material, so its own first frame stays at the 30-75 ms of the `label`/`menu` arms).
+  - then `await get_tree().process_frame` **twice**. The first one fires before frame 1's
+    draw and the second after it, so the label is drawn and presented once. Do not await
+    `RenderingServer.frame_post_draw`: headless test runs must not depend on a draw signal.
+  - then `start_game()`, and free the loading layer in the same call. The window keeps
+    showing the presented "Loading..." frame while the heavy first game frame draws, and the
+    game frame replaces it.
+- `start_game()` (54-64) stays as is: restart calls it directly, with no loading frame (the
+  shaders are compiled by then).
+- `tests/scene_game_test.gd` `test_restart_button_creates_a_fresh_game` (317-) awaits one
+  `process_frame` after adding `main.tscn` and then reads `_main.game`. It must await until
+  the game exists (two more frames). This is the only test that instances `main.tscn`.
 
-## Appendix: probe92.gd (throwaway, removed)
+**2. Warm light (B and C, one mechanism).** `scenes/lighting.gd`:
+- Constants near line 44: `const WARM_FRAMES := 3`. `const WARM_ENERGY := 0.01` (the code
+  slice checks whether 0.0 still selects the lit variant; if it does, use 0.0). Also a
+  constant for the rect the light must cover, taken from FxLayer (below), not repeated.
+- `_ready()` (83-104): add one dedicated `WarmLight` = `_light("WarmLight", _glow_texture(),
+  BEAM_COLOR, WARM_ENERGY, <scale>)`. Position and scale it so its rect covers
+  `FxLayer.WARMUP_RECT` and stays far smaller than the board. The probe used centre (4,5) and
+  `texture_scale` 0.1 (25.6 px). Visible from the first frame and **independent of
+  `night`**: `_apply_night()` must not touch it.
+- `_process()` (107-112): count `_warm_left` down once per processed frame and
+  `queue_free()` the light at 0 (`warm_light = null`).
+- Do not reuse beam/glow visibility or `night`. That keeps every day/night rule and
+  `tests/lighting_test.gd:93` (`beam.visible == false` by day) unchanged. Do not cover the
+  board: see `warmlight` (a 119-215 ms frame when the light goes away).
+
+`scenes/board/fx_layer.gd`:
+- Name the warm-up area: `const WARMUP_RECT := Rect2(0, 0, 10, 10)` (board-local, holds every
+  `_draw_warmup` draw incl. widths). `_draw_warmup()` (313-321) draws only inside it, and
+  `Lighting` sizes the warm light from it. A later move of the warm-up then moves the light
+  with it.
+- Doc comment on `_draw_warmup` and at the top of the file: the warm-up runs lit in the first
+  `Lighting.WARM_FRAMES` frames and unlit afterwards, so both variant sets compile inside
+  frame A. Without the light, the beam's rect reaching this corner ~1 s into the first night
+  was LT-92 frame C.
+- Optional, judged in the slice: add `draw_rect`, a filled `draw_circle` and `draw_string`
+  to the warm-up kinds while warm frames run. These are the kinds drawn under tower lights at
+  night (plates, glyphs, enemies, HP bars). `warmkit` shows they cost nothing extra; whether
+  they are needed is for the measure slice's first-shot/first-kill window to say. If added,
+  gate them to `Lighting.WARM_FRAMES` (draw-once kinds, no `_*_drawn` flag), not to the
+  per-shot flags.
+
+**3. Before/after measure (measure slice).** Recreate `probe92c.gd` from the appendix in the
+base worktree (0c6f17b/8a97f00) and in the fix worktree. Arms, interleaved base/fix,
+4 runs each, load gate < 10, `uptime` and `/usr/bin/time -p` per run, every window
+`--mute`:
+- `--bot --probe-secs=25` (LT-90 conditions; long enough for the first shot and kill at
+  night: check `SHOT` in the frame `sim` column).
+- `--wave --probe-secs=8`.
+- `plain` (no probe, `--quit-after 900 -- --seed=4242 --frame-stats --mute`): the game's own
+  spike log.
+
+Pass, in 4/4 fix runs: no frame over 150 ms after the loading frame and the first game frame
+(the wave-call frame and the rotation -2.69 frame both under 100 ms of draw). The first probe
+frame is the loading frame (30-75 ms, `draws` ~1). The next frame is the heavy one.
+Controls: base shows B and C in 4/4. The fix's heavy first game frame grows by about B+C (the
+warm light did draw). A `Loading` node is present in the first probe frame and gone after
+the game starts (log it from the probe).
+
+**4. Behaviours the tests must pin, with suggested control reverts (6-8).**
+
+| # | behaviour (test file) | control revert (code, never the test) |
+|---|---|---|
+| 1 | The WarmLight exists and is visible on the first frame, with `night` 0 and beam/glow invisible (`lighting_test.gd`) | do not create the light |
+| 2 | The WarmLight's rect (global AABB of texture size × scale) contains `FxLayer.WARMUP_RECT` (`lighting_test.gd`) | position it at the lighthouse centre, as `botwarm` did |
+| 3 | The WarmLight's rect is much smaller than the board world rect (e.g. < 1/16 of its area), so unlit variants still compile in frame A (`lighting_test.gd`) | scale it to cover the board (the `warmlight` arm) |
+| 4 | The WarmLight is gone after `WARM_FRAMES` processed frames and the scene has no other warm node (`lighting_test.gd`) | never `queue_free` it |
+| 5 | Day/night rules are unchanged during warm frames: `night` 0, beam/glow/tower lights invisible, `night` not changed by the warm-up (`lighting_test.gd`) | warm via `night = 0.01` instead of a dedicated light |
+| 6 | Every `_draw_warmup` draw lies inside `FxLayer.WARMUP_RECT` (spy layer recording draw positions, `lt62_fps_test.gd`) | move one warm-up draw out of the rect, e.g. to (20, 20) |
+| 7 | Boot draws a `Loading` layer before the game: right after `_ready`, `main.game` is null and the `Loading` layer exists; after two frames `main.game` exists and `Loading` is gone (new test in `main_boot_test.gd` or `scene_game_test.gd`) | call `start_game()` synchronously in `_ready` |
+| 8 | Restart creates the fresh game with no `Loading` layer (`scene_game_test.gd` restart test) | route the restart through the loading path |
+
+Controls 1-5 are in one test binary (`lighting_test.gd`) and 7-8 in the boot/scene tests, so
+group them by file in the tests slice's single control script.
+
+## Appendix: probe92c.gd (throwaway, removed)
 
 Copy it into the worktree root. Run:
-`/Applications/Godot.app/Contents/MacOS/Godot --path . --audio-driver Dummy -s probe92.gd --
---seed=4242 --frame-stats --mute --probe-secs=6 [--bot|--build|--wave] [--fg=0.5] [--warm=3]
-[--nomain|--menu=1.5] [--noui] [--nofx]`
+`/Applications/Godot.app/Contents/MacOS/Godot --path . --audio-driver Dummy -s probe92c.gd --
+--seed=4242 --frame-stats --mute --probe-secs=7 [--bot|--build|--wave] [--fg=0.5] [--warm=3]
+[--nomain|--menu=1.5] [--noui] [--nofx] [--night1] [--nolitent] [--hideent] [--nowarmup]
+[--warmlight=3] [--cornerlight=3] [--warmkit=3]`. `P92_LIGHTS` (first frame) prints the light
+geometry and which options applied. Each `F` line also carries `ep=` (enemy board positions)
+and `br=` (first beam's rotation).
 
 ```gdscript
 extends SceneTree
@@ -232,7 +371,9 @@ extends SceneTree
 ## node), gap (tail -> frame_pre_draw), draw (pre -> post draw, incl. swap) and wait (time
 ## after post_draw not spent in physics, i.e. OS event processing and frame pacing).
 ## Args (after `--`): --probe-secs=<s> --fg=<s> (window_move_to_foreground at wall s)
-## --nofx (hide lighting + sanity_fx) --noui (hide the UI CanvasLayer) --nomain (no main scene)
+## --nofx (hide lighting + sanity_fx layers) --noui (hide the UI CanvasLayer) --nomain (no main scene)
+## S5 (frame C): --night1 --nolitent --hideent --nowarmup --warmlight=<n> --cornerlight=<n>
+## --warmkit=<n>; game options apply on the first _process (main.game is null in _initialize).
 var main: Node
 var t0 := 0
 var init_us := 0
@@ -256,6 +397,13 @@ var menu_node: Node
 var do_build := false
 var do_wave := false
 var warm := 0  ## frames during which lighting.night is set to 0.01 (lights drawn, ~invisible)
+var night1 := false  ## C: night jumps to 1.0 at the wave call
+var nolitent := false  ## C: EntityLayer.light_mask = 0 (enemies never lit)
+var warmlight := 0  ## C: frames a board-covering PointLight2D stays on (B1 candidate)
+var warmkit := 0  ## C: frames a Node2D drawing enemy-like primitives sits at the lighthouse
+var wl: PointLight2D
+var kit: Node2D
+var lights_logged := false
 const ORDER := ["rifleman", "necronomicon_reader", "rifleman", "resonator", "harpooner", "elder_sign"]
 
 
@@ -280,6 +428,10 @@ func _initialize() -> void:
 	do_build = _arg("--bot", "") != "" or _arg("--build", "") != ""
 	do_wave = _arg("--bot", "") != "" or _arg("--wave", "") != ""
 	warm = int(_arg("--warm", "0"))
+	night1 = _arg("--night1", "") != ""
+	nolitent = _arg("--nolitent", "") != ""
+	warmlight = int(_arg("--warmlight", "0"))
+	warmkit = int(_arg("--warmkit", "0"))
 	print("P92_INIT t=%.3f ds=%s win=%s pos=%s focus=%s screen_scale=%.1f" % [
 		init_us / 1e6, DisplayServer.get_name(), DisplayServer.window_get_size(),
 		DisplayServer.window_get_position(), DisplayServer.window_is_focused(),
@@ -303,14 +455,7 @@ func _initialize() -> void:
 		root.add_child(main)
 		var g: Game = main.game
 		if g != null:
-			if _arg("--nofx", "") != "":
-				g.lighting.visible = false
-				g.sanity_fx.visible = false
-				for c in g.sanity_fx.get_children():
-					if c is CanvasLayer:
-						c.visible = false
-			if _arg("--noui", "") != "":
-				(g.get_node("UI") as CanvasLayer).visible = false
+			pass
 	var b := Time.get_ticks_usec()
 	print("P92_MAIN ready_ms=%.1f game=%s win=%s pos=%s" % [_ms(b - a),
 		main != null and main.get("game") != null, DisplayServer.window_get_size(),
@@ -318,6 +463,64 @@ func _initialize() -> void:
 	var tail := Tail.new()
 	tail.process_priority = 100000
 	root.add_child.call_deferred(tail)
+
+
+func _setup_c(g: Game) -> void:
+	var view := g.board.view
+	var r := view.world_rect()
+	if _arg("--nofx", "") != "":
+		g.lighting.visible = false
+		for c in g.sanity_fx.get_children():
+			if c is CanvasLayer:
+				c.visible = false
+	if _arg("--noui", "") != "":
+		(g.get_node("UI") as CanvasLayer).visible = false
+	if _arg("--hideent", "") != "":
+		g.board.entity_layer.visible = false
+	if nolitent:
+		g.board.entity_layer.light_mask = 0
+	if _arg("--nowarmup", "") != "":
+		g.board.fx_layer._line_drawn = true
+		g.board.fx_layer._polyline_drawn = true
+		g.board.fx_layer._polygon_drawn = true
+	if int(_arg("--cornerlight", "0")) > 0:
+		warmlight = int(_arg("--cornerlight", "0"))
+		wl = PointLight2D.new()
+		wl.name = "ProbeCornerLight"
+		wl.texture = Lighting._glow_texture()
+		wl.energy = 0.01
+		wl.blend_mode = Light2D.BLEND_MODE_ADD
+		wl.position = Vector2(4, 5)
+		wl.texture_scale = 0.1
+		g.lighting.add_child(wl)
+	if warmlight > 0:
+		wl = PointLight2D.new()
+		wl.name = "ProbeWarmLight"
+		wl.texture = Lighting._glow_texture()
+		wl.energy = 0.01
+		wl.blend_mode = Light2D.BLEND_MODE_ADD
+		wl.position = r.get_center()
+		wl.texture_scale = maxf(r.size.x, r.size.y) * 1.5 / 256.0
+		g.lighting.add_child(wl)
+	if warmkit > 0:
+		var m := g.sim.state.map
+		kit = Kit.new()
+		kit.name = "ProbeWarmKit"
+		kit.position = view.cell_to_world(m.grid.centre(m.lighthouse))
+		g.board.add_child(kit)
+
+
+class Kit extends Node2D:
+	func _draw() -> void:
+		var c := Color(1, 1, 1, 0.01)
+		draw_circle(Vector2.ZERO, 8.0, c)
+		draw_arc(Vector2.ZERO, 8.0, 0, TAU, 24, c, 2.0)
+		draw_arc(Vector2.ZERO, 9.0, 0, TAU, 24, c, 3.0)
+		draw_line(Vector2(-6, 0), Vector2(6, 0), c, 3.0)
+		draw_rect(Rect2(-6, 10, 12, 2), c)
+		draw_colored_polygon(PackedVector2Array([Vector2(0, -4), Vector2(4, 4), Vector2(-4, 4)]), c)
+		draw_polyline(PackedVector2Array([Vector2(-4, -6), Vector2(0, -8), Vector2(4, -6)]), c, 3.0)
+		draw_string(ThemeDB.fallback_font, Vector2(-4, -10), "R", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, c)
 
 
 class Tail extends Node:
@@ -350,11 +553,37 @@ func _process(delta: float) -> bool:
 		warm -= 1
 		g0.lighting.night = 0.01
 		events.append("warm")
+	if g0 != null and not lights_logged:
+		lights_logged = true
+		_setup_c(g0)
+		var v := g0.board.view
+		var mm := g0.sim.state.map
+		print("P92_LIGHTS lh=%s glow_half=%.1f beam_half=%.1f world=%s ent_mask=%d ent_vis=%s ui_vis=%s light_vis=%s wl=%s kit=%s fxwarm=%s" % [
+			v.cell_to_world(mm.grid.centre(mm.lighthouse)),
+			g0.lighting.glow.texture_scale * 128.0, g0.lighting.beam.texture_scale * 128.0,
+			v.world_rect(), g0.board.entity_layer.light_mask, g0.board.entity_layer.visible, (g0.get_node("UI") as CanvasLayer).visible, g0.lighting.visible, wl != null, kit != null, not g0.board.fx_layer._line_drawn])
+	if wl != null:
+		warmlight -= 1
+		events.append("wl")
+		if warmlight < 0:
+			wl.queue_free()
+			wl = null
+			events.append("wl_free")
+	if kit != null:
+		warmkit -= 1
+		events.append("kit")
+		if warmkit < 0:
+			kit.queue_free()
+			kit = null
+			events.append("kit_free")
 	if bot and not bot_done and sum_t > 0.5 and main != null and main.get("game") != null:
 		bot_done = true
 		var b0 := Time.get_ticks_usec()
 		var n := _bot(main.game)
 		events.append("bot%d_ms%.1f@%.3f" % [n, _ms(Time.get_ticks_usec() - b0), now / 1e6])
+		if night1 and g0 != null:
+			g0.lighting.night = 1.0
+			events.append("night1")
 	if last_head > 0:
 		var ms := _ms(now - last_head)
 		var tl := int(Engine.get_meta("tail_us", last_head))
@@ -363,14 +592,15 @@ func _process(delta: float) -> bool:
 		if phys_us > post_us:
 			phys = now - phys_us
 		max_ms = maxf(max_ms, ms)
-		print("F %d t=%.3f ms=%.1f proc=%.1f gap=%.1f draw=%.1f wait=%.1f phys=%.1f d=%.3f draws=%d foc=%s win=%s night=%.3f en=%d tw=%d sim=%s ev=%s" % [
+		print("F %d t=%.3f ms=%.1f proc=%.1f gap=%.1f draw=%.1f wait=%.1f phys=%.1f d=%.3f draws=%d foc=%s win=%s night=%.3f en=%d tw=%d sim=%s ep=%s br=%.2f ev=%s" % [
 			frame, last_head / 1e6, ms, _ms(tl - last_head), _ms(pre_us - tl), _ms(post_us - pre_us),
 			_ms(after - phys), _ms(phys), delta,
 			int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)),
 			DisplayServer.window_is_focused(), DisplayServer.window_get_size(),
 			g0.lighting.night if g0 != null else -1.0, g0.sim.state.enemies.size() if g0 != null else -1,
 			g0.sim.state.towers.size() if g0 != null else -1,
-			str(g0._frame_events).replace(" ", "") if g0 != null else "", ",".join(events)])
+			str(g0._frame_events).replace(" ", "") if g0 != null else "", _ep(g0),
+			g0.lighting.beam.rotation if g0 != null else 0.0, ",".join(events)])
 	else:
 		print("P92_FIRST_PROC t=%.3f since_init_ms=%.1f ev=%s" % [now / 1e6, _ms(now - init_us), ",".join(events)])
 	events.clear()
@@ -381,6 +611,17 @@ func _process(delta: float) -> bool:
 			DisplayServer.window_is_focused()])
 		return true
 	return false
+
+
+func _ep(g: Game) -> String:
+	if g == null:
+		return "-"
+	var out := PackedStringArray()
+	for e in g.sim.state.enemies:
+		if e.is_live():
+			var p := g.board.view.cell_to_world(g.sim.enemy_position(e, 0.0))
+			out.append("%d,%d" % [int(p.x), int(p.y)])
+	return ";".join(out) if out.size() > 0 else "-"
 
 
 ## LT-90 occult bot, one shot: builds what it can on the best cells, then calls the wave.
