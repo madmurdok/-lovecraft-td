@@ -152,13 +152,21 @@ func _refresh_oil() -> void:
 		oil_label.text += "\nFlare: %d oil, whole map, %s s; fired at night." % [
 			sim.flare_cost_oil(), ConfigReader.fmt(sim.flare_seconds())]
 	var buy := sim.can_buy_oil()
-	if eco.flare != null:
-		var units := sim.oil_for_flare()
-		if units == 0:
-			units = sim.flare_cost_oil()
-		oil_button.text = "Buy oil for a flare (%s)" % TowerText.money(units * eco.oil.price)
-	else:
-		oil_button.text = "Buy oil (%s)" % TowerText.money(eco.oil.price)
+	oil_button.text = buy_oil_text(sim)
 	if buy != SimCommand.CommandResult.OK and CommandText.panel_reason(buy) != "":
 		oil_button.text += "\n" + CommandText.panel_reason(buy)
 	oil_button.disabled = buy != SimCommand.CommandResult.OK
+
+
+## LT-119: the "Buy oil" label with the price of one click (Game.commands.buy_flare_oil),
+## shared by this panel and the HUD footer button. With a flare, one flare's missing oil
+## (a full flare's worth when nothing is missing), else one unit; price from config.
+## Needs economy.oil.
+static func buy_oil_text(sim: Simulation) -> String:
+	var eco := sim.config.economy
+	if eco.flare == null:
+		return "Buy oil (%s)" % TowerText.money(eco.oil.price)
+	var units := sim.oil_for_flare()
+	if units == 0:
+		units = sim.flare_cost_oil()
+	return "Buy oil for a flare (%s)" % TowerText.money(units * eco.oil.price)
