@@ -4,7 +4,8 @@ extends VBoxContainer
 ## crew button while crew is on. One row per crew kind (crew.json order): "Harpooners: 4 in
 ## reserve, 2 on duty" over a "Hire (+1, $25)" button, disabled with the reason whenever
 ## Simulation.can_hire refuses (by day only). A short note says how the reserve is used:
-## new towers take their crew from it, and at night a free cell takes a reserve post.
+## a crewed tower takes men from it first and hires the rest at build (LT-118), and at
+## night a free cell takes a reserve post.
 ## LT-78: one field group, rebuilt only when a sim event marks it (REFRESH_ON, flush);
 ## open() syncs it. `visible` is "the crew view is shown"; SidePanel shows its idle text
 ## otherwise.
@@ -112,7 +113,7 @@ func _rebuild(mask: int) -> void:
 			b.text += " (%s)" % CommandText.reason(r, "hire")
 	var post := sim.config.crew.post if sim.config.crew_on() else null
 	note_label.text = "" if post == null else (
-		"A new tower takes its crew from the reserve first (cheaper build).\n"
+		"A crewed tower takes men from the reserve first; any it lacks are hired at build.\n"
 		+ "At night, click a free cell to deploy a reserve post: %d men of one kind,"
 		+ " fighting as riflemen. Posts return to the reserve at dawn.") % post.crew
 
