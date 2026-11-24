@@ -141,8 +141,9 @@ func test_picker_cost_is_the_build_price_and_names_reserve_men() -> void:
 	var price := _game.sim.build_price(RIFLE)
 	assert_int(price).is_less(cost)
 	assert_str(pk.costs[RIFLE].text).is_equal(TowerText.cost_text(price))
-	assert_str(pk.buttons[RIFLE].tooltip_text).contains("uses %d %s from the reserve" % [need,
-		_game.sim.config.crew.crews[RIFLE].name])
+	# LT-118: the tooltip's price split names the men the reserve gives.
+	assert_str(pk.buttons[RIFLE].tooltip_text).contains("%s: %d from the reserve" % [
+		_game.sim.config.crew.crews[RIFLE].name, need])
 
 
 ## At night the post rows show, one per crew kind, enabled when can_deploy accepts; the title

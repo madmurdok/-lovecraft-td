@@ -443,10 +443,12 @@ func test_tooltip_second_line_spells_out_the_trait() -> void:
 	for id: String in want:
 		var lines := _game.picker.buttons[id].tooltip_text.split("\n")
 		assert_str(lines[0]).override_failure_message(id).is_equal(_tip(id))
+		# LT-118: a crewed tower adds its price split as the last line.
+		var crew := 1 if _game.sim.crew_need(id) > 0 else 0
 		if want[id].is_empty():
-			assert_int(lines.size()).override_failure_message(id).is_equal(1)
+			assert_int(lines.size()).override_failure_message(id).is_equal(1 + crew)
 		else:
-			assert_int(lines.size()).override_failure_message(id).is_equal(2)
+			assert_int(lines.size()).override_failure_message(id).is_equal(2 + crew)
 			assert_str(lines[1]).override_failure_message(id).is_equal(want[id])
 	# Refused: line 1 carries the reason, line 2 stays.
 	_game.sim.state.gold = 0

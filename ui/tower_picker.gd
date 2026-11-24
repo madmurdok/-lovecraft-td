@@ -13,7 +13,10 @@ extends VBoxContainer
 ## marks the Trait cell red with "!". Past LIST_MAX_ROWS rows the rows scroll under the
 ## pinned first group line. Cancel, Esc, or a click elsewhere on the board closes it.
 ## LT-32 §4 (crew on): by day a row's cost is Simulation.build_price (the reserve covers
-## crew) and its tooltip says how many men it takes from the reserve; at night a post
+## crew). LT-118: a crewed row also shows a small crew mark at the right of its name cell
+## (by day): "res 2" (the reserve covers the crew), "hire 2" (hired at build) or
+## "res 1·hire 1", and its tooltip's last line splits the price into the frame and the
+## crew (crew_price_text). At night a post
 ## section above the rows lists one "Post: 2 Harpooners (4 in reserve)" row per crew kind,
 ## enabled when Simulation.can_deploy accepts it; a click deploys that reserve post (not a
 ## tower: no glyph ghost, its hover card is the post's). The title then reads "Deploy a
@@ -60,6 +63,11 @@ const GROUP_H := 16
 const ROW_H := 18
 const SEPARATOR_H := 9
 const LIST_MAX_ROWS := 14  ## LT-61 §5: more rows scroll inside the list
+## LT-118: the crew mark at the right of a crewed row's name; at 9 px the widest mark
+## ("res 1·hire 1") leaves the short names their full FONT_SIZE.
+const CREW_FONT_SIZE := 9
+const CREW_GAP := 3  ## LT-118: between a name and its crew mark
+const CREW_MARK_COLOR := Color(0.6, 0.8, 0.95)  ## LT-118: muted blue, apart from $ and names
 ## LT-61 §3: column heads on the first group line: [text, tooltip, width].
 const HEADS := [
 	["$", "Cost", COST_W + COST_GAP],
@@ -86,6 +94,9 @@ var buttons: Dictionary[String, Button] = {}  ## tower def id -> its row button
 var costs: Dictionary[String, Label] = {}  ## tower def id -> its cost cell
 var cells: Dictionary[String, Dictionary] = {}  ## tower def id -> "dps"/"trait" -> its cell
 var names: Dictionary[String, Label] = {}  ## tower def id -> its name label
+## LT-118: crewed tower def id -> its crew mark (a child of the name label, right-aligned);
+## crew on only.
+var crew_marks: Dictionary[String, Label] = {}
 var hovered := ""  ## def id of the hovered row, "" for none
 var title_label: Label  ## "Build here", or the refusal every row shares
 var cancel_button: Button  ## right of the title
@@ -230,6 +241,14 @@ func _row(id: String, def: TowerDef) -> Button:
 	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	names[id] = name_label
 	h.add_child(name_label)
+	if game.sim.crew_need(id) > 0:
+		var mark := _cell("CrewMark", "", CREW_MARK_COLOR)
+		mark.add_theme_font_size_override("font_size", CREW_FONT_SIZE)
+		mark.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		mark.clip_text = false
+		mark.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		name_label.add_child(mark)
+		crew_marks[id] = mark
 	var cost := _value("Cost", TowerText.cost_text(def.cost), StatsTable.COLOR_VALUE, COST_W)
 	costs[id] = cost
 	h.add_child(cost)
@@ -248,11 +267,23 @@ func _row(id: String, def: TowerDef) -> Button:
 
 ## LT-61 §5: each name at FONT_SIZE, shrunk towards NAME_FONT_MIN while it is wider than
 ## NAME_W less `bar_w` (the scrollbar while the rows scroll); still too wide, it ends in an
-## ellipsis.
+## ellipsis. LT-118: a crewed row's name also leaves room for its widest crew mark (the
+## mixed one), so the mark never covers the name whatever the reserve holds.
 func _fit_names(bar_w: int) -> void:
-	var avail := NAME_W - bar_w
 	for id: String in names:
 		var l := names[id]
+		var avail := NAME_W - bar_w
+		if crew_marks.has(id):
+			var m := crew_marks[id]
+			var need := game.sim.crew_need(id)
+			var widest := crew_mark_text(maxi(need - 1, 0), mini(need, 1))
+			var room := ceili(m.get_theme_font("font").get_string_size(widest,
+				HORIZONTAL_ALIGNMENT_LEFT, -1, CREW_FONT_SIZE).x) + CREW_GAP
+			avail -= room
+			# The name's text (and its ellipsis) ends left of the mark.
+			var box := StyleBoxEmpty.new()
+			box.content_margin_right = room
+			l.add_theme_stylebox_override("normal", box)
 		var font := l.get_theme_font("font")
 		var fs := FONT_SIZE
 		while fs > NAME_FONT_MIN and font.get_string_size(l.text, HORIZONTAL_ALIGNMENT_LEFT, -1,
@@ -324,17 +355,20 @@ func refresh() -> void:
 		names[id].modulate = dim
 		cost.modulate = Color.WHITE if poor else dim
 		var tip := def.name + TowerText.DASH + TowerText.cost_text(price)
-		var from_reserve := _from_reserve(id)
-		if from_reserve > 0:
-			tip += "\nuses %d %s from the reserve" % [from_reserve,
-				game.sim.config.crew.crews[id].name]
 		if b.disabled:
 			tip += " (%s)" % CommandText.reason(r)
 		elif mad:
 			tip += TowerText.MADNESS_WARNING
+		if crew_marks.has(id):  # LT-118: where the crew comes from
+			var from_reserve := _from_reserve(id)
+			var hired := game.sim.crew_need(id) - from_reserve
+			crew_marks[id].text = crew_mark_text(from_reserve, hired)
+			crew_marks[id].visible = game.sim.state.phase != SimState.Phase.WAVE
 		var trait_tip := _trait_tip(base)
 		if not trait_tip.is_empty():
 			tip += "\n" + trait_tip
+		if crew_marks.has(id):  # LT-118: the price split, after the trait line (LT-61 §3)
+			tip += "\n" + crew_price_text(game.sim, id)
 		b.tooltip_text = tip
 	# Every row poor: can_build reports gold before the phase, so the title says the night
 	# itself, or by day that nothing is affordable.
@@ -352,6 +386,37 @@ func refresh() -> void:
 	var why := CommandText.reason(shared)
 	title_label.text = why.left(1).to_upper() + why.substr(1) if refused else title
 	title_label.add_theme_color_override("font_color", STATUS_COLOR if refused else Color.WHITE)
+
+
+## LT-118: the row's crew mark for a build taking `from_reserve` men from the reserve and
+## hiring `hired`: "res 2", "hire 2" or "res 1·hire 1"; "" when both are 0.
+static func crew_mark_text(from_reserve: int, hired: int) -> String:
+	var parts: PackedStringArray = []
+	if from_reserve > 0:
+		parts.append("res %d" % from_reserve)
+	if hired > 0:
+		parts.append("hire %d" % hired)
+	return "·".join(parts)
+
+
+## LT-118: the price split of crewed tower `def_id` now (the tooltip's last line), e.g. "Frame $20 +
+## Harpooners: 2 from the reserve" / "Frame $20 + Harpooners: hire 2 × $25" / "Frame $20 +
+## Harpooners: 1 from the reserve, hire 1 × $25"; "" when the def needs no crew (or crew is
+## off).
+static func crew_price_text(sim: Simulation, def_id: String) -> String:
+	var need := sim.crew_need(def_id)
+	if need == 0:
+		return ""
+	var crew: CrewConfig.CrewKind = sim.config.crew.crews[def_id]
+	var from_reserve := mini(need, sim.crew_reserve().get(def_id, 0))
+	var hired := need - from_reserve
+	var parts: PackedStringArray = []
+	if from_reserve > 0:
+		parts.append("%d from the reserve" % from_reserve)
+	if hired > 0:
+		parts.append("hire %d × %s" % [hired, TowerText.money(crew.hire)])
+	return "Frame %s + %s: %s" % [TowerText.money(sim.frame_price(def_id)), crew.name,
+		", ".join(parts)]
 
 
 ## LT-32 §4: men of crewed tower `def_id` a build would take from the reserve now (0 when

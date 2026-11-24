@@ -640,6 +640,11 @@ func build_price(def_id: String) -> int:
 	return _crew.build_price(def_id)
 
 
+## LT-118: the frame part of a crewed def's price (def.cost when uncrewed or crew is off).
+func frame_price(def_id: String) -> int:
+	return _crew.frame_price(def_id)
+
+
 func can_hire(kind: String) -> SimCommand.CommandResult:
 	return _crew.can_hire(kind)
 
