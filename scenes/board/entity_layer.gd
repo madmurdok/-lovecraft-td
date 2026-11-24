@@ -3,7 +3,9 @@ extends BoardLayer
 ## LT-84 (LT-65 §3.4): the board's entities, drawn each board redraw above the phantom path
 ## and below the effects: aura discs (Elder Sign ward, Searchlight sweep), towers (plate
 ## tinted by lit / shadow state and the BUILD preview, OverlayLayer.preview_cast), enemies
-## (interpolated by the clock alpha, flicker, markers, HP bars) and summoned allies. Reads
+## (interpolated by the clock alpha, flicker, markers, HP bars) and summoned allies. LT-32:
+## a reserve post (SimTower.post) is not a tower: its men are drawn as small rifleman
+## figures (_draw_post), with no plate, letter, border or level pips. Reads
 ## sim state only. Writes `board.last_pos` (enemy id -> drawn position), which the ward
 ## pulse, FxLayer's hit positions and astray spots read.
 
@@ -18,6 +20,8 @@ const SHADOW_TINT := Color(0.5, 0.28, 0.95)
 const LIT_BORDER := Color(2.8, 1.7, 0.35)
 const SHADOW_BORDER := Color(1.5, 0.7, 3.2)
 const PREVIEW_TINT_WEIGHT := 0.55
+## LT-117: a disabled tower's plate (t.disabled, e.g. a night-gaunt lift) is darkened by this.
+const DISABLED_DIM := 0.6
 const STATE_BORDER := 3.0
 const PREVIEW_BORDER := 2.0
 const SHADOW_MARK_COLOR := Color(0.22, 0.12, 0.4)  ## LT-70 §5: the shadowed corner dot
@@ -66,6 +70,14 @@ const REVEALED_SLASH_CELLS := 0.3  ## half length of the slash
 ## LT-52 Summoning Circle: the tower's rim and letter, a faint leash ring (summon_leash) and
 ## its units: a bone body with a violet rim (a Byakhee also gets two wing strokes), a teal
 ## HP bar under the body (enemy bars are red, above), a claw line to the enemy it holds.
+## LT-32 §4: a reserve post's figures. The night CanvasModulate (~0.3) would sink the
+## attack colour, so the figures are drawn brighter than 1 (as the state borders are),
+## over a dark rim that keeps them apart from the tile.
+const POST_GLOW := 2.6  ## multiplier on the attack colour of a post's figures
+const POST_RIM := Color(0.02, 0.02, 0.03)
+const POST_SPREAD_CELLS := 0.3  ## between two figures' centres
+const POST_HEAD_CELLS := 0.07  ## head radius
+const POST_BODY_CELLS := 0.2  ## body length, neck to feet
 const SUMMON_COLOR := Color(2.2, 0.8, 1.7)
 const ALLY_BODY := Color(0.86, 0.8, 0.68)
 const ALLY_HP := Color(0.35, 1.6, 1.25)
@@ -107,7 +119,13 @@ static func attack_color(kind: String) -> Color:
 ## LT-70 §5: the tower plate colour from the net sim flags: amber when lit, violet when
 ## shadowed (never both: cancelled is neither), else COLOR_TOWER; with neither flag, a
 ## `preview` "light" / "shadow" (preview_cast) mixes the same tint in at PREVIEW_TINT_WEIGHT.
+## LT-117: a disabled tower (the channel's last-tick value) gets that colour DISABLED_DIM darker.
 static func plate_color(t: SimTower, preview := "") -> Color:
+	var c := _plate_tint(t, preview)
+	return c.darkened(DISABLED_DIM) if t.disabled else c
+
+
+static func _plate_tint(t: SimTower, preview: String) -> Color:
 	if t.lit:
 		return LIT_TINT
 	if t.shadowed:
@@ -145,6 +163,9 @@ static func tower_anchors(centre: Vector2) -> Dictionary:
 
 
 func _draw_tower(t: SimTower) -> void:
+	if t.post:
+		_draw_post(t)
+		return
 	var at := tower_anchors(view.cell_centre(t.cell))
 	var c := attack_color(Board.shot_kind(t))
 	var preview := board.overlay_layer.preview_cast(t)
@@ -171,6 +192,43 @@ func _draw_tower(t: SimTower) -> void:
 	if not t.branch.is_empty():
 		draw_string(ThemeDB.fallback_font, at["branch"], t.branch,
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color.BLACK)
+
+
+## LT-32 §4: a reserve post: `t.crew` small figures side by side (head, body, legs and a
+## musket held up at a slant) in its attack colour, no plate, letter, border or pips; the
+## lit / shadowed corner dot as on a tower, so the beam's effect still reads.
+func _draw_post(t: SimTower) -> void:
+	var centre := view.cell_centre(t.cell)
+	var c := attack_color(Board.shot_kind(t))
+	var glow := Color(c.r * POST_GLOW, c.g * POST_GLOW, c.b * POST_GLOW, 1.0)
+	var n := maxi(1, t.crew)
+	var step := view.cells_to_px(POST_SPREAD_CELLS)
+	var head := view.cells_to_px(POST_HEAD_CELLS)
+	var body := view.cells_to_px(POST_BODY_CELLS)
+	for i in n:
+		var x := (i - (n - 1) * 0.5) * step
+		var neck := centre + Vector2(x, -body * 0.35)
+		var hip := neck + Vector2(0, body * 0.55)
+		var lines: Array[PackedVector2Array] = [
+			PackedVector2Array([neck, hip]),  # body
+			PackedVector2Array([hip, hip + Vector2(-head, body * 0.45)]),  # legs
+			PackedVector2Array([hip, hip + Vector2(head, body * 0.45)]),
+			PackedVector2Array([neck + Vector2(-head * 0.8, body * 0.3),  # musket
+				neck + Vector2(head * 1.6, -body * 0.55)]),
+		]
+		for l in lines:
+			draw_line(l[0], l[1], POST_RIM, 4.0)
+		for l in lines:
+			draw_line(l[0], l[1], glow, 2.0)
+		var h := neck + Vector2(0, -head)
+		draw_circle(h, head + 1.0, POST_RIM)
+		draw_circle(h, head, glow)
+	var mark: Vector2 = tower_anchors(centre)["mark"]
+	if t.lit:
+		draw_circle(mark, 3.5, LIT_MARK_COLOR)
+	elif t.shadowed:
+		draw_circle(mark, 3.5, SHADOW_MARK_COLOR)
+		draw_arc(mark, 3.5, 0, TAU, 12, SHADOW_MARK_RIM, 1.0)
 
 
 ## Elder Sign wards (LT-25 §1.3): a faint ring at the aura radius with 5 slowly turning

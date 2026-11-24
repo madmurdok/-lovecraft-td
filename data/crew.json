@@ -1,0 +1,10 @@
+{
+  "enabled": true,
+  "post": { "name": "Reserve post", "crew": 2, "range": 2.5, "damage": 6, "fire_interval": 0.8 },
+  "crews": {
+    "rifleman":      { "name": "Riflemen",   "per_tower": 2, "hire": 20 },
+    "harpooner":     { "name": "Harpooners", "per_tower": 2, "hire": 25 },
+    "dynamite_crew": { "name": "Sappers",    "per_tower": 2, "hire": 30 },
+    "coast_battery": { "name": "Gunners",    "per_tower": 3, "hire": 30 }
+  }
+}

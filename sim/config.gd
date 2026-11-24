@@ -19,6 +19,7 @@ const WAVES_FILE := "waves.json"
 const ECONOMY_FILE := "economy.json"
 const SANITY_FILE := "sanity.json"
 const MAP_FILE := "map.json"
+const CREW_FILE := "crew.json"  ## LT-32: optional; absent = crew off
 
 var towers: Dictionary[String, TowerDef] = {}
 var enemies: Dictionary[String, EnemyDef] = {}
@@ -26,6 +27,9 @@ var waves: WavesConfig
 var economy: EconomyConfig
 var sanity: SanityConfig
 var map: MapDef
+## LT-32 §2.1: crew.json, or null when the file is absent. Parsed (and validated) also with
+## `enabled: false`; read crew_on() for whether crew is in play.
+var crew: CrewConfig
 
 
 ## Builds and validates a config from already-parsed file roots (LT-102: the file IO is
@@ -105,6 +109,7 @@ static func _sections() -> Array[Array]:
 		[ECONOMY_FILE, _parse_economy, true],
 		[SANITY_FILE, _parse_sanity, true],
 		[MAP_FILE, _parse_map, true],
+		[CREW_FILE, _parse_crew, false],  # LT-32: last, so the older files keep their error order
 	]
 
 
@@ -130,10 +135,11 @@ static func _parse_enemies(r: ConfigReader, root: Dictionary, c: GameConfig,
 
 
 static func _parse_towers(r: ConfigReader, root: Dictionary, c: GameConfig,
-		_ctx: Dictionary) -> void:
+		ctx: Dictionary) -> void:
 	var map: Variant = _read_id_map(r, root, "towers")
 	if map == null:
 		return
+	ctx["towers_reader"] = r  # LT-32: crew.json checks its kinds only on a clean towers.json
 	for id: String in map:
 		var to: Variant = r.as_object(map[id], ConfigReader.join("towers", id))
 		if to != null:
@@ -167,6 +173,20 @@ static func _parse_sanity(r: ConfigReader, root: Dictionary, c: GameConfig,
 static func _parse_map(r: ConfigReader, root: Dictionary, c: GameConfig,
 		_ctx: Dictionary) -> void:
 	c.map = MapDef.parse(r, root)
+
+
+static func _parse_crew(r: ConfigReader, root: Dictionary, c: GameConfig,
+		ctx: Dictionary) -> void:
+	c.crew = CrewConfig.parse(r, root)
+	var tr: ConfigReader = ctx.get("towers_reader")
+	if tr != null and tr.errors.is_empty():
+		_check_crew(r, c)
+
+
+## LT-32: true when crew.json is present and `enabled` (crew in play: hire, crewed builds,
+## posts); false when the file is absent or `enabled: false`.
+func crew_on() -> bool:
+	return crew != null and crew.enabled
 
 
 ## LT-67 (debug `--sandbox`, set by scenes/game.gd): a copy of this config whose
@@ -211,6 +231,27 @@ static func _check_drops(c: GameConfig) -> Array[String]:
 					"drops"), kind), "unknown relic kind \"%s\"" % kind)
 		def.drops = ordered
 	return r.errors
+
+
+## LT-32 §2.1 cross-file check, run by _parse_crew (the crew row is after towers.json)
+## only when towers.json parsed without errors (no follow-on errors from a broken tower),
+## also with `enabled: false`: no tower is named CrewConfig.POST_ID, every crew kind is a
+## tower id, and its frame price `cost - per_tower * hire` is >= 0. Reports into `r`.
+static func _check_crew(r: ConfigReader, c: GameConfig) -> void:
+	if c.towers.has(CrewConfig.POST_ID):
+		r.error("post", "tower id \"%s\" is reserved for posts; rename it in towers.json"
+			% CrewConfig.POST_ID)
+	for id: String in c.crew.crews:
+		var path := ConfigReader.join("crews", id)
+		var def: TowerDef = c.towers.get(id)
+		if def == null:
+			r.error(path, "unknown tower \"%s\"" % id)
+			continue
+		var k: CrewConfig.CrewKind = c.crew.crews[id]
+		var crew_price := k.per_tower * k.hire
+		if def.cost - crew_price < 0:
+			r.error(path, "per_tower x hire (%d) exceeds the tower's cost (%d)"
+				% [crew_price, def.cost])
 
 
 ## Root of towers/enemies.json: {"<key>": {"<id>": {...}, ...}}. Returns the id map

@@ -462,7 +462,7 @@ func test_clicking_upgrade_and_branch_keeps_the_view_and_updates_ring_and_refund
 	var refund := _game.sim.sell_refund(t)
 	assert_str(_game.tower_panel.sell_button.text).is_equal("Sell (+$%d)" % refund)
 	if is_equal_approx(_config.economy.sell_refund_ratio, 0.7):
-		assert_int(refund).is_equal(119)  # LT-24 §2: Rifleman L3 at today's config
+		assert_int(refund).is_equal(91)  # LT-24 §2: 0.7 x 130; no crew money back (LT-32 Q6)
 
 
 # --- LT-31: target priority switch -------------------------------------------------------------

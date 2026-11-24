@@ -1,7 +1,9 @@
 {
   "tunables": {
     "build_first": 5,
-    "flare_min_live": 4
+    "flare_min_live": 4,
+    "crew_reserve": 0,
+    "post_min_live": 4
   },
   "strategies": [
     {"name": "mundane", "about": "rifleman, rifleman, harpooner repeated; never builds occult",

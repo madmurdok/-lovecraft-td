@@ -1,0 +1,8 @@
+{
+  "description": "LT-32 control: crew.json enabled false (expected identical to baseline)",
+  "patch": {
+    "crew.json": {
+      "enabled": false
+    }
+  }
+}

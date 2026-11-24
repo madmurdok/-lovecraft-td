@@ -305,10 +305,21 @@ func _replay(sim: Simulation, log: Array, end_tick: int) -> void:
 		sim.step()
 
 
+## LT-32: crew on for a test sim (the wsim config has no crew.json, so hire and deploy would
+## always be NO_CREW): the shipped data/crew.json, parsed into the sim's own config.
+func _crew_on(sim: Simulation) -> void:
+	var root: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://data/crew.json"))
+	var r := ConfigReader.new("crew.json")
+	sim.config.crew = CrewConfig.parse(r, root)
+	assert_array(r.errors).is_empty()
+	assert_bool(sim.config.crew_on()).is_true()
+
+
 func _twin() -> Array:
 	var pair: Array = []
 	for i in 2:
 		var sim := wsim([[group("deep_one", 1)]], 5)
+		_crew_on(sim)
 		sim.state.gold = 100000
 		sim.state.relics["star_stone"] = 2
 		sim.config.sanity.madness.exit_rule = "buyout"
@@ -465,7 +476,8 @@ func test_unknown_command_is_a_distinct_result() -> void:
 	assert_int(R2.UNKNOWN_COMMAND).is_equal(R2.NO_RELICS + 1)
 	assert_int(R2.BAD_ARGS).is_equal(R2.UNKNOWN_COMMAND + 1)
 	assert_int(R2.NOT_NIGHT).is_equal(R2.BAD_ARGS + 1)
-	assert_int(R2.OIL_FULL).is_equal(R2.size() - 1)
+	assert_int(R2.NOT_A_TOWER).is_equal(R2.size() - 1)  # LT-32 appended NO_CREW, RESERVE_SHORT, NOT_A_TOWER
+	assert_int(R2.NO_CREW).is_equal(R2.OIL_FULL + 1)
 	assert_int(R2.OK).is_equal(0)
 
 
@@ -489,6 +501,9 @@ const BAD_ENTRIES := {
 	"buy_oil": [[0, "buy_oil", 1], [0, "buy_oil", null]],
 	"fire_flare": [[0, "fire_flare", ""], [0, "fire_flare", 1, 2]],
 	"debug_end_night": [[0, "debug_end_night", 1], [0, "debug_end_night", null]],
+	"hire": [[0, "hire"], [0, "hire", 1], [0, "hire", "rifleman", 1]],
+	"deploy": [[0, "deploy"], [0, "deploy", "rifleman"], [0, "deploy", "rifleman", Vector2(3, 1)],
+		[0, "deploy", 1, Vector2i(3, 1)], [0, "deploy", "rifleman", Vector2i(3, 1), 1]],
 }
 
 
@@ -501,6 +516,8 @@ func _ready_sim() -> Array:
 	sim.config.sanity.madness.exit_rule = "buyout"
 	sim.state.oil = 13  # LT-30: room for buy_oil, enough for fire_flare (LT-57: cost 12, cap 16)
 	var t := build(sim, RIFLE, Vector2i(5, 1))
+	_crew_on(sim)  # after the build: the tower is uncrewed; two riflemen wait in the reserve
+	sim.state.crew["rifleman"] = 2
 	sim.drain_events()
 	# LT-30: a day sim, so upgrade_lighthouse and buy_oil would apply; fire_flare (night
 	# only) gets its own night sim in the bad-args test.
@@ -648,7 +665,7 @@ func test_commands_keys_are_the_names_log_command_writes() -> void:
 	var want: Array = Simulation.COMMANDS.keys()
 	want.sort()
 	assert_array(want).is_equal(got)
-	assert_int(want.size()).is_equal(12)
+	assert_int(want.size()).is_equal(14)
 
 
 ## Each entry: exactly the four fields; args a list of Variant types; text a String; can and
@@ -691,7 +708,9 @@ func _calls(tid: int) -> Array:
 		["set_target_priority", [tid, "strongest"]], ["set_target_priority", [9999, "strongest"]],
 		["call_wave", []], ["buy_sanity", []], ["sell_relics", ["star_stone"]],
 		["sell_relics", ["no_such_relic"]], ["debug_set_sanity", [12.0]],
-		["upgrade_lighthouse", []], ["buy_oil", []], ["fire_flare", []], ["debug_end_night", []]]
+		["upgrade_lighthouse", []], ["buy_oil", []], ["fire_flare", []], ["debug_end_night", []],
+		["hire", [RIFLE]], ["hire", ["no_such_kind"]],
+		["deploy", [RIFLE, Vector2i(9, 1)]], ["deploy", [RIFLE, Vector2i(5, 1)]]]
 
 
 ## A fresh _ready_sim in condition `st`: day, night (wave called), over (run lost), poor (no
@@ -782,7 +801,7 @@ func _issued_same_as_direct(pair: Array, name: String, args: Array, direct: Call
 		.is_equal(pair[1].state.command_log)
 
 
-## All 12 commands, OK and refused, through issue == the named method.
+## All 14 commands, OK and refused, through issue == the named method.
 func test_issue_equals_the_direct_call_for_every_command() -> void:
 	var p := _twin()
 	for s: Simulation in p:
@@ -817,7 +836,16 @@ func test_issue_equals_the_direct_call_for_every_command() -> void:
 		return s.fire_flare())  # NOT_NIGHT on both
 	_issued_same_as_direct(p, "debug_end_night", [], func(s: Simulation) -> int:
 		return s.debug_end_night())  # NOT_NIGHT on both
+	_issued_same_as_direct(p, "hire", [RIFLE], func(s: Simulation) -> int: return s.hire(RIFLE))
+	_issued_same_as_direct(p, "hire", [RIFLE], func(s: Simulation) -> int: return s.hire(RIFLE))
+	_issued_same_as_direct(p, "hire", ["no_such_kind"], func(s: Simulation) -> int:
+		return s.hire("no_such_kind"))  # NO_CREW on both
+	_issued_same_as_direct(p, "deploy", [RIFLE, Vector2i(9, 1)], func(s: Simulation) -> int:
+		return s.deploy(RIFLE, Vector2i(9, 1)))  # NOT_NIGHT on both
 	_issued_same_as_direct(p, "call_wave", [], func(s: Simulation) -> int: return s.call_wave())
+	_issued_same_as_direct(p, "hire", [RIFLE], func(s: Simulation) -> int: return s.hire(RIFLE))
+	_issued_same_as_direct(p, "deploy", [RIFLE, Vector2i(9, 1)], func(s: Simulation) -> int:
+		return s.deploy(RIFLE, Vector2i(9, 1)))
 	_issued_same_as_direct(p, "fire_flare", [], func(s: Simulation) -> int: return s.fire_flare())
 	_issued_same_as_direct(p, "debug_end_night", [], func(s: Simulation) -> int:
 		return s.debug_end_night())

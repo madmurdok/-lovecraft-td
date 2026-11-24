@@ -592,8 +592,9 @@ const G4B_OWNERS := {
 	"blasts": ["core/systems/combat_system.gd"],
 	"next_blast_id": ["core/systems/combat_system.gd"],
 	"allies": ["core/systems/ally_system.gd"],
-	"towers": ["core/simulation.gd"],
-	"tower_at": ["core/simulation.gd"],
+	"towers": ["core/simulation.gd", "core/systems/crew_system.gd"],  # LT-32: posts
+	"tower_at": ["core/simulation.gd", "core/systems/crew_system.gd"],
+	"crew": ["core/systems/crew_system.gd"],
 }
 
 

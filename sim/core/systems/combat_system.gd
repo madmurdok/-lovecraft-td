@@ -145,6 +145,8 @@ func _on_enemy_killed(e: SimEnemy, source: String) -> void:
 	if e.is_fake:
 		return
 	var tower_def: TowerDef = _config.towers.get(source)
+	if tower_def == null and source == CrewConfig.POST_ID and _config.crew_on():
+		tower_def = _config.crew.post.def  # LT-32: a post's riflemen are mundane shooters
 	if tower_def != null and tower_def.kind == "mundane":
 		_sanity.add(_config.sanity.regen_mundane_kill, "mundane_kill", e.id)
 

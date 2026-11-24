@@ -72,6 +72,10 @@ All keys are optional (`baseline.json` has only a description).
 - `flags` are passed to `tools/bot_runs.gd` (see its header): `--flare=0`, `--lighthouse=0`,
   `--upgrades=0`, `--branch=rifleman:b`. `--seeds`, `--data`, `--out`, `--strategies` and
   `--bot-strategies` belong to the runner and are refused.
+- Crew off (LT-32): `"crew.json": {"enabled": false}` (why `enabled` exists despite crew.json
+  being optional). The bot's crew policy is two optional tunables patched through `bot`:
+  `{"tunables": {"crew_reserve": 2}}` (men held by day, default 0 = plays as crew off) and
+  `post_min_live` (live enemies that trigger the night posts, default 4).
 - The patched data still goes through the game's config validation; a value it rejects fails
   that variant's runs with `config errors: ...` in the `.err` log.
 

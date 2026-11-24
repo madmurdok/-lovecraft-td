@@ -96,3 +96,13 @@ func buy_flare_oil() -> SimCommand.CommandResult:
 ## LT-30: the night flare, paid with oil.
 func fire_flare() -> SimCommand.CommandResult:
 	return issue("fire_flare", [])
+
+
+## LT-32: hire one man of crew kind `kind` into the reserve (by day).
+func hire(kind: String) -> SimCommand.CommandResult:
+	return issue("hire", [kind])
+
+
+## LT-32: deploy a reserve post of `kind` men on `cell` (at night).
+func deploy(kind: String, cell: Vector2i) -> SimCommand.CommandResult:
+	return issue("deploy", [kind, cell])

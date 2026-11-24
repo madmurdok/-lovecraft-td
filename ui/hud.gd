@@ -17,6 +17,7 @@ var hp_label: Label
 var phase_label: Label
 var call_wave_button: Button  ## "Light the lamp (luck ×1.62)": ends the day early
 var sell_relics_button: Button  ## LT-27 §1.4: sells the whole stash, by day only
+var crew_button: Button  ## LT-32 §4: "Crew: 6" (reserve total) in the footer, opens the crew view; crew on only
 var luck_label: Label  ## LT-27 §1.2: "Luck ×1.62" at night while the night's luck > 1
 var speed_button: Button
 var pause_button: Button
@@ -44,6 +45,7 @@ const FONT_SIZE := 14  ## LT-27: the bar fits the 1200 px base width, buyout inc
 const SEPARATION := 10
 const MARGIN := 8  ## bar inset from the right edge
 const FPS_INTERVAL_MSEC := 250  ## LT-44: the readout Timer's period (FPS, frame stats)
+const CREW_X := 90.0  ## LT-32: the crew button's left edge in the footer strip, past the FPS
 const RELIC_SLOT := 22.0  ## LT-28: left inset; relic tokens land in it, beside the counter
 ## LT-78 §1: field groups (bits of _dirty).
 const G_PURSE := 1  ## gold
@@ -54,7 +56,8 @@ const G_SPEED := 16  ## x1/x2 and pause (Game.speed_changed, not a sim event)
 const G_SANITY := 32  ## sanity bar redraw and distortion, the madness line
 const G_BUYOUT := 64  ## madness buyout button
 const G_FLARE := 128  ## flare button and oil stock (+ the flare burn and cooldown timers)
-const G_ALL := 255
+const G_CREW := 256  ## LT-32: the crew button (reserve total, per-kind tooltip)
+const G_ALL := 511
 const _PH := G_PHASE | G_RELICS | G_FLARE  ## phase events: day-only / night-only fields
 ## LT-78 §3 (rows 1-24): sim event -> the groups it may change. A group's values come from
 ## the rule queries at flush, never from the payload.
@@ -72,6 +75,11 @@ const REFRESH_ON: Dictionary[SimEvent.Type, int] = {
 	SimEvent.Type.OIL_CHANGED: G_FLARE,
 	SimEvent.Type.FLARE_FIRED: G_FLARE,
 	SimEvent.Type.LIGHTHOUSE_UPGRADED: G_FLARE,
+	SimEvent.Type.CREW_CHANGED: G_CREW,
+	SimEvent.Type.POST_DEPLOYED: G_CREW,  # the tooltip's "on duty"
+	SimEvent.Type.POST_REMOVED: G_CREW,
+	SimEvent.Type.TOWER_BUILT: G_CREW,
+	SimEvent.Type.TOWER_SOLD: G_CREW,
 }
 
 
@@ -104,6 +112,11 @@ func _ready() -> void:
 	fps_label.add_theme_color_override("font_color", Color(0.6, 1.0, 0.6))
 	fps_label.position = Vector2(6, footer.position.y + 4)
 	add_child(fps_label)
+	# LT-32 §4: the crew button in the footer strip right of the FPS readout (the bar has no
+	# room left with buyout and luck shown); never built when crew is off.
+	if game.sim.config.crew_on():
+		crew_button = _button(footer, "CrewButton", game.open_crew_panel)
+		crew_button.position = Vector2(CREW_X, 2)
 	var bar := HBoxContainer.new()
 	bar.name = "Bar"
 	# LT-27: two-line columns (money over relics, phase over lighthouse HP) keep the bar
@@ -248,6 +261,8 @@ func _rebuild(mask: int) -> void:
 		_refresh_buyout()
 	if mask & G_FLARE and flare_button != null:
 		_refresh_flare()
+	if mask & G_CREW and crew_button != null:
+		_refresh_crew()
 
 
 func _refresh_purse() -> void:
@@ -261,6 +276,13 @@ func _refresh_relics() -> void:
 	relics_label.tooltip_text = relics_tooltip(game.sim)
 	sell_relics_button.text = "Sell relics (+%s)" % TowerText.money(game.sim.relics_value())
 	sell_relics_button.disabled = game.sim.can_sell_relics() != SimCommand.CommandResult.OK
+
+
+## LT-32 §4: "Crew: 6" and one tooltip line per crew kind.
+func _refresh_crew() -> void:
+	refresh_count += 1
+	crew_button.text = crew_text(game.sim)
+	crew_button.tooltip_text = crew_tooltip(game.sim)
 
 
 func _refresh_hp() -> void:
@@ -423,6 +445,23 @@ static func relics_text(sim: Simulation) -> String:
 	for kind: String in sim.state.relics:
 		n += sim.state.relics[kind]
 	return "Relics: %d (≈ %s)" % [n, TowerText.money(sim.relics_value())]
+
+
+## LT-32 §4: "Crew: 6", the reserve total over every crew kind.
+static func crew_text(sim: Simulation) -> String:
+	var n := 0
+	var reserve := sim.crew_reserve()
+	for kind: String in reserve:
+		n += reserve[kind]
+	return "Crew: %d" % n
+
+
+## LT-32 §4: one line per crew kind in crew.json order: "Harpooners 4 in reserve, 2 on duty".
+static func crew_tooltip(sim: Simulation) -> String:
+	var lines := PackedStringArray()
+	for kind: String in sim.config.crew.crews:
+		lines.append(CrewPanel.count_text(sim, kind))
+	return "\n".join(lines)
 
 
 ## One line per relic kind in config order: "Amber: 3 × $15".

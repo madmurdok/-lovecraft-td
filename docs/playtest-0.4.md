@@ -443,3 +443,77 @@ target met 10/10. Lighthouse HP left: 0.0 everywhere except `light` 2.6/0.0. Nob
 Mean waves are as the lab reports them (over lost runs, round-1 rows) or per-strategy means averaged (rounds 2-4); compare
 within a round, not across. Proposal: `lt72_b_early_07_late_08` is the only arm that meets the two-part target for 10/10
 strategies, has wins (6, all `light`) and ends runs in waves 6-9; the owner picks the shipped numbers.
+
+## LT-117 tower_lift (0.11.0)
+
+Night gaunts lift a tower and drop it 2 cells away, disabled for 3 s (`night_gaunt.traits.tower_lift`, from wave 6; gaunts first appear in wave 7, 56 of them in waves 7-10). Playtest 0.4 is still the open lab log (its last section is LT-72 round 4), so the table goes here. Plan: `docs/design/LT-117-tower-lift.md` §8.
+
+Arms: `baseline` (shipped data, lift on) vs `lt117_lift_off` (`from_wave: 11`, never active in 10 waves). `python3 tools/balance/balance.py baseline lt117_lift_off --seeds=20 --jobs=6`, seeds 1000..1019, 10 strategies, flare on, commit `cb12597`. RUN lines carry the new `lifts` field (count of `TOWER_LIFTED`).
+
+Control: mean `lifts` is 0.00 in every `lt117_lift_off` row and above 0 in baseline for 5 of 10 strategies (below), so the arms differ. The other 5 strategies (occult, madness, resonator, gate, circle) are lifted 0 times in 20 runs each: they build nothing under the gaunts' flight line, or die before wave 7 reaches them.
+
+| strategy | wins/losses (on / off) | mean waves survived (on / off) | lighthouse HP mean/median (on / off) | mean lifts per run (on) |
+|---|---|---|---|---|
+| mundane | 0/20 / 0/20 | 5.9 / 6.0 | 0.0/0.0 / 0.0/0.0 | 1.10 |
+| occult | 0/20 / 0/20 | 6.2 / 6.2 | 0.0/0.0 / 0.0/0.0 | 0.00 |
+| mixed | 0/20 / 0/20 | 5.4 / 5.4 | 0.0/0.0 / 0.0/0.0 | 0.65 |
+| madness | 0/20 / 0/20 | 5.9 / 5.9 | 0.0/0.0 / 0.0/0.0 | 0.00 |
+| demolition | 0/20 / 0/20 | 7.0 / 7.0 | 0.0/0.0 / 0.0/0.0 | 2.45 |
+| battery | 0/20 / 0/20 | 6.9 / 6.9 | 0.0/0.0 / 0.0/0.0 | 1.60 |
+| resonator | 0/20 / 0/20 | 5.7 / 5.7 | 0.0/0.0 / 0.0/0.0 | 0.00 |
+| gate | 0/20 / 0/20 | 4.8 / 4.8 | 0.0/0.0 / 0.0/0.0 | 0.00 |
+| circle | 0/20 / 0/20 | 5.3 / 5.3 | 0.0/0.0 / 0.0/0.0 | 0.00 |
+| light | 5/15 / 6/14 | 7.5 / 7.7 | 2.2/0.0 / 2.6/0.0 | 2.75 |
+| all | 5/195 / 6/194 | 6.06 / 6.09 | | 0.86 |
+
+Losses per wave (waves 1..10, on / off, all strategies summed; waves 1-5 are 0.0.0.1.5 in both):
+
+| wave | 6 | 7 | 8 | 9 | 10 |
+|---|---|---|---|---|---|
+| deaths, lift on | 61 | 76 | 39 | 12 | 1 |
+| deaths, lift off | 61 | 75 | 39 | 13 | 0 |
+
+Per strategy, rows differ only in `mundane` (wave 7/8: 8/5 on, 7/6 off) and `light` (waves 8-10: 10/0/1 on, 9/1/0 off); the other 8 strategies have identical rows.
+
+Machine state: wall 2867 s for 400 runs, `/usr/bin/time -p` real 2867.47, user 5307.33, sys 47.39 (user/real 1.85 over 6 jobs); uptime at start `load averages: 26.10 16.15 10.57`, load peaked above 500 during the run (other agents), end `109.14 158.22 225.69`. Timings (s/run 38.1 vs 23.7) are not comparable between arms; the outcomes are seeded and do not depend on load.
+
+Reading:
+
+- The lift is lab-invisible: losses 195 vs 194 of 200, mean waves survived 6.06 vs 6.09, both inside the ±2-3 noise. The one-run shifts (`mundane` wave 8 vs 7, `light` wave 10 vs 8) are the only differences, and they are the strategies that get lifted most often besides `demolition` and `battery`.
+- Lifts do happen (0.86 per run on average, 2.75 for `light`, 2.45 for `demolition`), but gaunts arrive when most runs are already dying in waves 6-8 (150 of 195 losses), and a 3 s disable of one tower does not change the outcome of a run.
+- Lighthouse HP does not separate the arms either: only `light` ever wins, 2.2 vs 2.6 mean.
+- Caveat from the plan: the bot rebuilds into a slot a lift emptied, which softens the effect on the lab; a player who must react by hand may feel it more.
+- No re-tune from the lab. If the owner wants the lift to bite, the lab proposal is "double or halve X", not a nudge: `disable_seconds` 3 -> 6 (x2) with 1.5 as the weak arm, then `drop_cells` 2 -> 4 / 1; bisect after the first pair. Inertness control against a pre-LT-117 build (2 seeds, byte-identical RUN lines) was not run in this slice.
+
+## LT-32 crew (0.11.0)
+
+Plan: `docs/design/LT-32-crew.md` §8 steps 1-3 (steps 4-6 skipped: step 2-3 show no effect to price; `post_min_live` not touched). Playtest 0.4 is still the open lab log. Variants `tools/balance/variants/lt32_*.json`, 10 strategies, 20 seeds (1000..1019), flare on, commit `8bdb49e`. Arms: `baseline` (crew on, `crew_reserve` 0), `lt32_crew_off`, `res1` / `res2` / `res4` (`crew_reserve` 1/2/4), then with reserve 2: `dmg12` / `dmg3` (`post.damage` 6 x2 / ÷2), `range5` / `range125` (`post.range` 2.5 x2 / ÷2). Data (`data/crew.json`) unchanged.
+
+Control (step 1): `baseline` and `lt32_crew_off` give identical RUN lines in all 200 runs (every field, every seed, every strategy; compared as parsed JSON), so crew on with reserve 0 leaks nothing into play.
+
+Metrics over all 10 strategies (wave = mean `waves_survived`; HP = lighthouse HP left mean/median; posts, crew_gold, post_shots are means per run). `light` is the only strategy that ever wins; its cells in the arms except `baseline` and `range125` are partial (n below), see Machine state.
+
+| arm | runs | losses | wave | HP mean/med | posts | crew_gold | post_shots |
+|---|---|---|---|---|---|---|---|
+| baseline | 200 | 195 | 6.06 | 0.23/0.0 | 0.00 | 0 | 0 |
+| crew_off | 200 | 195 | 6.06 | 0.23/0.0 | 0.00 | 0 | 0 |
+| res1 | 194 | 190 | 5.94 | 0.23/0.0 | 0.00 | 39 | 0 |
+| res2 | 194 | 190 | 6.05 | 0.28/0.0 | 3.89 | 67 | 165 |
+| res4 | 195 | 191 | 6.09 | 0.27/0.0 | 6.50 | 109 | 311 |
+| res2 dmg12 (x2) | 195 | 191 | 6.21 | 0.23/0.0 | 3.99 | 71 | 168 |
+| res2 dmg3 (÷2) | 195 | 192 | 5.90 | 0.19/0.0 | 3.79 | 65 | 162 |
+| res2 range5 (x2) | 196 | 192 | 6.12 | 0.26/0.0 | 3.96 | 70 | 220 |
+| res2 range125 (÷2) | 200 | 194 | 5.99 | 0.23/0.0 | 3.77 | 65 | 77 |
+
+Excluding `light` (9 strategies, all 180 runs complete in every arm, 180/180 lost everywhere): wave 5.89 (baseline) / 5.79 (res1) / 5.91 (res2) / 5.94 (res4) / 6.07 (dmg12) / 5.75 (dmg3) / 5.97 (range5) / 5.78 (range125). `light`: losses 15/20 (baseline); 10/14 (res1), 10/14 (res2), 11/15 (res4), 11/15 (dmg12), 12/15 (dmg3), 12/16 (range5), 14/20 (range125).
+
+Machine state: stage 1 (baseline + crew_off, 400 runs, 10 jobs) wall 1917 s, `/usr/bin/time -p` real 1917.32 user 4030.07 sys 33.42 (user/real 2.1); stage 2 (baseline `light` rerun) real 950.34 user 700.17; stage 2 (7 arms, 1400 runs) real 7084.36 user 16168.05 sys 173.59 (user/real 2.3). Uptime load averages at start 282/243/186 (stage 1), 68/39/64 (stage 2); peak above 600. The lab kills a variant x strategy job after 1320 s; under this load `light` (the longest runs) timed out in baseline (rerun alone, 20/20 complete); res1, res2, res4, dmg12, dmg3, range5 `light` jobs timed out, so those cells hold the runs finished before the kill (n 14-16 of 20, kept as is, not rerun). Outcomes are seeded, not load-dependent.
+
+Reading:
+
+- Posts do deploy (res2: 3.9 posts, 165 shots, 67 gold per run; res4: 6.5 posts, 311 shots, 109 gold; `madness` 6.8 and 12.7 posts), so the arms measured something. `res1` hires men but never a post (posts 0.00): a post needs 2.
+- The lab sees no outcome move. Losses 190-195 of ~200 in every arm; waves survived 5.90-6.21 against 6.06, inside the ±2-3 losses / ~±0.2 wave noise. Lighthouse HP stays 0 except for `light` wins, 0.19-0.28 against 0.23.
+- Doubled and halved post stats move shots, not results: damage 3 / 6 / 12 gives 162 / 165 / 168 shots (same count, shots scale with damage only in kills), range 1.25 / 2.5 / 5 gives 77 / 165 / 220 shots; waves 5.99 / 6.05 / 6.12. `dmg12` is the best arm by wave (+0.15 over res2) and `dmg3` the worst (-0.15), the same direction as expected but not distinguishable from noise.
+- Phrased for the owner: between `post.damage` 3 (no measurable gain over crew off) and 12 (+0.15 wave, still no extra win), and between `post.range` 1.25 and 5, the lab finds nothing too strong; it cannot say the crew is noticeable by outcome, since the bots die in waves 6-8 at 0 HP regardless. A "noticeable but weaker than towers" feel has to come from the owner's playtest; if a larger step is wanted, the next lab arm is x4 (damage 24 / reserve 8), not a nudge.
+- Not run: `post.crew` 1 / 4, hire price arms (step 4), `post_min_live` (step 5), sanity DPS table (step 6): skipped as "only if" steps with no effect to price.
+- Owner decision (2026-11-23): "Оставить 6 / 2.5 (Recommended)". `data/crew.json` ships unchanged (post damage 6, range 2.5); whether the crew feels noticeable is left to the playtest.
