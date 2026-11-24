@@ -284,6 +284,7 @@ func test_b6_sanity_bar_animates_only_while_distorted() -> void:
 	]
 	for st: Array in steps:
 		_game.sim.debug_set_sanity(st[0])
+		GameFixture.sync(_game)  # LT-85: poked on the sim directly
 		_game.advance(0.0)
 		assert_int(_game.sim.state.sanity_state).is_equal(st[1])
 		assert_bool(bar.is_processing()).override_failure_message(
@@ -299,6 +300,7 @@ func test_b6_sanity_change_within_a_state_redraws_the_bar() -> void:
 		var before_state := _game.sim.state.sanity_state
 		var before := bar.redraw_count
 		_game.sim.debug_set_sanity(value)
+		GameFixture.sync(_game)
 		_game.advance(0.0)
 		assert_int(_game.sim.state.sanity_state).override_failure_message(
 			"sanity %s must stay in one state" % value).is_equal(before_state)
@@ -476,6 +478,7 @@ func _until(done: Callable, max_frames: int, delta: float, label: String) -> voi
 ## a check. Hooks bypass Game's commands, so the drain is the next frame's job.
 func _hook(label: String, write: Callable) -> void:
 	write.call()
+	GameFixture.sync(_game)  # LT-85: a direct sim write, as a command rebuilds the snapshot
 	_game.advance(0.0)
 	_check(label)
 

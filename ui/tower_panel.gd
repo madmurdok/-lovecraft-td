@@ -63,7 +63,7 @@ var upgrade_infos: Dictionary[String, Label] = {}
 var sell_button: Button
 var post_label: Label  ## LT-32: "Returns to the reserve at dawn", a post only; crew on only
 var priority_title: Label
-## SimTower.TARGET_PRIORITIES mode -> its button; the current mode is marked and disabled.
+## TowerRecord.TARGET_PRIORITIES mode -> its button; the current mode is marked and disabled.
 var priority_buttons: Dictionary[String, Button] = {}
 var refresh_count := 0  ## LT-78 §8 B1: field groups rebuilt so far (refresh and flush)
 var _dirty := 0  ## groups marked by on_event since the last flush
@@ -110,7 +110,7 @@ func _ready() -> void:
 	priority_title.text = "── Target ──"
 	priority_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	add_child(priority_title)
-	for mode: String in SimTower.TARGET_PRIORITIES:
+	for mode: String in TowerRecord.TARGET_PRIORITIES:
 		var pb := SidePanel.make_button("Priority_" + mode, _on_priority_pressed.bind(mode))
 		add_child(pb)
 		priority_buttons[mode] = pb
@@ -127,7 +127,7 @@ func _ready() -> void:
 
 
 func open_for(p_tower_id: int) -> void:
-	var t := game.sim.tower_by_id(p_tower_id)
+	var t := game.snapshot.tower(p_tower_id)
 	if t == null:
 		return
 	tower_id = p_tower_id
@@ -178,12 +178,12 @@ func flush() -> void:
 func _rebuild(mask: int) -> void:
 	if not visible:
 		return
-	var t := game.sim.tower_by_id(tower_id)
+	var t := game.snapshot.tower(tower_id)
 	if t == null:  # LT-78 §3 row 47: sold (TOWER_SOLD) or never there
 		close()
 		return
-	var s := t.stats()
-	var branches := game.sim.upgrade_branches(t)
+	var s := t.stats
+	var branches := game.sim.upgrade_branches_of(t.id)
 	if mask & G_HEAD:
 		refresh_count += 1
 		var at_max := t.level >= TowerDef.LEVEL_COUNT
@@ -208,7 +208,7 @@ func _rebuild(mask: int) -> void:
 		for branch: String in upgrade_buttons:
 			var b := upgrade_buttons[branch]
 			var info := upgrade_infos[branch]
-			var target: TowerDef.Level = game.sim.upgrade_target(t, branch) \
+			var target: TowerDef.Level = game.sim.upgrade_target_of(t.id, branch) \
 				if branches.has(branch) else null
 			b.visible = target != null
 			info.visible = target != null
@@ -223,7 +223,7 @@ func _rebuild(mask: int) -> void:
 		# LT-27 §3: towers are sold by day only.
 		var sell := game.sim.can_sell_tower(t.id)
 		sell_button.disabled = sell != SimCommand.CommandResult.OK
-		sell_button.text = "Sell (+%s)" % TowerText.money(game.sim.sell_refund(t))
+		sell_button.text = "Sell (+%s)" % TowerText.money(game.sim.sell_refund_of(t.id))
 		if sell_button.disabled:
 			sell_button.text += " (%s)" % CommandText.reason(sell)
 	if mask & G_RANGE:
@@ -237,7 +237,7 @@ func _on_scroll_resized() -> void:
 	_rebuild(G_TABLE)
 
 
-func _refresh_upgrade(b: Button, info: Label, t: SimTower, s: TowerDef.Level, branch: String,
+func _refresh_upgrade(b: Button, info: Label, t: TowerRecord, s: TowerDef.Level, branch: String,
 		target: TowerDef.Level) -> void:
 	var r := game.sim.can_upgrade(t.id, branch)
 	b.disabled = r != SimCommand.CommandResult.OK
@@ -255,16 +255,16 @@ func _refresh_upgrade(b: Button, info: Label, t: SimTower, s: TowerDef.Level, br
 ## LT-43 §2, §4, §5: the table (Now + one column per upgrade target), the lit status line and
 ## lit Now cells (LT-70 §5: the shadow numbers, line and colour while shadowed), the special lines (Now's, then each column's special_delta_lines prefixed
 ## by its head; a sanity-scaled tower first reads the sanity its DPS is at), the kind line.
-func _refresh_table(t: SimTower, s: TowerDef.Level, branches: PackedStringArray) -> void:
+func _refresh_table(t: TowerRecord, s: TowerDef.Level, branches: PackedStringArray) -> void:
 	var cfg := game.sim.config
-	var sanity_now := game.sim.state.sanity
+	var sanity_now := game.snapshot.sanity
 	var heads := PackedStringArray(["Now"])
 	var cols: Array[Dictionary] = [TowerText.row_values(t.def, s, cfg, sanity_now)]
 	var targets: Array[TowerDef.Level] = []
 	for branch: String in upgrade_buttons:
 		if not branches.has(branch):
 			continue
-		var target: TowerDef.Level = game.sim.upgrade_target(t, branch)
+		var target: TowerDef.Level = game.sim.upgrade_target_of(t.id, branch)
 		if target == null:
 			continue
 		heads.append("L%d" % (t.level + 2) if branch.is_empty() else branch.to_upper())
@@ -322,8 +322,8 @@ func _refresh_table(t: SimTower, s: TowerDef.Level, branches: PackedStringArray)
 ## LT-31: shown only when the tower picks targets (Simulation.has_targeting). The current
 ## mode is marked and disabled; the others are disabled with the reason when
 ## can_set_target_priority refuses (run over).
-func _refresh_priority(t: SimTower) -> void:
-	var shown := game.sim.has_targeting(t)
+func _refresh_priority(t: TowerRecord) -> void:
+	var shown := game.sim.has_targeting_of(t.id)
 	priority_title.visible = shown
 	for mode: String in priority_buttons:
 		var b := priority_buttons[mode]

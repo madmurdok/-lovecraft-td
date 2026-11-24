@@ -257,6 +257,7 @@ func test_hud_labels_track_sim_state() -> void:
 	await _build_via_ui(_buildable_cell())
 	s.lighthouse_hp -= 3
 	_game.sim.call_wave()
+	GameFixture.sync(_game)  # LT-85: poked on the sim directly
 	_game.advance(0.0)
 	assert_str(hud.gold_label.text).is_equal("Money: $%d" % s.gold)
 	# LT-78 (review F1): the phase follows WAVE_STARTED through advance alone, no refresh().
@@ -272,11 +273,13 @@ func test_day_timer_shows_floored_seconds_matching_the_luck() -> void:
 	var rate := _config.economy.early_night_luck_per_second
 	# One tick short of 25 whole seconds must read 24, never 25.
 	s.build_ticks_left = SimTime.ticks(25.0) - 1
+	GameFixture.sync(_game)  # LT-85: poked on the sim directly
 	_game.hud.on_stepped()  # LT-78 §1.1: a stepped frame re-reads the day timer
 	assert_str(_game.hud.phase_label.text).is_equal("Day 1 — night falls in 24 s")
 	assert_float(_game.sim.early_night_luck()).is_equal_approx(1.0 + rate * 24, 1e-9)
 	assert_str(_game.hud.call_wave_button.text).contains(Hud.luck_text(1.0 + rate * 24))
 	s.build_ticks_left = SimTime.ticks(25.0)
+	GameFixture.sync(_game)
 	_game.hud.on_stepped()
 	assert_str(_game.hud.phase_label.text).contains("in 25 s")
 	assert_float(_game.sim.early_night_luck()).is_equal_approx(1.0 + rate * 25, 1e-9)

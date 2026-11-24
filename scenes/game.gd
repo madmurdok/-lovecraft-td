@@ -227,7 +227,7 @@ func _consume_events() -> int:
 			lighthouse_panel.close()
 			crew_panel.close()
 			side_panel.visible = false
-			end_screen.show_result(ev.data.get("result", "") == "won", sim.state,
+			end_screen.show_result(ev.data.get("result", "") == "won", snapshot,
 				star_stones_found)
 	return events.size()
 

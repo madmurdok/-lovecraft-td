@@ -51,7 +51,7 @@ func _ready() -> void:
 
 func open() -> void:
 	visible = true
-	game.selection.set_cell(game.sim.state.map.lighthouse)
+	game.selection.set_cell(game.snapshot.map.lighthouse)
 	game.selection.set_ring(0.0, "")
 	refresh()
 
@@ -114,7 +114,7 @@ func _rebuild(mask: int) -> void:
 func _refresh_head() -> void:
 	var sim := game.sim
 	var beams := sim.beam_count()
-	title_label.text = "Lighthouse  L%d" % (sim.state.lighthouse_level + 1)
+	title_label.text = "Lighthouse  L%d" % (game.snapshot.lighthouse_level + 1)
 	stats_label.text = "Beams: %d\nCoverage: %d %%\nThe lamp is lit at night only." % [
 		beams, coverage_percent(beams, sim.config.economy.beam.half_width_ratio)]
 
@@ -122,7 +122,7 @@ func _refresh_head() -> void:
 func _refresh_upgrade() -> void:
 	var sim := game.sim
 	var eco := sim.config.economy
-	var level := sim.state.lighthouse_level
+	var level := game.snapshot.lighthouse_level
 	var cost := sim.lighthouse_upgrade_cost()
 	var up := sim.can_upgrade_lighthouse()
 	if cost == 0:
@@ -147,7 +147,7 @@ func _refresh_oil() -> void:
 	oil_button.visible = has_oil
 	if not has_oil:
 		return
-	oil_label.text = "Lamp oil: %d / %d" % [sim.state.oil, sim.oil_cap()]
+	oil_label.text = "Lamp oil: %d / %d" % [game.snapshot.oil, sim.oil_cap()]
 	if eco.flare != null:
 		oil_label.text += "\nFlare: %d oil, whole map, %s s; fired at night." % [
 			sim.flare_cost_oil(), ConfigReader.fmt(sim.flare_seconds())]

@@ -1113,3 +1113,72 @@ func test_g14_no_enemy_status_read_in_presentation() -> void:
 	assert_array(near).is_empty()
 	assert_array(hits).override_failure_message(
 		"enemy status read in presentation (use SimEnemy.markers): " + ", ".join(hits)).is_empty()
+
+
+# --- G16 (LT-85 §5.3): presentation reads the snapshot, never the sim's state or entities ---
+
+## Under scenes/ and ui/ (code only: comments and strings blanked) nothing reaches SimState
+## or a live sim entity: no `.state` member access (so no alias of `sim.state` either), no
+## SimState type except its enums, no entity class, and none of the entity-returning or
+## SimTower-taking queries. Presentation reads `game.snapshot` (records) and the `*_of(id)`
+## queries. tools/ is out of scope: bots are players with full rules access.
+const G16_DIRS := ["res://scenes", "res://ui"]
+const G16_DENY := "\\.state\\b" \
+	+ "|\\bSimState\\b(?!\\.(Phase|Outcome|SanityState)\\b)" \
+	+ "|\\b(SimEnemy|SimAlly|SimTower|SimBlast|RelicToken)\\b" \
+	+ "|\\b(enemy_by_id|enemy_position|ally_by_id|ally_position|allies_of|tower_by_id" \
+	+ "|tower_at_cell|enemies_in_range|enemies_near|debug_is_fake)\\s*\\(" \
+	+ "|\\b(upgrade_branches|upgrade_target|has_targeting|sell_refund)\\s*\\("
+
+
+func _g16_hits(scan: SimBoundaryTest, file: String, text: String) -> Array[String]:
+	return scan._find(file, scan._code_lines(text), G16_DENY)
+
+
+func test_g16_presentation_reads_only_the_snapshot() -> void:
+	var scan := SimBoundaryTest.new()
+	var hits: Array[String] = []
+	var scanned := 0
+	for dir: String in G16_DIRS:
+		for f in scan._gd_files(dir):
+			scanned += 1
+			hits.append_array(_g16_hits(scan, f, FileAccess.get_file_as_string(f)))
+	scan.free()
+	assert_int(scanned).is_greater(20)
+	assert_array(hits).override_failure_message(
+		"sim state or a live entity read in presentation (use game.snapshot): "
+		+ ", ".join(hits)).is_empty()
+
+
+## The guard fires on one planted probe per rule and not on the allowed near misses.
+func test_g16_catches_planted_reads_and_passes_the_snapshot_forms() -> void:
+	var scan := SimBoundaryTest.new()
+	var planted := {
+		"state member": "x = game.sim.state.gold",
+		"state alias": "var s := game.sim.state",
+		"SimState type": "func f(s: SimState) -> void:",
+		"entity class": "for e: SimEnemy in x:",
+		"entity query": "var e = sim.enemy_by_id(3)",
+		"SimTower query": "var g = sim.sell_refund(t)",
+	}
+	var missed: Array[String] = []
+	for k: String in planted:
+		if _g16_hits(scan, "ui/probe.gd", planted[k]).is_empty():
+			missed.append(k)
+	var allowed := {
+		"enum": "if p == SimState.Phase.BUILD:",
+		"sanity_state": "x = sanity_fx.sanity_state",
+		"id query": "var g = sim.sell_refund_of(id)",
+		"debug id query": "if sim.debug_is_fake_id(id):",
+		"comment": "# game.sim.state.gold",
+		"string": "x = \"SimTower\"",
+	}
+	var false_hits: Array[String] = []
+	for k: String in allowed:
+		if not _g16_hits(scan, "ui/probe.gd", allowed[k]).is_empty():
+			false_hits.append(k)
+	scan.free()
+	assert_array(missed).override_failure_message(
+		"G16 did not fire on: " + ", ".join(missed)).is_empty()
+	assert_array(false_hits).override_failure_message(
+		"G16 fired on an allowed form: " + ", ".join(false_hits)).is_empty()
