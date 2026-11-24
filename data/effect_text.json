@@ -66,5 +66,9 @@
     {"key": "summon_max", "text": "{summon_max} {summon_max|plural:unit:units}, {summon_hp} HP"},
     {"key": "casts_light", "text": "lights"},
     {"key": "casts_shadow", "text": "shadows"}
+  ],
+  "tips": [
+    {"key": "casts_shadow",
+     "text": "Shadow: at night, other towers in this tower's range\nare shadowed (a light on them cancels it).\nOccult in shadow: ×{shadow_occult_power_mult} power.\nMundane in shadow: +{shadow_mundane_fire_interval_mult|pct_over1}% fire interval, +{shadow_mundane_miss_chance_add|pct}% misses."}
   ]
 }
