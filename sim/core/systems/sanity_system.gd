@@ -160,6 +160,10 @@ func change_reserve(t: SimTower, delta: float, reason: String) -> void:
 		{"delta": applied, "cap": _state.sanity_cap, "reason": reason})
 	if _state.sanity > _state.sanity_cap:
 		add(_state.sanity_cap - _state.sanity, "reserve", t.id)
+	elif recover_applies():
+		# LT-121 F1: the cap fell to exactly the current sanity, so add() never runs, but
+		# exit_target() = min(exit_sanity, cap) fell with it and may now be reached.
+		_settle_state()
 
 
 ## Between-waves sanity regen (sanity.json regen.between_waves), paid once per cleared wave
@@ -216,11 +220,18 @@ func add(delta: float, reason: String, id: int) -> float:
 		return 0.0
 	_ctx.emit(SimEvent.Type.SANITY_CHANGED, id,
 		{"delta": applied, "sanity": _state.sanity, "reason": reason})
+	_settle_state()
+	return applied
+
+
+## Sets the state _next_state gives for the current sanity and emits SANITY_STATE_CHANGED
+## {old, new} when it moves. Run by add() after every applied change, and by change_reserve
+## when the cap (and so exit_target()) moved without sanity moving (LT-121 F1).
+func _settle_state() -> void:
 	var old := _state.sanity_state
 	_state.sanity_state = _next_state(old, _state.sanity)
 	if _state.sanity_state != old:
 		_ctx.emit(SimEvent.Type.SANITY_STATE_CHANGED, 0, {"old": old, "new": _state.sanity_state})
-	return applied
 
 
 ## Slot 6: every live real enemy with horror_drain > 0 within sanity.horror_radius_cells of
