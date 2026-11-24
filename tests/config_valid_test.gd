@@ -279,6 +279,14 @@ func test_sanity() -> void:
 	assert_float(s.thresholds["madness"].min_sanity).is_equal(0.0)
 
 
+## LT-121: the frozen golden fixture has no exit_sanity and still parses, with the default.
+func test_the_golden_fixture_without_exit_sanity_gets_the_default() -> void:
+	var r := ConfigLoader.load_dir("res://tests/fixtures/golden_data")
+	assert_bool(r.ok).override_failure_message("\n".join(r.errors)).is_true()
+	assert_str(r.config.sanity.madness.exit_rule).is_equal("permanent")
+	assert_float(r.config.sanity.madness.exit_sanity).is_equal(20.0)
+
+
 func test_madness_rules() -> void:
 	var m := _real().sanity.madness
 	assert_float(m.damage_multiplier).is_equal(2.0)

@@ -545,6 +545,37 @@ func test_occult_run_line_metrics_are_consistent() -> void:
 	assert_int(run_line["towers"].get(RIFLE, 0)).is_less_equal(3)
 
 
+## LT-121 §4: madness_entries / madness_exits count the SANITY_STATE_CHANGED events into and
+## out of MADNESS, checked against an independent count of the events the run emits. The sink
+## sends the run to sanity 0 at its 10th tick and to 30 (above exit_sanity 20, "recover") at
+## its 20th, so the run has an entry and an exit whatever the strategy does.
+func test_run_line_counts_madness_entries_and_exits_from_state_changes() -> void:
+	var cfg := _fresh()
+	cfg.sanity.madness.exit_rule = "recover"
+	cfg.sanity.madness.exit_sanity = 20.0
+	var bot := _bot(true)
+	bot.set("_cfg", cfg)
+	var seen := [0, 0, 0]  # entries, exits, sink calls
+	bot.set("_event_sink", func(sim: Simulation, evs: Array[SimEvent]) -> void:
+		seen[2] += 1
+		if seen[2] == 10:
+			sim.debug_set_sanity(0.0)
+		elif seen[2] == 20:
+			sim.debug_set_sanity(30.0)
+		for ev in evs:
+			if ev.type != SimEvent.Type.SANITY_STATE_CHANGED:
+				continue
+			if ev.data["new"] == SimState.SanityState.MADNESS:
+				seen[0] += 1
+			elif ev.data["old"] == SimState.SanityState.MADNESS:
+				seen[1] += 1)
+	var run_line: Dictionary = bot.call("_play", "mundane", 1000)
+	assert_int(run_line["madness_entries"]).is_equal(seen[0])
+	assert_int(run_line["madness_exits"]).is_equal(seen[1])
+	assert_int(run_line["madness_entries"]).is_greater_equal(1)
+	assert_int(run_line["madness_exits"]).is_greater_equal(1)
+
+
 ## LT-31 decision 12: bots never switch target priority, so their towers keep "first" and
 ## their runs are those of before LT-31.
 func test_bots_never_set_target_priority() -> void:

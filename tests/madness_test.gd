@@ -425,6 +425,158 @@ func test_permanent_and_buyout_madness_survive_every_wave_clear() -> void:
 		assert_int(sim.state.sanity_state).is_equal(S.MADNESS)
 
 
+# --- LT-121: exit rule "recover" (design note §2) ---------------------------------------
+
+const RECOVER_AT := 20.0  ## exit_sanity of these tests, set on the config, not read from data
+const DAWN := 12.0
+const KILL := 0.5
+
+
+## Rule "recover" with exit_sanity RECOVER_AT and the regen set here, so no number comes
+## from data/.
+func _recover_sim(exit_sanity := RECOVER_AT) -> Simulation:
+	var sim := tsim()
+	_rule(sim, "recover")
+	sim.config.sanity.madness.exit_sanity = exit_sanity
+	sim.config.sanity.regen_between_waves = DAWN
+	sim.config.sanity.regen_mundane_kill = KILL
+	return sim
+
+
+## MADNESS at sanity `v` (the state set by hand: sanity_state_for(v) is no MADNESS above 0).
+func _mad_at(sim: Simulation, v: float) -> void:
+	sim.state.sanity = v
+	sim.state.sanity_state = S.MADNESS
+	sim.drain_events()
+
+
+## An occult tower whose L1 reserve is `reserve`, built on the loaded config.
+func _reserve(sim: Simulation, reserve: float) -> SimTower:
+	sim.config.towers[NECRO].levels[0].sanity_reserve = reserve
+	sim.state.gold = 100000
+	return build(sim, NECRO, Vector2i(3, 1))
+
+
+func test_recover_regen_applies_while_mad_and_the_state_holds() -> void:
+	var sim := _recover_sim()
+	build(sim, "rifleman")
+	var e := put(sim, "cultist", 8.0)
+	_set_sanity(sim, 0.0)
+	sim.apply_damage(e.id, 1.0e9, "rifleman")
+	var ev := sim.drain_events()
+	var ch := of_type(ev, T.SANITY_CHANGED)
+	assert_int(ch.size()).is_equal(1)
+	assert_str(ch[0].data["reason"]).is_equal("mundane_kill")
+	assert_float(sim.state.sanity).is_equal(KILL)
+	assert_array(of_type(ev, T.SANITY_STATE_CHANGED)).is_empty()
+	assert_float(sim.award_wave_sanity()).is_equal(DAWN)
+	assert_float(sim.state.sanity).is_equal(KILL + DAWN)
+	assert_int(sim.state.sanity_state).is_equal(S.MADNESS)
+	assert_array(of_type(sim.drain_events(), T.SANITY_STATE_CHANGED)).is_empty()
+
+
+func test_recover_exits_at_exit_sanity_and_not_below() -> void:
+	var sim := _recover_sim()
+	_set_sanity(sim, 0.0)
+	assert_int(sim.debug_set_sanity(RECOVER_AT - 0.5)).is_equal(SimCommand.CommandResult.OK)
+	assert_int(sim.state.sanity_state).is_equal(S.MADNESS)
+	assert_array(of_type(sim.drain_events(), T.SANITY_STATE_CHANGED)).is_empty()
+	assert_int(sim.debug_set_sanity(RECOVER_AT)).is_equal(SimCommand.CommandResult.OK)
+	assert_float(sim.state.sanity).is_equal(RECOVER_AT)
+	assert_int(sim.state.sanity_state).is_not_equal(S.MADNESS)
+	assert_int(sim.state.sanity_state).is_equal(sim.sanity_state_for(RECOVER_AT))
+	var sc := of_type(sim.drain_events(), T.SANITY_STATE_CHANGED)
+	assert_int(sc.size()).is_equal(1)
+	assert_dict(sc[0].data).is_equal({"old": S.MADNESS, "new": sim.state.sanity_state})
+
+
+func test_recover_exit_target_is_the_lower_of_exit_sanity_and_the_cap() -> void:
+	var sim := _recover_sim()
+	assert_float(sim.exit_target()).is_equal(RECOVER_AT)
+	var top := sim.config.sanity.max_sanity
+	_reserve(sim, top - 12.0)  # cap 12 < RECOVER_AT
+	assert_float(sim.state.sanity_cap).is_equal_approx(12.0, 0.0001)
+	assert_float(sim.exit_target()).is_equal_approx(12.0, 0.0001)
+	_mad_at(sim, 0.0)
+	assert_int(sim.debug_set_sanity(11.5)).is_equal(SimCommand.CommandResult.OK)
+	assert_int(sim.state.sanity_state).is_equal(S.MADNESS)
+	assert_int(sim.debug_set_sanity(12.0)).is_equal(SimCommand.CommandResult.OK)
+	assert_float(sim.state.sanity).is_equal_approx(12.0, 0.0001)
+	assert_int(sim.state.sanity_state).is_not_equal(S.MADNESS)
+
+
+func test_recover_at_cap_zero_has_no_exit_until_a_sell_makes_room() -> void:
+	var sim := _recover_sim()
+	sim.config.sanity.regen_between_waves = RECOVER_AT + 5.0  # one dawn is enough once there is room
+	var t := _reserve(sim, sim.config.sanity.max_sanity)
+	assert_float(sim.state.sanity_cap).is_equal(0.0)
+	assert_float(sim.exit_target()).is_equal(0.0)
+	_mad_at(sim, 0.0)
+	assert_float(sim.award_wave_sanity()).is_equal(0.0)
+	assert_int(sim.state.sanity_state).is_equal(S.MADNESS)
+	assert_int(sim.sell_tower(t.id)).is_equal(SimCommand.CommandResult.OK)
+	assert_int(sim.state.sanity_state).is_equal(S.MADNESS)  # a sell moves only the cap
+	sim.award_wave_sanity()
+	assert_float(sim.state.sanity).is_equal(RECOVER_AT + 5.0)
+	assert_int(sim.state.sanity_state).is_not_equal(S.MADNESS)
+
+
+func test_recover_ends_madness_when_the_cap_falls_to_exactly_the_sanity() -> void:
+	var sim := _recover_sim()
+	_mad_at(sim, 0.0)
+	assert_int(sim.debug_set_sanity(15.0)).is_equal(SimCommand.CommandResult.OK)
+	assert_int(sim.state.sanity_state).is_equal(S.MADNESS)  # 15 < RECOVER_AT
+	sim.drain_events()
+	_reserve(sim, sim.config.sanity.max_sanity - 15.0)  # cap 15 == sanity: no add() runs
+	assert_float(sim.state.sanity_cap).is_equal_approx(15.0, 0.0001)
+	assert_float(sim.state.sanity).is_equal(15.0)
+	assert_int(sim.state.sanity_state).is_not_equal(S.MADNESS)
+	var sc := of_type(sim.drain_events(), T.SANITY_STATE_CHANGED)
+	assert_int(sc.size()).is_equal(1)
+	assert_int(sc[0].data["old"]).is_equal(S.MADNESS)
+
+
+func test_recover_re_enters_madness_only_at_zero_after_the_exit() -> void:
+	var sim := _recover_sim()
+	_set_sanity(sim, 0.0)
+	sim.debug_set_sanity(RECOVER_AT)
+	assert_int(sim.state.sanity_state).is_not_equal(S.MADNESS)
+	for v: float in [10.0, 1.0]:
+		assert_int(sim.debug_set_sanity(v)).is_equal(SimCommand.CommandResult.OK)
+		assert_int(sim.state.sanity_state).override_failure_message(str(v)) \
+			.is_not_equal(S.MADNESS)
+	assert_int(sim.debug_set_sanity(0.0)).is_equal(SimCommand.CommandResult.OK)
+	assert_int(sim.state.sanity_state).is_equal(S.MADNESS)
+
+
+func test_recover_horror_drain_still_applies_while_mad() -> void:
+	var sim := _recover_sim()
+	build(sim, "rifleman")
+	put(sim, "shoggoth", 7.0)
+	var h: float = sim.config.enemies["shoggoth"].horror_drain
+	_mad_at(sim, 10.0)
+	var ev := run(sim, SimTime.TICK_RATE)
+	assert_float(sim.state.sanity).is_equal_approx(10.0 - h, 0.01)
+	assert_int(sim.state.sanity_state).is_equal(S.MADNESS)
+	assert_bool(of_type(ev, T.SANITY_CHANGED).any(
+		func(x: SimEvent) -> bool: return x.data["reason"] == "horror")).is_true()
+
+
+func test_recover_has_no_buyout_and_no_auto_restore() -> void:
+	var sim := _recover_sim()
+	sim.state.gold = 100000
+	_set_sanity(sim, 0.0)
+	assert_bool(sim.buyout_applies()).is_false()
+	assert_bool(sim.recover_applies()).is_true()
+	assert_int(sim.buy_sanity()).is_equal(SimCommand.CommandResult.NO_BUYOUT)
+	assert_float(sim.auto_restore_sanity()).is_equal(0.0)
+	assert_float(sim.state.sanity).is_equal(0.0)
+	# The other rules do not recover.
+	for rule in ["permanent", "buyout", "auto_restore"]:
+		_rule(sim, rule)
+		assert_bool(sim.recover_applies()).override_failure_message(rule).is_false()
+
+
 # --- buyout ----------------------------------------------------------------------------
 
 func _buyout_sim() -> Simulation:
