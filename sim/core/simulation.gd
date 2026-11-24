@@ -275,6 +275,23 @@ func upgrade_target(t: SimTower, branch := "") -> TowerDef.Level:
 	return t.def.levels[t.level + 1]
 
 
+## LT-85 D7: upgrade_branches for the tower `tower_id` (presentation holds ids, not
+## SimTowers); empty when there is no such tower.
+func upgrade_branches_of(tower_id: int) -> PackedStringArray:
+	var t := tower_by_id(tower_id)
+	if t == null:
+		return PackedStringArray()
+	return upgrade_branches(t)
+
+
+## LT-85 D7: upgrade_target for the tower `tower_id`; null when there is no such tower.
+func upgrade_target_of(tower_id: int, branch := "") -> TowerDef.Level:
+	var t := tower_by_id(tower_id)
+	if t == null:
+		return null
+	return upgrade_target(t, branch)
+
+
 ## Whether upgrade_tower(tower_id, branch) would be applied now; OK or the first failing
 ## reason in this order: OUTCOME_REACHED, NO_SUCH_TOWER, NOT_A_TOWER (LT-32: a post has one
 ## level and no branches), MAX_LEVEL, NEED_BRANCH,
@@ -359,6 +376,12 @@ func would_drive_mad_upgrade(tower_id: int, branch := "") -> bool:
 func has_targeting(t: SimTower) -> bool:
 	var s := t.stats()
 	return s.acts() and not s.is_summon()
+
+
+## LT-85 D7: has_targeting for the tower `tower_id`; false when there is no such tower.
+func has_targeting_of(tower_id: int) -> bool:
+	var t := tower_by_id(tower_id)
+	return t != null and has_targeting(t)
 
 
 ## Whether set_target_priority(tower_id, mode) would be applied now; OK or the first
@@ -688,6 +711,14 @@ func sell_refund(t: SimTower) -> int:
 	return _economy.sell_refund(t)
 
 
+## LT-85 D7: sell_refund for the tower `tower_id`; 0 when there is no such tower.
+func sell_refund_of(tower_id: int) -> int:
+	var t := tower_by_id(tower_id)
+	if t == null:
+		return 0
+	return sell_refund(t)
+
+
 func award_wave_bonus(wave_number: int) -> int:
 	return _economy.award_wave_bonus(wave_number)
 
@@ -767,6 +798,46 @@ func enemy_by_id(id: int) -> SimEnemy:
 func enemy_position(e: SimEnemy, alpha: float) -> Vector2:
 	var d := roundi(lerpf(float(e.prev_distance), float(e.distance), alpha))
 	return e.route.position_at(d)
+
+
+## LT-85 (D1-D3, §3-§4): a fresh read-only copy of what presentation reads: live enemies,
+## towers and live allies as records (id order) plus the SimState scalars. Pure: no RNG
+## draw, no state write, no event, and no cache (the caller, Game, keeps one per changed
+## frame). EnemyRecord.madness_buffed follows SanitySystem.apply_madness_buff's conditions.
+func snapshot() -> SimSnapshot:
+	var snap := SimSnapshot.new()
+	var m := config.sanity.madness
+	var mad := state.sanity_state == SimState.SanityState.MADNESS \
+		and (m.enemy_speed_multiplier != 1.0 or m.enemy_damage_taken_multiplier != 1.0)
+	for e in state.enemies:
+		if e.is_live():
+			snap.enemies.append(EnemyRecord.from_enemy(e,
+				mad and not _sanity.madness_buff_blocked(e)))
+	for t in state.towers:
+		snap.towers.append(TowerRecord.from_tower(t))
+	for a in state.allies:
+		if a.is_live():
+			snap.allies.append(AllyRecord.from_ally(a))
+	snap.tick = state.tick
+	snap.outcome = state.outcome
+	snap.phase = state.phase
+	snap.wave_index = state.wave_index
+	snap.waves_total = state.waves_total
+	snap.build_ticks_left = state.build_ticks_left
+	snap.gold = state.gold
+	snap.relics = state.relics.duplicate()
+	snap.sanity = state.sanity
+	snap.sanity_cap = state.sanity_cap
+	snap.sanity_state = state.sanity_state
+	snap.lighthouse_hp = state.lighthouse_hp
+	snap.lighthouse_level = state.lighthouse_level
+	snap.night_luck = state.night_luck
+	snap.oil = state.oil
+	snap.flare_ticks_left = state.flare_ticks_left
+	snap.flare_cooldown_ticks = state.flare_cooldown_ticks
+	snap.map = state.map
+	snap.index(state.tower_at)
+	return snap
 
 
 func spawn_ally(tower: int, source: String, at: Vector2, hp: float, dps: float, speed: float,
@@ -873,6 +944,15 @@ func dissolve_fakes(reason: String) -> void:
 ## The only way a scene may tell a fake (LT-12 §1): false unless debug_reveal_fakes.
 func debug_is_fake(e: SimEnemy) -> bool:
 	return debug_reveal_fakes and e.is_fake
+
+
+## LT-85 D6: debug_is_fake by id (records have no fake field): false unless
+## debug_reveal_fakes, and false for an id that is not an enemy.
+func debug_is_fake_id(id: int) -> bool:
+	if not debug_reveal_fakes:
+		return false
+	var e := enemy_by_id(id)
+	return e != null and e.is_fake
 
 
 func live_fakes_in_range(cell: Vector2i, range_cells: float) -> Array[SimEnemy]:

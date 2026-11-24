@@ -976,6 +976,9 @@ const G12_FIELDS := "\\b(power_mult|interval_mult|miss_add|ignore_miss)" + G12_W
 ## `disabled` is also Button.disabled: under res://sim every write counts; elsewhere only
 ## a write through a tower (a SimTower alias of the file, or a tower lookup chain).
 const G12_DISABLED := "\\bdisabled" + G12_WRITE_OP
+## LT-85: TowerRecord copies `disabled` into its own field (a read-only snapshot for
+## presentation, never a SimTower); the four channel names stay banned there too.
+const G12_DISABLED_COPY := "res://sim/view/tower_record.gd"
 const G12_TOWER_CHAIN := "(?:\\b(?:tower_by_id|tower_at_cell)\\([^()]*\\)|\\btowers\\[[^\\]]*\\])" \
 	+ "\\.disabled" + G12_WRITE_OP
 ## Names that hold a SimTower: typed `: SimTower`, `var x := ...tower_by_id(..)` /
@@ -993,7 +996,8 @@ const G12_WRITERS := ["sim/core/systems/light_system.gd", "sim/core/traits/trait
 func _g12_hits(scan: SimBoundaryTest, file: String, text: String) -> Array[String]:
 	var hits := _find_joined(scan, file, text, G12_FIELDS)
 	if file.begins_with("res://sim/"):
-		hits.append_array(_find_joined(scan, file, text, G12_DISABLED))
+		if file != G12_DISABLED_COPY:
+			hits.append_array(_find_joined(scan, file, text, G12_DISABLED))
 		return hits
 	hits.append_array(_find_joined(scan, file, text, G12_TOWER_CHAIN))
 	var alias_re := RegEx.create_from_string(G12_ALIAS)
