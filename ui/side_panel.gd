@@ -141,6 +141,7 @@ func show_card(def_id: String) -> void:
 			StatsTable.kind_color(def.kind))
 		card_special.text = "\n".join(TowerText.special_lines(s))
 		card_special.visible = not card_special.text.is_empty()
+		card_special.tooltip_text = TowerText.special_tip(s.effects, game.sim.config)  # LT-122
 		card_kind.text = "\n".join(TowerText.kind_lines(def, s, game.sim.config.sanity))
 		card_kind.visible = not card_kind.text.is_empty()
 		card_path.text = TowerText.upgrade_path_text(def)
@@ -167,6 +168,7 @@ func _make_card(views: VBoxContainer) -> void:
 	card.add_child(card_table)
 	card_special = make_label("CardSpecial", COLOR_INFO)
 	card_special.add_theme_font_size_override("font_size", StatsTable.FONT_SIZE)
+	card_special.mouse_filter = Control.MOUSE_FILTER_PASS  # LT-122: Labels ignore the mouse by default; PASS shows the tooltip
 	card.add_child(card_special)
 	card_kind = make_label("CardKind", StatsTable.COLOR_LABEL)
 	card_kind.add_theme_font_size_override("font_size", StatsTable.FONT_SIZE)

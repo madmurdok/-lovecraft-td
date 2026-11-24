@@ -93,6 +93,19 @@ static func state_effect(def: TowerDef, cfg: GameConfig, shadow := false) -> Dic
 	return TowerRules.light_effect(def, cfg, not shadow, shadow)
 
 
+## LT-122: what a shadow does to the towers it covers, as TowerRules applies it: occult
+## power_mult, mundane interval_mult and miss_add of a shadowed tower; {} when the economy has
+## no shadow block.
+static func shadow_numbers(cfg: GameConfig) -> Dictionary:
+	if cfg == null or cfg.economy == null or cfg.economy.shadow == null:
+		return {}
+	return {
+		"occult_power_mult": TowerRules.power_mult("occult", cfg, false, true),
+		"mundane_interval_mult": TowerRules.interval_mult("mundane", cfg, false, true),
+		"mundane_miss_add": TowerRules.miss_add("mundane", cfg, true),
+	}
+
+
 ## LT-105 D7: the modifiers a lit / shadow function reads: `fx` when given (a placed
 ## tower's channel, Simulation.tower_mults), else state_effect(def, cfg, shadow).
 static func effect_of(def: TowerDef, cfg: GameConfig, shadow: bool, fx: Dictionary) -> Dictionary:

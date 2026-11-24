@@ -16,12 +16,19 @@ extends RefCounted
 ## placeholders {key} or {key|op}; a missing value reads the entry's `defaults`, else 0.
 ## Ops (OPS): num (the default, TowerText.num), pct (v x 100), pct_over1 ((v - 1) x 100),
 ## plus1 (1 + v), cells (TowerText.cells_text), plural:one:many (`one` when v == 1).
+##   tips   [{key, text}] (optional, LT-122): the hover explanation of the line of `key`,
+##          shown when `key` is active. Its placeholders name TIP_VALUES (numbers the sim
+##          reads from data/economy.json, TowerText.tip_values), not effect keys.
 
 const PATH := "res://data/effect_text.json"
 const OPS := ["num", "pct", "pct_over1", "plus1", "cells", "plural"]
 const _LINE_FIELDS := ["keys", "text", "in_row", "defaults"]
 const _SHORT_FIELDS := ["key", "text", "when", "keep_case", "defaults"]
 const _VARIANT_FIELDS := ["text", "when"]
+const _TIP_FIELDS := ["key", "text"]
+## LT-122: the placeholders a `tips` template may name (TowerText.tip_values fills them).
+const TIP_VALUES := ["shadow_occult_power_mult", "shadow_mundane_fire_interval_mult",
+	"shadow_mundane_miss_chance_add"]
 
 static var _table := {}
 static var _loaded := false
@@ -111,6 +118,24 @@ static func short_text(effects: Dictionary) -> String:
 	return t if keep_case else t.substr(0, 1).to_upper() + t.substr(1)
 
 
+## LT-122: the hover explanations of the tips whose key is active in `effects`, in table
+## order, joined by a blank line; a tip naming a value `values` lacks (its config block is
+## absent) is left out. "" when none applies.
+static func tip_text(effects: Dictionary, values: Dictionary) -> String:
+	var parts := PackedStringArray()
+	for entry: Dictionary in table().get("tips", []):
+		if not TowerStatsModel.is_active(effects, entry["key"]):
+			continue
+		var tpl: String = entry["text"]
+		var complete := true
+		for key in _placeholder_keys(tpl):
+			if not values.has(key):
+				complete = false
+		if complete:
+			parts.append(format(tpl, values))
+	return "\n\n".join(parts)
+
+
 ## The Attack cell label of an EffectCatalog.Mode.
 static func mode_label(mode: int) -> String:
 	var name: String = EffectCatalog.Mode.find_key(mode)
@@ -190,7 +215,31 @@ static func validate(t: Variant) -> Array[String]:
 			if e.has("when"):
 				_check_when(e["when"], at + ".when", errs)
 			_check_text(e.get("text"), at + ".text", false, errs)
+	if t.has("tips"):
+		_check_tips(t["tips"], errs)
 	return errs
+
+
+## LT-122: `tips` is an array of {key: effect key, text: template over TIP_VALUES}, one per key.
+static func _check_tips(tips: Variant, errs: Array[String]) -> void:
+	if not tips is Array:
+		errs.append("tips: must be an array")
+		return
+	var seen := {}
+	for i in tips.size():
+		var at := "tips[%d]" % i
+		var e: Variant = tips[i]
+		if not _check_entry(e, at, _TIP_FIELDS, errs):
+			continue
+		var key: Variant = e.get("key")
+		if _check_key(key, at + ".key", errs):
+			if seen.has(key):
+				errs.append("%s.key: \"%s\" has another tip" % [at, key])
+			seen[key] = true
+		if e.get("text") is String:
+			_check_template(e["text"], at + ".text", errs, TIP_VALUES)
+		else:
+			errs.append(at + ".text: must be a template")
 
 
 static func _value(key: String, values: Dictionary, defaults: Dictionary) -> float:
@@ -273,7 +322,24 @@ static func _check_text(text: Variant, at: String, variants: bool, errs: Array[S
 			else ": must be a template"))
 
 
-static func _check_template(tpl: String, at: String, errs: Array[String]) -> void:
+## The keys named by the placeholders of `tpl` (a closed "{...}" each), in order.
+static func _placeholder_keys(tpl: String) -> PackedStringArray:
+	var out := PackedStringArray()
+	var from := 0
+	while true:
+		var i := tpl.find("{", from)
+		var j := tpl.find("}", i) if i >= 0 else -1
+		if j < 0:
+			return out
+		out.append(tpl.substr(i + 1, j - i - 1).get_slice("|", 0))
+		from = j + 1
+	return out
+
+
+## `values`, when given (a tip), is the set of names a placeholder may use instead of the
+## effect catalog's keys.
+static func _check_template(tpl: String, at: String, errs: Array[String],
+		values: Array = []) -> void:
 	var from := 0
 	while true:
 		var i := tpl.find("{", from)
@@ -285,7 +351,11 @@ static func _check_template(tpl: String, at: String, errs: Array[String]) -> voi
 			return
 		var spec := tpl.substr(i + 1, j - i - 1)
 		var bar := spec.find("|")
-		_check_key(spec if bar < 0 else spec.substr(0, bar), at, errs)
+		var key := spec if bar < 0 else spec.substr(0, bar)
+		if values.is_empty():
+			_check_key(key, at, errs)
+		elif key not in values:
+			errs.append("%s: \"%s\" is not a tip value (%s)" % [at, key, ", ".join(values)])
 		if bar >= 0:
 			var op := spec.substr(bar + 1).split(":")
 			if op[0] not in OPS:

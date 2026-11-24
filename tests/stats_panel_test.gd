@@ -314,6 +314,31 @@ func test_special_lines_are_prefixed_by_column_only_with_upgrade_columns() -> vo
 	assert_array(Array(_special_lines())).is_equal(Array(TowerText.special_lines(dyn.branches["a"])))
 
 
+## LT-122: the id of a tower whose L1 casts shadow, and of one that does not (live data).
+func _caster_id() -> String:
+	for id: String in _config.towers:
+		if TowerStatsModel.is_active(_config.towers[id].levels[0].effects, "casts_shadow"):
+			return id
+	return ""
+
+
+## LT-122: hovering the special lines explains the shadow, numbers from the config; a tower
+## that casts none has no tooltip.
+func test_special_label_tooltip_explains_the_shadow_only_for_a_caster() -> void:
+	await _start_game()
+	var id := _caster_id()
+	assert_str(id).is_not_empty()
+	var sh := _config.economy.shadow
+	await _tower(id)
+	var tip := _game.tower_panel.special_label.tooltip_text
+	assert_str(tip).is_not_empty().contains("×" + TowerText.num(sh.occult_power_mult))
+	assert_str(tip).is_equal(TowerText.special_tip(_config.towers[id].levels[0].effects, _config))
+	await _tower(RIFLE)
+	assert_str(_game.tower_panel.special_label.tooltip_text).is_empty()
+	_game.tower_panel.open_for(_game.sim.state.tower_at[_game.sim.state.tower_at.keys()[0]])
+	assert_str(_game.tower_panel.special_label.tooltip_text).is_not_empty()
+
+
 # --- §5 lit ----------------------------------------------------------------------------------
 
 ## LT-89: the seconds between shots the sim fires at `interval_s`: whole 30 Hz ticks.
