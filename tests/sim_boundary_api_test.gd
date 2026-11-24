@@ -218,6 +218,7 @@ func test_debug_set_sanity_to_zero_starts_madness() -> void:
 
 func test_debug_set_sanity_in_madness_applies_nothing_but_is_ok_and_logged() -> void:
 	var sim := tsim()
+	sim.config.sanity.madness.exit_rule = "permanent"  # LT-121: the shipped default "recover" changes the madness text / lets debug through
 	sim.debug_set_sanity(0.0)
 	sim.drain_events()
 	assert_int(sim.debug_set_sanity(50.0)).is_equal(R2.OK)

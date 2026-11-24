@@ -351,6 +351,7 @@ func test_a_threshold_move_emits_the_state_change_after_the_amount_change() -> v
 
 func test_madness_is_latched_against_a_debug_change() -> void:
 	var sim := _sane_sim()
+	sim.config.sanity.madness.exit_rule = "permanent"  # LT-121: the shipped default "recover" changes the madness text / lets debug through
 	sim.debug_set_sanity(0.0)
 	assert_int(sim.state.sanity_state).is_equal(S.MADNESS)
 	sim.drain_events()

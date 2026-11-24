@@ -398,6 +398,7 @@ func test_fakes_spawn_at_the_madness_row_interval() -> void:
 
 func test_regen_and_drain_change_nothing_in_madness() -> void:
 	var sim := tsim()
+	_rule(sim, "permanent")  # LT-121: the shipped default "recover" lets regen through
 	build(sim, "rifleman")
 	var e := put(sim, "cultist", 8.0)
 	_set_sanity(sim, 0.0)

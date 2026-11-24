@@ -67,6 +67,7 @@ func test_cap_ratio_is_cap_over_max() -> void:
 
 func test_label_shows_the_cap_only_while_it_is_below_max() -> void:
 	await _start_game()
+	_config.sanity.madness.exit_rule = "permanent"  # LT-121: the shipped default "recover" changes the madness text / lets debug through
 	var bar := _game.hud.sanity_bar
 	var top := _config.sanity.max_sanity
 	assert_str(bar.label_text()).is_equal("Sanity %d  Lucid" % roundi(top))
@@ -104,6 +105,7 @@ func test_hostile_text_follows_the_config_and_leaves_out_a_part_at_one() -> void
 
 func test_hostile_label_is_visible_only_in_madness() -> void:
 	await _start_game()
+	_config.sanity.madness.exit_rule = "permanent"  # LT-121: the shipped default "recover" changes the madness text / lets debug through
 	var label := _game.hud.hostile_label
 	_game.hud.refresh()
 	assert_bool(label.visible).is_false()

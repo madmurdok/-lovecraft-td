@@ -285,7 +285,8 @@ func test_madness_rules() -> void:
 	assert_float(m.shot_real).is_equal(0.4)
 	assert_float(m.shot_fake).is_equal(0.35)
 	assert_float(m.shot_empty).is_equal(0.25)
-	assert_str(m.exit_rule).is_equal("permanent")
+	assert_str(m.exit_rule).is_equal("recover")  # LT-121 shipped default
+	assert_float(m.exit_sanity).is_equal(20.0)
 	assert_float(m.restore_sanity).is_equal(30.0)
 	assert_int(m.buyout_cost).is_equal(150)
 	# The multipliers are tuned numbers (LT-23 S10): the file's value, and a buff by sign.

@@ -218,6 +218,9 @@ func _play(strat: String, run_seed: int) -> Dictionary:
 	var posts := 0
 	var post_shots := 0
 	var post_ids := {}  ## ids of deployed posts (a post may be gone at dawn by the drain)
+	# LT-121 §4 metrics: transitions into and out of MADNESS (SANITY_STATE_CHANGED).
+	var madness_entries := 0
+	var madness_exits := 0
 	_policy().shadowed_builds = 0
 	for kind in _cfg.economy.relic_ids():
 		drops[kind] = 0
@@ -284,6 +287,11 @@ func _play(strat: String, run_seed: int) -> Dictionary:
 			elif ev.type == SimEvent.Type.POST_DEPLOYED:
 				posts += 1
 				post_ids[ev.id] = true
+			elif ev.type == SimEvent.Type.SANITY_STATE_CHANGED:
+				if ev.data["new"] == SimState.SanityState.MADNESS:
+					madness_entries += 1
+				elif ev.data["old"] == SimState.SanityState.MADNESS:
+					madness_exits += 1
 			elif ev.type == SimEvent.Type.FLARE_FIRED:
 				flares += 1
 			elif ev.type == SimEvent.Type.TOWER_LIFTED:
@@ -332,6 +340,7 @@ func _play(strat: String, run_seed: int) -> Dictionary:
 		"shadowed_mundane_builds": _policy().shadowed_builds,
 		"crew_hired": crew_hired, "crew_gold": crew_gold, "posts": posts,
 		"post_shots": post_shots,
+		"madness_entries": madness_entries, "madness_exits": madness_exits,
 	}
 	if _upgrades:
 		run["upgrades"] = upgrades

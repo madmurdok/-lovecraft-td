@@ -40,6 +40,14 @@ func buyout_applies() -> bool:
 		and _state.sanity_state == SimState.SanityState.MADNESS
 
 
+## LT-121: whether the player is in MADNESS under exit_rule "recover", i.e. climbing back
+## to exit_target(). The HUD shows the exit mark and the recover line exactly while this is
+## true. Changes nothing.
+func recover_applies() -> bool:
+	return _config.sanity.madness.exit_rule == "recover" \
+		and _state.sanity_state == SimState.SanityState.MADNESS
+
+
 ## Whether buy_sanity() would be applied now; OK or the first failing reason, in this
 ## order: OUTCOME_REACHED, NO_BUYOUT, NOT_IN_MADNESS, NO_SANITY_ROOM (the cap is 0, LT-23
 ## Q6), NOT_ENOUGH_GOLD. Changes nothing.
@@ -114,6 +122,12 @@ func restore_target() -> float:
 	return minf(_config.sanity.madness.restore_sanity, _state.sanity_cap)
 
 
+## LT-121 §2: sanity at which MADNESS ends under exit_rule "recover":
+## min(madness.exit_sanity, sanity_cap). At cap 0 there is no exit (0 is still MADNESS).
+func exit_target() -> float:
+	return minf(_config.sanity.madness.exit_sanity, _state.sanity_cap)
+
+
 ## The sanity cap `t` holds now: its current level's (or branch's) sanity_reserve.
 func reserve_of(t: SimTower) -> float:
 	return t.stats().sanity_reserve
@@ -171,15 +185,28 @@ func sanity_state_for(s: float) -> SimState.SanityState:
 	return SimState.SanityState.FRAYING
 
 
+## LT-121 §2: the state after a sanity change from `old` to `s`. Under exit_rule "recover"
+## MADNESS holds while s < exit_target() (hysteresis: entry at 0, exit at exit_sanity);
+## otherwise, and under the other rules, sanity_state_for(s).
+func _next_state(old: SimState.SanityState, s: float) -> SimState.SanityState:
+	if old == SimState.SanityState.MADNESS and _config.sanity.madness.exit_rule == "recover" \
+			and s < exit_target():
+		return SimState.SanityState.MADNESS
+	return sanity_state_for(s)
+
+
 ## Every sanity change goes through here: clamps to [0, sanity_cap], then emits SANITY_CHANGED
 ## {delta, sanity, reason} with the delta actually applied (nothing when it is 0, e.g. regen
 ## at the cap), and SANITY_STATE_CHANGED {old, new} (SimState.SanityState values) when the
 ## threshold state moves. `id` is the enemy (kill) or tower (build, cast) it is about,
 ## 0 otherwise ("reserve": the cap fell below sanity). MADNESS is latched (LT-13): while in it only MADNESS_EXIT_REASONS change
-## sanity; regen and drain apply nothing and emit nothing.
+## sanity; regen and drain apply nothing and emit nothing. Under exit_rule "recover"
+## (LT-121) every reason applies while mad, and the state leaves MADNESS only once sanity
+## reaches exit_target() (see _next_state).
 ## Returns the applied delta.
 func add(delta: float, reason: String, id: int) -> float:
 	if _state.sanity_state == SimState.SanityState.MADNESS \
+			and _config.sanity.madness.exit_rule != "recover" \
 			and not MADNESS_EXIT_REASONS.has(reason):
 		return 0.0
 	var before := _state.sanity
@@ -190,7 +217,7 @@ func add(delta: float, reason: String, id: int) -> float:
 	_ctx.emit(SimEvent.Type.SANITY_CHANGED, id,
 		{"delta": applied, "sanity": _state.sanity, "reason": reason})
 	var old := _state.sanity_state
-	_state.sanity_state = sanity_state_for(_state.sanity)
+	_state.sanity_state = _next_state(old, _state.sanity)
 	if _state.sanity_state != old:
 		_ctx.emit(SimEvent.Type.SANITY_STATE_CHANGED, 0, {"old": old, "new": _state.sanity_state})
 	return applied
