@@ -21,14 +21,15 @@ void fragment() {
 	vec2 uv = SCREEN_UV;
 	vec2 px = SCREEN_PIXEL_SIZE;
 	float t = TIME;
-	float amount = distortion * (1.0 + 2.0 * pulse);
+	vec2 from_centre = uv - vec2(0.5);
+	float edge = length(from_centre * vec2(1.0, 0.75)) * 2.0;  // ~0 centre, ~1 corners
+	// LT-40 W1: the board centre, where play happens, stays still; only the rim wobbles.
+	float amount = distortion * (1.0 + 2.0 * pulse) * smoothstep(0.25, 0.9, edge);
 	vec2 wave = vec2(
 		sin(uv.y * 23.0 + t * 1.9) + 0.6 * sin(uv.y * 61.0 - t * 3.1),
 		cos(uv.x * 17.0 + t * 1.4) + 0.6 * cos(uv.x * 47.0 + t * 2.3));
 	uv += wave * 0.5 * amount * px;
 
-	vec2 from_centre = uv - vec2(0.5);
-	float edge = length(from_centre * vec2(1.0, 0.75)) * 2.0;  // ~0 centre, ~1 corners
 	vec2 split = normalize(from_centre + vec2(1e-5)) * aberration * (0.3 + edge) * px;
 	vec3 col;
 	col.r = texture(screen_tex, uv + split).r;
