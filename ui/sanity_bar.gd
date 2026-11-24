@@ -6,12 +6,15 @@ extends Control
 ## drawing moves; the control's rect never does. Reads sim state, never changes it.
 ## LT-23: the part of the bar held by occult reserves (cap..max) is a dark hatched block at
 ## the right end, and the label reads "Sanity n / cap" while the cap is below max.
+## LT-121: in madness under exit rule "recover" an exit mark sits at exit_target() and the
+## label reads "Sanity n / target to recover".
 
 const SIZE := Vector2(190, 26)
 const STATE_NAMES: PackedStringArray = ["Lucid", "Whispers", "Fraying", "Madness"]
 const COLOR_BACK := Color(0.05, 0.05, 0.07)
 const COLOR_FRAME := Color(0.55, 0.55, 0.6)
 const COLOR_MARK := Color(0.9, 0.9, 0.95, 0.85)
+const COLOR_EXIT_MARK := Color(0.35, 0.95, 0.55)  ## LT-121: the recover target mark
 const MARK_TICK := 5.0  ## LT-28: px a threshold tick reaches into the bar from each edge
 const COLOR_RESERVED := Color(0.13, 0.07, 0.16)  ## LT-23: reserved block
 const COLOR_HATCH := Color(0.42, 0.28, 0.48, 0.9)  ## LT-23: its hatching
@@ -24,8 +27,8 @@ const STATE_COLORS: Array[Color] = [
 ]
 const SLICES := 12
 ## Visual tunables for the Fraying look.
-@export var tear_px := 3.0  ## vertical slice offset
-@export var edge_wobble_px := 9.0  ## fill edge wobble
+@export var tear_px := 1.5  ## vertical slice offset
+@export var edge_wobble_px := 4.5  ## fill edge wobble
 @export var glitch_rate := 9.0  ## new glitch pattern per second
 
 var game: Game
@@ -36,7 +39,7 @@ var _rng := RandomNumberGenerator.new()  ## presentation-only
 
 func _ready() -> void:
 	custom_minimum_size = SIZE
-	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	mouse_filter = Control.MOUSE_FILTER_PASS  # LT-120: hovered for the Hud's tooltip
 	set_process(false)  # LT-78 Q3: the Hud turns the animation on (set_distorted)
 
 
@@ -68,9 +71,12 @@ func cap_ratio() -> float:
 	return clampf(game.sim.state.sanity_cap / game.sim.config.sanity.max_sanity, 0.0, 1.0)
 
 
-## "Sanity n  State", or "Sanity n / cap  State" while reserves hold part of the bar.
+## "Sanity n  State", or "Sanity n / cap  State" while reserves hold part of the bar;
+## "Sanity n / target to recover" while recovering from madness (LT-121; not at cap 0).
 func label_text() -> String:
 	var s := game.sim.state
+	if exit_ratio() > 0.0:
+		return "Sanity %d / %d to recover" % [roundi(s.sanity), roundi(game.sim.exit_target())]
 	var st := STATE_NAMES[int(s.sanity_state)]
 	if s.sanity_cap < game.sim.config.sanity.max_sanity:
 		return "Sanity %d / %d  %s" % [roundi(s.sanity), roundi(s.sanity_cap), st]
@@ -86,6 +92,14 @@ func mark_ratios() -> PackedFloat32Array:
 		if m > 0.02:
 			out.append(m)
 	return out
+
+
+## LT-121: the recover target as a 0..1 position while recovering from madness; 0 (no
+## mark) otherwise, and at cap 0 where there is no target to climb to.
+func exit_ratio() -> float:
+	if not game.sim.recover_applies():
+		return 0.0
+	return clampf(game.sim.exit_target() / game.sim.config.sanity.max_sanity, 0.0, 1.0)
 
 
 func _draw() -> void:
@@ -108,6 +122,13 @@ func _draw() -> void:
 		# LT-28: edge ticks only, so a mark never crosses the label in the middle.
 		draw_line(Vector2(x, -3), Vector2(x, MARK_TICK), COLOR_MARK, 2.0)
 		draw_line(Vector2(x, r.size.y - MARK_TICK), Vector2(x, r.size.y + 3), COLOR_MARK, 2.0)
+	var exit := exit_ratio()
+	if exit > 0.0:
+		# LT-121: taller than a threshold tick and in its own colour, edges only as LT-28.
+		var xe := r.size.x * exit
+		draw_line(Vector2(xe, -5), Vector2(xe, MARK_TICK + 2), COLOR_EXIT_MARK, 3.0)
+		draw_line(Vector2(xe, r.size.y - MARK_TICK - 2), Vector2(xe, r.size.y + 5),
+			COLOR_EXIT_MARK, 3.0)
 	draw_rect(r, COLOR_FRAME, false, 1.0)
 	var text := label_text()
 	var font := ThemeDB.fallback_font

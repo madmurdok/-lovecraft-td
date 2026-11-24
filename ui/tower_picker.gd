@@ -10,8 +10,8 @@ extends VBoxContainer
 ## A row is disabled whenever Simulation.can_build refuses it: unaffordable dims it and
 ## reddens the cost; any other refusal (the same for every row) replaces the title with
 ## the reason and dims the rows; a reserve that would take the sanity cap to 0 (LT-23 Q3)
-## marks the Trait cell red with "!". Past LIST_MAX_ROWS rows the rows scroll under the
-## pinned first group line. Cancel, Esc, or a click elsewhere on the board closes it.
+## marks the Trait cell red with "!". Past LIST_MAX_ROWS rows (fewer by night, LT-113: the
+## post rows take their slots) the rows scroll under the pinned first group line. Cancel, Esc, or a click elsewhere on the board closes it.
 ## LT-32 §4 (crew on): by day a row's cost is Simulation.build_price (the reserve covers
 ## crew). LT-118: a crewed row also shows a small crew mark at the right of its name cell
 ## (by day): "res 2" (the reserve covers the crew), "hire 2" (hired at build) or
@@ -62,7 +62,12 @@ const TITLE_H := 22
 const GROUP_H := 16
 const ROW_H := 18
 const SEPARATOR_H := 9
-const LIST_MAX_ROWS := 14  ## LT-61 §5: more rows scroll inside the list
+## LT-61 §5: more rows scroll inside the list. LT-113: 10, not 14: the list stays at the
+## shipped roster's height, so the tallest L1 card below it fits the panel unscrolled.
+## LT-113 (owner): night post rows take list slots (posts + list rows <= LIST_MAX_ROWS),
+## so the card fits by night too; the list keeps at least LIST_MIN_ROWS rows.
+const LIST_MAX_ROWS := 10
+const LIST_MIN_ROWS := 4
 ## LT-118: the crew mark at the right of a crewed row's name; at 9 px the widest mark
 ## ("res 1·hire 1") leaves the short names their full FONT_SIZE.
 const CREW_FONT_SIZE := 9
@@ -106,6 +111,12 @@ var post_buttons: Dictionary[String, Button] = {}  ## LT-32: crew kind -> its po
 var _traits: Dictionary[String, String] = {}  ## def id -> trait_text of its L1
 var refresh_count := 0  ## LT-78 §8 B1: row rebuilds so far (refresh and flush)
 var _dirty := 0  ## LT-78: G_ROWS when an event marked the rows since the last flush
+var list_rows := 0  ## LT-113: rows the list shows unscrolled now (LIST_MAX_ROWS less posts)
+var _marks_shown := true  ## LT-113: crew marks show (by day); names reserve their room only then
+var _n_rows := 0  ## tower rows in the list
+var _inner_groups := 0  ## group lines inside the scrolled body
+var _pinned: HBoxContainer  ## the first group line, pinned above the rows
+var _bar_spacer: Control  ## in _pinned while the list scrolls (the scrollbar's width)
 
 
 func _ready() -> void:
@@ -155,21 +166,41 @@ func _ready() -> void:
 		for id: String in groups[i][1]:
 			body.add_child(_row(id, towers[id]))
 	add_child(rows_scroll)
-	var scrolling := n_rows > LIST_MAX_ROWS
-	# Past LIST_MAX_ROWS the rows lose the scrollbar's width; the pinned heads do too.
-	var bar_w := scrollbar_w() if scrolling else 0
-	if bar_w > 0:
-		var pinned: HBoxContainer = get_node("Group_" + String(groups[0][0]))
-		pinned.add_child(_spacer(bar_w))
-		# The title loses that width too: one size down keeps "MUNDANE" whole.
-		var title: Label = pinned.get_node("Title")
-		title.add_theme_font_size_override("font_size", HEAD_FONT_SIZE - 1)
-	rows_scroll.custom_minimum_size.y = mini(n_rows, LIST_MAX_ROWS) * ROW_H \
-		+ inner_groups * GROUP_H
+	_n_rows = n_rows
+	_inner_groups = inner_groups
+	_pinned = get_node("Group_" + String(groups[0][0]))
 	var sep := HSeparator.new()
 	sep.name = "Separator"
 	sep.custom_minimum_size.y = SEPARATOR_H
 	add_child(sep)
+	_layout_rows()
+
+
+## LT-113: sizes the list to LIST_MAX_ROWS rows less the shown post rows (at least
+## LIST_MIN_ROWS), so the picker keeps one height by day and by night; past that the rows
+## scroll inside the list. Re-run when the post section shows or hides.
+func _layout_rows() -> void:
+	var posts := post_box.get_child_count() if post_box != null and post_box.visible else 0
+	var cap := maxi(LIST_MAX_ROWS - posts, LIST_MIN_ROWS)
+	var marks := game.sim.state.phase != SimState.Phase.WAVE  # as refresh() shows them
+	if cap == list_rows and marks == _marks_shown:
+		return
+	list_rows = cap
+	_marks_shown = marks
+	rows_scroll.custom_minimum_size.y = mini(_n_rows, cap) * ROW_H + _inner_groups * GROUP_H
+	# Past `cap` the rows lose the scrollbar's width; the pinned heads do too.
+	var bar_w := scrollbar_w() if _n_rows > cap else 0
+	var title: Label = _pinned.get_node("Title")
+	if bar_w > 0 and _bar_spacer == null:
+		_bar_spacer = _spacer(bar_w)
+		_pinned.add_child(_bar_spacer)
+		# The title loses that width too: one size down keeps "MUNDANE" whole.
+		title.add_theme_font_size_override("font_size", HEAD_FONT_SIZE - 1)
+	elif bar_w == 0 and _bar_spacer != null:
+		_pinned.remove_child(_bar_spacer)
+		_bar_spacer.free()
+		_bar_spacer = null
+		title.add_theme_font_size_override("font_size", HEAD_FONT_SIZE)
 	_fit_names(bar_w)
 
 
@@ -273,7 +304,9 @@ func _fit_names(bar_w: int) -> void:
 	for id: String in names:
 		var l := names[id]
 		var avail := NAME_W - bar_w
-		if crew_marks.has(id):
+		if crew_marks.has(id) and not _marks_shown:  # LT-113: by night the name takes it all
+			l.add_theme_stylebox_override("normal", StyleBoxEmpty.new())
+		elif crew_marks.has(id):
 			var m := crew_marks[id]
 			var need := game.sim.crew_need(id)
 			var widest := crew_mark_text(maxi(need - 1, 0), mini(need, 1))
@@ -382,6 +415,7 @@ func refresh() -> void:
 	if _refresh_posts() == SimCommand.CommandResult.OK:
 		shared = SimCommand.CommandResult.OK
 		title = POST_TITLE_TEXT
+	_layout_rows()
 	var refused := shared != SimCommand.CommandResult.OK
 	var why := CommandText.reason(shared)
 	title_label.text = why.left(1).to_upper() + why.substr(1) if refused else title

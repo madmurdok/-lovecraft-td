@@ -163,3 +163,104 @@ func _first_buildable() -> Vector2i:
 			if m.is_buildable(Vector2i(x, y)):
 				return Vector2i(x, y)
 	return Vector2i(-1, -1)
+
+
+# ---- LT-40: eased flicker, HUD sway rate, halved bar look --------------------------------
+
+
+const FLICKER_KEYS := [0, 1, 2, 7, 19, 123]
+
+
+## Largest change of `Board.flicker_dip(key)` between neighbouring samples `dt` apart over
+## `seconds`, plus the largest value seen (so a flat series cannot pass vacuously).
+func _flicker_scan(board: Board, key: int, dt: float, seconds: float) -> Vector2:
+	var worst := 0.0
+	var peak := 0.0
+	board.time = 0.0
+	var prev := board.flicker_dip(key)
+	var n := int(seconds / dt)
+	for i in range(1, n + 1):
+		board.time = i * dt
+		var d := board.flicker_dip(key)
+		worst = maxf(worst, absf(d - prev))
+		peak = maxf(peak, d)
+		prev = d
+	return Vector2(worst, peak)
+
+
+func test_flicker_dip_never_jumps_between_frames_by_more_than_the_eased_bound() -> void:
+	var board: Board = auto_free(Board.new())
+	# smoothstep slope <= 1.5 and neighbouring step dips differ by <= 1, so per sample the
+	# dip moves at most 1.5 * rate * dt (plus a little float slack).
+	for dt in [1.0 / 240.0, 1.0 / 60.0, 1.0 / 30.0]:
+		var bound: float = 1.5 * board.flicker_rate * dt + 0.005
+		for key in FLICKER_KEYS:
+			var scan := _flicker_scan(board, key, dt, 2.0)
+			assert_float(scan.x).override_failure_message(
+				"key %d dt %.4f: jump %.3f > bound %.3f" % [key, dt, scan.x, bound]) \
+				.is_less_equal(bound)
+			assert_float(scan.y).is_greater(0.3)  # the series does move (not a flat pass)
+
+
+func test_flicker_dip_equals_the_step_value_at_a_step_boundary() -> void:
+	var board: Board = auto_free(Board.new())
+	var differing := 0
+	for key in FLICKER_KEYS:
+		for k in range(1, 8):
+			board.time = float(k) / board.flicker_rate
+			var want := board._flicker_step_dip(k, key)
+			assert_float(board.flicker_dip(key)).is_equal_approx(want, 1e-4)
+			# just before the boundary it has already arrived there (continuous, no snap)
+			board.time = (float(k) - 1e-3) / board.flicker_rate
+			assert_float(board.flicker_dip(key)).is_equal_approx(want, 1e-3)
+			if absf(board._flicker_step_dip(k - 1, key) - want) > 0.05:
+				differing += 1
+	assert_int(differing).is_greater(5)  # the check does tell neighbouring steps apart
+
+
+func test_flicker_dip_halfway_between_steps_is_the_mean_of_both_steps() -> void:
+	var board: Board = auto_free(Board.new())
+	var differing := 0
+	for key in FLICKER_KEYS:
+		for k in range(0, 8):
+			board.time = (float(k) + 0.5) / board.flicker_rate
+			var a := board._flicker_step_dip(k, key)
+			var b := board._flicker_step_dip(k + 1, key)
+			assert_float(board.flicker_dip(key)).is_equal_approx((a + b) * 0.5, 1e-4)
+			if absf(a - b) > 0.05:
+				differing += 1
+	assert_int(differing).is_greater(5)
+
+
+func test_flicker_dip_follows_the_flicker_rate_export() -> void:
+	var board: Board = auto_free(Board.new())
+	board.time = 0.37
+	board.flicker_rate = 13.0
+	var at13 := board.flicker_dip(3)
+	board.flicker_rate = 29.0
+	assert_float(board.flicker_dip(3)).is_not_equal(at13)
+
+
+func test_the_owner_chosen_flicker_and_sway_values_are_the_defaults() -> void:
+	var board: Board = auto_free(Board.new())
+	assert_float(board.flicker_rate).is_equal(13.0)
+	var fx: SanityFx = auto_free(SanityFx.new())
+	assert_float(fx.max_flicker).is_equal(0.85)
+	assert_float(fx.ui_jitter_rate).is_equal(11.0)
+
+
+func test_hud_sway_rate_comes_from_the_ui_jitter_rate_export() -> void:
+	await _start_game()
+	_set_sanity(55.0)  # Whispers: the sway is on
+	var mat := _game.sanity_fx.ui_jitter_material
+	assert_float(mat.get_shader_parameter("rate")).is_equal(_game.sanity_fx.ui_jitter_rate)
+	_game.sanity_fx.ui_jitter_rate = 4.0  # not the shader's own default (11)
+	_game.sanity_fx._apply()
+	assert_float(mat.get_shader_parameter("rate")).is_equal(4.0)
+
+
+func test_sanity_bar_wobble_and_tear_are_the_halved_values() -> void:
+	var bar: SanityBar = auto_free(SanityBar.new())
+	assert_float(bar.edge_wobble_px).is_equal(4.5)
+	assert_float(bar.tear_px).is_equal(1.5)
+	assert_float(bar.glitch_rate).is_equal(9.0)

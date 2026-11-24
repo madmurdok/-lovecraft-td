@@ -279,13 +279,22 @@ func test_sanity() -> void:
 	assert_float(s.thresholds["madness"].min_sanity).is_equal(0.0)
 
 
+## LT-121: the frozen golden fixture has no exit_sanity and still parses, with the default.
+func test_the_golden_fixture_without_exit_sanity_gets_the_default() -> void:
+	var r := ConfigLoader.load_dir("res://tests/fixtures/golden_data")
+	assert_bool(r.ok).override_failure_message("\n".join(r.errors)).is_true()
+	assert_str(r.config.sanity.madness.exit_rule).is_equal("permanent")
+	assert_float(r.config.sanity.madness.exit_sanity).is_equal(20.0)
+
+
 func test_madness_rules() -> void:
 	var m := _real().sanity.madness
 	assert_float(m.damage_multiplier).is_equal(2.0)
 	assert_float(m.shot_real).is_equal(0.4)
 	assert_float(m.shot_fake).is_equal(0.35)
 	assert_float(m.shot_empty).is_equal(0.25)
-	assert_str(m.exit_rule).is_equal("permanent")
+	assert_str(m.exit_rule).is_equal("recover")  # LT-121 shipped default
+	assert_float(m.exit_sanity).is_equal(20.0)
 	assert_float(m.restore_sanity).is_equal(30.0)
 	assert_int(m.buyout_cost).is_equal(150)
 	# The multipliers are tuned numbers (LT-23 S10): the file's value, and a buff by sign.

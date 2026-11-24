@@ -29,6 +29,9 @@ var oil_label: Label  ## LT-30: "Oil 4 / 6", beside the flare button
 var frame_label: Label  ## LT-38 P1: only with `--frame-stats` (debug builds)
 var sandbox_label: Label  ## LT-67: "SANDBOX", only in a `--sandbox` run, top-right of the board
 var fps_label: Label  ## LT-44: always-visible FPS readout, bottom-left in the footer strip
+## LT-119: "Buy oil for a flare (12 gold)" in the footer by day, where the flare sits at night;
+## the same command as the lighthouse panel's button. Built with the flare and lamp oil.
+var buy_oil_button: Button
 var _fps_shown := -1
 var readout_timer: Timer  ## LT-78 Q3: refreshes the FPS and frame-stats labels
 var footer: ColorRect  ## LT-28: covers the strip below the board (range rings end there)
@@ -62,7 +65,7 @@ const _PH := G_PHASE | G_RELICS | G_FLARE  ## phase events: day-only / night-onl
 ## LT-78 §3 (rows 1-24): sim event -> the groups it may change. A group's values come from
 ## the rule queries at flush, never from the payload.
 const REFRESH_ON: Dictionary[SimEvent.Type, int] = {
-	SimEvent.Type.GOLD_CHANGED: G_PURSE | G_BUYOUT,
+	SimEvent.Type.GOLD_CHANGED: G_PURSE | G_BUYOUT | G_FLARE,  # LT-119: "Buy oil" money
 	SimEvent.Type.RELICS_CHANGED: G_RELICS,
 	SimEvent.Type.LEAKED: G_HP,
 	SimEvent.Type.BUILD_STARTED: _PH,
@@ -117,6 +120,11 @@ func _ready() -> void:
 	if game.sim.config.crew_on():
 		crew_button = _button(footer, "CrewButton", game.open_crew_panel)
 		crew_button.position = Vector2(CREW_X, 2)
+	# LT-119: by day, "Buy oil" takes the flare's place at the footer's right end (placed by
+	# _refresh_flare), so the purchase is found without opening the lighthouse.
+	var eco := game.sim.config.economy
+	if eco.flare != null and eco.oil != null:
+		buy_oil_button = _button(footer, "BuyOilButton", game.commands.buy_flare_oil)
 	var bar := HBoxContainer.new()
 	bar.name = "Bar"
 	# LT-27: two-line columns (money over relics, phase over lighthouse HP) keep the bar
@@ -319,9 +327,14 @@ func _refresh_sanity() -> void:
 	var s := game.sim.state
 	sanity_bar.set_distorted(s.sanity_state >= SimState.SanityState.FRAYING)
 	sanity_bar.redraw()
+	sanity_bar.tooltip_text = sanity_tooltip(game.sim)  # LT-120: what drains and restores it
 	hostile_label.visible = s.sanity_state == SimState.SanityState.MADNESS
 	if hostile_label.visible:
-		hostile_label.text = hostile_text(game.sim.config.sanity.madness)
+		var text := hostile_text(game.sim.config.sanity.madness)
+		if game.sim.recover_applies():  # LT-121: the way out, as a second line
+			text += "\n" + recover_text(game.sim.config.sanity, game.sim.exit_target())
+		hostile_label.text = text
+		hostile_label.size = Vector2.ZERO  # shrink back to one line after a recovery
 		_place_hostile()
 
 
@@ -353,7 +366,7 @@ func _on_speed_changed() -> void:
 ## LT-30 §3.2: "Flare (2 oil)" while it can be fired, "Flare 12 s" during the cooldown,
 ## "Flare burning" while it burns; the oil stock beside it. The button shows at night only
 ## (a night command); the stock shows all the time. Arms the flare timer for on_stepped
-## while a flare burns or cools down.
+## while a flare burns or cools down. LT-119: by day "Buy oil" stands where the flare does.
 func _refresh_flare() -> void:
 	refresh_count += 1
 	var sim := game.sim
@@ -380,7 +393,29 @@ func _refresh_flare() -> void:
 	var lw := oil_label.get_combined_minimum_size().x
 	flare_button.position = Vector2(right - w, y - footer.position.y)
 	var label_right := right - w - 8.0 if night else right
+	if buy_oil_button != null:
+		var buy_left := _refresh_buy_oil(night, right, y)
+		if not night:
+			label_right = buy_left
 	oil_label.position = Vector2(label_right - lw, y - footer.position.y + 4.0)
+
+
+## LT-119: the day "Buy oil" button (shown by day only, where the flare stands at night),
+## disabled with the sim's refusal as its tooltip. Returns the x the oil stock ends at.
+func _refresh_buy_oil(night: bool, right: float, y: float) -> float:
+	var sim := game.sim
+	buy_oil_button.visible = not night
+	var buy := sim.can_buy_oil()
+	buy_oil_button.text = LighthousePanel.buy_oil_text(sim)
+	buy_oil_button.disabled = buy != SimCommand.CommandResult.OK
+	if buy == SimCommand.CommandResult.OK:
+		buy_oil_button.tooltip_text = "Oil for one flare; the flare is fired at night"
+	else:
+		var why := CommandText.reason(buy, "buy_oil")
+		buy_oil_button.tooltip_text = why.left(1).to_upper() + why.substr(1)
+	var w := buy_oil_button.get_combined_minimum_size().x
+	buy_oil_button.position = Vector2(right - w, y - footer.position.y)
+	return right - w - 8.0
 
 
 static func _cooldown_secs(s: SimState) -> int:
@@ -417,6 +452,63 @@ static func hostile_text(m: SanityConfig.Madness) -> String:
 	if parts.is_empty():
 		return "The world turns hostile"
 	return "The world turns hostile: enemies " + ", ".join(parts)
+
+
+## LT-121 §3: "Recover at 20 sanity: +12 each dawn, +0.5 per mundane kill" from the recover
+## target and the regen config (a source is left out when it is 0); at target 0 (cap 0) "No
+## room to recover: sell an occult tower".
+static func recover_text(cfg: SanityConfig, target: float) -> String:
+	if target <= 0.0:
+		return "No room to recover: sell an occult tower"
+	var head := "Recover at %d sanity" % roundi(target)
+	var parts := regen_parts(cfg)
+	if parts.is_empty():
+		return head
+	return head + ": " + ", ".join(parts)
+
+
+## The regen sources, "+12 each dawn", "+0.5 per mundane kill" (a source is left out when
+## it is 0); shared by the recover line and the sanity tooltip.
+static func regen_parts(cfg: SanityConfig) -> PackedStringArray:
+	var parts := PackedStringArray()
+	if cfg.regen_between_waves > 0.0:
+		parts.append("+%s each dawn" % ConfigReader.fmt(cfg.regen_between_waves))
+	if cfg.regen_mundane_kill > 0.0:
+		parts.append("+%s per mundane kill" % ConfigReader.fmt(cfg.regen_mundane_kill))
+	return parts
+
+
+## LT-120: the sanity bar's tooltip, what drains sanity and what restores it, from config:
+##   Drains sanity:
+##   · occult towers hold part of it (the hatched end): 30 now
+##   · Shoggoth within 3 cells of a tower: −2.5 per s
+##   Restores: +12 each dawn, +0.5 per mundane kill
+##   At 0: madness until sanity is back to 20
+## The "now" part only while a reserve stands; a horror line per enemy with horror_drain in
+## config order; the last line names the recover target under exit_rule "recover" only.
+static func sanity_tooltip(sim: Simulation) -> String:
+	var cfg := sim.config.sanity
+	var lines := PackedStringArray(["Drains sanity:"])
+	var occult := "· occult towers hold part of it (the hatched end)"
+	var held := cfg.max_sanity - sim.state.sanity_cap
+	if held > 0.0:
+		occult += ": %s now" % ConfigReader.fmt(roundf(held))
+	lines.append(occult)
+	for e: EnemyDef in sim.config.enemies.values():
+		if e.horror_drain > 0.0:
+			lines.append("· %s within %s cells of a tower: %s%s per s" % [e.name,
+				ConfigReader.fmt(cfg.horror_radius_cells), TowerText.MINUS,
+				ConfigReader.fmt(e.horror_drain)])
+	var parts := regen_parts(cfg)
+	if not parts.is_empty():
+		lines.append("Restores: " + ", ".join(parts))
+	if not sim.recover_rule():
+		lines.append("At 0: madness")
+	elif sim.exit_target() > 0.0:
+		lines.append("At 0: madness until sanity is back to %d" % roundi(sim.exit_target()))
+	else:
+		lines.append("At 0: madness, with no way back while occult towers hold it all")
+	return "\n".join(lines)
 
 
 ## LT-27 §4: "Day 3 — night falls in 31 s" (day n comes before night n), "Night 3 of 5",

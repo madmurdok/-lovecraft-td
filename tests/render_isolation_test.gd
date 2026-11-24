@@ -92,3 +92,28 @@ func test_a_game_started_without_the_flag_does_not_reveal_fakes() -> void:
 	assert_bool(OS.get_cmdline_user_args().has(DebugArgs.REVEAL_FAKES_ARG)).is_false()
 	assert_bool(game.sim.debug_reveal_fakes).is_false()
 	game.free()
+
+
+## LT-40: the flicker dip depends only on (time, key): two boards with the same time and key
+## agree, repeated calls agree, and another key or time gives another value. A real and a
+## fake enemy are told apart by nothing but their id, so they flicker alike.
+func test_flicker_dip_depends_only_on_time_and_key() -> void:
+	var a: Board = auto_free(Board.new())
+	var b: Board = auto_free(Board.new())
+	b.flicker_rate = a.flicker_rate
+	var distinct_keys := 0
+	var distinct_times := 0
+	for i in 40:
+		var t := 0.011 * i
+		a.time = t
+		b.time = t
+		for key in [5, 6, 77]:
+			assert_float(a.flicker_dip(key)).is_equal(b.flicker_dip(key))
+			assert_float(a.flicker_dip(key)).is_equal(a.flicker_dip(key))
+		if absf(a.flicker_dip(5) - a.flicker_dip(6)) > 1e-3:
+			distinct_keys += 1
+		a.time = t + 0.2
+		if absf(a.flicker_dip(5) - b.flicker_dip(5)) > 1e-3:
+			distinct_times += 1
+	assert_int(distinct_keys).is_greater(10)
+	assert_int(distinct_times).is_greater(10)

@@ -142,9 +142,13 @@ but deals no leak damage and credits no relic (its token melts in flight). The p
   ×0.37 damage while in Madness (`madness.enemy_speed_multiplier`,
   `enemy_damage_taken_multiplier`); on top of Elder Sign auras; gone the tick after
   Madness ends.
-- Duration: until the end of the game (default).
+- Duration: until sanity climbs back to the recover target (default, LT-121).
 - Exit rule is a config switch for rebalancing:
-  - `permanent` (default): no exit.
+  - `recover` (default, LT-121): regen, kills, horror drain and the cap keep moving sanity
+    while mad, but the state stays Madness until sanity reaches min(`exit_sanity` 20, cap);
+    then it is Fraying. Re-entry only at 0 (hysteresis). At cap 0 there is no way out until
+    an occult tower is sold. The HUD marks the target on the bar and lists the sources.
+  - `permanent`: no exit.
   - `buyout`: spend money to restore sanity to min(30, cap) (cost $150), any phase, night
     included; refused at cap 0.
   - `auto_restore`: after the current wave ends, sanity resets to min(30, cap).
@@ -314,7 +318,7 @@ data/
   Fakes do not drain sanity (no horror spiral), so an attentive player may notice a
   shoggoth that does not drain: accepted trade-off. Bosses are never picked as fakes.
 - **Madness as a deliberate strategy.** ×2 occult damage may make crashing sanity
-  on purpose optimal. Mitigation: astray shots cut the net output to ≈ ×0.8 (a loss, not a gain), plus permanent default; tune `madness.shot_split`.
+  on purpose optimal. Mitigation: astray shots cut the net output to ≈ ×0.8 (a loss, not a gain), plus the slow `recover` exit; tune `madness.shot_split`.
 - **Permanent madness may make the rest of the run a lottery.** That is why the exit rule is switchable.
 - **Scope creep.** L3 branches double tower content; keep branch effects to one
   stat or flag each.

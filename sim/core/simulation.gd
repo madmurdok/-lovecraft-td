@@ -424,6 +424,16 @@ func buyout_applies() -> bool:
 	return _sanity.buyout_applies()
 
 
+## LT-121: in MADNESS under exit_rule "recover" (SanitySystem.recover_applies).
+func recover_applies() -> bool:
+	return _sanity.recover_applies()
+
+
+## LT-120: madness ends under exit_rule "recover", in any state (SanitySystem.recover_rule).
+func recover_rule() -> bool:
+	return _sanity.recover_rule()
+
+
 func can_buy_sanity() -> SimCommand.CommandResult:
 	return _sanity.can_buy_sanity()
 
@@ -713,6 +723,11 @@ func award_wave_sanity() -> float:
 
 func sanity_state_for(s: float) -> SimState.SanityState:
 	return _sanity.sanity_state_for(s)
+
+
+## LT-121: sanity at which MADNESS ends under exit_rule "recover" (SanitySystem.exit_target).
+func exit_target() -> float:
+	return _sanity.exit_target()
 
 
 ## LT-76 (LT-65 §3.2), LT-105 D7 read-only: the modifier channel of tower `tower_id` as the
