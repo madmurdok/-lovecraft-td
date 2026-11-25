@@ -15,11 +15,17 @@ var cell := NONE
 var range_cells := 0.0
 var glyph := ""
 var cast := ""
+var enemy_id := 0  ## LT-66 §4: the monster card's enemy; 0 = none
 
 
 ## A fresh selection of `p_cell`: no ring, no ghost letter, no cast (picker opened).
 func show_cell(p_cell: Vector2i) -> void:
-	_assign(p_cell, 0.0, "", "")
+	_assign(p_cell, 0.0, "", "", 0)
+
+
+## LT-66 §4: selects enemy `id` (0 = none) and no cell, ring, letter or cast.
+func show_enemy(id: int) -> void:
+	_assign(NONE, 0.0, "", "", id)
 
 
 ## Moves the selection to `p_cell` and keeps the ring, letter and cast.
@@ -39,14 +45,19 @@ func set_preview(p_range: float, p_glyph: String, p_cast: String) -> void:
 
 ## Nothing selected.
 func clear() -> void:
-	_assign(NONE, 0.0, "", "")
+	_assign(NONE, 0.0, "", "", 0)
 
 
-func _assign(p_cell: Vector2i, p_range: float, p_glyph: String, p_cast: String) -> void:
-	if p_cell == cell and p_range == range_cells and p_glyph == glyph and p_cast == cast:
+## set_cell, set_ring and set_preview keep `enemy_id` (p_enemy -1).
+func _assign(p_cell: Vector2i, p_range: float, p_glyph: String, p_cast: String,
+		p_enemy := -1) -> void:
+	var e := enemy_id if p_enemy < 0 else p_enemy
+	if p_cell == cell and p_range == range_cells and p_glyph == glyph and p_cast == cast \
+			and e == enemy_id:
 		return
 	cell = p_cell
 	range_cells = p_range
 	glyph = p_glyph
 	cast = p_cast
+	enemy_id = e
 	changed.emit()

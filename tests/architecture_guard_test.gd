@@ -69,7 +69,7 @@ func test_g1_no_rule_copies_outside_the_sim() -> void:
 ## `BOARD_ORIGIN`, `ORIGIN`; `/ CELL` picking included) are named only in
 ## scenes/board/board_view.gd (BoardView). sim/, tools/, scenes/ (the board layers too),
 ## ui/ and tests/ (but tests/support/) ask the view: cell_at_screen, cell_to_world,
-## cells_to_px, world_rect.
+## cells_to_px, world_rect, play_rect, screen_to_cells (LT-66: and origin(), which holds the pan).
 const G2_DIRS := ["res://sim", "res://tools", "res://scenes", "res://ui", "res://tests"]
 const G2_HOME := "res://scenes/board/board_view.gd"
 const G2_DENY := "\\b(CELL|BOARD_ORIGIN|ORIGIN)\\b"
@@ -154,12 +154,13 @@ func test_g3_one_cell_centre() -> void:
 ## panels call its methods, which emit `changed`. Forms caught (LT-84 F2): `selection.cell =`,
 ## compound `selection.range_cells += 1`, an alias (`var s := game.selection` or any name
 ## typed `: SelectionModel`) then `s.cell = c`, the private `_assign(` and `selection.set(`.
+## LT-66 §4: `enemy_id` too; the monster card writes it only through `show_enemy(id)`.
 ## Comparisons (`==`, `!=`, `<=`, `>=`) are reads and pass.
 const G7_DIRS := ["res://ui", "res://scenes", "res://tools"]
 const G7_HOME := "res://scenes/board/selection_model.gd"
 const G7_WRITE_OP := "\\s*[-+*/%|&^]?=(?!=)"
 const G7_DENY := "\\bselected_(cell|range|glyph|cast)" + G7_WRITE_OP \
-	+ "|\\bselection\\.(cell|range_cells|glyph|cast)" + G7_WRITE_OP \
+	+ "|\\bselection\\.(cell|range_cells|glyph|cast|enemy_id)" + G7_WRITE_OP \
 	+ "|\\bselection\\.(set|_assign)\\(|\\b_assign\\("
 ## A name that holds a SelectionModel: typed `: SelectionModel` (var, parameter) or `var x =
 ## <anything>.selection` / `SelectionModel.new()`.
@@ -182,7 +183,8 @@ func _g7_hits(scan: SimBoundaryTest, file: String, text: String) -> Array[String
 	var hits := _find_joined(scan, file, text, G7_DENY)
 	if not aliases.is_empty():
 		hits.append_array(_find_joined(scan, file, text,
-			"\\b(" + "|".join(aliases) + ")\\.(cell|range_cells|glyph|cast)" + G7_WRITE_OP))
+			"\\b(" + "|".join(aliases) + ")\\.(cell|range_cells|glyph|cast|enemy_id)"
+			+ G7_WRITE_OP))
 	return hits
 
 

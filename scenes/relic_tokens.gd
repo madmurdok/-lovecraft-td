@@ -31,8 +31,9 @@ const CHIME_SECONDS := 0.7
 static var _chime: AudioStreamWAV
 
 var game: Game
-## token id -> {kind, from (px, this layer), drop_tick, arrive_tick, fade (-1 = flying,
-## else seconds left of the dissolve), at (px, frozen when the dissolve starts)}
+## token id -> {kind, from (cells; converted per frame, so the token follows the pan),
+## drop_tick, arrive_tick, fade (-1 = flying, else seconds left of the dissolve), at (px,
+## frozen when the dissolve starts)}
 var tokens: Dictionary[int, Dictionary] = {}
 var _time := 0.0  ## presentation seconds, drives the glint
 var _player: AudioStreamPlayer
@@ -51,7 +52,7 @@ func on_event(ev: SimEvent) -> void:
 	match ev.type:
 		SimEvent.Type.RELIC_DROPPED:
 			var kind: String = ev.data.get("kind", "")
-			tokens[ev.id] = {"kind": kind, "from": board_to_layer(ev.data.get("at", Vector2.ZERO)),
+			tokens[ev.id] = {"kind": kind, "from": ev.data.get("at", Vector2.ZERO) as Vector2,
 				"drop_tick": ev.tick, "arrive_tick": int(ev.data.get("arrive_tick", ev.tick)),
 				"fade": -1.0, "at": Vector2.ZERO}
 			if kind == STAR_STONE and _player != null:
@@ -105,7 +106,7 @@ func pose(tok: Dictionary) -> Array:
 	var p := progress(tok)
 	var span_s := float(tok["arrive_tick"] - tok["drop_tick"]) / SimTime.TICK_RATE
 	var hang := clampf(HANG_SECONDS / span_s, 0.0, 0.9) if span_s > 0.0 else 0.0
-	var from: Vector2 = tok["from"]
+	var from := board_to_layer(tok["from"])  # LT-66 §6.4: at the current pan
 	if p < hang:
 		var k := p / hang
 		return [from + Vector2(0, -6.0 * sin(k * PI)), 1.0 + POP_SCALE * sin(k * PI)]

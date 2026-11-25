@@ -1,7 +1,7 @@
 class_name PickerOverlayTest
 extends GdUnitTestSuite
 ## LT-53 (LT-43 §3, Q3, Q5 "one click builds, card on hover"), moved by LT-61 into the side
-## panel: the build list sits inside SidePanel.panel_rect and never covers the board;
+## panel: the build list sits inside SidePanel.panel_rect (LT-66: the overlay rect);
 ## hovering a row frames it, puts that tower's L1 range on the cell and shows its L1 card in
 ## the side panel; Esc, Cancel and a click elsewhere on the board close it and the side panel
 ## goes back to idle; one click builds; refusals (money, night "Only by day" in the title,
@@ -105,11 +105,12 @@ func _text_w(l: Label, text := "") -> float:
 
 # --- placement (LT-61 §1) ---------------------------------------------------------------------
 
-## Every row with a buildable cell: the list is inside the side panel and never over the board.
-func test_picker_sits_in_the_side_panel_and_never_covers_the_board() -> void:
+## Every row with a buildable cell: the list is inside the overlay rect (LT-66 §1: the overlay
+## lies over the board's right edge by design).
+func test_picker_sits_inside_the_overlay_rect() -> void:
 	await _start_game()
 	var map := _game.sim.state.map
-	var panel := SidePanel.panel_rect(map)
+	var panel := SidePanel.panel_rect()
 	for y in map.height:
 		var cell := _buildable(y)
 		if cell.x < 0:
@@ -118,8 +119,6 @@ func test_picker_sits_in_the_side_panel_and_never_covers_the_board() -> void:
 		var r := _game.picker.get_global_rect()
 		var tag := "cell %s picker %s panel %s board %s" % [cell, r, panel, _board()]
 		assert_bool(panel.encloses(r)).override_failure_message(tag).is_true()
-		assert_bool(r.intersects(_board())).override_failure_message(tag + " covers the board") \
-			.is_false()
 		_game.picker.close()
 
 
@@ -414,7 +413,7 @@ func test_title_says_the_refusal_once_and_costs_redden_alone() -> void:
 	assert_int(_game.commands.call_wave()).is_equal(R.OK)
 	_game.sim.step()
 	_game.sim.state.gold = 0
-	_game.picker.refresh()
+	_game.picker.open_for(_game.picker.cell)  # LT-66 §2: dusk closed the list
 	assert_str(t.text).is_equal("Only by day")
 	assert_that(t.get_theme_color("font_color")).is_equal(TowerPicker.STATUS_COLOR)
 	_game.sim.state.gold = 10000
@@ -468,7 +467,7 @@ func test_list_sits_above_the_card_and_both_inside_the_panel() -> void:
 	await _move(_game.picker.buttons[RIFLE].get_global_rect().get_center())
 	var pr := _game.picker.get_global_rect()
 	var cr := sp.card.get_global_rect()
-	var panel := SidePanel.panel_rect(_game.sim.state.map)
+	var panel := SidePanel.panel_rect()
 	assert_bool(sp.card.is_visible_in_tree()).is_true()
 	assert_float(cr.position.y).is_greater_equal(pr.end.y)
 	assert_bool(panel.encloses(cr)).override_failure_message("card %s panel %s" % [cr, panel]).is_true()
@@ -517,7 +516,7 @@ func test_no_picker_text_is_cut_at_1280x720() -> void:
 		_game.picker.open_for(_buildable(3))
 		await get_tree().process_frame
 		await get_tree().process_frame
-		if not SidePanel.panel_rect(_game.sim.state.map).encloses(_game.picker.get_global_rect()):
+		if not SidePanel.panel_rect().encloses(_game.picker.get_global_rect()):
 			cuts.append("night=%s picker %s" % [night, _game.picker.get_global_rect()])
 		for id: String in _config.towers:
 			var labels: Array = [_game.picker.names[id], _game.picker.costs[id]]

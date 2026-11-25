@@ -25,7 +25,7 @@ const STATIC_OK: PackedStringArray = [
 	"hud:^(Background|Footer)$",
 	"lighthouse:^(\\.|CancelButton)$",
 	"picker:^(\\.|Rows|Rows/Body|Separator)$",
-	"picker:^Rows/Body/Tower_\\w+/Cells(/Gap)?$",
+	"picker:^Rows/Body/Tower_\\w+/Cells(/Gap|/DpsGap|/RngGap)?$",  # LT-66: DpsGap, RngGap
 	# Group titles, column heads and the cancel button: fixed text per view (§3 rows 29, 54).
 	"picker:^(Rows/Body/)?Group_\\w+(/(Head_.*|Title))?$",
 	"picker:^TitleLine(/CancelButton)?$",
@@ -601,10 +601,12 @@ func _script_whole_game() -> void:
 ## LT-32 crew fields that never change through flush while their view stays open, with the
 ## reason (same form as STATIC_OK): the crew view's title, note and cancel button are fixed
 ## text; a post's "Not a tower" note is fixed per opened tower, and a post's view is only
-## reached by a click (which resyncs), so it is pinned by crew_ui_test instead.
+## reached by a click (which resyncs), so it is pinned by crew_ui_test instead. LT-66 §2:
+## dusk closes the picker, so its post section is shown by the night open_for, not a flush.
 const CREW_STATIC_OK: PackedStringArray = [
 	"crew:^(\\.|Title|Note|CancelButton)$",
 	"tower:^PostNote$",
+	"picker:^Posts$",
 ]
 ## Paths the crew B2 run must cover: the crew view, the HUD crew button, the picker's post
 ## section and the post note.
@@ -676,6 +678,7 @@ func _script_crew() -> void:
 		_cmd("hire rifleman %d" % k, func() -> int: return c.hire(RIFLE))
 	# Night 1 with the picker open: post rows follow each deploy, then one from the row.
 	_cmd("call wave", func() -> int: return c.call_wave())
+	_click(cells[0], "night picker")  # LT-66 §2: dusk closed the picker; reopen it
 	_frames(5, 1.0 / 20.0, "night picker")
 	var i := 3
 	for kind: String in kinds:

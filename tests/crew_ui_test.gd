@@ -110,8 +110,8 @@ func test_crew_view_hires_by_day_only_and_counts_men_on_duty() -> void:
 	var cells := _free_cells(2)
 	assert_int(_game.commands.build(RIFLE, cells[0])).is_equal(R.OK)
 	_hire(HARP, _post_crew())
-	_game.open_crew_panel()
 	_night()
+	_game.open_crew_panel()  # LT-66 §2: dusk closes every view
 	for kind: String in p.hire_buttons:
 		assert_bool(p.hire_buttons[kind].disabled).override_failure_message(kind).is_true()
 		assert_str(p.hire_buttons[kind].text).contains("hire by day")

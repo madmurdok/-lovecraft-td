@@ -46,6 +46,7 @@ var picker: TowerPicker  ## LT-61: the build list at the top of side_panel, its 
 var tower_panel: TowerPanel  ## tower view of side_panel
 var lighthouse_panel: LighthousePanel  ## LT-30: lighthouse view of side_panel
 var crew_panel: CrewPanel  ## LT-32 §4: crew view of side_panel (opened from the HUD)
+var monster_card: MonsterCard  ## LT-66 §5: monster view of side_panel (a night enemy click)
 var end_screen: EndScreen
 
 
@@ -84,6 +85,7 @@ func _ready() -> void:
 	add_child(board)
 	board.cell_clicked.connect(_on_cell_clicked)
 	board.outside_clicked.connect(close_panels)
+	board.enemy_clicked.connect(_on_enemy_clicked)
 	lighting = Lighting.new()
 	lighting.name = "Lighting"
 	lighting.setup(self, self)
@@ -113,6 +115,7 @@ func _ready() -> void:
 	tower_panel = side_panel.tower_panel
 	lighthouse_panel = side_panel.lighthouse_panel
 	crew_panel = side_panel.crew_panel
+	monster_card = side_panel.monster_card
 	end_screen = EndScreen.new()
 	end_screen.name = "EndScreen"
 	ui.add_child(end_screen)
@@ -172,6 +175,7 @@ func advance(delta: float) -> void:
 		_flush_ui()
 	if steps > 0:
 		hud.on_stepped()
+		monster_card.on_stepped()  # LT-66 §5: after the snapshot rebuild above
 	board.alpha = clock.alpha()
 	board.tick_effects(delta)
 	relic_tokens.tick(delta)
@@ -218,6 +222,11 @@ func _consume_events() -> int:
 		tower_panel.on_event(ev)
 		lighthouse_panel.on_event(ev)
 		crew_panel.on_event(ev)
+		monster_card.on_event(ev)
+		if ev.type == SimEvent.Type.WAVE_STARTED:  # LT-66 §2 (owner Q3): dusk closes every view
+			close_panels()
+		if ev.type == SimEvent.Type.BUILD_STARTED or ev.type == SimEvent.Type.WAVE_STARTED:
+			side_panel.sync_visible()
 		if ev.type == SimEvent.Type.RELICS_CHANGED and ev.data.get("reason", "") == "kill" \
 				and ev.data.get("kind", "") == RelicTokens.STAR_STONE:
 			star_stones_found += 1
@@ -226,6 +235,7 @@ func _consume_events() -> int:
 			tower_panel.close()
 			lighthouse_panel.close()
 			crew_panel.close()
+			monster_card.close()
 			side_panel.visible = false
 			end_screen.show_result(ev.data.get("result", "") == "won", snapshot,
 				star_stones_found)
@@ -242,12 +252,14 @@ func _flush_ui() -> void:
 	crew_panel.flush()
 
 
-## LT-28: closes the build and tower views (a click on a cell, or one off the grid).
+## LT-28: closes every side panel view (a click on a cell, or one off the grid; Esc).
+## LT-66 §2: by day the idle text shows, by night the overlay hides (SidePanel.sync_visible).
 func close_panels() -> void:
 	picker.close()
 	tower_panel.close()
 	lighthouse_panel.close()
 	crew_panel.close()
+	monster_card.close()
 
 
 ## LT-32 §4: the HUD's crew button: the crew view replaces whatever the side panel shows.
@@ -265,5 +277,18 @@ func _on_cell_clicked(cell: Vector2i) -> void:
 		lighthouse_panel.open()
 	elif snapshot.tower_at(cell) != null:
 		tower_panel.open_for(snapshot.tower_at(cell).id)
-	elif snapshot.map.is_buildable(cell):
-		picker.open_for(cell)
+	elif snapshot.map.is_buildable(cell) \
+			and (snapshot.phase != SimState.Phase.WAVE or sim.config.crew_on()):
+		picker.open_for(cell)  # LT-66 §2: by night only the reserve-post list (crew on)
+	else:
+		return
+	board.camera.reveal(snapshot.map.grid.centre(cell))  # LT-66 §6.1 auto-reveal
+
+
+## LT-66 §4: a night click on a drawn enemy opens its monster card.
+func _on_enemy_clicked(id: int) -> void:
+	close_panels()
+	if snapshot.outcome == SimState.Outcome.NONE:
+		monster_card.open_for(id)
+		if board.last_pos.has(id):  # LT-66 §6.1 auto-reveal at the drawn position
+			board.camera.reveal(board.last_pos[id])
