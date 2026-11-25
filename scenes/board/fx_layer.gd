@@ -7,6 +7,15 @@ extends BoardLayer
 ## LT-62 P1 / LT-90 F1: the first-use warm-up draw lives here, on this same canvas item, as
 ## the effect draws whose first-use stall it pays; the effect draws set _line_drawn,
 ## _polyline_drawn and _polygon_drawn.
+## LT-92: the warm-up stays inside WARMUP_RECT. Lighting's WarmLight covers that rect in the
+## first Lighting.WARM_FRAMES game frames (boot iterations 2-4, after the Loading frame).
+## Lighting is chosen per canvas item: this layer's rect meets the light, so the whole layer
+## draws lit then, and its lit variants compile in the first game frame (frame A). It first
+## draws unlit in iteration 5, after the light is freed. By then the unlit variants of the
+## same kinds were already compiled by unlit items in frame A (e.g. the UI canvas, which no
+## board light reaches). Without the light, the beam's rect reaching this corner ~1 s into
+## the first night compiled the lit set then (LT-92 frame C,
+## docs/design/LT-92-startup-frames.md).
 
 const FLASH_SECONDS := 0.25
 const COLOR_DEATH := Color(1, 0.5, 0.2)
@@ -22,6 +31,9 @@ const TRACER_TRAVEL := 0.08  ## seconds for the dash to reach its end
 const TRACER_MUZZLE := 0.05
 const TRACER_SECONDS := 0.18  ## travel + hit spark
 const WARMUP_ALPHA := 0.01  ## invisible over the board, but still a real draw
+## LT-92: board-local area holding every _draw_warmup draw (widths included); Lighting
+## sizes its WarmLight from it, so moving the warm-up moves the light with it.
+const WARMUP_RECT := Rect2(0, 0, 10, 10)
 const TRACER_DASH_CELLS := 0.35
 const TRACER_MISS_SIDE_CELLS := 0.4  ## a miss ends this far to the side of the aim point
 const TRACER_MISS_PAST_CELLS := 0.5  ## and this far past it
@@ -310,6 +322,11 @@ func astray_end(aim: Vector2) -> Vector2:
 ## (_line_drawn, _polyline_drawn, _polygon_drawn), and it draws only the kinds still cold.
 ## Not timed: the startup frames, before the window is up, do not pay the cost (LT-90), so
 ## the warm-up must still be running once the window is presented. Presentation only.
+## LT-92: every draw lies inside WARMUP_RECT. In the first Lighting.WARM_FRAMES game frames
+## (iterations 2-4) Lighting's WarmLight covers that rect, so this layer draws lit and the lit
+## variants compile in frame A, not when the beam's rect first reaches this corner at night
+## (frame C). From iteration 5 it draws unlit, with variants that unlit items compiled in
+## frame A.
 func _draw_warmup() -> void:
 	var c := Color(Board.TRACER_COLOR, WARMUP_ALPHA)
 	if not _line_drawn:
