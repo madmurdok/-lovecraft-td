@@ -159,7 +159,9 @@ func test_world_rect_is_the_same_in_a_1200x675_and_a_1920x1080_viewport() -> voi
 		await _start_game(size)
 		assert_object(_game.board.view.world_rect()).override_failure_message(str(size)) \
 			.is_equal(want)
-		assert_object(_game.hud.board_rect()).is_equal(want)
+		# LT-66 §6.1: the HUD lays out on the fixed play frame, not on the (pannable) map
+		assert_object(_game.hud.board_rect()).is_equal(Rect2(0, TOP, 1200, want.size.y))
+		assert_object(_game.hud.board_rect()).is_equal(BoardView.play_rect())
 		var bg: Control = _game.hud.get_node("Background")
 		assert_float(bg.size.y).is_equal(TOP)  # the HUD bar is the strip above the board
 		assert_float(_game.side_panel.position.x).is_equal(SidePanel.panel_rect().position.x)

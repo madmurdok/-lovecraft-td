@@ -25,7 +25,7 @@ const STATIC_OK: PackedStringArray = [
 	"hud:^(Background|Footer)$",
 	"lighthouse:^(\\.|CancelButton)$",
 	"picker:^(\\.|Rows|Rows/Body|Separator)$",
-	"picker:^Rows/Body/Tower_\\w+/Cells(/Gap|/DpsGap)?$",  # LT-66: DpsGap
+	"picker:^Rows/Body/Tower_\\w+/Cells(/Gap|/DpsGap|/RngGap)?$",  # LT-66: DpsGap, RngGap
 	# Group titles, column heads and the cancel button: fixed text per view (§3 rows 29, 54).
 	"picker:^(Rows/Body/)?Group_\\w+(/(Head_.*|Title))?$",
 	"picker:^TitleLine(/CancelButton)?$",

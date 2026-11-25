@@ -401,7 +401,8 @@ func test_row_cells_have_their_column_widths_summing_to_288() -> void:
 	await _open_picker()
 	await get_tree().process_frame
 	var sum := TowerPicker.NAME_W + TowerPicker.COST_W + TowerPicker.COST_GAP \
-		+ TowerPicker.DPS_W + TowerPicker.DPS_GAP + TowerPicker.RNG_W + TowerPicker.TRAIT_W
+		+ TowerPicker.DPS_W + TowerPicker.DPS_GAP + TowerPicker.RNG_W + TowerPicker.RNG_GAP \
+		+ TowerPicker.TRAIT_W
 	var inner := SidePanel.panel_rect().size.x - 2.0 * SidePanel.MARGIN
 	assert_int(sum).is_equal(int(inner))
 	assert_int(sum).is_equal(288)

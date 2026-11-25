@@ -57,11 +57,12 @@ const COST_W := 30
 const COST_GAP := 4  ## between $ and DPS, so "$130" and "15–45" never read as one number
 const DPS_W := 34
 const DPS_GAP := 4  ## LT-66 §1: between DPS and Rng, so "15–45" and "2–7" never read as one
-const RNG_W := 28  ## LT-66 §1: the L1 range ("3", "3.5", "2–7")
+const RNG_W := 24  ## LT-66 §1: the L1 range ("3", "3.5", "2–7": 20 px at FONT_SIZE)
+const RNG_GAP := 4  ## LT-66/S3: between Rng and Trait, so "3.5" and "Ground" never touch
 const TRAIT_W := 46
 ## The name takes what the other columns leave of the inner width: 142 at the 304 px overlay.
 const NAME_W := SidePanel.PANEL_W - 2 * SidePanel.MARGIN \
-	- (COST_W + COST_GAP + DPS_W + DPS_GAP + RNG_W + TRAIT_W)
+	- (COST_W + COST_GAP + DPS_W + DPS_GAP + RNG_W + RNG_GAP + TRAIT_W)
 const TITLE_H := 22
 const GROUP_H := 16
 const ROW_H := 18
@@ -84,7 +85,7 @@ const HEADS := [
 	["Rng", "Range in cells; 2–7 = can't fire within 2", RNG_W],
 	["Trait", "What sets it apart: Ground = never hits flyers, Blind N = can't fire within N"
 		+ " cells, Line = pierces, Reveal = shows fakes, Res N = sanity reserve, ! = building"
-		+ " it drives you mad", TRAIT_W],
+		+ " it drives you mad", RNG_GAP + TRAIT_W],
 ]
 ## LT-61 §3: a row tooltip's full trait line, by the tag's first word ("%s" = its number).
 const TRAIT_TIPS := {
@@ -300,6 +301,9 @@ func _row(id: String, def: TowerDef) -> Button:
 	var rng_text := TowerText.range_text(s)
 	var rng := _value("Rng", rng_text, StatsTable.color_for("range", rng_text), RNG_W)
 	h.add_child(rng)
+	var rng_gap := _spacer(RNG_GAP)
+	rng_gap.name = "RngGap"
+	h.add_child(rng_gap)
 	_traits[id] = TowerText.trait_text(def, s)
 	var trait_cell := _value("Trait", _traits[id], _trait_color(_traits[id]), TRAIT_W)
 	h.add_child(trait_cell)

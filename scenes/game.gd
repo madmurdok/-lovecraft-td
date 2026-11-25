@@ -277,8 +277,12 @@ func _on_cell_clicked(cell: Vector2i) -> void:
 		lighthouse_panel.open()
 	elif snapshot.tower_at(cell) != null:
 		tower_panel.open_for(snapshot.tower_at(cell).id)
-	elif snapshot.map.is_buildable(cell):
-		picker.open_for(cell)
+	elif snapshot.map.is_buildable(cell) \
+			and (snapshot.phase != SimState.Phase.WAVE or sim.config.crew_on()):
+		picker.open_for(cell)  # LT-66 §2: by night only the reserve-post list (crew on)
+	else:
+		return
+	board.camera.reveal(snapshot.map.grid.centre(cell))  # LT-66 §6.1 auto-reveal
 
 
 ## LT-66 §4: a night click on a drawn enemy opens its monster card.
@@ -286,3 +290,5 @@ func _on_enemy_clicked(id: int) -> void:
 	close_panels()
 	if snapshot.outcome == SimState.Outcome.NONE:
 		monster_card.open_for(id)
+		if board.last_pos.has(id):  # LT-66 §6.1 auto-reveal at the drawn position
+			board.camera.reveal(board.last_pos[id])

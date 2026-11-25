@@ -89,10 +89,13 @@ var entity_layer: EntityLayer
 var fx_layer: FxLayer
 var overlay_layer: OverlayLayer
 var view := BoardView.new()  ## LT-35: cells <-> pixels; the only holder of the pixel scale
+var camera := BoardCamera.new(view)  ## LT-66 §6.2: input -> view.pan (keys, drag, wheel, edge)
+var _mouse_in_window := true  ## LT-66 §6.2: no edge pan while the cursor is outside the window
 
 
 func _ready() -> void:
 	position = view.origin()
+	view.panned.connect(_on_panned)
 	map_layer = MapLayer.new()
 	map_layer.view = view
 	map_layer.name = "MapLayer"
@@ -125,9 +128,19 @@ func sync_map() -> void:
 		map_layer.set_map(game.snapshot.map)
 
 
+## LT-66 §6.1: the board node follows the pan, so every layer, Lighting and the sea move.
+func _on_panned() -> void:
+	position = view.origin()
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	var mb := event as InputEventMouseButton
-	if mb == null or not mb.pressed or mb.button_index != MOUSE_BUTTON_LEFT:
+	if mb == null or mb.button_index != MOUSE_BUTTON_LEFT:
+		# LT-66 §6.2: right/middle drag, wheel and pan gestures pan; a left click never does
+		if game != null and camera.input(game.make_input_local(event)):
+			get_viewport().set_input_as_handled()
+		return
+	if not mb.pressed:
 		return
 	sync_map()
 	var p := (game.make_input_local(mb) as InputEventMouseButton).position
@@ -164,6 +177,30 @@ func enemy_at_screen(p: Vector2) -> int:
 	return best
 
 
+## LT-66 §6.2: arrows and WASD (press and release) pan while held.
+func _unhandled_key_input(event: InputEvent) -> void:
+	if camera.key_input(event):
+		get_viewport().set_input_as_handled()
+
+
+func _notification(what: int) -> void:
+	match what:
+		NOTIFICATION_WM_MOUSE_EXIT:
+			_mouse_in_window = false
+		NOTIFICATION_WM_MOUSE_ENTER:
+			_mouse_in_window = true
+		NOTIFICATION_APPLICATION_FOCUS_OUT, NOTIFICATION_WM_WINDOW_FOCUS_OUT:
+			camera.release_all()  # a key released while unfocused never arrives
+
+
+## LT-66 §6.2: edge pan only with the cursor in the focused window, over no Control and with
+## no mouse button held.
+func edge_pan_allowed() -> bool:
+	return _mouse_in_window and get_window().has_focus() \
+		and get_viewport().gui_get_hovered_control() == null \
+		and Input.get_mouse_button_mask() == 0
+
+
 ## Sim events for the effects (SHOT, BLAST, DIED, FAKE_DISSOLVED, LEAKED): FxLayer.
 func on_event(ev: SimEvent) -> void:
 	fx_layer.on_event(ev)
@@ -188,9 +225,12 @@ static func cast_of(s: TowerDef.Level) -> String:
 
 
 ## Advances effects time by `delta` seconds: the effects' ttl (FxLayer) and the phantom
-## path (PhantomLayer). The Game calls it once per frame.
+## path (PhantomLayer); LT-66: the camera's key/edge pan and ease. The Game calls it once per
+## frame.
 func tick_effects(delta: float) -> void:
 	time += delta
+	if game != null and is_inside_tree():  # LT-66 §6.2-§6.3: key and edge pan, the ease
+		camera.tick(delta, game.get_local_mouse_position(), edge_pan_allowed())
 	fx_layer.tick(delta)
 	phantom_layer.tick(delta)
 
@@ -247,6 +287,15 @@ class MapLayer extends Node2D:
 		if map == null:
 			return
 		var m := map
+		# LT-66 §3: a sea backdrop below the tiles, so the strip right of the map (night, the
+		# overlay hidden) and a pan past the map's edge show open sea, not the clear colour. It
+		# spans the map grown by the play rect on every side: any clamped pan stays inside.
+		var play := BoardView.play_rect()
+		var bounds := m.grid.bounds()
+		var sea := Rect2(view.cell_to_world(bounds.position), view.cell_to_world(bounds.size)) \
+			.grow_individual(
+			play.size.x, play.size.y, play.size.x, play.size.y)
+		draw_rect(sea, Board.COLOR_WATER)
 		for c in m.grid.cells():
 			var color := Board.COLOR_WATER
 			match m.kind_at(c):

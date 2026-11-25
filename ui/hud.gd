@@ -571,9 +571,9 @@ static func overlay_left() -> float:
 	return SidePanel.panel_rect().position.x
 
 
-## The board in this layer's base pixels (BoardView.world_rect).
+## The play frame in this layer's base pixels (BoardView.play_rect; LT-66: not the map).
 func board_rect() -> Rect2:
-	return game.board.view.world_rect()
+	return BoardView.play_rect()  # LT-66 §6.1: the screen frame, fixed under any pan
 
 
 ## LT-28: where relic tokens land, in the slot left of the relic counter, so a landing

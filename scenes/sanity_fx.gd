@@ -128,7 +128,7 @@ func target_level() -> float:
 ## The board in base viewport units (same as Hud.board_rect): the only area the screen
 ## pass draws on.
 func board_rect() -> Rect2:
-	return game.board.view.world_rect()
+	return BoardView.play_rect()  # LT-66 §6.1: the screen frame, fixed under any pan
 
 
 ## LT-62/S13: gl_compatibility applies a BackBufferCopy rect in render-target pixels, without

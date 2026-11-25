@@ -215,6 +215,16 @@ func sync_visible() -> void:
 	var s := game.snapshot
 	visible = s != null and s.outcome == SimState.Outcome.NONE \
 		and (s.phase == SimState.Phase.BUILD or any_view_open())
+	if game.board != null:  # LT-66 §6.3: a changed visible rect eases the pan to its clamp
+		game.board.camera.set_visible_rect(board_visible_rect())
+
+
+## LT-66 §6.1: where the map is seen: BoardView.play_rect, minus the overlay while it shows.
+func board_visible_rect() -> Rect2:
+	var play := BoardView.play_rect()
+	if visible:
+		play.end.x = minf(play.end.x, panel_rect().position.x)
+	return play
 
 
 ## LT-66 §2 (owner Q3): Esc closes the open view (by day the idle text shows, by night the
