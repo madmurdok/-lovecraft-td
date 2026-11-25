@@ -30,17 +30,20 @@ var flare_ticks_left := 0
 var flare_cooldown_ticks := 0
 var map: MapDef  ## shared immutable config
 
-# Lookups, built once by index().
+# Lookups, built once by index(). _enemy_by_id stays empty while `enemies` is in id order
+# (always, from Simulation.snapshot()): enemy() then bisects the array instead (LT-85/S15).
 var _enemy_by_id: Dictionary[int, EnemyRecord] = {}
 var _tower_by_id: Dictionary[int, TowerRecord] = {}
 var _tower_at: Dictionary[Vector2i, TowerRecord] = {}
 
 
 ## Builds the id lookups from the entity arrays and `tower_cells` (occupied cell -> tower
-## id, SimState.tower_at). Called once by Simulation.snapshot().
-func index(tower_cells: Dictionary[Vector2i, int]) -> void:
-	for e in enemies:
-		_enemy_by_id[e.id] = e
+## id, SimState.tower_at). Called once by Simulation.snapshot(); `enemies_in_id_order`
+## true (ids strictly increasing) skips the enemy Dictionary.
+func index(tower_cells: Dictionary[Vector2i, int], enemies_in_id_order := false) -> void:
+	if not enemies_in_id_order:
+		for e in enemies:
+			_enemy_by_id[e.id] = e
 	for t in towers:
 		_tower_by_id[t.id] = t
 	for cell: Vector2i in tower_cells:
@@ -51,7 +54,20 @@ func index(tower_cells: Dictionary[Vector2i, int]) -> void:
 
 ## The live enemy `id`, or null.
 func enemy(id: int) -> EnemyRecord:
-	return _enemy_by_id.get(id)
+	if not _enemy_by_id.is_empty():
+		return _enemy_by_id.get(id)
+	var lo := 0
+	var hi := enemies.size()
+	while lo < hi:
+		var mid := (lo + hi) >> 1
+		var e := enemies[mid]
+		if e.id < id:
+			lo = mid + 1
+		elif e.id > id:
+			hi = mid
+		else:
+			return e
+	return null
 
 
 ## The tower `id`, or null.

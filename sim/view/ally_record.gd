@@ -14,19 +14,25 @@ var flying: bool
 var held_id: int  ## the enemy it holds; -1 = none
 
 
-## The only code that reads a live SimAlly for presentation.
+## Same as AllyRecord.new(a).
 static func from_ally(a: SimAlly) -> AllyRecord:
-	var r := AllyRecord.new()
-	r.id = a.id
-	r.tower = a.tower
-	r.source = a.source
-	r.prev_pos = a.prev_pos
-	r.pos = a.pos
-	r.hp = a.hp
-	r.max_hp = a.max_hp
-	r.flying = a.flying
-	r.held_id = a.held_id
-	return r
+	return AllyRecord.new(a)
+
+
+## The only code that reads a live SimAlly for presentation; `a` null leaves a blank record.
+## Built in _init so the field writes are member writes (LT-85/S15).
+func _init(a: SimAlly = null) -> void:
+	if a == null:
+		return
+	id = a.id
+	tower = a.tower
+	source = a.source
+	prev_pos = a.prev_pos
+	pos = a.pos
+	hp = a.hp
+	max_hp = a.max_hp
+	flying = a.flying
+	held_id = a.held_id
 
 
 ## Position in cell units between the last two ticks by `alpha` (0..1): the

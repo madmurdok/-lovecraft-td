@@ -63,10 +63,27 @@ func markers() -> PackedStringArray:
 		out.append("vuln")
 	if status.is_empty():
 		return out
-	for row: Dictionary in StatusRules.ROWS.values():
-		if row["marker"] != "" and int(status.get(row["ticks"], 0)) > 0:
-			out.append(row["marker"])
+	var rows := _marker_rows()
+	for i in range(0, rows.size(), 2):
+		if int(status.get(rows[i], 0)) > 0:
+			out.append(rows[i + 1])
 	return out
+
+
+## StatusRules.ROWS with a marker, in row order, flattened as ticks key, marker, ...: built
+## once (ROWS is a const), so markers() walks no Dictionary per enemy (LT-85/S15).
+static var _marker_rows_cache := PackedStringArray()
+static var _marker_rows_built := false
+
+
+static func _marker_rows() -> PackedStringArray:
+	if not _marker_rows_built:
+		for row: Dictionary in StatusRules.ROWS.values():
+			if row["marker"] != "":
+				_marker_rows_cache.append(row["ticks"])
+				_marker_rows_cache.append(row["marker"])
+		_marker_rows_built = true
+	return _marker_rows_cache
 
 
 ## Still in play: neither killed, leaked nor dissolved.

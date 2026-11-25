@@ -33,15 +33,17 @@ static func straight(grid: GridTopology, a: Vector2i, b: Vector2i) -> SimRoute:
 
 ## Position in cell units (the grid's cell centres); distance is clamped to the route.
 func position_at(distance: int) -> Vector2:
-	if _points.is_empty():
+	var n := _points.size()
+	if n == 0:
 		return Vector2.ZERO
+	if n == 1:
+		return _points[0]
 	var d := clampi(distance, 0, length)
-	var i := 0
-	while i < _points.size() - 2 and _cumulative[i + 1] <= d:
-		i += 1
+	# The segment start: the last point at or before d, at most n - 2. bsearch(d, false) is
+	# the first index past every cumulative <= d (cumulative[0] = 0 <= d, so i >= 0); native,
+	# where the old linear walk was the snapshot's hottest loop (LT-85/S15).
+	var i := mini(_cumulative.bsearch(d, false) - 1, n - 2)
 	var a := _points[i]
-	if _points.size() == 1:
-		return a
 	var seg := _cumulative[i + 1] - _cumulative[i]
 	if seg == 0:
 		return a

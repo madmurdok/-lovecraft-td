@@ -40,3 +40,15 @@ static func from_tower(t: SimTower) -> TowerRecord:
 	r.disabled = t.disabled
 	r.target_priority = t.target_priority
 	return r
+
+
+## True when every field equals what from_tower(t) would copy now. Simulation.snapshot(prev)
+## then shares this record with the new snapshot instead of building an equal one: records
+## are read-only, so sharing an unchanged one is unobservable (LT-85/S15). A new field goes
+## here as well as in from_tower.
+func copies(t: SimTower) -> bool:
+	return id == t.id and def == t.def and cell == t.cell and centre == t.centre() \
+		and level == t.level and branch == t.branch and stats == t.stats() \
+		and post == t.post and crew == t.crew and crew_kind == t.crew_kind and lit == t.lit \
+		and shadowed == t.shadowed and disabled == t.disabled \
+		and target_priority == t.target_priority

@@ -805,16 +805,25 @@ func enemy_position(e: SimEnemy, alpha: float) -> Vector2:
 ## draw, no state write, no event, and no cache (the caller, Game, keeps one per changed
 ## frame). EnemyRecord.madness_buffed copies what slot 2 applied this tick (SimEnemy.madness_buffed),
 ## not the sanity state at build time, which can move later in the tick or between ticks.
-func snapshot() -> SimSnapshot:
+## `prev`, an earlier snapshot of this sim (Game passes its current one), only saves work:
+## a TowerRecord of it that still copies its tower is shared, not rebuilt (LT-85/S15). The
+## result equals snapshot() field for field either way.
+func snapshot(prev: SimSnapshot = null) -> SimSnapshot:
 	var snap := SimSnapshot.new()
+	var last_id := -1
+	var in_order := true
 	for e in state.enemies:
 		if e.is_live():
-			snap.enemies.append(EnemyRecord.from_enemy(e))
+			if e.id <= last_id:
+				in_order = false
+			last_id = e.id
+			snap.enemies.append(EnemyRecord.new(e))
 	for t in state.towers:
-		snap.towers.append(TowerRecord.from_tower(t))
+		var r: TowerRecord = prev.tower(t.id) if prev != null else null
+		snap.towers.append(r if r != null and r.copies(t) else TowerRecord.from_tower(t))
 	for a in state.allies:
 		if a.is_live():
-			snap.allies.append(AllyRecord.from_ally(a))
+			snap.allies.append(AllyRecord.new(a))
 	snap.tick = state.tick
 	snap.outcome = state.outcome
 	snap.phase = state.phase
@@ -833,7 +842,7 @@ func snapshot() -> SimSnapshot:
 	snap.flare_ticks_left = state.flare_ticks_left
 	snap.flare_cooldown_ticks = state.flare_cooldown_ticks
 	snap.map = state.map
-	snap.index(state.tower_at)
+	snap.index(state.tower_at, in_order)
 	return snap
 
 

@@ -73,7 +73,7 @@ func setup(
 ## LT-85 §4: rebuilds `snapshot` from the sim. Game calls it after steps and commands;
 ## tests call it (GameFixture.sync) after poking sim state directly.
 func refresh_snapshot() -> void:
-	snapshot = sim.snapshot()
+	snapshot = sim.snapshot(snapshot)
 
 
 func _ready() -> void:
