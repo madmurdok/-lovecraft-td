@@ -57,8 +57,8 @@ const COST_W := 30
 const COST_GAP := 4  ## between $ and DPS, so "$130" and "15–45" never read as one number
 const DPS_W := 34
 const DPS_GAP := 4  ## LT-66 §1: between DPS and Rng, so "15–45" and "2–7" never read as one
-const RNG_W := 24  ## LT-66 §1: the L1 range ("3", "3.5", "2–7": 20 px at FONT_SIZE)
-const RNG_GAP := 4  ## LT-66/S3: between Rng and Trait, so "3.5" and "Ground" never touch
+const RNG_W := 20  ## LT-66 §1: the L1 range ("3", "3.5", "2–7": 20 px at FONT_SIZE)
+const RNG_GAP := 8  ## LT-124: between Rng and Trait, so "3.5" and "Ground" never touch (was 4)
 const TRAIT_W := 46
 ## The name takes what the other columns leave of the inner width: 142 at the 304 px overlay.
 const NAME_W := SidePanel.PANEL_W - 2 * SidePanel.MARGIN \
@@ -77,15 +77,17 @@ const LIST_MIN_ROWS := 4
 ## ("res 1·hire 1") leaves the short names their full FONT_SIZE.
 const CREW_FONT_SIZE := 9
 const CREW_GAP := 3  ## LT-118: between a name and its crew mark
+const CREW_END_GAP := 5  ## LT-124: between a crew mark and the $ cell, so "hire 3" and "$120" never touch
 const CREW_MARK_COLOR := Color(0.6, 0.8, 0.95)  ## LT-118: muted blue, apart from $ and names
 ## LT-61 §3: column heads on the first group line: [text, tooltip, width].
+const RNG_HEAD_PAD := 4  ## LT-124: the "Rng" head borrows this much of RNG_GAP so "Rng" (23 px) is not clipped by the 20 px column
 const HEADS := [
 	["$", "Cost", COST_W + COST_GAP],
 	["DPS", "Damage per second", DPS_W + DPS_GAP],
-	["Rng", "Range in cells; 2–7 = can't fire within 2", RNG_W],
+	["Rng", "Range in cells; 2–7 = can't fire within 2", RNG_W + RNG_HEAD_PAD],
 	["Trait", "What sets it apart: Ground = never hits flyers, Blind N = can't fire within N"
 		+ " cells, Line = pierces, Reveal = shows fakes, Res N = sanity reserve, ! = building"
-		+ " it drives you mad", RNG_GAP + TRAIT_W],
+		+ " it drives you mad", RNG_GAP - RNG_HEAD_PAD + TRAIT_W],
 ]
 ## LT-61 §3: a row tooltip's full trait line, by the tag's first word ("%s" = its number).
 const TRAIT_TIPS := {
@@ -284,6 +286,7 @@ func _row(id: String, def: TowerDef) -> Button:
 		mark.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		mark.clip_text = false
 		mark.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		mark.offset_right = -CREW_END_GAP
 		name_label.add_child(mark)
 		crew_marks[id] = mark
 	var cost := _value("Cost", TowerText.cost_text(def.cost), StatsTable.COLOR_VALUE, COST_W)
@@ -326,7 +329,7 @@ func _fit_names(bar_w: int) -> void:
 			var need := game.sim.crew_need(id)
 			var widest := crew_mark_text(maxi(need - 1, 0), mini(need, 1))
 			var room := ceili(m.get_theme_font("font").get_string_size(widest,
-				HORIZONTAL_ALIGNMENT_LEFT, -1, CREW_FONT_SIZE).x) + CREW_GAP
+				HORIZONTAL_ALIGNMENT_LEFT, -1, CREW_FONT_SIZE).x) + CREW_GAP + CREW_END_GAP
 			avail -= room
 			# The name's text (and its ellipsis) ends left of the mark.
 			var box := StyleBoxEmpty.new()
