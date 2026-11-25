@@ -1,9 +1,9 @@
 class_name SanityFx
 extends Node
 ## LT-14 sanity feedback (GDD §5.3 table, §9, §9a), presentation only: reads
-## `game.sim.state.sanity` / `sanity_state` and the sanity.json thresholds, never changes
+## `game.snapshot.sanity` / `sanity_state` and the sanity.json thresholds, never changes
 ## the sim. Owns the board-wide distortion layer (between the world and the HUD), the
-## shared UI jitter material and the whisper audio. Board and HUD read `state`, `level`,
+## shared UI jitter material and the whisper audio. Board and HUD read `shown_state`, `level`,
 ## `flicker` and `ui_jitter_material` from here.
 ##
 ## What each threshold shows / plays:
@@ -36,7 +36,7 @@ const COPY_MARGIN := 32.0
 @export var pulse_seconds := 0.8  ## jolt after a threshold change
 
 var game: Game
-var state := SimState.SanityState.LUCID
+var shown_state := SimState.SanityState.LUCID  ## LT-85: not `state` (G16)
 var level := 0.0  ## smoothed 0..1
 var pulse := 0.0  ## 1 right after a threshold change, decays to 0
 var madness := 0.0  ## smoothed 0..1 madness grade
@@ -93,10 +93,10 @@ func _process(delta: float) -> void:
 
 ## One frame of smoothing, then pushes the values to the shaders and the audio.
 func tick(delta: float) -> void:
-	var s := game.sim.state
-	state = s.sanity_state
+	var s := game.snapshot
+	shown_state = s.sanity_state
 	level = move_toward(level, target_level(), level_speed * delta)
-	var mad_target := 1.0 if state == SimState.SanityState.MADNESS else 0.0
+	var mad_target := 1.0 if shown_state == SimState.SanityState.MADNESS else 0.0
 	madness = move_toward(madness, mad_target, level_speed * delta)
 	pulse = maxf(0.0, pulse - delta / pulse_seconds)
 	_apply()
@@ -104,15 +104,15 @@ func tick(delta: float) -> void:
 
 ## Jumps straight to the current target (start of a run, tests, screenshots).
 func _snap() -> void:
-	state = game.sim.state.sanity_state
+	shown_state = game.snapshot.sanity_state
 	level = target_level()
-	madness = 1.0 if state == SimState.SanityState.MADNESS else 0.0
+	madness = 1.0 if shown_state == SimState.SanityState.MADNESS else 0.0
 	_apply()
 
 
 ## The level the current sanity asks for (GDD §5.3 table, thresholds from sanity.json).
 func target_level() -> float:
-	var s := game.sim.state
+	var s := game.snapshot
 	var i := int(s.sanity_state)
 	if i <= SimState.SanityState.LUCID:
 		return state_levels[0]
@@ -128,7 +128,7 @@ func target_level() -> float:
 ## The board in base viewport units (same as Hud.board_rect): the only area the screen
 ## pass draws on.
 func board_rect() -> Rect2:
-	return game.board.view.world_rect()
+	return BoardView.play_rect()  # LT-66 §6.1: the screen frame, fixed under any pan
 
 
 ## LT-62/S13: gl_compatibility applies a BackBufferCopy rect in render-target pixels, without
@@ -151,8 +151,8 @@ func screen_scale() -> float:
 
 
 func _apply() -> void:
-	var fraying := state >= SimState.SanityState.FRAYING
-	var whispers := state >= SimState.SanityState.WHISPERS
+	var fraying := shown_state >= SimState.SanityState.FRAYING
+	var whispers := shown_state >= SimState.SanityState.WHISPERS
 	# Fraying flicker grows with the level and stays at its maximum in Madness (§5.4).
 	var f_lo := state_levels[SimState.SanityState.FRAYING]
 	flicker = max_flicker * clampf(0.55 + 0.45 * (level - f_lo) / maxf(1.0 - f_lo, 0.001),
@@ -171,4 +171,4 @@ func _apply() -> void:
 	# Lucid costs nothing: the screen copy only runs while something is shown.
 	screen_rect.visible = level > 0.001 or pulse > 0.0 or madness > 0.0
 	screen_copy.visible = screen_rect.visible
-	audio.set_state(state)
+	audio.set_state(shown_state)

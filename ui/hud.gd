@@ -200,7 +200,7 @@ func _ready() -> void:
 		sandbox_label.add_theme_color_override("font_color", Color(1.0, 0.75, 0.2))
 		add_child(sandbox_label)  # first, so the minimum size sees the HUD theme
 		sandbox_label.size = sandbox_label.get_minimum_size()
-		sandbox_label.position = Vector2(board_rect().end.x - sandbox_label.size.x - 6,
+		sandbox_label.position = Vector2(overlay_left() - sandbox_label.size.x - 6,
 			board_rect().position.y + 2)
 	# LT-78 Q3: the wall-clock readouts on a Timer instead of every frame.
 	readout_timer = Timer.new()
@@ -246,7 +246,7 @@ func flush() -> void:
 ## or a flare burn/cooldown runs, re-reads it and rewrites its group only when the shown
 ## whole seconds (or the flare's burning/cooldown/ready state) changed.
 func on_stepped() -> void:
-	if _day_active and SimTime.whole_seconds(game.sim.state.build_ticks_left) != _day_secs:
+	if _day_active and SimTime.whole_seconds(game.snapshot.build_ticks_left) != _day_secs:
 		_rebuild(G_PHASE)
 	if _flare_active and _flare_key() != _flare_shown:
 		_rebuild(G_FLARE)
@@ -275,13 +275,13 @@ func _rebuild(mask: int) -> void:
 
 func _refresh_purse() -> void:
 	refresh_count += 1
-	gold_label.text = "Money: " + TowerText.money(game.sim.state.gold)
+	gold_label.text = "Money: " + TowerText.money(game.snapshot.gold)
 
 
 func _refresh_relics() -> void:
 	refresh_count += 1
-	relics_label.text = relics_text(game.sim)
-	relics_label.tooltip_text = relics_tooltip(game.sim)
+	relics_label.text = relics_text(game.sim, game.snapshot)
+	relics_label.tooltip_text = relics_tooltip(game.sim, game.snapshot)
 	sell_relics_button.text = "Sell relics (+%s)" % TowerText.money(game.sim.relics_value())
 	sell_relics_button.disabled = game.sim.can_sell_relics() != SimCommand.CommandResult.OK
 
@@ -290,12 +290,12 @@ func _refresh_relics() -> void:
 func _refresh_crew() -> void:
 	refresh_count += 1
 	crew_button.text = crew_text(game.sim)
-	crew_button.tooltip_text = crew_tooltip(game.sim)
+	crew_button.tooltip_text = crew_tooltip(game.sim, game.snapshot)
 
 
 func _refresh_hp() -> void:
 	refresh_count += 1
-	hp_label.text = "Lighthouse %d/%d" % [game.sim.state.lighthouse_hp,
+	hp_label.text = "Lighthouse %d/%d" % [game.snapshot.lighthouse_hp,
 		game.sim.config.economy.lighthouse_hp]
 
 
@@ -303,7 +303,7 @@ func _refresh_hp() -> void:
 ## timer) and the night's luck. Arms the day timer for on_stepped while it is day.
 func _refresh_phase() -> void:
 	refresh_count += 1
-	var s := game.sim.state
+	var s := game.snapshot
 	phase_label.text = phase_text(s)
 	call_wave_button.disabled = game.sim.can_call_wave() != SimCommand.CommandResult.OK
 	call_wave_button.text = "Light the lamp" if call_wave_button.disabled \
@@ -324,10 +324,10 @@ func _refresh_speed() -> void:
 ## the madness line under it.
 func _refresh_sanity() -> void:
 	refresh_count += 1
-	var s := game.sim.state
+	var s := game.snapshot
 	sanity_bar.set_distorted(s.sanity_state >= SimState.SanityState.FRAYING)
 	sanity_bar.redraw()
-	sanity_bar.tooltip_text = sanity_tooltip(game.sim)  # LT-120: what drains and restores it
+	sanity_bar.tooltip_text = sanity_tooltip(game.sim, game.snapshot)  # LT-120: what drains and restores it
 	hostile_label.visible = s.sanity_state == SimState.SanityState.MADNESS
 	if hostile_label.visible:
 		var text := hostile_text(game.sim.config.sanity.madness)
@@ -343,7 +343,7 @@ func _refresh_sanity() -> void:
 func _place_hostile() -> void:
 	if hostile_label == null or not hostile_label.visible:
 		return
-	var board_right := board_rect().end.x
+	var board_right := overlay_left()
 	var w := hostile_label.get_combined_minimum_size().x
 	var x := minf(sanity_bar.get_global_rect().position.x - get_global_rect().position.x,
 		board_right - w - 4.0)
@@ -370,7 +370,7 @@ func _on_speed_changed() -> void:
 func _refresh_flare() -> void:
 	refresh_count += 1
 	var sim := game.sim
-	var s := sim.state
+	var s := game.snapshot
 	var night := s.phase == SimState.Phase.WAVE
 	flare_button.visible = night
 	oil_label.text = "Oil %d / %d" % [s.oil, sim.oil_cap()]
@@ -387,7 +387,7 @@ func _refresh_flare() -> void:
 		flare_button.text = "Flare (%d oil)" % sim.flare_cost_oil()
 	_flare_shown = _flare_key()
 	_flare_active = s.flare_ticks_left > 0 or s.flare_cooldown_ticks > 0
-	var right := board_rect().end.x - MARGIN
+	var right := overlay_left() - MARGIN
 	var y := board_rect().end.y + 4.0
 	var w := flare_button.get_combined_minimum_size().x
 	var lw := oil_label.get_combined_minimum_size().x
@@ -418,13 +418,13 @@ func _refresh_buy_oil(night: bool, right: float, y: float) -> float:
 	return right - w - 8.0
 
 
-static func _cooldown_secs(s: SimState) -> int:
+static func _cooldown_secs(s: SimSnapshot) -> int:
 	return ceili(float(s.flare_cooldown_ticks) / SimTime.TICK_RATE)
 
 
 ## What the flare button shows from its timers: burning, cooldown seconds, fireable.
 func _flare_key() -> Array:
-	var s := game.sim.state
+	var s := game.snapshot
 	return [s.flare_ticks_left > 0, _cooldown_secs(s), game.sim.can_fire_flare()]
 
 
@@ -486,11 +486,11 @@ static func regen_parts(cfg: SanityConfig) -> PackedStringArray:
 ##   At 0: madness until sanity is back to 20
 ## The "now" part only while a reserve stands; a horror line per enemy with horror_drain in
 ## config order; the last line names the recover target under exit_rule "recover" only.
-static func sanity_tooltip(sim: Simulation) -> String:
+static func sanity_tooltip(sim: Simulation, snap: SimSnapshot) -> String:
 	var cfg := sim.config.sanity
 	var lines := PackedStringArray(["Drains sanity:"])
 	var occult := "· occult towers hold part of it (the hatched end)"
-	var held := cfg.max_sanity - sim.state.sanity_cap
+	var held := cfg.max_sanity - snap.sanity_cap
 	if held > 0.0:
 		occult += ": %s now" % ConfigReader.fmt(roundf(held))
 	lines.append(occult)
@@ -514,7 +514,7 @@ static func sanity_tooltip(sim: Simulation) -> String:
 ## LT-27 §4: "Day 3 — night falls in 31 s" (day n comes before night n), "Night 3 of 5",
 ## "Dawn. All nights survived". The day timer shows whole seconds rounded down, the same
 ## seconds the early-night luck is set from (Simulation.early_night_luck).
-static func phase_text(s: SimState) -> String:
+static func phase_text(s: SimSnapshot) -> String:
 	match s.phase:
 		SimState.Phase.BUILD:
 			return "Day %d — night falls in %d s" % [s.wave_index + 1,
@@ -532,10 +532,10 @@ static func luck_text(luck: float) -> String:
 
 
 ## LT-27 §4: "Relics: 12 (≈ $96)", the stash count and its value at today's prices.
-static func relics_text(sim: Simulation) -> String:
+static func relics_text(sim: Simulation, snap: SimSnapshot) -> String:
 	var n := 0
-	for kind: String in sim.state.relics:
-		n += sim.state.relics[kind]
+	for kind: String in snap.relics:
+		n += snap.relics[kind]
 	return "Relics: %d (≈ %s)" % [n, TowerText.money(sim.relics_value())]
 
 
@@ -549,25 +549,31 @@ static func crew_text(sim: Simulation) -> String:
 
 
 ## LT-32 §4: one line per crew kind in crew.json order: "Harpooners 4 in reserve, 2 on duty".
-static func crew_tooltip(sim: Simulation) -> String:
+static func crew_tooltip(sim: Simulation, snap: SimSnapshot) -> String:
 	var lines := PackedStringArray()
 	for kind: String in sim.config.crew.crews:
-		lines.append(CrewPanel.count_text(sim, kind))
+		lines.append(CrewPanel.count_text(sim, snap, kind))
 	return "\n".join(lines)
 
 
 ## One line per relic kind in config order: "Amber: 3 × $15".
-static func relics_tooltip(sim: Simulation) -> String:
+static func relics_tooltip(sim: Simulation, snap: SimSnapshot) -> String:
 	var lines := PackedStringArray()
 	for k in sim.config.economy.relics:
-		lines.append("%s: %d × %s" % [k.name, sim.state.relics.get(k.id, 0),
+		lines.append("%s: %d × %s" % [k.name, snap.relics.get(k.id, 0),
 			TowerText.money(sim.relic_price(k.id))])
 	return "\n".join(lines)
 
 
-## The board in this layer's base pixels (BoardView.world_rect).
+## LT-66 §2: the side overlay's left edge; right-anchored HUD labels end left of it, so
+## none of them ever sits under the overlay.
+static func overlay_left() -> float:
+	return SidePanel.panel_rect().position.x
+
+
+## The play frame in this layer's base pixels (BoardView.play_rect; LT-66: not the map).
 func board_rect() -> Rect2:
-	return game.board.view.world_rect()
+	return BoardView.play_rect()  # LT-66 §6.1: the screen frame, fixed under any pan
 
 
 ## LT-28: where relic tokens land, in the slot left of the relic counter, so a landing

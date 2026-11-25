@@ -1,7 +1,8 @@
 class_name SanityFxScreenTest
 extends GdUnitTestSuite
-## LT-62 P3: the SanityFx screen pass covers only the board. The BackBufferCopy rect is the
-## board (+ COPY_MARGIN) in screen pixels (stretch scale only, clipped to the stretched
+## LT-62 P3: the SanityFx screen pass covers only the board (LT-66: the fixed play rect,
+## full base width between the HUD bar and the footer, not the map, and not moved by a pan).
+## The BackBufferCopy rect is the board (+ COPY_MARGIN) in screen pixels (stretch scale only, clipped to the stretched
 ## viewport, recomputed on a resize), it is shown and hidden together with the pass, and the
 ## shader skips the madness grade (and the framebuffer read) when it can. The rect tests run
 ## in a stretched SubViewport (size_2d_override), because gl_compatibility reads the rect in
@@ -35,16 +36,22 @@ func _start(size: Vector2i, override: Vector2i) -> void:
 	await get_tree().process_frame
 
 
-## The board (0, 48, 960, 560 at the default map) plus margin, times the stretch `f`, clipped
-## to the stretched viewport (BASE * f). Written from the numbers, not from SanityFx.
+## LT-66: the play rect, built from BoardView's HUD_H/FOOTER_H and BASE, not from SanityFx.
+## (0, 48, 1200, 560): 560 = 675 - 48 - 67.
+func _board() -> Rect2:
+	return Rect2(0.0, BoardView.HUD_H, BASE.x, BASE.y - BoardView.HUD_H - BoardView.FOOTER_H)
+
+
+## The board plus margin, times the stretch `f`, clipped to the stretched viewport (BASE * f).
 func _expected_rect(f: float) -> Rect2:
-	var board := Rect2(0.0, 48.0, 960.0, 560.0)
+	var board := _board()
 	var raw := Rect2(board.position * f - Vector2(MARGIN, MARGIN) * f, (board.size + Vector2(2, 2) * MARGIN) * f)
 	return raw.intersection(Rect2(Vector2.ZERO, Vector2(BASE) * f))
 
 
 func _set_sanity(v: float) -> void:
 	_game.sim._add_sanity(v - _game.sim.state.sanity, "test", 0)
+	GameFixture.sync(_game)
 	_game.advance(0.0)
 	_game.sanity_fx._snap()
 
@@ -52,8 +59,10 @@ func _set_sanity(v: float) -> void:
 func test_the_screen_pass_rect_is_the_board_not_the_viewport() -> void:
 	await _start(BASE, Vector2i.ZERO)
 	var fx := _game.sanity_fx
+	assert_vector(fx.screen_rect.position).is_equal(_board().position)
+	assert_vector(fx.screen_rect.size).is_equal(_board().size)
 	assert_vector(fx.screen_rect.position).is_equal(Vector2(0, 48))
-	assert_vector(fx.screen_rect.size).is_equal(Vector2(960, 560))
+	assert_vector(fx.screen_rect.size).is_equal(Vector2(1200, 560))
 	assert_vector(fx.screen_rect.position).is_equal(fx.board_rect().position)
 	assert_vector(fx.screen_rect.size).is_equal(fx.board_rect().size)
 	assert_int(fx.screen_rect.mouse_filter).is_equal(Control.MOUSE_FILTER_IGNORE)
@@ -63,11 +72,11 @@ func test_copy_rect_equals_the_board_plus_margin_at_the_base_size() -> void:
 	await _start(BASE, Vector2i.ZERO)
 	var copy := _game.sanity_fx.screen_copy
 	assert_int(copy.copy_mode).is_equal(BackBufferCopy.COPY_MODE_RECT)
-	var want := _expected_rect(1.0)  # (0, 16) .. (992, 640)
+	var want := _expected_rect(1.0)  # (0, 16) .. (1200, 640): the margin past x 0/1200 is cut
 	assert_vector(copy.rect.position).is_equal(want.position)
 	assert_vector(copy.rect.size).is_equal(want.size)
 	assert_vector(copy.rect.position).is_equal(Vector2(0, 16))
-	assert_vector(copy.rect.size).is_equal(Vector2(992, 624))
+	assert_vector(copy.rect.size).is_equal(Vector2(1200, 624))
 
 
 func test_copy_rect_scales_with_the_stretch() -> void:
@@ -79,7 +88,7 @@ func test_copy_rect_scales_with_the_stretch() -> void:
 	assert_vector(copy.rect.position).is_equal_approx(want.position, Vector2(1e-3, 1e-3))
 	assert_vector(copy.rect.size).is_equal_approx(want.size, Vector2(1e-3, 1e-3))
 	# not the base-unit rect, which is the unstretched-render bug
-	assert_float(copy.rect.size.x).is_greater(992.0)
+	assert_float(copy.rect.size.x).is_greater(1200.0)
 
 
 func test_copy_rect_is_clipped_to_the_stretched_viewport() -> void:
@@ -88,18 +97,34 @@ func test_copy_rect_is_clipped_to_the_stretched_viewport() -> void:
 	assert_float(copy.rect.position.x).is_equal(0.0)  # the margin left of x=0 is cut
 	assert_float(copy.rect.end.x).is_less_equal(2400.0)
 	assert_float(copy.rect.end.y).is_less_equal(1350.0)
-	assert_vector(copy.rect.size).is_equal_approx(Vector2(992.0 * 2.0, 624.0 * 2.0), Vector2(1e-3, 1e-3))
+	assert_vector(copy.rect.size).is_equal_approx(Vector2(1200.0 * 2.0, 624.0 * 2.0), Vector2(1e-3, 1e-3))
 
 
 func test_copy_rect_is_recomputed_after_a_size_change() -> void:
 	await _start(BASE, BASE)  # stretch 1
 	var copy := _game.sanity_fx.screen_copy
-	assert_vector(copy.rect.size).is_equal(Vector2(992, 624))
+	assert_vector(copy.rect.size).is_equal(Vector2(1200, 624))
 	_vp.size = Vector2i(1600, 900)
 	await get_tree().process_frame
 	var want := _expected_rect(1600.0 / 1200.0)
 	assert_vector(copy.rect.position).is_equal_approx(want.position, Vector2(1e-3, 1e-3))
 	assert_vector(copy.rect.size).is_equal_approx(want.size, Vector2(1e-3, 1e-3))
+
+
+## LT-66 §9.16: the pass and its copy rect are the fixed play rect, so a pan moves neither.
+func test_copy_rect_equals_the_play_rect_at_a_non_zero_pan() -> void:
+	await _start(BASE, Vector2i.ZERO)
+	var fx := _game.sanity_fx
+	_game.board.view.set_pan(Vector2(-40, 0))
+	assert_vector(_game.board.view.pan).is_equal(Vector2(-40, 0))
+	fx._update_copy_rect()
+	assert_vector(fx.board_rect().position).is_equal(BoardView.play_rect().position)
+	assert_vector(fx.board_rect().size).is_equal(BoardView.play_rect().size)
+	assert_vector(fx.screen_rect.position).is_equal(BoardView.play_rect().position)
+	assert_vector(fx.screen_rect.size).is_equal(BoardView.play_rect().size)
+	var want := _expected_rect(1.0)
+	assert_vector(fx.screen_copy.rect.position).is_equal(want.position)
+	assert_vector(fx.screen_copy.rect.size).is_equal(want.size)
 
 
 func test_copy_is_a_sibling_drawn_before_the_screen_rect() -> void:

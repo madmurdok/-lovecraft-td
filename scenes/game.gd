@@ -2,7 +2,7 @@ class_name Game
 extends Node2D
 ## One run (LT-7): owns the Simulation, its WaveDirector and the SimClock, steps the sim
 ## from _process and hands the frame's events to the board and the HUD.
-## Scenes only read `sim.state` and call sim commands; no game rules live here.
+## Scenes only read `snapshot` (LT-85) and call sim commands; no game rules live here.
 
 signal restart_requested
 signal speed_changed  ## LT-78: chosen_speed or paused changed (the HUD's speed group)
@@ -11,6 +11,10 @@ const SKIP_KEY := KEY_N
 const UI_LAYER := 2  ## above SanityFx.SCREEN_LAYER, so the HUD is never distorted
 
 var sim: Simulation
+## LT-85 §4: the one shared read-only copy of the sim that presentation reads, rebuilt on
+## frames where the sim changed (a step or a command). Tests that poke the sim's state directly
+## call refresh_snapshot() (GameFixture.sync) before reading presentation.
+var snapshot: SimSnapshot
 var clock := SimClock.new()
 var chosen_speed := 1  ## x1 / x2; the clock runs at 0 while paused
 var paused := false
@@ -42,6 +46,7 @@ var picker: TowerPicker  ## LT-61: the build list at the top of side_panel, its 
 var tower_panel: TowerPanel  ## tower view of side_panel
 var lighthouse_panel: LighthousePanel  ## LT-30: lighthouse view of side_panel
 var crew_panel: CrewPanel  ## LT-32 §4: crew view of side_panel (opened from the HUD)
+var monster_card: MonsterCard  ## LT-66 §5: monster view of side_panel (a night enemy click)
 var end_screen: EndScreen
 
 
@@ -55,7 +60,7 @@ func setup(
 		config = config.sandboxed(DebugArgs.SANDBOX_GOLD)
 	sim = Simulation.new(config, p_seed)
 	sim.set_spawner(WaveDirector.new(config.waves))
-	# LT-12 §1: debug builds only; the board then marks fakes via sim.debug_is_fake.
+	# LT-12 §1: debug builds only; the board then marks fakes via sim.debug_is_fake_id.
 	sim.debug_reveal_fakes = OS.is_debug_build() and debug.reveal_fakes
 	DebugArgs.apply_mute(args)
 	if debug.sanity >= 0.0:
@@ -63,6 +68,13 @@ func setup(
 	if debug.frame_stats:
 		frame_stats = FrameStats.new()
 	commands = GameCommands.new(sim, debug, _after_command)
+	refresh_snapshot()  # LT-85 §4: built before any child's _ready reads it
+
+
+## LT-85 §4: rebuilds `snapshot` from the sim. Game calls it after steps and commands;
+## tests call it (GameFixture.sync) after poking sim state directly.
+func refresh_snapshot() -> void:
+	snapshot = sim.snapshot(snapshot)
 
 
 func _ready() -> void:
@@ -73,6 +85,7 @@ func _ready() -> void:
 	add_child(board)
 	board.cell_clicked.connect(_on_cell_clicked)
 	board.outside_clicked.connect(close_panels)
+	board.enemy_clicked.connect(_on_enemy_clicked)
 	lighting = Lighting.new()
 	lighting.name = "Lighting"
 	lighting.setup(self, self)
@@ -102,6 +115,7 @@ func _ready() -> void:
 	tower_panel = side_panel.tower_panel
 	lighthouse_panel = side_panel.lighthouse_panel
 	crew_panel = side_panel.crew_panel
+	monster_card = side_panel.monster_card
 	end_screen = EndScreen.new()
 	end_screen.name = "EndScreen"
 	ui.add_child(end_screen)
@@ -126,7 +140,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 ## state, live enemies, towers, board effects, window focus and the events consumed in the
 ## previous frame (the one whose process + draw the spike interval covers). Read-only.
 func spike_context(now_usec: int) -> Dictionary:
-	var st := sim.state
+	var st := snapshot
 	var win: Window = get_window() if is_inside_tree() else null
 	return {
 		"t": "%.2fs" % (now_usec / 1000000.0),
@@ -154,11 +168,14 @@ func advance(delta: float) -> void:
 	var steps := clock.advance(delta)
 	for i in steps:
 		sim.step()
+	if steps > 0:
+		refresh_snapshot()  # LT-85 §4: before the events reach their consumers
 	# LT-78 §1: panels change only when events (or a running timer, on stepped frames) say so.
 	if _consume_events() > 0 or steps > 0:
 		_flush_ui()
 	if steps > 0:
 		hud.on_stepped()
+		monster_card.on_stepped()  # LT-66 §5: after the snapshot rebuild above
 	board.alpha = clock.alpha()
 	board.tick_effects(delta)
 	relic_tokens.tick(delta)
@@ -183,6 +200,7 @@ func _apply_speed() -> void:
 
 ## Commands apply between ticks; show their effect without waiting for the next frame.
 func _after_command() -> void:
+	refresh_snapshot()  # LT-85 §4: before the events and the panel flush read it
 	_consume_events()
 	board.queue_redraw()
 	_flush_ui()
@@ -204,6 +222,11 @@ func _consume_events() -> int:
 		tower_panel.on_event(ev)
 		lighthouse_panel.on_event(ev)
 		crew_panel.on_event(ev)
+		monster_card.on_event(ev)
+		if ev.type == SimEvent.Type.WAVE_STARTED:  # LT-66 §2 (owner Q3): dusk closes every view
+			close_panels()
+		if ev.type == SimEvent.Type.BUILD_STARTED or ev.type == SimEvent.Type.WAVE_STARTED:
+			side_panel.sync_visible()
 		if ev.type == SimEvent.Type.RELICS_CHANGED and ev.data.get("reason", "") == "kill" \
 				and ev.data.get("kind", "") == RelicTokens.STAR_STONE:
 			star_stones_found += 1
@@ -212,8 +235,9 @@ func _consume_events() -> int:
 			tower_panel.close()
 			lighthouse_panel.close()
 			crew_panel.close()
+			monster_card.close()
 			side_panel.visible = false
-			end_screen.show_result(ev.data.get("result", "") == "won", sim.state,
+			end_screen.show_result(ev.data.get("result", "") == "won", snapshot,
 				star_stones_found)
 	return events.size()
 
@@ -228,28 +252,43 @@ func _flush_ui() -> void:
 	crew_panel.flush()
 
 
-## LT-28: closes the build and tower views (a click on a cell, or one off the grid).
+## LT-28: closes every side panel view (a click on a cell, or one off the grid; Esc).
+## LT-66 §2: by day the idle text shows, by night the overlay hides (SidePanel.sync_visible).
 func close_panels() -> void:
 	picker.close()
 	tower_panel.close()
 	lighthouse_panel.close()
 	crew_panel.close()
+	monster_card.close()
 
 
 ## LT-32 §4: the HUD's crew button: the crew view replaces whatever the side panel shows.
 func open_crew_panel() -> void:
 	close_panels()
-	if sim.state.outcome == SimState.Outcome.NONE:
+	if snapshot.outcome == SimState.Outcome.NONE:
 		crew_panel.open()
 
 
 func _on_cell_clicked(cell: Vector2i) -> void:
 	close_panels()
-	if sim.state.outcome != SimState.Outcome.NONE:
+	if snapshot.outcome != SimState.Outcome.NONE:
 		return
-	if cell == sim.state.map.lighthouse:
+	if cell == snapshot.map.lighthouse:
 		lighthouse_panel.open()
-	elif sim.state.tower_at.has(cell):
-		tower_panel.open_for(sim.state.tower_at[cell])
-	elif sim.state.map.is_buildable(cell):
-		picker.open_for(cell)
+	elif snapshot.tower_at(cell) != null:
+		tower_panel.open_for(snapshot.tower_at(cell).id)
+	elif snapshot.map.is_buildable(cell) \
+			and (snapshot.phase != SimState.Phase.WAVE or sim.config.crew_on()):
+		picker.open_for(cell)  # LT-66 §2: by night only the reserve-post list (crew on)
+	else:
+		return
+	board.camera.reveal(snapshot.map.grid.centre(cell))  # LT-66 §6.1 auto-reveal
+
+
+## LT-66 §4: a night click on a drawn enemy opens its monster card.
+func _on_enemy_clicked(id: int) -> void:
+	close_panels()
+	if snapshot.outcome == SimState.Outcome.NONE:
+		monster_card.open_for(id)
+		if board.last_pos.has(id):  # LT-66 §6.1 auto-reveal at the drawn position
+			board.camera.reveal(board.last_pos[id])

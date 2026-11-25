@@ -8,14 +8,14 @@ extends Node2D
 ## hits drawn off-target into an empty spot. Its randomness is presentation-only.
 ## LT-25: each attack kind has its own look, chosen from the tower's current stats
 ## (shot_kind): rifle tracer, piercing harpoon, Elder Sign ward aura, Necronomicon dark
-## wave; slow, damage-taken and (LT-29) bleed markers on enemies (SimEnemy.markers), a longer
+## wave; slow, damage-taken and (LT-29) bleed markers on enemies (EnemyRecord.markers), a longer
 ## hit spark on a crit and a dashed chain for a pull. LT-47: the Dynamite crew's lobbed
 ## charge (an arc, then a sputtering fuse on the ground until the BLAST event, sim time) and
 ## its blast ring. Nothing here tells a fake from a real enemy: every look depends only on
 ## SHOT / BLAST fields and aura state. LT-104: the looks themselves (colour, effect, area,
 ## cap; enemy body) are rows of LookCatalog, derived from the attack mode or overridden per
 ## tower / enemy def id by data/looks.json. LT-49: the Searchlight's aura is a lit disc with a
-## sweeping beam; a fake its aura revealed (`SimEnemy.revealed`, sim state)
+## sweeping beam; a fake its aura revealed (`EnemyRecord.revealed`, a game rule)
 ## is drawn as a ghost-grey body with an amber ring and slash.
 ## LT-70 §5: a lit tower's plate is tinted warm, a shadowed one cold violet (plate_color),
 ## each with its corner dot; by day (BUILD) the selected caster previews its radius with a
@@ -34,6 +34,7 @@ extends Node2D
 
 signal cell_clicked(cell: Vector2i)
 signal outside_clicked  ## LT-28: a left click no control took that misses the grid
+signal enemy_clicked(id: int)  ## LT-66 §4: a left click within PICK_RADIUS of a drawn enemy
 
 ## LT-84: the palette shared by several layers: the map colours (MapLayer), the leak red
 ## (FxLayer's flash, OverlayLayer's dead zone) and each attack look's colour (EntityLayer's
@@ -71,6 +72,10 @@ const BANISH_COLOR := Color(2.0, 2.1, 2.6)
 ## LT-14 visual tunables.
 @export var flicker_rate := 13.0  ## flicker steps per second
 
+## LT-66 §4: a click this close (cells) to a drawn enemy's centre picks it: max(look
+## radius, 0.5), and LookCatalog.RADIUS_MAX is 0.5, so 0.5 covers every body.
+const PICK_RADIUS := maxf(LookCatalog.RADIUS_MAX, 0.5)
+
 var game: Game
 var alpha := 0.0  ## render interpolation between the last two ticks
 var time := 0.0  ## seconds of effects time, drives the flicker, pulses and sweeps
@@ -84,10 +89,13 @@ var entity_layer: EntityLayer
 var fx_layer: FxLayer
 var overlay_layer: OverlayLayer
 var view := BoardView.new()  ## LT-35: cells <-> pixels; the only holder of the pixel scale
+var camera := BoardCamera.new(view)  ## LT-66 §6.2: input -> view.pan (keys, drag, wheel, edge)
+var _mouse_in_window := true  ## LT-66 §6.2: no edge pan while the cursor is outside the window
 
 
 func _ready() -> void:
 	position = view.origin()
+	view.panned.connect(_on_panned)
 	map_layer = MapLayer.new()
 	map_layer.view = view
 	map_layer.name = "MapLayer"
@@ -115,22 +123,89 @@ func _add_layer(layer: BoardLayer, layer_name: String) -> BoardLayer:
 
 ## Hands the sim's current map to the map layer; it redraws only if the map changed.
 func sync_map() -> void:
-	if game != null and game.sim != null and map_layer != null:
-		view.grid = game.sim.state.map.grid
-		map_layer.set_map(game.sim.state.map)
+	if game != null and game.snapshot != null and map_layer != null:
+		view.grid = game.snapshot.map.grid
+		map_layer.set_map(game.snapshot.map)
+
+
+## LT-66 §6.1: the board node follows the pan, so every layer, Lighting and the sea move.
+func _on_panned() -> void:
+	position = view.origin()
 
 
 func _unhandled_input(event: InputEvent) -> void:
 	var mb := event as InputEventMouseButton
-	if mb == null or not mb.pressed or mb.button_index != MOUSE_BUTTON_LEFT:
+	if mb == null or mb.button_index != MOUSE_BUTTON_LEFT:
+		# LT-66 §6.2: right/middle drag, wheel and pan gestures pan; a left click never does.
+		# Plain motions and keys return before make_input_local (no event copy per move).
+		var mm := event as InputEventMouseMotion
+		if mm != null \
+				and not (mm.button_mask & (MOUSE_BUTTON_MASK_RIGHT | MOUSE_BUTTON_MASK_MIDDLE)):
+			return
+		if mb == null and mm == null and not (event is InputEventPanGesture):
+			return
+		if game != null and camera.input(game.make_input_local(event)):
+			get_viewport().set_input_as_handled()
+		return
+	if not mb.pressed:
 		return
 	sync_map()
-	var cell := view.cell_at_screen((game.make_input_local(mb) as InputEventMouseButton).position)
+	var p := (game.make_input_local(mb) as InputEventMouseButton).position
+	var enemy := enemy_at_screen(p)  # LT-66 §4: a monster wins inside its pick radius
+	if enemy != 0:
+		get_viewport().set_input_as_handled()
+		enemy_clicked.emit(enemy)
+		return
+	var cell := view.cell_at_screen(p)
 	if cell != BoardView.OFF_BOARD:
 		get_viewport().set_input_as_handled()
 		cell_clicked.emit(cell)
 	else:
 		outside_clicked.emit()
+
+
+## LT-66 §4: the id of the enemy drawn this frame (`last_pos`, still in the snapshot) whose
+## centre is nearest to screen point `p` within PICK_RADIUS cells; ties go to the lower id.
+## 0 when none. Uses only drawn positions, never the sim.
+func enemy_at_screen(p: Vector2) -> int:
+	if game == null or game.snapshot == null:
+		return 0
+	var at := view.screen_to_cells(p)
+	var best := 0
+	var best_d := PICK_RADIUS * PICK_RADIUS
+	for id: int in last_pos:
+		var d := at.distance_squared_to(last_pos[id])
+		if d > best_d or (d == best_d and best != 0 and id > best):
+			continue
+		if game.snapshot.enemy(id) == null:  # drawn last frame, gone since
+			continue
+		best = id
+		best_d = d
+	return best
+
+
+## LT-66 §6.2: arrows and WASD (press and release) pan while held.
+func _unhandled_key_input(event: InputEvent) -> void:
+	if camera.key_input(event):
+		get_viewport().set_input_as_handled()
+
+
+func _notification(what: int) -> void:
+	match what:
+		NOTIFICATION_WM_MOUSE_EXIT:
+			_mouse_in_window = false
+		NOTIFICATION_WM_MOUSE_ENTER:
+			_mouse_in_window = true
+		NOTIFICATION_APPLICATION_FOCUS_OUT, NOTIFICATION_WM_WINDOW_FOCUS_OUT:
+			camera.release_all()  # a key released while unfocused never arrives
+
+
+## LT-66 §6.2: edge pan only with the cursor in the focused window, over no Control and with
+## no mouse button held.
+func edge_pan_allowed() -> bool:
+	return _mouse_in_window and get_window().has_focus() \
+		and get_viewport().gui_get_hovered_control() == null \
+		and Input.get_mouse_button_mask() == 0
 
 
 ## Sim events for the effects (SHOT, BLAST, DIED, FAKE_DISSOLVED, LEAKED): FxLayer.
@@ -141,7 +216,7 @@ func on_event(ev: SimEvent) -> void:
 ## LT-25 §1: the attack look from the tower's current stats (so upgrades and branches
 ## change it). LT-104: LookCatalog.tower_look (a data/looks.json override, else the mode
 ## ladder, LookCatalog.derived_tower_look).
-static func shot_kind(t: SimTower) -> String:
+static func shot_kind(t: TowerRecord) -> String:
 	return LookCatalog.tower_look(t)
 
 
@@ -157,9 +232,12 @@ static func cast_of(s: TowerDef.Level) -> String:
 
 
 ## Advances effects time by `delta` seconds: the effects' ttl (FxLayer) and the phantom
-## path (PhantomLayer). The Game calls it once per frame.
+## path (PhantomLayer); LT-66: the camera's key/edge pan and ease. The Game calls it once per
+## frame.
 func tick_effects(delta: float) -> void:
 	time += delta
+	if game != null and is_inside_tree():  # LT-66 §6.2-§6.3: key and edge pan, the ease
+		camera.tick(delta, game.get_local_mouse_position(), edge_pan_allowed())
 	fx_layer.tick(delta)
 	phantom_layer.tick(delta)
 
@@ -216,6 +294,15 @@ class MapLayer extends Node2D:
 		if map == null:
 			return
 		var m := map
+		# LT-66 §3: a sea backdrop below the tiles, so the strip right of the map (night, the
+		# overlay hidden) and a pan past the map's edge show open sea, not the clear colour. It
+		# spans the map grown by the play rect on every side: any clamped pan stays inside.
+		var play := BoardView.play_rect()
+		var bounds := m.grid.bounds()
+		var sea := Rect2(view.cell_to_world(bounds.position), view.cell_to_world(bounds.size)) \
+			.grow_individual(
+			play.size.x, play.size.y, play.size.x, play.size.y)
+		draw_rect(sea, Board.COLOR_WATER)
 		for c in m.grid.cells():
 			var color := Board.COLOR_WATER
 			match m.kind_at(c):

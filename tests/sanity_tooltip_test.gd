@@ -69,7 +69,7 @@ func _horror_defs() -> Array[EnemyDef]:
 
 
 func _lines() -> PackedStringArray:
-	return Hud.sanity_tooltip(_game.sim).split("\n")
+	return Hud.sanity_tooltip(_game.sim, _game.snapshot).split("\n")
 
 
 # --- the bar is hoverable and carries the text ---------------------------------------------
@@ -84,11 +84,11 @@ func test_refresh_sets_the_bar_tooltip_from_the_current_state() -> void:
 	var bar := _game.hud.sanity_bar
 	_game.hud.refresh()
 	assert_str(bar.tooltip_text).is_not_empty()
-	assert_str(bar.tooltip_text).is_equal(Hud.sanity_tooltip(_game.sim))
+	assert_str(bar.tooltip_text).is_equal(Hud.sanity_tooltip(_game.sim, _game.snapshot))
 	assert_bool(bar.tooltip_text.contains(" now")).is_false()
 	_build_reserve(20.0)
 	_game.hud.refresh()
-	assert_str(bar.tooltip_text).is_equal(Hud.sanity_tooltip(_game.sim))
+	assert_str(bar.tooltip_text).is_equal(Hud.sanity_tooltip(_game.sim, _game.snapshot))
 	assert_bool(bar.tooltip_text.contains("20 now")).is_true()
 
 

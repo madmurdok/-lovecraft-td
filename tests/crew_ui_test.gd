@@ -75,7 +75,7 @@ func test_hud_crew_button_shows_the_reserve_total_and_per_kind_lines() -> void:
 	assert_str(b.text).is_equal("Crew: 3")
 	var lines := b.tooltip_text.split("\n")
 	assert_int(lines.size()).is_equal(_game.sim.config.crew.crews.size())
-	assert_str(lines[0]).is_equal(CrewPanel.count_text(_game.sim, RIFLE))
+	assert_str(lines[0]).is_equal(CrewPanel.count_text(_game.sim, _game.snapshot, RIFLE))
 	assert_str(lines[0]).contains("2 in reserve")
 	assert_str(lines[1]).contains("1 in reserve")
 	b.pressed.emit()
@@ -105,20 +105,20 @@ func test_crew_view_hires_by_day_only_and_counts_men_on_duty() -> void:
 	assert_bool(p.hire_buttons[RIFLE].disabled).is_false()
 	p.hire_buttons[RIFLE].pressed.emit()
 	assert_int(_game.sim.crew_reserve()[RIFLE]).is_equal(1)
-	assert_str(p.counts[RIFLE].text).is_equal(CrewPanel.count_text(_game.sim, RIFLE))
+	assert_str(p.counts[RIFLE].text).is_equal(CrewPanel.count_text(_game.sim, _game.snapshot, RIFLE))
 	assert_str(p.counts[RIFLE].text).contains("1 in reserve, 0 on duty")
 	var cells := _free_cells(2)
 	assert_int(_game.commands.build(RIFLE, cells[0])).is_equal(R.OK)
 	_hire(HARP, _post_crew())
-	_game.open_crew_panel()
 	_night()
+	_game.open_crew_panel()  # LT-66 §2: dusk closes every view
 	for kind: String in p.hire_buttons:
 		assert_bool(p.hire_buttons[kind].disabled).override_failure_message(kind).is_true()
 		assert_str(p.hire_buttons[kind].text).contains("hire by day")
 	assert_int(_game.commands.deploy(HARP, cells[1])).is_equal(R.OK)
 	var need := _game.sim.crew_need(RIFLE)
-	assert_int(CrewPanel.on_duty(_game.sim, RIFLE)).is_equal(need)
-	assert_int(CrewPanel.on_duty(_game.sim, HARP)).is_equal(_post_crew())
+	assert_int(CrewPanel.on_duty(_game.snapshot, RIFLE)).is_equal(need)
+	assert_int(CrewPanel.on_duty(_game.snapshot, HARP)).is_equal(_post_crew())
 	assert_str(p.counts[HARP].text).contains("0 in reserve, %d on duty" % _post_crew())
 
 

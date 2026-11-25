@@ -281,6 +281,7 @@ func apply_madness_buff() -> void:
 			continue
 		e.speed_mult *= m.enemy_speed_multiplier
 		e.damage_taken_mult *= m.enemy_damage_taken_multiplier
+		e.madness_buffed = true
 
 
 ## LT-30 (LT-26 D4): true when `e` must not get the madness buff: lit this tick (the

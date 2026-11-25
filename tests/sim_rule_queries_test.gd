@@ -348,10 +348,12 @@ func test_hud_and_game_flare_oil_equal_the_sims_oil_rules() -> void:
 		got.append(game.sim.oil_for_flare())
 	assert_array(got).is_equal([6, 6, 4, 0])
 	sim.state.oil = 4
+	GameFixture.sync(game)  # LT-85: poked on the sim directly
 	game.hud.refresh()
 	assert_str(game.hud.oil_label.text).is_equal("Oil 4 / %d" % sim.oil_cap())
 	assert_int(sim.oil_cap()).is_equal(9)
 	sim.state.phase = SimState.Phase.WAVE  # the flare button shows at night
+	GameFixture.sync(game)
 	game.hud.refresh()
 	assert_str(game.hud.flare_button.text).is_equal("Flare (%d oil)" % sim.flare_cost_oil())
 	game.lighthouse_panel.open()

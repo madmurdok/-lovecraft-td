@@ -2,7 +2,7 @@ class_name TowerPickerGroupsTest
 extends ConfigTestBase
 ## LT-55 (LT-46 P15), LT-61: the build list shows two labelled groups, "MUNDANE" then
 ## "OCCULT", by TowerDef.kind, data order inside each; with 10 towers the list fits the side
-## panel's 224 px at 1200x675. Each row shows its short name, cost, L1 DPS and trait. The 10-tower config is built
+## panel's 288 px (LT-66) at 1200x675. Each row shows its short name, cost, L1 DPS, range and trait. The 10-tower config is built
 ## here (res://data plus five towers appended in mixed kind order), never in data/. Real mouse
 ## events go into a 1200x675 SubViewport like side_panel_test.
 
@@ -231,23 +231,22 @@ func test_every_row_shows_its_short_name_cost_dps_and_trait() -> void:
 			.is_equal(TowerText.trait_text(def, def.levels[0]))
 
 
-# --- fit: 10 towers, 1200x675, the side panel's 224 px --------------------------------------
+# --- fit: 10 towers, 1200x675, the side panel's 288 px --------------------------------------
 
 func _assert_fits(state: String) -> void:
-	var map := _game.sim.state.map
-	var panel := SidePanel.panel_rect(map)
+	var panel := SidePanel.panel_rect()
 	var r := _game.picker.get_global_rect()
 	assert_bool(panel.encloses(r)).override_failure_message(
 		"%s: picker %s outside the panel %s" % [state, r, panel]).is_true()
-	assert_float(r.size.x).override_failure_message("%s: picker %s wider than 224 px"
-		% [state, r]).is_less_equal(224.0)
+	assert_float(r.size.x).override_failure_message("%s: picker %s wider than 288 px"
+		% [state, r]).is_less_equal(288.0)
 	for id: String in _config.towers:
 		var c: Control = _game.picker.buttons[id]
 		assert_bool(r.encloses(c.get_global_rect())).override_failure_message(
 			"%s: %s at %s outside %s" % [state, c.name, c.get_global_rect(), r]).is_true()
 
 
-func test_ten_affordable_towers_fit_224_px_at_1200x675() -> void:
+func test_ten_affordable_towers_fit_288_px_at_1200x675() -> void:
 	await _start_game(_ten_config())
 	assert_that(_vp.size).is_equal(Vector2i(1200, 675))
 	_game.sim.state.gold = 10000
@@ -258,7 +257,7 @@ func test_ten_affordable_towers_fit_224_px_at_1200x675() -> void:
 	_assert_fits("affordable")
 
 
-func test_ten_unaffordable_towers_fit_224_px_at_1200x675() -> void:
+func test_ten_unaffordable_towers_fit_288_px_at_1200x675() -> void:
 	await _start_game(_ten_config())
 	_game.sim.state.gold = 0
 	await _open_picker()
@@ -371,7 +370,8 @@ func _total_config(total: int, min_extra := 0, keep := "") -> GameConfig:
 	while towers.size() < want:
 		n += 1
 		var t: Dictionary = template.duplicate(true)
-		t["name"] = "Extra Harbour Gunner %d" % n
+		# LT-66: long enough to overrun the 142 px name column even at 10 px.
+		t["name"] = "Extra Harbour Gunner of the Drowned Watch %d" % n
 		t.erase("short")
 		t["glyph"] = free.pop_front()
 		towers["extra_gunner_%d" % n] = t
@@ -393,24 +393,27 @@ func _font_of(l: Label) -> int:
 	return l.get_theme_font_size("font_size")
 
 
-## The widths of the four cells add up to the panel's inner width (240 px panel less both
-## margins = 224 px), and each cell has its width.
-func test_row_cells_have_their_column_widths_summing_to_224() -> void:
+## The widths of the five cells and two gaps add up to the panel's inner width (LT-66: 304 px
+## overlay less both margins = 288 px; Name 142), and each cell has its width.
+func test_row_cells_have_their_column_widths_summing_to_288() -> void:
 	await _start_game(_data_config())
 	_game.sim.state.gold = 10000
 	await _open_picker()
 	await get_tree().process_frame
 	var sum := TowerPicker.NAME_W + TowerPicker.COST_W + TowerPicker.COST_GAP \
-		+ TowerPicker.DPS_W + TowerPicker.TRAIT_W
-	var inner := SidePanel.panel_rect(_game.sim.state.map).size.x - 2.0 * SidePanel.MARGIN
+		+ TowerPicker.DPS_W + TowerPicker.DPS_GAP + TowerPicker.RNG_W + TowerPicker.RNG_GAP \
+		+ TowerPicker.TRAIT_W
+	var inner := SidePanel.panel_rect().size.x - 2.0 * SidePanel.MARGIN
 	assert_int(sum).is_equal(int(inner))
-	assert_int(sum).is_equal(224)
+	assert_int(sum).is_equal(288)
+	assert_int(TowerPicker.NAME_W).is_equal(142)
 	assert_float(_game.picker.size.x).is_equal(float(sum))
 	for id: String in _config.towers:
 		assert_float(_game.picker.names[id].size.x).override_failure_message(id) \
 			.is_equal(float(TowerPicker.NAME_W))
 		assert_float(_game.picker.costs[id].size.x).is_equal(float(TowerPicker.COST_W))
 		assert_float(_game.picker.cells[id]["dps"].size.x).is_equal(float(TowerPicker.DPS_W))
+		assert_float(_game.picker.cells[id]["rng"].size.x).is_equal(float(TowerPicker.RNG_W))
 		assert_float(_game.picker.cells[id]["trait"].size.x).is_equal(float(TowerPicker.TRAIT_W))
 		var row: Control = _game.picker.buttons[id].find_child("Gap", true, false)
 		assert_float(row.size.x).is_equal(float(TowerPicker.COST_GAP))
@@ -461,7 +464,7 @@ func test_a_long_name_shrinks_to_10_px_then_ends_in_an_ellipsis() -> void:
 	assert_int(ellipsis).override_failure_message("fixture has no over-long name").is_greater(0)
 
 
-## 10 shipped towers: no scrolling in the list (neither way), the whole list inside 224 px.
+## 10 shipped towers: no scrolling in the list (neither way), the whole list inside 288 px.
 func test_ten_towers_need_no_scrolling_in_the_list() -> void:
 	await _start_game(_data_config())
 	_game.sim.state.gold = 10000
@@ -520,7 +523,7 @@ func _assert_cards_fit() -> void:
 		assert_bool(bar.visible).override_failure_message("%s card scrolls" % id).is_false()
 		assert_float(sp.card.get_global_rect().position.y).is_greater_equal(
 			_game.picker.get_global_rect().end.y)
-		assert_bool(SidePanel.panel_rect(_game.sim.state.map).encloses(sp.card.get_global_rect())) \
+		assert_bool(SidePanel.panel_rect().encloses(sp.card.get_global_rect())) \
 			.override_failure_message("%s card %s" % [id, sp.card.get_global_rect()]).is_true()
 
 
@@ -579,7 +582,7 @@ func test_the_list_follows_the_phase_through_refresh() -> void:
 	# Night.
 	assert_int(_game.commands.call_wave()).is_equal(SimCommand.CommandResult.OK)
 	_game.advance(0.0)
-	pk.refresh()
+	pk.open_for(pk.cell)  # LT-66 §2: dusk closed the list; open_for refreshes it
 	await get_tree().process_frame
 	var posts := pk.post_box.get_child_count()
 	assert_bool(pk.post_box.visible).is_true()
@@ -591,6 +594,7 @@ func test_the_list_follows_the_phase_through_refresh() -> void:
 	assert_int(pinned.get_child_count()).is_equal(heads_n + 1)  # the scrollbar spacer
 	# Dawn (the picker reads the phase).
 	_game.sim.state.phase = SimState.Phase.BUILD
+	GameFixture.sync(_game)  # LT-85: poked on the sim directly
 	pk.refresh()
 	await get_tree().process_frame
 	assert_bool(pk.post_box.visible).is_false()
@@ -688,7 +692,7 @@ func test_fifteen_towers_scroll_the_list_and_pin_heads_aligned_to_the_scrollbar(
 	for h: Label in pinned.get_children().filter(func(c: Node) -> bool: return c is Label):
 		heads[h.name] = h
 	assert_float(heads["Head_DPS"].get_global_rect().end.x).is_equal_approx(
-		picker.cells[id]["dps"].get_global_rect().end.x, tol)
+		picker.cells[id]["dps"].get_global_rect().end.x + TowerPicker.DPS_GAP, tol)
 	assert_float(heads["Head_Trait"].get_global_rect().end.x).is_equal_approx(
 		picker.cells[id]["trait"].get_global_rect().end.x, tol)
 	assert_float(heads["Head_$"].get_global_rect().end.x).is_equal_approx(
@@ -704,7 +708,7 @@ func test_fifteen_towers_scroll_the_list_and_pin_heads_aligned_to_the_scrollbar(
 		if fs > TowerPicker.NAME_FONT_MIN:
 			assert_float(_name_w(l, fs)).override_failure_message("%s '%s' %d px" % [tid, l.text, fs]) \
 				.is_less_equal(float(avail))
-		# LT-59: at the 240 px panel the shipped names fit beside the scrollbar unshrunk.
+		# LT-59: at the 240 px panel (LT-66: 304) the shipped names fit beside the scrollbar unshrunk.
 
 
 ## The column heads (LT-61 §3) sit on the first group line only, each with its tooltip.

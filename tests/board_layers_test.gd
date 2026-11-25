@@ -30,19 +30,19 @@ class SpyEntity:
 		log.append("entity")
 		super._draw()
 
-	func _draw_auras(s: SimState) -> void:
+	func _draw_auras(s: SimSnapshot) -> void:
 		log.append("auras")
 		super._draw_auras(s)
 
-	func _draw_tower(t: SimTower) -> void:
+	func _draw_tower(t: TowerRecord) -> void:
 		log.append("tower")
 		super._draw_tower(t)
 
-	func _draw_enemies(s: SimState) -> void:
+	func _draw_enemies(s: SimSnapshot) -> void:
 		log.append("enemies")
 		super._draw_enemies(s)
 
-	func _draw_allies(s: SimState) -> void:
+	func _draw_allies(s: SimSnapshot) -> void:
 		log.append("allies")
 		super._draw_allies(s)
 
@@ -456,7 +456,7 @@ func test_overlay_reads_the_selection_and_paints_no_cast_on_an_empty_one() -> vo
 	var o := _game.board.overlay_layer
 	assert_float(o.selected_dead_zone()).is_equal(0.0)
 	_build_a_tower()
-	var t := _game.sim.state.towers[0]
+	var t := _game.snapshot.towers[0]
 	assert_str(o.preview_cast(t)).is_equal("")  # no cast selected
 	_game.selection.show_cell(C2)
 	_game.selection.set_ring(50.0, "light")  # a caster on C2 whose ring covers every tower
@@ -481,5 +481,6 @@ func _build_a_tower() -> int:
 		if sim.state.map.kind_at(c) != MapDef.Kind.BUILDABLE or c == C2:
 			continue
 		if sim.build_tower("rifleman", c) == SimCommand.CommandResult.OK:
+			GameFixture.sync(_game)  # LT-85: built on the sim directly
 			return sim.state.towers.back().id
 	return -1

@@ -3,12 +3,12 @@ extends Node2D
 ## LT-8 baseline lighting, drawn in board space (child of Board): a CanvasModulate
 ## darkens the world canvas (the UI CanvasLayer is not affected), a rotating lighthouse
 ## beam and glow, one small light per tower, and a sea fog shader over water cells.
-## Visual only: reads `game.sim.state`, never changes it. Nothing here depends on the
+## Visual only: reads `game.snapshot` (LT-85), never changes the sim. Nothing here depends on the
 ## enemy kind, so fake enemies (LT-12) render exactly like real ones.
 ## LT-27 §4 day/night: a render-only `night` factor (0 = day, 1 = night) eases toward 1 in
 ## a wave and 0 by day (BUILD, DONE); it blends the ambient from AMBIENT_DAY to
 ## AMBIENT_NIGHT, scales the beam, the lighthouse glow and the tower lights (the lamp is
-## dark by day) and thins the fog by day. It reads `state.phase` only and keeps easing
+## dark by day) and thins the fog by day. It reads `snapshot.phase` only and keeps easing
 ## while paused.
 
 const FOG_SHADER := preload("res://shaders/sea_fog.gdshader")
@@ -44,6 +44,17 @@ const FLARE_TEX_SIZE := 256
 ## The flare texture's near-flat bright core ends at this fraction of its radius
 ## (_flare_texture); flare_cover_cells() puts every board corner inside it.
 const FLARE_CORE := 0.7
+## LT-92: a tiny light over FxLayer.WARMUP_RECT in the first WARM_FRAMES game frames (boot
+## iterations 2-4: Main shows its Loading frame in iteration 1 and adds the Game in
+## iteration 2). Every canvas item whose rect meets it, FxLayer with its warm-up among them,
+## draws lit there while the first game frame is loading anyway. It compiles the lit
+## shader variants that the first night otherwise compiled on the wave-call frame (frame B)
+## and when the beam's rect first reached the warm-up corner (frame C). It must stay small:
+## a board-covering one leaves the unlit variants to the first frame after it (iteration 5,
+## a new stall); a small one leaves enough unlit items to compile them in frame A.
+const WARM_FRAMES := 3
+const WARM_ENERGY := 0.0  ## invisible; a light at 0 still selects the lit variants (LT-92 S6, 2/2 runs)
+const WARM_COVER := 2.5  ## the light's texture spans this many times the rect's longer side
 
 static var _beam_texs: Dictionary[int, ImageTexture] = {}  ## half angle (milli-rad) -> cone
 static var _glow_tex: GradientTexture2D
@@ -58,6 +69,8 @@ var flare_light: PointLight2D  ## LT-69: the whole-board flare, visible only whi
 var fog: Node2D
 var _tower_lights: Dictionary[int, PointLight2D] = {}  ## tower id -> light
 var night := 0.0  ## LT-27 §4: 0 = day, 1 = night; eases toward night_target()
+var warm_light: PointLight2D  ## LT-92: null once WARM_FRAMES frames have drawn it
+var _warm_left := WARM_FRAMES
 
 
 ## `world` is the node whose canvas gets darkened (the Game); the lights live here.
@@ -65,7 +78,7 @@ func setup(p_game: Game, world: Node) -> void:
 	game = p_game
 	modulate_node = CanvasModulate.new()
 	modulate_node.name = "Darkness"
-	night = night_target(game.sim.state.phase)
+	night = night_target(game.snapshot.phase)
 	modulate_node.color = ambient(night)
 	world.add_child(modulate_node)
 
@@ -81,7 +94,7 @@ static func ambient(p_night: float) -> Color:
 
 
 func _ready() -> void:
-	var m := game.sim.state.map
+	var m := game.snapshot.map
 	var view := game.board.view
 	var lh_center := view.cell_to_world(m.grid.centre(m.lighthouse))
 
@@ -102,19 +115,46 @@ func _ready() -> void:
 	_sync_beams()
 	beam = beams[0]
 	_apply_night()
+	_add_warm_light()
 
 
 func _process(delta: float) -> void:
+	_tick_warm_light()
 	_sync_beams()
 	_sync_tower_lights()
 	ease_night(delta)
 	_sync_flare()
 
 
+## LT-92: the WarmLight over FxLayer.WARMUP_RECT (board-local; this node is the Board's child
+## at its origin). Visible from the first frame and independent of `night`: _apply_night
+## never touches it, so every day/night rule stays as it is.
+func _add_warm_light() -> void:
+	var r := FxLayer.WARMUP_RECT
+	warm_light = _light("WarmLight", _glow_texture(), BEAM_COLOR, WARM_ENERGY,
+		maxf(r.size.x, r.size.y) * WARM_COVER / _glow_texture().get_width())
+	warm_light.position = r.get_center()
+	_warm_left = WARM_FRAMES
+
+
+## Frees the WarmLight in the first _process after WARM_FRAMES frames: it is drawn in the
+## frames whose _process left it in place, WARM_FRAMES of them (boot: iterations 2-4, freed
+## in iteration 5's _process, before that frame draws).
+func _tick_warm_light() -> void:
+	if warm_light == null:
+		return
+	if _warm_left > 0:
+		_warm_left -= 1
+		return
+	remove_child(warm_light)
+	warm_light.queue_free()
+	warm_light = null
+
+
 ## Moves `night` toward the phase's target by 1 - exp(-delta / NIGHT_EASE_SECONDS) of the
 ## gap (real seconds, so it also runs while paused) and applies it.
 func ease_night(delta: float) -> void:
-	var target := night_target(game.sim.state.phase)
+	var target := night_target(game.snapshot.phase)
 	night += (target - night) * (1.0 - exp(-maxf(delta, 0.0) / NIGHT_EASE_SECONDS))
 	if absf(target - night) < 0.001:
 		night = target
@@ -141,7 +181,8 @@ func _apply_night() -> void:
 func _sync_beams() -> void:
 	var sim := game.sim
 	var view := game.board.view
-	var lh_center := view.cell_to_world(sim.state.map.grid.centre(sim.state.map.lighthouse))
+	var lh_center := view.cell_to_world(game.snapshot.map.grid.centre(
+		game.snapshot.map.lighthouse))
 	var cfg := sim.config.economy
 	var tex := _beam_texture(atan(cfg.beam.half_width_ratio))
 	var tex_scale := view.cells_to_px(cfg.beam.reach_cells * 2.0) / BEAM_TEX_SIZE
@@ -163,12 +204,12 @@ func _sync_beams() -> void:
 
 
 ## LT-69: the flare light's disc has a radius of flare_cover_cells() (the whole board inside
-## its bright core) and burns while state.flare_ticks_left > 0 (a read): energy eases in
+## its bright core) and burns while snapshot.flare_ticks_left > 0 (a read): energy eases in
 ## over FLARE_EASE_IN after the shot and out over the last FLARE_EASE_OUT seconds, x night.
 func _sync_flare() -> void:
 	var sim := game.sim
 	flare_light.texture_scale = game.board.view.cells_to_px(
-		flare_cover_cells(sim.state.map) * 2.0) / FLARE_TEX_SIZE
+		flare_cover_cells(game.snapshot.map) * 2.0) / FLARE_TEX_SIZE
 	flare_light.energy = FLARE_ENERGY * night * flare_strength(sim)
 	flare_light.visible = flare_light.energy > 0.0
 
@@ -202,7 +243,7 @@ static func flare_strength(sim: Simulation) -> float:
 
 func _sync_tower_lights() -> void:
 	var seen: Dictionary[int, bool] = {}
-	for t in game.sim.state.towers:
+	for t in game.snapshot.towers:
 		if seen.size() >= MAX_TOWER_LIGHTS:
 			break
 		seen[t.id] = true
@@ -214,7 +255,7 @@ func _sync_tower_lights() -> void:
 			_tower_lights[t.id] = l
 		# LT-117: placed on every sync, so a lifted tower's light follows it.
 		_tower_lights[t.id].position = \
-			game.board.view.cell_to_world(game.sim.state.map.grid.centre(t.cell))
+			game.board.view.cell_to_world(game.snapshot.map.grid.centre(t.cell))
 	for id in _tower_lights.keys():
 		if not seen.has(id):
 			_tower_lights[id].queue_free()

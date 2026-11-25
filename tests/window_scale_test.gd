@@ -117,6 +117,7 @@ func test_distortion_and_aberration_scale_with_the_stretch() -> void:
 	await _start_game()
 	var fx := _game.sanity_fx
 	_game.sim._add_sanity(-_game.sim.state.sanity, "test", 0)  # madness: level 1
+	GameFixture.sync(_game)
 	_game.advance(0.0)
 	fx._snap()
 	assert_float(fx.screen_scale()).is_equal_approx(SCALE, 0.0001)

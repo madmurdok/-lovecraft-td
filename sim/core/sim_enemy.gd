@@ -30,6 +30,9 @@ var dissolved := false  ## fake gone at the lighthouse or at wave end (LT-12)
 var speed_mult := 1.0
 var damage_taken_mult := 1.0
 var armor_bonus := 0.0
+## LT-85 SF1: SanitySystem.apply_madness_buff applied the MADNESS buff to it this tick (slot 2);
+## what EnemyRecord.madness_buffed copies, so the record agrees with speed_mult.
+var madness_buffed := false
 ## LT-30, LT-70 §2.4: lit this tick (slot 2, night only): inside a lighthouse beam, the
 ## flare or a casts_light tower's radius (Searchlight). Enemies have no shadow.
 var lit := false
@@ -46,6 +49,7 @@ func reset_modifiers() -> void:
 	speed_mult = 1.0
 	damage_taken_mult = 1.0
 	armor_bonus = 0.0
+	madness_buffed = false
 	lit = false
 
 
@@ -59,10 +63,27 @@ func markers() -> PackedStringArray:
 		out.append("vuln")
 	if status.is_empty():
 		return out
-	for row: Dictionary in StatusRules.ROWS.values():
-		if row["marker"] != "" and int(status.get(row["ticks"], 0)) > 0:
-			out.append(row["marker"])
+	var rows := _marker_rows()
+	for i in range(0, rows.size(), 2):
+		if int(status.get(rows[i], 0)) > 0:
+			out.append(rows[i + 1])
 	return out
+
+
+## StatusRules.ROWS with a marker, in row order, flattened as ticks key, marker, ...: built
+## once (ROWS is a const), so markers() walks no Dictionary per enemy (LT-85/S15).
+static var _marker_rows_cache := PackedStringArray()
+static var _marker_rows_built := false
+
+
+static func _marker_rows() -> PackedStringArray:
+	if not _marker_rows_built:
+		for row: Dictionary in StatusRules.ROWS.values():
+			if row["marker"] != "":
+				_marker_rows_cache.append(row["ticks"])
+				_marker_rows_cache.append(row["marker"])
+		_marker_rows_built = true
+	return _marker_rows_cache
 
 
 ## Still in play: neither killed, leaked nor dissolved.

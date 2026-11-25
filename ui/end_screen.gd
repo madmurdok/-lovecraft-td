@@ -27,7 +27,7 @@ func _ready() -> void:
 	list.add_child(restart_button)
 
 
-func show_result(won: bool, s: SimState, star_stones := 0) -> void:
+func show_result(won: bool, s: SimSnapshot, star_stones := 0) -> void:
 	var lines := PackedStringArray()
 	if won:
 		lines.append("The lighthouse stands.")

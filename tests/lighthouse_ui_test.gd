@@ -30,6 +30,7 @@ func after_test() -> void:
 func _steps(n: int) -> void:
 	for i in n:
 		_game.sim.step()
+	GameFixture.sync(_game)  # LT-85: poked on the sim directly
 
 
 # --- beams (Lighting) ------------------------------------------------------------------------
@@ -156,7 +157,7 @@ func test_panel_upgrade_button_states() -> void:
 	assert_bool(p.upgrade_button.disabled).is_true()
 	s.lighthouse_level = 0
 	_game.commands.call_wave()
-	p.refresh()
+	p.open()  # LT-66 §2: dusk closed the view
 	assert_bool(p.upgrade_button.disabled).is_true()
 	assert_str(p.upgrade_button.text).contains("Only by day")
 
@@ -181,7 +182,7 @@ func test_panel_oil_button_states() -> void:
 	assert_str(p.oil_button.text).contains("Tank full")
 	s.oil = 0
 	_game.commands.call_wave()
-	p.refresh()
+	p.open()  # LT-66 §2: dusk closed the view
 	assert_bool(p.oil_button.disabled).is_true()
 	assert_str(p.oil_button.text).contains("Only by day")
 

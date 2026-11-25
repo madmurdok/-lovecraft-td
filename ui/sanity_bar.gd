@@ -62,19 +62,19 @@ func redraw() -> void:
 
 ## Sanity as a 0..1 fill.
 func fill_ratio() -> float:
-	var s := game.sim.state
+	var s := game.snapshot
 	return clampf(s.sanity / game.sim.config.sanity.max_sanity, 0.0, 1.0)
 
 
 ## The sanity cap (LT-23) as a 0..1 position: the reserved block starts here.
 func cap_ratio() -> float:
-	return clampf(game.sim.state.sanity_cap / game.sim.config.sanity.max_sanity, 0.0, 1.0)
+	return clampf(game.snapshot.sanity_cap / game.sim.config.sanity.max_sanity, 0.0, 1.0)
 
 
 ## "Sanity n  State", or "Sanity n / cap  State" while reserves hold part of the bar;
 ## "Sanity n / target to recover" while recovering from madness (LT-121; not at cap 0).
 func label_text() -> String:
-	var s := game.sim.state
+	var s := game.snapshot
 	if exit_ratio() > 0.0:
 		return "Sanity %d / %d to recover" % [roundi(s.sanity), roundi(game.sim.exit_target())]
 	var st := STATE_NAMES[int(s.sanity_state)]
@@ -105,7 +105,7 @@ func exit_ratio() -> float:
 func _draw() -> void:
 	if game == null or game.sim == null:
 		return
-	var s := game.sim.state
+	var s := game.snapshot
 	var st := int(s.sanity_state)
 	var r := Rect2(Vector2.ZERO, size)
 	draw_rect(r, COLOR_BACK)

@@ -11,7 +11,7 @@ extends VBoxContainer
 ## reddens the cost; any other refusal (the same for every row) replaces the title with
 ## the reason and dims the rows; a reserve that would take the sanity cap to 0 (LT-23 Q3)
 ## marks the Trait cell red with "!". Past LIST_MAX_ROWS rows (fewer by night, LT-113: the
-## post rows take their slots) the rows scroll under the pinned first group line. Cancel, Esc, or a click elsewhere on the board closes it.
+## post rows take their slots) the rows scroll under the pinned first group line. Cancel, Esc (SidePanel._input, LT-66), or a click elsewhere on the board closes it.
 ## LT-32 §4 (crew on): by day a row's cost is Simulation.build_price (the reserve covers
 ## crew). LT-118: a crewed row also shows a small crew mark at the right of its name cell
 ## (by day): "res 2" (the reserve covers the crew), "hire 2" (hired at build) or
@@ -52,12 +52,17 @@ const REFRESH_ON: Dictionary[SimEvent.Type, int] = {
 const FONT_SIZE := 12
 const HEAD_FONT_SIZE := 11  ## group titles and column heads
 const NAME_FONT_MIN := 10  ## past LIST_MAX_ROWS the names shrink to this, then ellipsis
-## LT-61 §2: column widths at FONT_SIZE; their sum (224) is the panel's inner width.
-const NAME_W := 110  ## 62 at the 192 px panel; LT-59 gives the name the extra 48 px of the 240 px panel
+## LT-61 §2: column widths at FONT_SIZE; their sum is the panel's inner width (LT-66 §1: 288).
 const COST_W := 30
 const COST_GAP := 4  ## between $ and DPS, so "$130" and "15–45" never read as one number
 const DPS_W := 34
+const DPS_GAP := 4  ## LT-66 §1: between DPS and Rng, so "15–45" and "2–7" never read as one
+const RNG_W := 24  ## LT-66 §1: the L1 range ("3", "3.5", "2–7": 20 px at FONT_SIZE)
+const RNG_GAP := 4  ## LT-66/S3: between Rng and Trait, so "3.5" and "Ground" never touch
 const TRAIT_W := 46
+## The name takes what the other columns leave of the inner width: 142 at the 304 px overlay.
+const NAME_W := SidePanel.PANEL_W - 2 * SidePanel.MARGIN \
+	- (COST_W + COST_GAP + DPS_W + DPS_GAP + RNG_W + RNG_GAP + TRAIT_W)
 const TITLE_H := 22
 const GROUP_H := 16
 const ROW_H := 18
@@ -76,10 +81,11 @@ const CREW_MARK_COLOR := Color(0.6, 0.8, 0.95)  ## LT-118: muted blue, apart fro
 ## LT-61 §3: column heads on the first group line: [text, tooltip, width].
 const HEADS := [
 	["$", "Cost", COST_W + COST_GAP],
-	["DPS", "Damage per second", DPS_W],
+	["DPS", "Damage per second", DPS_W + DPS_GAP],
+	["Rng", "Range in cells; 2–7 = can't fire within 2", RNG_W],
 	["Trait", "What sets it apart: Ground = never hits flyers, Blind N = can't fire within N"
 		+ " cells, Line = pierces, Reveal = shows fakes, Res N = sanity reserve, ! = building"
-		+ " it drives you mad", TRAIT_W],
+		+ " it drives you mad", RNG_GAP + TRAIT_W],
 ]
 ## LT-61 §3: a row tooltip's full trait line, by the tag's first word ("%s" = its number).
 const TRAIT_TIPS := {
@@ -97,7 +103,7 @@ var game: Game
 var cell := Vector2i(-1, -1)
 var buttons: Dictionary[String, Button] = {}  ## tower def id -> its row button
 var costs: Dictionary[String, Label] = {}  ## tower def id -> its cost cell
-var cells: Dictionary[String, Dictionary] = {}  ## tower def id -> "dps"/"trait" -> its cell
+var cells: Dictionary[String, Dictionary] = {}  ## tower def id -> "dps"/"rng"/"trait" -> its cell
 var names: Dictionary[String, Label] = {}  ## tower def id -> its name label
 ## LT-118: crewed tower def id -> its crew mark (a child of the name label, right-aligned);
 ## crew on only.
@@ -182,7 +188,7 @@ func _ready() -> void:
 func _layout_rows() -> void:
 	var posts := post_box.get_child_count() if post_box != null and post_box.visible else 0
 	var cap := maxi(LIST_MAX_ROWS - posts, LIST_MIN_ROWS)
-	var marks := game.sim.state.phase != SimState.Phase.WAVE  # as refresh() shows them
+	var marks := game.snapshot.phase != SimState.Phase.WAVE  # as refresh() shows them
 	if cap == list_rows and marks == _marks_shown:
 		return
 	list_rows = cap
@@ -252,7 +258,7 @@ func _head_line(kind: String, with_heads: bool) -> HBoxContainer:
 	return line
 
 
-## One tower: a flat button holding its short name, cost, L1 DPS and trait.
+## One tower: a flat button holding its short name, cost, L1 DPS, range (LT-66) and trait.
 func _row(id: String, def: TowerDef) -> Button:
 	var b := Button.new()
 	b.name = "Tower_" + id
@@ -289,10 +295,19 @@ func _row(id: String, def: TowerDef) -> Button:
 	var dps_text := TowerText.dps_text(s, game.sim.config)
 	var dps := _value("Dps", dps_text, StatsTable.color_for("dps", dps_text), DPS_W)
 	h.add_child(dps)
+	var dps_gap := _spacer(DPS_GAP)
+	dps_gap.name = "DpsGap"
+	h.add_child(dps_gap)
+	var rng_text := TowerText.range_text(s)
+	var rng := _value("Rng", rng_text, StatsTable.color_for("range", rng_text), RNG_W)
+	h.add_child(rng)
+	var rng_gap := _spacer(RNG_GAP)
+	rng_gap.name = "RngGap"
+	h.add_child(rng_gap)
 	_traits[id] = TowerText.trait_text(def, s)
 	var trait_cell := _value("Trait", _traits[id], _trait_color(_traits[id]), TRAIT_W)
 	h.add_child(trait_cell)
-	cells[id] = {"dps": dps, "trait": trait_cell}
+	cells[id] = {"dps": dps, "rng": rng, "trait": trait_cell}
 	return b
 
 
@@ -396,7 +411,7 @@ func refresh() -> void:
 			var from_reserve := _from_reserve(id)
 			var hired := game.sim.crew_need(id) - from_reserve
 			crew_marks[id].text = crew_mark_text(from_reserve, hired)
-			crew_marks[id].visible = game.sim.state.phase != SimState.Phase.WAVE
+			crew_marks[id].visible = game.snapshot.phase != SimState.Phase.WAVE
 		var trait_tip := _trait_tip(base)
 		if not trait_tip.is_empty():
 			tip += "\n" + trait_tip
@@ -407,7 +422,7 @@ func refresh() -> void:
 	# itself, or by day that nothing is affordable.
 	if shared == SimCommand.CommandResult.OK and not any_ok and not buttons.is_empty():
 		shared = SimCommand.CommandResult.NOT_BUILD_PHASE \
-			if game.sim.state.phase == SimState.Phase.WAVE \
+			if game.snapshot.phase == SimState.Phase.WAVE \
 			else SimCommand.CommandResult.NOT_ENOUGH_GOLD
 	# LT-32: once some post can be deployed the title invites it; otherwise it keeps the
 	# towers' refusal ("Only by day") and each dimmed post row says its own in the tooltip.
@@ -466,7 +481,7 @@ func _from_reserve(def_id: String) -> int:
 ## Simulation.can_deploy; returns OK when some post can be deployed, else the first row's
 ## refusal, or -1 when the section is hidden (by day, crew off).
 func _refresh_posts() -> int:
-	var night := post_box != null and game.sim.state.phase == SimState.Phase.WAVE
+	var night := post_box != null and game.snapshot.phase == SimState.Phase.WAVE
 	if post_box != null:
 		post_box.visible = night
 	if not night:
@@ -505,12 +520,6 @@ static func _trait_tip(tag: String) -> String:
 ## Reserve violet for an occult "Res N", the dash dim, any other tag plain.
 static func _trait_color(tag: String) -> Color:
 	return StatsTable.color_for("reserve" if tag.begins_with("Res ") else "trait", tag)
-
-
-func _input(event: InputEvent) -> void:
-	if visible and event.is_action_pressed("ui_cancel"):
-		get_viewport().set_input_as_handled()
-		close()
 
 
 func _on_tower_pressed(def_id: String) -> void:
