@@ -1,0 +1,1 @@
+{"description":"LT-71: Searchlight cost 80 -> 120","patch":{"towers.json":{"towers":{"searchlight":{"cost":120}}}}}

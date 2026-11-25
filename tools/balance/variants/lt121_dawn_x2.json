@@ -1,0 +1,4 @@
+{
+  "description": "LT-121: regen.between_waves 24 (x2)",
+  "patch": { "sanity.json": { "regen": { "between_waves": 24 } } }
+}

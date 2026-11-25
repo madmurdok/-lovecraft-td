@@ -1,0 +1,35 @@
+{
+ "description": "LT-71x: speed left x2 capped (slow 0 = none)",
+ "patch": {
+  "towers.json": {
+   "towers": {
+    "searchlight": {
+     "levels": {
+      "0": {
+       "effects": {
+        "slow": 0.0
+       }
+      },
+      "1": {
+       "effects": {
+        "slow": 0.0
+       }
+      }
+     },
+     "branches": {
+      "a": {
+       "effects": {
+        "slow": 0.0
+       }
+      },
+      "b": {
+       "effects": {
+        "slow": 0.0
+       }
+      }
+     }
+    }
+   }
+  }
+ }
+}

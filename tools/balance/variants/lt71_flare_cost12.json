@@ -1,0 +1,1 @@
+{"description":"LT-71: flare costs 12 oil instead of 8 (for madness)","patch":{"economy.json":{"lighthouse":{"flare":{"cost_oil":12}}}}}

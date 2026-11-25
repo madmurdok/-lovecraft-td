@@ -1,0 +1,35 @@
+{
+ "description": "LT-71x bisect: Searchlight slow .15/.175/.175/.25 (speed left halfway to none)",
+ "patch": {
+  "towers.json": {
+   "towers": {
+    "searchlight": {
+     "levels": {
+      "0": {
+       "effects": {
+        "slow": 0.15
+       }
+      },
+      "1": {
+       "effects": {
+        "slow": 0.175
+       }
+      }
+     },
+     "branches": {
+      "a": {
+       "effects": {
+        "slow": 0.175
+       }
+      },
+      "b": {
+       "effects": {
+        "slow": 0.25
+       }
+      }
+     }
+    }
+   }
+  }
+ }
+}

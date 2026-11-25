@@ -1,0 +1,4 @@
+{
+  "description": "LT-121 control: madness exit_rule permanent (old behaviour)",
+  "patch": { "sanity.json": { "madness": { "exit_rule": "permanent" } } }
+}

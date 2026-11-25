@@ -1,0 +1,35 @@
+{
+ "description": "LT-71x: speed left /2: slow .65/.675/.675/.75",
+ "patch": {
+  "towers.json": {
+   "towers": {
+    "searchlight": {
+     "levels": {
+      "0": {
+       "effects": {
+        "slow": 0.65
+       }
+      },
+      "1": {
+       "effects": {
+        "slow": 0.675
+       }
+      }
+     },
+     "branches": {
+      "a": {
+       "effects": {
+        "slow": 0.675
+       }
+      },
+      "b": {
+       "effects": {
+        "slow": 0.75
+       }
+      }
+     }
+    }
+   }
+  }
+ }
+}

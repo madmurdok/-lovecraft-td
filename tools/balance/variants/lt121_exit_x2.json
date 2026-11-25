@@ -1,0 +1,4 @@
+{
+  "description": "LT-121: recover exit_sanity 40 (x2)",
+  "patch": { "sanity.json": { "madness": { "exit_sanity": 40 } } }
+}

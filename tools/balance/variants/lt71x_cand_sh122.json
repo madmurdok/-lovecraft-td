@@ -1,0 +1,61 @@
+{
+ "description": "LT-71x candidate: w3 3/6, flare 12, slow .15/.175/.175/.25, shadow occult 1.22",
+ "patch": {
+  "waves.json": {
+   "waves": {
+    "2": {
+     "groups": {
+      "0": {
+       "count": 3
+      },
+      "1": {
+       "count": 6
+      }
+     }
+    }
+   }
+  },
+  "economy.json": {
+   "lighthouse": {
+    "flare": {
+     "cost_oil": 12
+    }
+   },
+   "shadow": {
+    "occult": {
+     "power_mult": 1.22
+    }
+   }
+  },
+  "towers.json": {
+   "towers": {
+    "searchlight": {
+     "levels": {
+      "0": {
+       "effects": {
+        "slow": 0.15
+       }
+      },
+      "1": {
+       "effects": {
+        "slow": 0.175
+       }
+      }
+     },
+     "branches": {
+      "a": {
+       "effects": {
+        "slow": 0.175
+       }
+      },
+      "b": {
+       "effects": {
+        "slow": 0.25
+       }
+      }
+     }
+    }
+   }
+  }
+ }
+}

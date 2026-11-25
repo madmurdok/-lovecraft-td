@@ -1,0 +1,1 @@
+{"description":"LT-71: Searchlight slow back to 0.2/0.25 (branch a 0.25, b 0.4); light kept","patch":{"towers.json":{"towers":{"searchlight":{"levels":{"0":{"effects":{"slow":0.2}},"1":{"effects":{"slow":0.25}}},"branches":{"a":{"effects":{"slow":0.25}},"b":{"effects":{"slow":0.4}}}}}}}}

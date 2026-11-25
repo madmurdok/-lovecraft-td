@@ -1,0 +1,26 @@
+{
+ "description": "LT-71x bisect: wave 3 3/6 + flare 12",
+ "patch": {
+  "waves.json": {
+   "waves": {
+    "2": {
+     "groups": {
+      "0": {
+       "count": 3
+      },
+      "1": {
+       "count": 6
+      }
+     }
+    }
+   }
+  },
+  "economy.json": {
+   "lighthouse": {
+    "flare": {
+     "cost_oil": 12
+    }
+   }
+  }
+ }
+}
