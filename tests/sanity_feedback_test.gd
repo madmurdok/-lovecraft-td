@@ -31,6 +31,7 @@ func _start_game() -> void:
 
 func _set_sanity(v: float) -> void:
 	_game.sim._add_sanity(v - _game.sim.state.sanity, "test", 0)
+	GameFixture.sync(_game)
 	_game.advance(0.0)
 	_game.sanity_fx._snap()
 

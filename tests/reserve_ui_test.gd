@@ -49,6 +49,7 @@ func _build_reserve(reserve: float) -> void:
 func _set_sanity(v: float) -> void:
 	_game.sim.state.sanity = v
 	_game.sim.state.sanity_state = _game.sim.sanity_state_for(v)
+	GameFixture.sync(_game)  # LT-85: poked on the sim directly
 	_game.hud.refresh()
 
 
@@ -131,6 +132,7 @@ func _recovering(v: float) -> void:
 	cfg.regen_mundane_kill = 0.5
 	_game.sim.state.sanity = v
 	_game.sim.state.sanity_state = SimState.SanityState.MADNESS
+	GameFixture.sync(_game)  # LT-85: poked on the sim directly
 	_game.hud.refresh()
 
 
@@ -160,6 +162,7 @@ func test_sanity_bar_shows_the_exit_mark_and_label_only_while_recovering() -> vo
 	_recovering(7.0)
 	_game.sim.state.sanity = 50.0
 	_game.sim.state.sanity_state = _game.sim.sanity_state_for(50.0)
+	GameFixture.sync(_game)
 	assert_float(bar.exit_ratio()).is_equal(0.0)
 	assert_bool(bar.label_text().contains("to recover")).is_false()
 

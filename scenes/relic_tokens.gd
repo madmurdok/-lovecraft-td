@@ -75,7 +75,7 @@ func tick(delta: float) -> void:
 			tok["fade"] -= delta
 			if tok["fade"] <= 0.0:
 				tokens.erase(id)
-		elif game.sim.state.tick > tok["arrive_tick"] + LATE_TICKS:
+		elif game.snapshot.tick > tok["arrive_tick"] + LATE_TICKS:
 			tokens.erase(id)  # its credit event never came (not in normal play)
 	queue_redraw()
 
@@ -95,7 +95,7 @@ func progress(tok: Dictionary) -> float:
 	var span: int = tok["arrive_tick"] - tok["drop_tick"]
 	if span <= 0:
 		return 1.0
-	var now := float(game.sim.state.tick) + game.clock.alpha()
+	var now := float(game.snapshot.tick) + game.clock.alpha()
 	return clampf((now - tok["drop_tick"]) / span, 0.0, 1.0)
 
 

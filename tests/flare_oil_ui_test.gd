@@ -123,6 +123,7 @@ func test_shipped_flare_seconds_reach_the_hud_and_the_panel_per_level() -> void:
 	var seconds := ["5", "6", "7"]
 	for level in 3:
 		s.lighthouse_level = level
+		GameFixture.sync(_game)  # LT-85: poked on the sim directly
 		h.refresh()
 		p.refresh()
 		assert_str(h.flare_button.tooltip_text).is_equal(

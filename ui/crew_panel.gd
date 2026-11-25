@@ -84,18 +84,18 @@ func flush() -> void:
 
 
 ## Men of crew `kind` on the board now: on its towers and on posts of that kind.
-static func on_duty(sim: Simulation, kind: String) -> int:
+static func on_duty(snap: SimSnapshot, kind: String) -> int:
 	var n := 0
-	for t in sim.state.towers:
+	for t: TowerRecord in snap.towers:
 		if (t.crew_kind if t.post else t.def.id) == kind:
 			n += t.crew
 	return n
 
 
 ## "Harpooners: 4 in reserve, 2 on duty".
-static func count_text(sim: Simulation, kind: String) -> String:
+static func count_text(sim: Simulation, snap: SimSnapshot, kind: String) -> String:
 	return "%s: %d in reserve, %d on duty" % [sim.config.crew.crews[kind].name,
-		sim.crew_reserve().get(kind, 0), on_duty(sim, kind)]
+		sim.crew_reserve().get(kind, 0), on_duty(snap, kind)]
 
 
 func _rebuild(mask: int) -> void:
@@ -104,7 +104,7 @@ func _rebuild(mask: int) -> void:
 	refresh_count += 1
 	var sim := game.sim
 	for kind: String in hire_buttons:
-		counts[kind].text = count_text(sim, kind)
+		counts[kind].text = count_text(sim, game.snapshot, kind)
 		var b := hire_buttons[kind]
 		var r := sim.can_hire(kind)
 		b.disabled = r != SimCommand.CommandResult.OK

@@ -45,6 +45,8 @@ func test_the_patterns_tell_a_fake_reference_from_the_debug_accessor() -> void:
 	assert_array(_hits(FORBIDDEN[0], "if e.is_fake:")).has_size(1)
 	assert_array(_hits(FORBIDDEN[0], "e.get(\"is_fake\")")).has_size(1)
 	assert_array(_hits(FORBIDDEN[0], "game.sim.debug_is_fake(e)")).is_empty()
+	# LT-85: the by-id accessor the records use is not a fake reference either
+	assert_array(_hits(FORBIDDEN[0], "game.sim.debug_is_fake_id(e.id)")).is_empty()
 	assert_array(_hits(FORBIDDEN[2], "h.spawn_fake(sim, id)")).has_size(1)
 	assert_array(_hits(REVEAL_SET, "sim.debug_reveal_fakes = true")).has_size(1)
 	assert_array(_hits(REVEAL_SET, "if sim.debug_reveal_fakes == x:")).is_empty()
@@ -91,6 +93,12 @@ func test_a_game_started_without_the_flag_does_not_reveal_fakes() -> void:
 	var game := GameFixture.make_game(null, real_config(), 7)
 	assert_bool(OS.get_cmdline_user_args().has(DebugArgs.REVEAL_FAKES_ARG)).is_false()
 	assert_bool(game.sim.debug_reveal_fakes).is_false()
+	# LT-85: the by-id accessor says nothing about a fake either, without the flag
+	var fake_id := game.sim.spawn_enemy("cultist", true)
+	var real_id := game.sim.spawn_enemy("cultist")
+	assert_bool(game.sim.enemy_by_id(fake_id).is_fake).is_true()
+	assert_bool(game.sim.debug_is_fake_id(fake_id)).is_false()
+	assert_bool(game.sim.debug_is_fake_id(real_id)).is_false()
 	game.free()
 
 

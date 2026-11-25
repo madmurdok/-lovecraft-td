@@ -30,6 +30,7 @@ func after_test() -> void:
 func _steps(n: int) -> void:
 	for i in n:
 		_game.sim.step()
+	GameFixture.sync(_game)  # LT-85: poked on the sim directly
 
 
 # --- beams (Lighting) ------------------------------------------------------------------------

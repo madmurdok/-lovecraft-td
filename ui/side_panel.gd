@@ -70,7 +70,7 @@ static func panel_rect(map: MapDef) -> Rect2:
 
 
 func _ready() -> void:
-	var r := panel_rect(game.sim.state.map)
+	var r := panel_rect(game.snapshot.map)
 	position = r.position
 	size = r.size
 	custom_minimum_size = r.size

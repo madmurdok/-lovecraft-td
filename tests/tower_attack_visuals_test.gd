@@ -62,7 +62,14 @@ func _enemy(fake := false, cells := 2.0) -> SimEnemy:
 	return e
 
 
+## LT-85: the record of live tower `t` in a fresh snapshot (the test pokes the sim directly).
+func _rec(t: SimTower) -> TowerRecord:
+	GameFixture.sync(_game)
+	return _game.snapshot.tower(t.id)
+
+
 func _shoot(t: SimTower, to: Vector2, hits: Array, miss := false, astray := false) -> void:
+	GameFixture.sync(_game)  # LT-85: FxLayer reads the tower and the hits from the snapshot
 	var ev := SimEvent.new(SimEvent.Type.SHOT, 0, t.id, {"def": t.def.id,
 		"target": hits[0] if not hits.is_empty() else 0, "hits": hits, "to": to,
 		"miss": miss, "astray": astray})
@@ -120,7 +127,7 @@ func test_a_necronomicon_shot_is_a_wave_of_its_aoe_radius() -> void:
 func test_the_elder_sign_is_an_aura_and_draws_no_shot() -> void:
 	await _start_game()
 	var t := _tower("elder_sign")
-	assert_str(Board.shot_kind(t)).is_equal("aura")
+	assert_str(Board.shot_kind(_rec(t))).is_equal("aura")
 	var before := _game.board.fx_layer.effects.size()
 	_shoot(t, t.centre() + Vector2(1, 0), [])
 	assert_int(_game.board.fx_layer.effects.size()).is_equal(before)
@@ -128,10 +135,10 @@ func test_the_elder_sign_is_an_aura_and_draws_no_shot() -> void:
 
 func test_shot_kind_follows_the_stats_of_each_tower() -> void:
 	await _start_game()
-	assert_str(Board.shot_kind(_tower("rifleman"))).is_equal("tracer")
-	assert_str(Board.shot_kind(_tower("harpooner"))).is_equal("harpoon")
-	assert_str(Board.shot_kind(_tower("necronomicon_reader"))).is_equal("wave")
-	assert_str(Board.shot_kind(_tower("elder_sign"))).is_equal("aura")
+	assert_str(Board.shot_kind(_rec(_tower("rifleman")))).is_equal("tracer")
+	assert_str(Board.shot_kind(_rec(_tower("harpooner")))).is_equal("harpoon")
+	assert_str(Board.shot_kind(_rec(_tower("necronomicon_reader")))).is_equal("wave")
+	assert_str(Board.shot_kind(_rec(_tower("elder_sign")))).is_equal("aura")
 
 
 # --- 5: markers from enemy state ------------------------------------------------------
@@ -158,11 +165,11 @@ func test_the_ward_is_faint_when_empty_and_bright_with_an_enemy_inside() -> void
 	var r := t.stats().range_cells
 	var board := _game.board
 	board.last_pos.clear()
-	assert_float(board.entity_layer.ward_alpha(t)).is_equal(EntityLayer.WARD_IDLE_ALPHA)
+	assert_float(board.entity_layer.ward_alpha(_rec(t))).is_equal(EntityLayer.WARD_IDLE_ALPHA)
 	board.last_pos[9001] = t.centre() + Vector2(r + 0.5, 0)
-	assert_float(board.entity_layer.ward_alpha(t)).is_equal(EntityLayer.WARD_IDLE_ALPHA)
+	assert_float(board.entity_layer.ward_alpha(_rec(t))).is_equal(EntityLayer.WARD_IDLE_ALPHA)
 	board.last_pos[9002] = t.centre() + Vector2(r * 0.5, 0)
-	var a := board.entity_layer.ward_alpha(t)
+	var a := board.entity_layer.ward_alpha(_rec(t))
 	assert_float(a).is_between(EntityLayer.WARD_PULSE_LOW, EntityLayer.WARD_ACTIVE_ALPHA)
 	assert_float(a).is_greater(EntityLayer.WARD_IDLE_ALPHA)
 
@@ -294,6 +301,7 @@ func test_one_tower_keeps_at_most_two_attack_effects_the_newest() -> void:
 # --- LT-29: bleed marker, crit spark, pull chain ---------------------------------------
 
 func _shoot_data(t: SimTower, data: Dictionary) -> void:
+	GameFixture.sync(_game)
 	_game.board.on_event(SimEvent.new(SimEvent.Type.SHOT, 0, t.id, data))
 
 
@@ -357,16 +365,17 @@ func test_a_pull_shot_holds_a_chain_from_each_pulled_enemy() -> void:
 func test_shot_kind_of_a_fuse_level_is_dynamite() -> void:
 	await _start_game()
 	var t := _tower("dynamite_crew")
-	assert_str(Board.shot_kind(t)).is_equal("dynamite")
+	assert_str(Board.shot_kind(_rec(t))).is_equal("dynamite")
 	t.level = TowerDef.LEVEL_COUNT
 	for b: String in TowerDef.BRANCH_IDS:
 		t.branch = b
-		assert_str(Board.shot_kind(t)).is_equal("dynamite")
+		assert_str(Board.shot_kind(_rec(t))).is_equal("dynamite")
 
 
 ## A thrown charge (SHOT {fuse}) as of sim tick `tick`, detonating `fuse` ticks later.
 func _throw(t: SimTower, tick: int, fuse: int, miss := false) -> void:
 	_game.sim.state.tick = tick
+	GameFixture.sync(_game)
 	_game.board.on_event(SimEvent.new(SimEvent.Type.SHOT, tick, t.id, {"def": t.def.id,
 		"target": 0, "hits": [], "to": Vector2(4.5, 2.5), "miss": miss, "fuse": true,
 		"detonate_tick": tick + fuse, "radius": 1.0, "blast": 0 if miss else 1}))
@@ -375,6 +384,7 @@ func _throw(t: SimTower, tick: int, fuse: int, miss := false) -> void:
 ## Whether `t`'s dynamite effect is still live after the sim clock reached `tick`.
 func _alive_at(t: SimTower, tick: int) -> bool:
 	_game.sim.state.tick = tick
+	GameFixture.sync(_game)
 	_game.board.alpha = 0.0
 	_game.board.tick_effects(1.0 / SimTime.TICK_RATE)
 	return not _fx_of(t.id).is_empty()
@@ -426,13 +436,13 @@ func test_a_blast_event_adds_a_blast_effect_at_its_centre() -> void:
 func test_shot_kind_of_every_battery_level_is_shell() -> void:
 	await _start_game()
 	var t := _tower("coast_battery")
-	assert_str(Board.shot_kind(t)).is_equal("shell")
+	assert_str(Board.shot_kind(_rec(t))).is_equal("shell")
 	t.level = 1
-	assert_str(Board.shot_kind(t)).is_equal("shell")
+	assert_str(Board.shot_kind(_rec(t))).is_equal("shell")
 	t.level = TowerDef.LEVEL_COUNT
 	for b: String in TowerDef.BRANCH_IDS:
 		t.branch = b
-		assert_str(Board.shot_kind(t)).override_failure_message(b).is_equal("shell")
+		assert_str(Board.shot_kind(_rec(t))).override_failure_message(b).is_equal("shell")
 	assert_float(t.stats().effects.get("aoe_radius", 0.0)).is_equal(1.0)  # b: min_range wins
 
 
@@ -497,14 +507,14 @@ func test_selected_dead_zone_is_the_selected_towers_min_range_while_its_ring_sho
 func test_shot_kind_of_every_searchlight_level_is_searchlight_and_it_draws_no_shot() -> void:
 	await _start_game()
 	var t := _tower("searchlight")
-	assert_str(Board.shot_kind(t)).is_equal("searchlight")
+	assert_str(Board.shot_kind(_rec(t))).is_equal("searchlight")
 	t.level = 1
-	assert_str(Board.shot_kind(t)).is_equal("searchlight")
+	assert_str(Board.shot_kind(_rec(t))).is_equal("searchlight")
 	t.level = TowerDef.LEVEL_COUNT
 	for b: String in TowerDef.BRANCH_IDS:
 		t.branch = b
-		assert_str(Board.shot_kind(t)).override_failure_message(b).is_equal("searchlight")
-	assert_str(Board.shot_kind(_tower("elder_sign"))).is_equal("aura")
+		assert_str(Board.shot_kind(_rec(t))).override_failure_message(b).is_equal("searchlight")
+	assert_str(Board.shot_kind(_rec(_tower("elder_sign")))).is_equal("aura")
 	var before := _game.board.fx_layer.effects.size()
 	_shoot(t, t.centre() + Vector2(1, 0), [])
 	assert_int(_game.board.fx_layer.effects.size()).is_equal(before)
@@ -561,6 +571,7 @@ func test_a_board_frame_with_a_revealed_and_a_hidden_fake_draws_without_errors()
 	var hidden := _enemy(true, 3.0)
 	shown.revealed = true
 	assert_bool(_game.sim.debug_reveal_fakes).is_false()
+	GameFixture.sync(_game)
 	_game.board.queue_redraw()
 	await get_tree().process_frame
 	await get_tree().process_frame
@@ -573,13 +584,13 @@ func test_a_board_frame_with_a_revealed_and_a_hidden_fake_draws_without_errors()
 func test_shot_kind_of_every_resonator_level_is_beam() -> void:
 	await _start_game()
 	var t := _tower("resonator")
-	assert_str(Board.shot_kind(t)).is_equal("beam")
+	assert_str(Board.shot_kind(_rec(t))).is_equal("beam")
 	t.level = 1
-	assert_str(Board.shot_kind(t)).is_equal("beam")
+	assert_str(Board.shot_kind(_rec(t))).is_equal("beam")
 	t.level = TowerDef.LEVEL_COUNT
 	for b: String in TowerDef.BRANCH_IDS:
 		t.branch = b
-		assert_str(Board.shot_kind(t)).override_failure_message(b).is_equal("beam")
+		assert_str(Board.shot_kind(_rec(t))).override_failure_message(b).is_equal("beam")
 
 
 func test_the_beam_colour_is_its_own() -> void:
@@ -592,6 +603,7 @@ func test_the_beam_colour_is_its_own() -> void:
 ## A Resonator SHOT {beam, sanity_factor} at `target` as of sim tick `tick`.
 func _beam(t: SimTower, tick: int, target: SimEnemy, factor := 1.0) -> void:
 	_game.sim.state.tick = tick
+	GameFixture.sync(_game)
 	var to := _game.sim.enemy_position(target, 1.0)
 	_game.board.on_event(SimEvent.new(SimEvent.Type.SHOT, tick, t.id, {"def": t.def.id,
 		"target": target.id, "hits": [target.id], "to": to, "miss": false, "beam": true,
@@ -620,6 +632,7 @@ func test_one_beam_per_tower_a_new_shot_replaces_it() -> void:
 	assert_int(mine[0]["target"]).is_equal(e.id)
 	assert_int(_fx_of(other.id).size()).is_equal(1)
 	# A frame with a held beam on a live enemy draws without errors.
+	GameFixture.sync(_game)
 	_game.board.queue_redraw()
 	await get_tree().process_frame
 	await get_tree().process_frame
@@ -640,6 +653,7 @@ func test_the_beam_stays_drawn_at_full_strength_until_the_next_shot_is_due() -> 
 	for tick in range(100, 100 + n):
 		for a: float in [0.0, 0.5, 0.99]:
 			_game.sim.state.tick = tick
+			GameFixture.sync(_game)
 			_game.board.alpha = a
 			_game.board.tick_effects(1.0 / 60.0)
 			var fx := _fx_of(t.id)

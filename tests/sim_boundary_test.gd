@@ -901,6 +901,10 @@ func test_the_is_fake_leak_guard_is_kept_and_presentation_is_clean() -> void:
 	for f in _presentation_files():
 		bad.append_array(_find(f, _code_lines(FileAccess.get_file_as_string(f)), "\\bis_fake\\b"))
 	assert_array(bad).is_empty()
+	# LT-85 §5.4: the snapshot-only reach guard is kept next to it
+	var arch := FileAccess.get_file_as_string("res://tests/architecture_guard_test.gd")
+	assert_str(arch).contains("func test_g16_presentation_reads_only_the_snapshot()")
+	assert_str(arch).contains("func test_g16_catches_planted_reads_and_passes_the_snapshot_forms()")
 
 
 # --- 4: the sim needs no SceneTree ---------------------------------------------------------

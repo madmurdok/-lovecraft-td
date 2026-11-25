@@ -39,3 +39,10 @@ static func make_game(
 		game.set_process(false)
 	return game
 
+
+
+## LT-85 §2.3: rebuilds `game.snapshot` (Game.refresh_snapshot). Call it after a block of
+## direct sim state / entity pokes, before the next presentation read; game.advance with a
+## step and commands through Game / GameCommands rebuild on their own.
+static func sync(game: Game) -> void:
+	game.refresh_snapshot()

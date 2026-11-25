@@ -3,12 +3,12 @@ extends Node2D
 ## LT-8 baseline lighting, drawn in board space (child of Board): a CanvasModulate
 ## darkens the world canvas (the UI CanvasLayer is not affected), a rotating lighthouse
 ## beam and glow, one small light per tower, and a sea fog shader over water cells.
-## Visual only: reads `game.sim.state`, never changes it. Nothing here depends on the
+## Visual only: reads `game.snapshot` (LT-85), never changes the sim. Nothing here depends on the
 ## enemy kind, so fake enemies (LT-12) render exactly like real ones.
 ## LT-27 §4 day/night: a render-only `night` factor (0 = day, 1 = night) eases toward 1 in
 ## a wave and 0 by day (BUILD, DONE); it blends the ambient from AMBIENT_DAY to
 ## AMBIENT_NIGHT, scales the beam, the lighthouse glow and the tower lights (the lamp is
-## dark by day) and thins the fog by day. It reads `state.phase` only and keeps easing
+## dark by day) and thins the fog by day. It reads `snapshot.phase` only and keeps easing
 ## while paused.
 
 const FOG_SHADER := preload("res://shaders/sea_fog.gdshader")
@@ -78,7 +78,7 @@ func setup(p_game: Game, world: Node) -> void:
 	game = p_game
 	modulate_node = CanvasModulate.new()
 	modulate_node.name = "Darkness"
-	night = night_target(game.sim.state.phase)
+	night = night_target(game.snapshot.phase)
 	modulate_node.color = ambient(night)
 	world.add_child(modulate_node)
 
@@ -94,7 +94,7 @@ static func ambient(p_night: float) -> Color:
 
 
 func _ready() -> void:
-	var m := game.sim.state.map
+	var m := game.snapshot.map
 	var view := game.board.view
 	var lh_center := view.cell_to_world(m.grid.centre(m.lighthouse))
 
@@ -154,7 +154,7 @@ func _tick_warm_light() -> void:
 ## Moves `night` toward the phase's target by 1 - exp(-delta / NIGHT_EASE_SECONDS) of the
 ## gap (real seconds, so it also runs while paused) and applies it.
 func ease_night(delta: float) -> void:
-	var target := night_target(game.sim.state.phase)
+	var target := night_target(game.snapshot.phase)
 	night += (target - night) * (1.0 - exp(-maxf(delta, 0.0) / NIGHT_EASE_SECONDS))
 	if absf(target - night) < 0.001:
 		night = target
@@ -181,7 +181,8 @@ func _apply_night() -> void:
 func _sync_beams() -> void:
 	var sim := game.sim
 	var view := game.board.view
-	var lh_center := view.cell_to_world(sim.state.map.grid.centre(sim.state.map.lighthouse))
+	var lh_center := view.cell_to_world(game.snapshot.map.grid.centre(
+		game.snapshot.map.lighthouse))
 	var cfg := sim.config.economy
 	var tex := _beam_texture(atan(cfg.beam.half_width_ratio))
 	var tex_scale := view.cells_to_px(cfg.beam.reach_cells * 2.0) / BEAM_TEX_SIZE
@@ -203,12 +204,12 @@ func _sync_beams() -> void:
 
 
 ## LT-69: the flare light's disc has a radius of flare_cover_cells() (the whole board inside
-## its bright core) and burns while state.flare_ticks_left > 0 (a read): energy eases in
+## its bright core) and burns while snapshot.flare_ticks_left > 0 (a read): energy eases in
 ## over FLARE_EASE_IN after the shot and out over the last FLARE_EASE_OUT seconds, x night.
 func _sync_flare() -> void:
 	var sim := game.sim
 	flare_light.texture_scale = game.board.view.cells_to_px(
-		flare_cover_cells(sim.state.map) * 2.0) / FLARE_TEX_SIZE
+		flare_cover_cells(game.snapshot.map) * 2.0) / FLARE_TEX_SIZE
 	flare_light.energy = FLARE_ENERGY * night * flare_strength(sim)
 	flare_light.visible = flare_light.energy > 0.0
 
@@ -242,7 +243,7 @@ static func flare_strength(sim: Simulation) -> float:
 
 func _sync_tower_lights() -> void:
 	var seen: Dictionary[int, bool] = {}
-	for t in game.sim.state.towers:
+	for t in game.snapshot.towers:
 		if seen.size() >= MAX_TOWER_LIGHTS:
 			break
 		seen[t.id] = true
@@ -254,7 +255,7 @@ func _sync_tower_lights() -> void:
 			_tower_lights[t.id] = l
 		# LT-117: placed on every sync, so a lifted tower's light follows it.
 		_tower_lights[t.id].position = \
-			game.board.view.cell_to_world(game.sim.state.map.grid.centre(t.cell))
+			game.board.view.cell_to_world(game.snapshot.map.grid.centre(t.cell))
 	for id in _tower_lights.keys():
 		if not seen.has(id):
 			_tower_lights[id].queue_free()

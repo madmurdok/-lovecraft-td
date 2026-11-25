@@ -45,6 +45,7 @@ func _kill(def_id: String, fake := false) -> int:
 func _steps(n: int) -> void:
 	for i in n:
 		_game.sim.step()
+	GameFixture.sync(_game)  # LT-85: stepped on the sim directly
 
 
 func _texts() -> Array[String]:
@@ -154,6 +155,7 @@ func test_hud_shows_money_and_the_relic_stash_and_sells_it_by_day() -> void:
 	for k: String in {"bone": 2, "amber": 1, "idol": 0, "star_stone": 1}:
 		_game.sim._add_relics(k, {"bone": 2, "amber": 1, "idol": 0, "star_stone": 1}[k]
 			- s.relics.get(k, 0), "test", 0)
+	GameFixture.sync(_game)  # LT-85: poked on the sim directly
 	var value := 2 * 5 + 15 + 200
 	_game.advance(0.0)
 	assert_str(hud.gold_label.text).is_equal("Money: $%d" % s.gold)

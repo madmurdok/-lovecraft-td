@@ -109,7 +109,7 @@ func _draw() -> void:
 func on_event(ev: SimEvent) -> void:
 	match ev.type:
 		SimEvent.Type.SHOT:
-			var t := game.sim.tower_by_id(ev.id)
+			var t := game.snapshot.tower(ev.id)
 			if t != null:
 				var fx := _shot_fx(t, ev.data)
 				if fx.is_empty():
@@ -117,14 +117,14 @@ func on_event(ev: SimEvent) -> void:
 				var cap: int = LookCatalog.row(fx["look"])["cap"]  # LT-104 §2.4
 				if fx["kind"] == "banish":
 					# LT-51: one SHOT per banished enemy; a Pure cast moves 3 at once.
-					_add_attack_fx(fx, maxi(cap, t.stats().banish_targets()))
+					_add_attack_fx(fx, maxi(cap, t.stats.banish_targets()))
 					return
 				if fx.get("kind", "") == "dynamite":
 					fx["throw_tick"] = ev.tick
 				if fx.get("kind", "") == "beam":
 					# LT-50: held in sim time until the next SHOT is due (+ grace), so pause
 					# and x2 follow the clock; one beam per tower, the new one replaces it.
-					fx["end_tick"] = ev.tick + SimTime.ticks(t.stats().fire_interval) \
+					fx["end_tick"] = ev.tick + SimTime.ticks(t.stats.fire_interval) \
 						+ BEAM_GRACE_TICKS
 					_drop_beam(t.id)
 				_add_attack_fx(fx, cap)
@@ -145,13 +145,13 @@ func on_event(ev: SimEvent) -> void:
 		SimEvent.Type.TOWER_LIFTED:
 			# LT-117: an arc from the old to the new cell centre; a Resonator beam keeps its
 			# origin in the effect, so it is dropped (the tower is off for a while anyway).
-			var grid := game.sim.state.map.grid
+			var grid := game.snapshot.map.grid
 			effects.append({"kind": "lift", "from": grid.centre(ev.data["from"]),
 				"to": grid.centre(ev.data["to"]), "ttl": LIFT_SECONDS, "dur": LIFT_SECONDS})
 			_drop_beam(ev.id)
 		SimEvent.Type.LEAKED:
-			var lh := game.sim.state.map.lighthouse
-			effects.append({"kind": "leak", "from": game.sim.state.map.grid.centre(lh),
+			var lh := game.snapshot.map.lighthouse
+			effects.append({"kind": "leak", "from": game.snapshot.map.grid.centre(lh),
 				"cell": lh, "ttl": FLASH_SECONDS})
 
 
@@ -161,9 +161,9 @@ func on_event(ev: SimEvent) -> void:
 ## and drops the expired ones. Board.tick_effects calls it once per frame.
 func tick(delta: float) -> void:
 	for fx in effects:
-		if fx.has("end_tick") and game != null and game.sim != null:
+		if fx.has("end_tick") and game != null and game.snapshot != null:
 			# LT-47: a lobbed charge lives in sim time (pause and x2 follow the clock).
-			fx["ttl"] = delta + (float(fx["end_tick"] - game.sim.state.tick) - alpha) \
+			fx["ttl"] = delta + (float(fx["end_tick"] - game.snapshot.tick) - alpha) \
 				/ SimTime.TICK_RATE
 		fx["ttl"] -= delta
 	effects = effects.filter(func(fx: Dictionary) -> bool: return fx["ttl"] > 0.0)
@@ -173,7 +173,7 @@ func tick(delta: float) -> void:
 ## fields (to, hits, miss, astray) and the tower's stats, never what was hit (LT-12 §1).
 ## LT-104 §2.5: `kind` is the look row's `fx` (the builder and renderer pair, "" = none),
 ## `look` the look id (its cap), `color` the row's colour (the renderers read it).
-func _shot_fx(t: SimTower, data: Dictionary) -> Dictionary:
+func _shot_fx(t: TowerRecord, data: Dictionary) -> Dictionary:
 	var look := Board.shot_kind(t)
 	var row := LookCatalog.row(look)
 	var kind: String = row["fx"]
@@ -182,14 +182,14 @@ func _shot_fx(t: SimTower, data: Dictionary) -> Dictionary:
 	if kind == "banish":
 		# LT-51: `from` / `to` are the banished enemy's spots before and after the move.
 		return {"kind": "banish", "look": look, "color": row["color"], "tower": t.id,
-			"origin": t.centre(), "from": data["from"],
+			"origin": t.centre, "from": data["from"],
 			"to": data["to"], "hits": data.get("hits", []).duplicate(),
 			"astray": data.get("astray", false), "seed": _fx_rng.randi(),
 			"ttl": BANISH_SECONDS, "dur": BANISH_SECONDS}
 	var hits: Array = data.get("hits", [])
 	var to: Vector2 = data["to"]
 	var fx := {"kind": kind, "look": look, "color": row["color"], "tower": t.id,
-		"from": t.centre(), "to": to, "end": to,
+		"from": t.centre, "to": to, "end": to,
 		"hits": hits.duplicate(), "hit_pos": _hit_positions(hits),
 		"miss": data.get("miss", false), "astray": data.get("astray", false),
 		"seed": _fx_rng.randi(), "crit": data.get("crit", false)}
@@ -197,9 +197,9 @@ func _shot_fx(t: SimTower, data: Dictionary) -> Dictionary:
 	if not pulled.is_empty():  # LT-29: chain from each pulled enemy back to the tower
 		var chain := {}
 		for id: int in pulled:
-			var e := game.sim.enemy_by_id(id)
+			var e := game.snapshot.enemy(id)
 			if e != null:
-				chain[id] = game.sim.enemy_position(e, 1.0)
+				chain[id] = e.pos
 		fx["chain"] = chain
 	if fx["astray"] and hits.is_empty():
 		# An empty astray shot lands off its aim point (LT-14); a wave tower fizzles there
@@ -224,10 +224,10 @@ func _shot_fx(t: SimTower, data: Dictionary) -> Dictionary:
 					last = maxf(last, p)
 				fx["ttl"] = maxf(HARPOON_SECONDS, last + HARPOON_TICK_SECONDS)
 			"wave":
-				fx["radius"] = t.stats().effects.get("aoe_radius", 0.0)
+				fx["radius"] = t.stats.effects.get("aoe_radius", 0.0)
 				fx["ttl"] = WAVE_SECONDS
 			"shell":
-				fx["radius"] = t.stats().effects.get("aoe_radius", 0.0)
+				fx["radius"] = t.stats.effects.get("aoe_radius", 0.0)
 				fx["ttl"] = SHELL_SECONDS
 				if fx["miss"]:
 					fx["end"] = _miss_end(fx["from"], to)
@@ -272,9 +272,9 @@ func _add_attack_fx(fx: Dictionary, cap := MAX_FX_PER_TOWER) -> void:
 func _hit_positions(hits: Array) -> Array[Vector2]:
 	var out: Array[Vector2] = []
 	for id: int in hits:
-		var e := game.sim.enemy_by_id(id)
+		var e := game.snapshot.enemy(id)
 		if e != null:
-			out.append(game.sim.enemy_position(e, 1.0))
+			out.append(e.pos)
 		elif board.last_pos.has(id):
 			out.append(board.last_pos[id])
 	return out
@@ -503,9 +503,10 @@ func _draw_beam(fx: Dictionary) -> void:
 	var col: Color = fx.get("color", Board.BEAM_COLOR)
 	var a: Vector2 = view.cell_to_world(fx["from"])
 	var end: Vector2 = fx["to"]
-	var e := game.sim.enemy_by_id(fx["target"]) if game != null and game.sim != null else null
-	if e != null and e.is_live():
-		end = game.sim.enemy_position(e, alpha)
+	var e := game.snapshot.enemy(fx["target"]) if game != null and game.snapshot != null \
+		else null
+	if e != null:  # the snapshot holds live enemies only
+		end = e.position(alpha)
 	var b := view.cell_to_world(end)
 	# From the tile's rim, not its centre, so the glyph stays readable under the beam.
 	a += (b - a).normalized() * minf(view.cells_to_px(BEAM_RIM_CELLS), a.distance_to(b))
@@ -626,7 +627,7 @@ func _draw_shell(fx: Dictionary) -> void:
 ## detonate_tick; the BLAST event takes over. A dud's fuse dies and it smokes instead.
 func _draw_charge(fx: Dictionary) -> void:
 	var col: Color = fx.get("color", Board.DYNAMITE_COLOR)
-	var el := float(game.sim.state.tick - int(fx["throw_tick"])) + alpha  # ticks
+	var el := float(game.snapshot.tick - int(fx["throw_tick"])) + alpha  # ticks
 	var fuse := maxf(1.0, float(int(fx["detonate_tick"]) - int(fx["throw_tick"])))
 	var flight := minf(float(DYN_FLIGHT_TICKS), fuse)
 	var a: Vector2 = view.cell_to_world(fx["from"])

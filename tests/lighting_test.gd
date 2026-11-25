@@ -104,6 +104,7 @@ func test_ambient_is_day_by_day_and_night_after_the_fade_at_night() -> void:
 	assert_that(l.modulate_node.color).is_equal(Lighting.AMBIENT_NIGHT)
 	assert_bool(l.beam.visible).is_true()
 	_game.sim.state.phase = SimState.Phase.BUILD
+	GameFixture.sync(_game)
 	l.ease_night(10.0)
 	assert_that(l.modulate_node.color).is_equal(Lighting.AMBIENT_DAY)
 

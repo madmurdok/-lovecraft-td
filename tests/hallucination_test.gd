@@ -590,3 +590,18 @@ func test_debug_is_fake_only_with_the_reveal_flag() -> void:
 	sim.debug_reveal_fakes = true
 	assert_bool(sim.debug_is_fake(real)).is_false()
 	assert_bool(sim.debug_is_fake(fake)).is_true()
+
+
+## LT-85 D6: the by-id form (records carry no fake field) is true only with the flag and only
+## for a fake enemy's id; a real id, an unknown id and a flag-less sim give false.
+func test_debug_is_fake_id_is_true_only_with_the_flag_and_only_for_a_fake() -> void:
+	var sim := tsim()
+	var real := put(sim, "cultist", 3.0)
+	var fake := put(sim, "cultist", 4.0, HUGE_HP, true)
+	for id in [real.id, fake.id, 99999]:
+		assert_bool(sim.debug_is_fake_id(id)).override_failure_message("no flag, id %d" % id).is_false()
+	sim.debug_reveal_fakes = true
+	assert_bool(sim.debug_is_fake_id(fake.id)).is_true()
+	assert_bool(sim.debug_is_fake_id(real.id)).is_false()
+	assert_bool(sim.debug_is_fake_id(99999)).is_false()
+	assert_bool(sim.debug_is_fake_id(-1)).is_false()
