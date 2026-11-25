@@ -211,10 +211,12 @@ func any_view_open() -> bool:
 
 ## LT-66 §2: the one place the overlay's visibility is decided: shown by day, by night only
 ## while a view is open, never after the outcome. Phase and outcome from game.snapshot.
+## Night is `phase == WAVE` (spec §2 table; the same predicate as Game._on_cell_clicked and
+## the picker), so NONE and DONE count as day.
 func sync_visible() -> void:
 	var s := game.snapshot
 	visible = s != null and s.outcome == SimState.Outcome.NONE \
-		and (s.phase == SimState.Phase.BUILD or any_view_open())
+		and (s.phase != SimState.Phase.WAVE or any_view_open())  # night = WAVE, as game.gd
 	if game.board != null:  # LT-66 §6.3: a changed visible rect eases the pan to its clamp
 		game.board.camera.set_visible_rect(board_visible_rect())
 

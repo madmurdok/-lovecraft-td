@@ -123,6 +123,8 @@ func key_input(event: InputEvent) -> bool:
 	var k := event as InputEventKey
 	if k == null or not KEY_DIRS.has(k.keycode):
 		return false
+	if k.pressed and (k.ctrl_pressed or k.meta_pressed or k.alt_pressed):
+		return false  # a shortcut (Cmd+S, Ctrl+A), not a pan; releases still count below
 	if k.pressed:
 		_held[k.keycode] = true
 	else:

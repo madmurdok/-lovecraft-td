@@ -136,7 +136,14 @@ func _on_panned() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	var mb := event as InputEventMouseButton
 	if mb == null or mb.button_index != MOUSE_BUTTON_LEFT:
-		# LT-66 §6.2: right/middle drag, wheel and pan gestures pan; a left click never does
+		# LT-66 §6.2: right/middle drag, wheel and pan gestures pan; a left click never does.
+		# Plain motions and keys return before make_input_local (no event copy per move).
+		var mm := event as InputEventMouseMotion
+		if mm != null \
+				and not (mm.button_mask & (MOUSE_BUTTON_MASK_RIGHT | MOUSE_BUTTON_MASK_MIDDLE)):
+			return
+		if mb == null and mm == null and not (event is InputEventPanGesture):
+			return
 		if game != null and camera.input(game.make_input_local(event)):
 			get_viewport().set_input_as_handled()
 		return
