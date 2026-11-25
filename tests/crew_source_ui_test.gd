@@ -186,6 +186,46 @@ func test_crewed_names_leave_room_for_the_widest_mark() -> void:
 			.override_failure_message(id).is_false()
 
 
+## LT-124: a crew mark's right edge sits CREW_END_GAP (5 px) left of its name label's right
+## edge, which is the $ cell's left edge, so "hire 3" never touches "$120".
+func test_the_crew_mark_ends_5_px_left_of_the_name_and_cost_edge() -> void:
+	await _start()
+	var pk := _open_picker()
+	await get_tree().process_frame
+	assert_int(pk.crew_marks.size()).is_greater(0)
+	for id: String in pk.crew_marks:
+		var m := pk.crew_marks[id].get_global_rect()
+		var n := pk.names[id].get_global_rect()
+		assert_float(n.end.x - m.end.x).override_failure_message(id).is_equal_approx(5.0, 0.01)
+		assert_float(n.end.x - m.end.x).override_failure_message(id) \
+			.is_equal_approx(float(TowerPicker.CREW_END_GAP), 0.01)
+		assert_float(pk.costs[id].get_global_rect().position.x - m.end.x) \
+			.override_failure_message(id).is_equal_approx(5.0, 0.51)
+
+
+## LT-124: _fit_names reserves the widest mark's width (whole px) + CREW_GAP + CREW_END_GAP on a
+## crewed name's right, so the name's text box ends CREW_GAP left of where the widest mark's
+## text starts (the mark is right-aligned in its box, which ends CREW_END_GAP short).
+func test_crewed_names_reserve_the_widest_mark_plus_both_gaps() -> void:
+	await _start()
+	var pk := _open_picker()
+	await get_tree().process_frame
+	assert_int(pk.crew_marks.size()).is_greater(0)
+	for id: String in pk.crew_marks:
+		var need := _game.sim.crew_need(id)
+		var widest := TowerPicker.crew_mark_text(maxi(need - 1, 0), mini(need, 1))
+		var w := ceili(pk.crew_marks[id].get_theme_font("font").get_string_size(widest,
+			HORIZONTAL_ALIGNMENT_LEFT, -1, TowerPicker.CREW_FONT_SIZE).x)
+		var l := pk.names[id]
+		var margin := l.get_theme_stylebox("normal").content_margin_right
+		assert_float(margin).override_failure_message(id).is_equal(
+			float(w + TowerPicker.CREW_GAP + TowerPicker.CREW_END_GAP))
+		var text_end := l.get_global_rect().end.x - margin
+		var mark_start := pk.crew_marks[id].get_global_rect().end.x - w
+		assert_float(mark_start - text_end).override_failure_message(id) \
+			.is_equal_approx(float(TowerPicker.CREW_GAP), 0.01)
+
+
 # --- tooltip --------------------------------------------------------------------------------------
 
 ## The price split is the tooltip's last line with an empty, a partial and a full reserve.
