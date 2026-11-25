@@ -5,6 +5,7 @@ extends GdUnitTestSuite
 
 var _vp: SubViewport
 var _game: Game
+var _extra_vps: Array[SubViewport] = []  ## LT-92: viewports of games built inside a test
 
 
 func before_test() -> void:
@@ -20,6 +21,10 @@ func after_test() -> void:
 		_vp.queue_free()
 	_vp = null
 	_game = null
+	for v in _extra_vps:
+		if is_instance_valid(v):
+			v.queue_free()
+	_extra_vps.clear()
 
 
 func _buildable_cells(n: int) -> Array[Vector2i]:
@@ -179,3 +184,134 @@ func test_beam_energy_is_beam_energy_times_night() -> void:
 	l._apply_night()
 	for b: PointLight2D in l.beams:
 		assert_float(b.energy).is_equal_approx(Lighting.BEAM_ENERGY * 0.5, 1e-5)
+
+
+# ---- LT-92: the WarmLight (docs/design/LT-92-startup-frames.md, edit map 2 and 4) --------
+
+
+## A game whose Lighting has not processed a frame yet (no await after it is added), so the
+## warm-up frame count starts at zero. Driven by hand: Lighting._process(0.0) is one frame.
+func _fresh_game() -> Game:
+	var r := ConfigLoader.load_dir("res://data")
+	var vp := GameFixture.make_viewport(self)
+	_extra_vps.append(vp)
+	return GameFixture.make_game(vp, r.config, 7)
+
+
+## The light's rect in the Lighting's (board-local) space: texture size x scale, centred.
+func _rect_of(l: PointLight2D) -> Rect2:
+	var side := l.texture.get_width() * l.texture_scale
+	return Rect2(l.position - Vector2(side, side) / 2.0, Vector2(side, side))
+
+
+func test_warm_light_exists_on_the_first_frame_and_gives_no_light() -> void:
+	var g := _fresh_game()
+	var wl := g.lighting.warm_light
+	assert_object(wl).is_not_null()
+	assert_str(wl.name).is_equal("WarmLight")
+	assert_object(wl.get_parent()).is_same(g.lighting)
+	assert_bool(wl.visible).is_true()  # drawn from frame 1, whatever `night` is
+	assert_float(wl.energy).is_equal(Lighting.WARM_ENERGY)
+	assert_float(wl.energy).is_less_equal(0.01)  # never a visible light
+	assert_float(g.lighting.night).is_equal(0.0)
+	assert_bool(g.lighting.beam.visible).is_false()
+	assert_bool(g.lighting.glow.visible).is_false()
+
+
+func test_warm_light_rect_contains_the_warmup_rect() -> void:
+	var g := _fresh_game()
+	var rect := _rect_of(g.lighting.warm_light)
+	assert_bool(rect.encloses(FxLayer.WARMUP_RECT)) \
+		.override_failure_message("warm rect %s does not enclose %s" % [rect, FxLayer.WARMUP_RECT]) \
+		.is_true()
+
+
+func test_warm_light_rect_is_far_smaller_than_the_board() -> void:
+	var g := _fresh_game()
+	var rect := _rect_of(g.lighting.warm_light)
+	var board := g.board.view.world_rect()
+	assert_float(rect.get_area() * 16.0).is_less(board.get_area())
+
+
+func test_warm_light_is_freed_after_exactly_warm_frames_frames() -> void:
+	var g := _fresh_game()
+	var l := g.lighting
+	var wl := l.warm_light
+	for i in Lighting.WARM_FRAMES:
+		l._process(0.0)
+		assert_object(l.warm_light).is_same(wl)  # still drawn in each of the warm frames
+		assert_bool(wl.is_inside_tree()).is_true()
+	l._process(0.0)
+	assert_object(l.warm_light).is_null()
+	assert_bool(is_instance_valid(wl) and wl.is_inside_tree()).is_false()
+	assert_object(l.get_node_or_null("WarmLight")).is_null()
+	assert_array(g.find_children("WarmLight", "", true, false)).is_empty()
+	for i in 3:  # later frames leave nothing behind and do not fail
+		l._process(0.0)
+	assert_array(g.find_children("WarmLight", "", true, false)).is_empty()
+
+
+func test_warm_light_is_freed_by_real_frames() -> void:
+	var g := _fresh_game()
+	var l := g.lighting
+	assert_object(l.warm_light).is_not_null()
+	for i in Lighting.WARM_FRAMES + 3:
+		await get_tree().process_frame
+	assert_object(l.warm_light).is_null()
+	assert_array(g.find_children("WarmLight", "", true, false)).is_empty()
+
+
+func test_warm_frames_leave_day_and_night_lighting_unchanged() -> void:
+	var g := _fresh_game()
+	var l := g.lighting
+	for i in Lighting.WARM_FRAMES:
+		assert_float(l.night).is_equal(0.0)
+		assert_bool(l.beam.visible).is_false()
+		assert_bool(l.glow.visible).is_false()
+		for tl: PointLight2D in l._tower_lights.values():
+			assert_bool(tl.visible).is_false()
+		assert_object(l.modulate_node.color).is_equal(Lighting.ambient(0.0))
+		l._process(0.0)
+	assert_float(l.night).is_equal(0.0)
+	assert_object(l.modulate_node.color).is_equal(Lighting.ambient(0.0))
+
+
+func test_night_does_not_touch_the_warm_light() -> void:
+	var g := _fresh_game()
+	var l := g.lighting
+	var wl := l.warm_light
+	assert_int(g.commands.call_wave()).is_equal(SimCommand.CommandResult.OK)
+	for i in 5:
+		l.ease_night(10.0)
+	assert_float(l.night).is_greater(0.9)
+	assert_bool(l.beam.visible).is_true()
+	assert_bool(wl.visible).is_true()
+	assert_float(wl.energy).is_equal(Lighting.WARM_ENERGY)  # _apply_night leaves it alone
+
+
+func test_a_wave_called_in_the_first_frames_still_frees_the_warm_light() -> void:
+	var g := _fresh_game()
+	var l := g.lighting
+	var wl := l.warm_light
+	l._process(0.0)
+	assert_int(g.commands.call_wave()).is_equal(SimCommand.CommandResult.OK)
+	for i in Lighting.WARM_FRAMES - 1:
+		l._process(0.0)
+		assert_object(l.warm_light).is_same(wl)
+	l._process(0.0)
+	assert_object(l.warm_light).is_null()
+	assert_bool(is_instance_valid(wl) and wl.is_inside_tree()).is_false()
+	assert_array(g.find_children("WarmLight", "", true, false)).is_empty()
+
+
+func test_the_game_freed_in_the_first_frames_takes_the_warm_light_with_it() -> void:
+	var g := _fresh_game()
+	var vp: SubViewport = g.get_parent()
+	var wl := g.lighting.warm_light
+	g.lighting._process(0.0)
+	g.free()
+	assert_bool(is_instance_valid(wl)).is_false()
+	for i in Lighting.WARM_FRAMES + 2:
+		await get_tree().process_frame
+	assert_array(vp.find_children("WarmLight", "", true, false)).is_empty()
+	assert_int(vp.get_child_count()).is_equal(0)

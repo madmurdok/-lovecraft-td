@@ -126,6 +126,32 @@ func test_warmup_draws_on_every_frame_while_no_effect_has_drawn() -> void:
 	assert_array(b.spy_fx.stamps).is_equal(b.stamps)
 
 
+## LT-92: the draw_* calls are native and cannot be spied, so this reads _draw_warmup's source:
+## every Vector2 literal in it (a draw position) must lie inside FxLayer.WARMUP_RECT, shrunk
+## by half the widest draw width, so the widths stay inside too. Lighting's WarmLight covers
+## exactly that rect; a draw outside it would be lit only when the beam reaches it (frame C).
+func test_every_warmup_draw_lies_inside_the_warmup_rect() -> void:
+	var src := FileAccess.get_file_as_string("res://scenes/board/fx_layer.gd")
+	var start := src.find("func _draw_warmup()")
+	assert_int(start).is_greater_equal(0)
+	var end := src.find("\nfunc ", start + 1)
+	var body := src.substr(start, end - start if end >= 0 else -1)
+	var widths := RegEx.create_from_string(",\\s*c\\s*,\\s*(\\d+(?:\\.\\d+)?)\\s*\\)")
+	var half := 0.0
+	for m in widths.search_all(body):
+		half = maxf(half, m.get_string(1).to_float() / 2.0)
+	assert_float(half).is_greater(0.0)  # the widths were found
+	var inner := FxLayer.WARMUP_RECT.grow(-half)
+	var points := RegEx.create_from_string("Vector2\\(\\s*(-?[\\d.]+)\\s*,\\s*(-?[\\d.]+)\\s*\\)")
+	var found := 0
+	for m in points.search_all(body):
+		var p := Vector2(m.get_string(1).to_float(), m.get_string(2).to_float())
+		found += 1
+		assert_bool(inner.has_point(p)) \
+			.override_failure_message("warm-up draw at %s is outside %s" % [p, inner]).is_true()
+	assert_int(found).is_greater_equal(8)  # 2 line + 3 polyline + 3 polygon points
+
+
 func test_board_without_a_game_draws_no_warmup() -> void:
 	var b := SpyBoard.new()
 	_vp.add_child(b)
