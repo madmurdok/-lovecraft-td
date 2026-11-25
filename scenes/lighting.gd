@@ -44,11 +44,14 @@ const FLARE_TEX_SIZE := 256
 ## The flare texture's near-flat bright core ends at this fraction of its radius
 ## (_flare_texture); flare_cover_cells() puts every board corner inside it.
 const FLARE_CORE := 0.7
-## LT-92: a tiny light over FxLayer.WARMUP_RECT in the first WARM_FRAMES frames, so the
-## warm-up draws lit once while the first game frame is loading anyway. It compiles the lit
+## LT-92: a tiny light over FxLayer.WARMUP_RECT in the first WARM_FRAMES game frames (boot
+## iterations 2-4: Main shows its Loading frame in iteration 1 and adds the Game in
+## iteration 2). Every canvas item whose rect meets it, FxLayer with its warm-up among them,
+## draws lit there while the first game frame is loading anyway. It compiles the lit
 ## shader variants that the first night otherwise compiled on the wave-call frame (frame B)
 ## and when the beam's rect first reached the warm-up corner (frame C). It must stay small:
-## a board-covering one leaves the unlit variants to the first frame after it (a new stall).
+## a board-covering one leaves the unlit variants to the first frame after it (iteration 5,
+## a new stall); a small one leaves enough unlit items to compile them in frame A.
 const WARM_FRAMES := 3
 const WARM_ENERGY := 0.0  ## invisible; a light at 0 still selects the lit variants (LT-92 S6, 2/2 runs)
 const WARM_COVER := 2.5  ## the light's texture spans this many times the rect's longer side
@@ -135,7 +138,8 @@ func _add_warm_light() -> void:
 
 
 ## Frees the WarmLight in the first _process after WARM_FRAMES frames: it is drawn in the
-## frames whose _process left it in place, WARM_FRAMES of them.
+## frames whose _process left it in place, WARM_FRAMES of them (boot: iterations 2-4, freed
+## in iteration 5's _process, before that frame draws).
 func _tick_warm_light() -> void:
 	if warm_light == null:
 		return
