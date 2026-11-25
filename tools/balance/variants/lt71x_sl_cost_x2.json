@@ -1,0 +1,12 @@
+{
+ "description": "LT-71x: Searchlight cost 160",
+ "patch": {
+  "towers.json": {
+   "towers": {
+    "searchlight": {
+     "cost": 160
+    }
+   }
+  }
+ }
+}

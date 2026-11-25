@@ -1,3 +1,5 @@
 build/
 .godot/
 reports/
+.DS_Store
+References/

@@ -1,0 +1,12 @@
+{
+ "description": "LT-71x: shadow occult power_mult 1.6",
+ "patch": {
+  "economy.json": {
+   "shadow": {
+    "occult": {
+     "power_mult": 1.6
+    }
+   }
+  }
+ }
+}

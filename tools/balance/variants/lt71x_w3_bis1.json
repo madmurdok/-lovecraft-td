@@ -1,0 +1,19 @@
+{
+ "description": "LT-71x bisect: wave 3 deep_one 3, hybrid 6",
+ "patch": {
+  "waves.json": {
+   "waves": {
+    "2": {
+     "groups": {
+      "0": {
+       "count": 3
+      },
+      "1": {
+       "count": 6
+      }
+     }
+    }
+   }
+  }
+ }
+}

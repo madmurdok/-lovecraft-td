@@ -1,0 +1,19 @@
+{
+ "description": "LT-71x: wave 3 deep_one 8, hybrid 16",
+ "patch": {
+  "waves.json": {
+   "waves": {
+    "2": {
+     "groups": {
+      "0": {
+       "count": 8
+      },
+      "1": {
+       "count": 16
+      }
+     }
+    }
+   }
+  }
+ }
+}

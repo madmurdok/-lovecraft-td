@@ -1,0 +1,4 @@
+{
+  "description": "LT-121: regen.mundane_kill 1.0 (x2)",
+  "patch": { "sanity.json": { "regen": { "mundane_kill": 1.0 } } }
+}

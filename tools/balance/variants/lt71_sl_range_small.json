@@ -1,0 +1,1 @@
+{"description":"LT-71: Searchlight range 3/3.5/5/3.5 -> 2.5/3/4/3","patch":{"towers.json":{"towers":{"searchlight":{"levels":{"0":{"range":2.5},"1":{"range":3}},"branches":{"a":{"range":4},"b":{"range":3}}}}}}}

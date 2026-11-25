@@ -1,0 +1,12 @@
+{
+ "description": "LT-71x: flare cost 4 oil",
+ "patch": {
+  "economy.json": {
+   "lighthouse": {
+    "flare": {
+     "cost_oil": 4
+    }
+   }
+  }
+ }
+}

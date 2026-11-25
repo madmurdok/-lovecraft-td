@@ -1,0 +1,56 @@
+{
+ "description": "LT-71x bisect: wave 3 3/6 + flare 12 + slow .15/.175/.175/.25",
+ "patch": {
+  "waves.json": {
+   "waves": {
+    "2": {
+     "groups": {
+      "0": {
+       "count": 3
+      },
+      "1": {
+       "count": 6
+      }
+     }
+    }
+   }
+  },
+  "economy.json": {
+   "lighthouse": {
+    "flare": {
+     "cost_oil": 12
+    }
+   }
+  },
+  "towers.json": {
+   "towers": {
+    "searchlight": {
+     "levels": {
+      "0": {
+       "effects": {
+        "slow": 0.15
+       }
+      },
+      "1": {
+       "effects": {
+        "slow": 0.175
+       }
+      }
+     },
+     "branches": {
+      "a": {
+       "effects": {
+        "slow": 0.175
+       }
+      },
+      "b": {
+       "effects": {
+        "slow": 0.25
+       }
+      }
+     }
+    }
+   }
+  }
+ }
+}
