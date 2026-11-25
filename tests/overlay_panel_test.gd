@@ -6,8 +6,9 @@ extends GdUnitTestSuite
 ## opens its monster card (nearest wins, ties to the lower id) and a click farther away opens
 ## the tower or cell under it; the card and the overlay close with the enemy; opening a view
 ## under the overlay pans it into sight; the build list has the Rng column; the HUD's
-## right-anchored labels end left of the overlay; relic tokens follow the pan. Already pinned
-## elsewhere: the rect, and that a click on the overlay stays there (side_panel_test, §9.9),
+## right-anchored labels end left of the overlay; relic tokens follow the pan; the card closes
+## on a leak and a dissolve too; a click on the overlay over a buildable cell never reaches the
+## board (LT-124, §9.5, §9.9). Already pinned elsewhere: the rect (side_panel_test, §9.9),
 ## SanityFx's rect at a pan (sanity_fx_screen_test, §9.16), G6c/G7 (architecture_guard_test).
 ## Clicks are real mouse events in a 1200x675 SubViewport.
 
@@ -87,8 +88,8 @@ func _night() -> void:
 	assert_int(_game.sim.state.phase).is_equal(SimState.Phase.WAVE)
 
 
-func _enemy(at: Vector2) -> int:
-	var id := _game.sim.spawn_enemy("cultist")
+func _enemy(at: Vector2, fake := false) -> int:
+	var id := _game.sim.spawn_enemy("cultist", fake)
 	GameFixture.sync(_game)
 	_game.board.last_pos[id] = at
 	return id
@@ -264,6 +265,105 @@ func test_a_kill_closes_the_card_and_hides_the_night_overlay() -> void:
 	assert_bool(_game.monster_card.visible).is_false()
 	assert_bool(_game.side_panel.visible).is_false()
 	assert_int(_game.selection.enemy_id).is_equal(0)
+
+
+## Puts enemy `id` at the end of its route and runs one sim tick, so it leaks (a real one) or
+## dissolves at the lighthouse (a fake, SpawnSystem.leak). The frame then consumes the events
+## without a step, so only the event closes the card: on_stepped (which also closes it once the
+## enemy leaves the snapshot) does not run. Returns the enemy.
+func _to_the_lighthouse(id: int) -> SimEnemy:
+	_game.sim.state.lighthouse_hp = 1000  # one leak never ends the run
+	var e := _game.sim.enemy_by_id(id)
+	e.distance = e.route.length
+	_game.sim.step()
+	_game.advance(0.0)  # consumes the LEAKED / FAKE_DISSOLVED event
+	assert_int(_game.sim.state.outcome).is_equal(SimState.Outcome.NONE)
+	assert_int(_game.sim.state.phase).is_equal(SimState.Phase.WAVE)
+	return e
+
+
+func test_a_leak_closes_the_card_and_hides_the_night_overlay() -> void:
+	await _start()
+	_night()
+	var id := _enemy(Vector2(10.5, 3.5))
+	await _click(_screen(Vector2(10.5, 3.5)))
+	assert_int(_game.monster_card.enemy_id).is_equal(id)
+	assert_bool(_game.side_panel.visible).is_true()
+	var e := _to_the_lighthouse(id)
+	assert_bool(e.leaked).is_true()
+	assert_bool(_game.monster_card.visible).is_false()
+	assert_bool(_game.side_panel.visible).is_false()
+	assert_int(_game.selection.enemy_id).is_equal(0)
+
+
+func test_a_hallucination_dissolving_closes_the_card_and_hides_the_night_overlay() -> void:
+	await _start()
+	_night()
+	var id := _enemy(Vector2(10.5, 3.5), true)
+	await _click(_screen(Vector2(10.5, 3.5)))
+	assert_int(_game.monster_card.enemy_id).is_equal(id)
+	assert_bool(_game.side_panel.visible).is_true()
+	var e := _to_the_lighthouse(id)
+	assert_bool(e.dissolved).is_true()
+	assert_bool(e.leaked).is_false()
+	assert_bool(_game.monster_card.visible).is_false()
+	assert_bool(_game.side_panel.visible).is_false()
+	assert_int(_game.selection.enemy_id).is_equal(0)
+
+
+# --- 9: a click on the overlay never reaches the board ----------------------------------------
+
+## [cell, point]: a screen point inside the overlay's left margin strip (x in [left edge,
+## left edge + MARGIN), where only the SidePanel itself is, no child) and clear of its top and
+## bottom margins, over a buildable cell no tower stands on; [OFF_BOARD, -] when none.
+func _cell_under_overlay() -> Array:
+	var r := SidePanel.panel_rect()
+	var m := _game.sim.state.map
+	var v := _game.board.view
+	for y in m.height:
+		for x in m.width:
+			var c := Vector2i(x, y)
+			if not m.is_buildable(c) or _game.sim.state.tower_at.has(c):
+				continue
+			var lo := maxf(v.cell_to_screen(Vector2(x, y)).x, r.position.x)
+			var hi := minf(v.cell_to_screen(Vector2(x + 1, y)).x, r.position.x + SidePanel.MARGIN)
+			var p := Vector2((lo + hi) / 2.0, _screen(m.grid.centre(c)).y)
+			if hi - lo >= 2.0 and p.y > r.position.y + SidePanel.MARGIN \
+					and p.y < r.end.y - SidePanel.MARGIN and v.cell_at_screen(p) == c:
+				return [c, p]
+	return [BoardView.OFF_BOARD, Vector2.ZERO]
+
+
+## §9.9: a real left click inside the overlay over a buildable cell stays on the overlay: no
+## build list, no selection, no tower. The map is panned to its far end first: at pan 0 no
+## buildable cell lies under the overlay, at the far end one reaches ~4 px into its margin
+## strip (the map ends left of mid-panel at every pan). Then the same point with the overlay
+## hidden opens that cell's build list, so the point does reach the board without it.
+func test_a_click_on_the_overlay_over_a_buildable_cell_never_reaches_the_board() -> void:
+	await _start()
+	assert_bool(_game.side_panel.visible).is_true()
+	var cam := _game.board.camera
+	cam.set_visible_rect(_game.side_panel.board_visible_rect())
+	cam.pan_by(Vector2(1.0e6, 0))  # the far end: the map shifted right, under the overlay
+	var towers := _game.sim.state.towers.size()
+	var gold := _game.sim.state.gold
+	var hit := _cell_under_overlay()
+	assert_int((hit[0] as Vector2i).x).override_failure_message(
+		"no buildable cell under the overlay's margin strip").is_greater(-1)
+	assert_bool(SidePanel.panel_rect().has_point(hit[1])).is_true()
+	await _click(hit[1])
+	assert_bool(_game.picker.visible).is_false()
+	assert_bool(_no_view()).is_true()
+	assert_vector(Vector2(_game.selection.cell)).is_equal(Vector2(SelectionModel.NONE))
+	assert_int(_game.selection.enemy_id).is_equal(0)
+	assert_bool(_game.side_panel.idle_label.visible).is_true()
+	assert_str(_game.side_panel.idle_label.text).is_equal(SidePanel.IDLE_TEXT)
+	assert_int(_game.sim.state.towers.size()).is_equal(towers)
+	assert_int(_game.sim.state.gold).is_equal(gold)
+	_game.side_panel.visible = false
+	await _click(hit[1])
+	assert_bool(_game.picker.visible).is_true()
+	assert_vector(Vector2(_game.picker.cell)).is_equal(Vector2(hit[0]))
 
 
 # --- 15: auto-reveal ---------------------------------------------------------------------------

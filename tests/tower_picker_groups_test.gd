@@ -711,6 +711,49 @@ func test_fifteen_towers_scroll_the_list_and_pin_heads_aligned_to_the_scrollbar(
 		# LT-59: at the 240 px panel (LT-66: 304) the shipped names fit beside the scrollbar unshrunk.
 
 
+## LT-124: in every row the Trait cell starts 8 px (RNG_GAP) right of the Rng cell's end. The
+## Rng head is RNG_W + RNG_HEAD_PAD (24 px) wide and ends RNG_HEAD_PAD into that gap; the Trait
+## head still ends at the Trait cell's end; the heads together span the value columns ($ cell's
+## left edge to the Trait cell's right edge), and the title plus the heads span the row.
+func test_rng_and_trait_cells_are_8_px_apart_and_the_rng_head_borrows_the_pad() -> void:
+	await _start_game(_data_config())
+	_game.sim.state.gold = 10000
+	await _open_picker()
+	await get_tree().process_frame
+	var pk := _game.picker
+	var tol := 0.51
+	for tid: String in _config.towers:
+		var rng_r: Rect2 = (pk.cells[tid]["rng"] as Control).get_global_rect()
+		var trait_r: Rect2 = (pk.cells[tid]["trait"] as Control).get_global_rect()
+		assert_float(trait_r.position.x - rng_r.end.x).override_failure_message(tid) \
+			.is_equal_approx(8.0, tol)
+		assert_float(trait_r.position.x - rng_r.end.x).override_failure_message(tid) \
+			.is_equal_approx(float(TowerPicker.RNG_GAP), tol)
+	var pinned: Control = pk.get_node("Group_mundane")
+	var heads: Dictionary = {}
+	var sum := 0.0
+	for head: Array in TowerPicker.HEADS:
+		var h := pinned.get_node("Head_" + head[0]) as Label
+		heads[head[0]] = h.get_global_rect()
+		sum += h.size.x
+	var id: String = pk.buttons.keys()[0]
+	var rng: Rect2 = (pk.cells[id]["rng"] as Control).get_global_rect()
+	var trait_cell: Rect2 = (pk.cells[id]["trait"] as Control).get_global_rect()
+	var cost: Rect2 = pk.costs[id].get_global_rect()
+	assert_float(heads["Rng"].size.x).is_equal(24.0)
+	assert_float(heads["Rng"].size.x).is_equal(
+		float(TowerPicker.RNG_W + TowerPicker.RNG_HEAD_PAD))
+	assert_float(heads["Rng"].end.x).is_equal_approx(rng.end.x + TowerPicker.RNG_HEAD_PAD, tol)
+	assert_float(heads["Trait"].position.x).is_equal_approx(heads["Rng"].end.x, tol)
+	assert_float(heads["Trait"].end.x).is_equal_approx(trait_cell.end.x, tol)
+	assert_float(heads["$"].position.x).is_equal_approx(cost.position.x, tol)
+	assert_float(sum).is_equal_approx(trait_cell.end.x - cost.position.x, tol)
+	var title := pinned.get_node("Title") as Label
+	var row := pk.buttons[id].get_global_rect()
+	assert_float(title.size.x + sum).is_equal_approx(row.size.x, tol)
+	assert_float(title.size.x).is_equal_approx(pk.names[id].size.x, tol)
+
+
 ## The column heads (LT-61 §3) sit on the first group line only, each with its tooltip.
 func test_heads_are_on_the_first_group_line_only_with_tooltips() -> void:
 	await _start_game(_data_config())
