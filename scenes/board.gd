@@ -34,6 +34,7 @@ extends Node2D
 
 signal cell_clicked(cell: Vector2i)
 signal outside_clicked  ## LT-28: a left click no control took that misses the grid
+signal enemy_clicked(id: int)  ## LT-66 §4: a left click within PICK_RADIUS of a drawn enemy
 
 ## LT-84: the palette shared by several layers: the map colours (MapLayer), the leak red
 ## (FxLayer's flash, OverlayLayer's dead zone) and each attack look's colour (EntityLayer's
@@ -70,6 +71,10 @@ const BANISH_COLOR := Color(2.0, 2.1, 2.6)
 
 ## LT-14 visual tunables.
 @export var flicker_rate := 13.0  ## flicker steps per second
+
+## LT-66 §4: a click this close (cells) to a drawn enemy's centre picks it: max(look
+## radius, 0.5), and LookCatalog.RADIUS_MAX is 0.5, so 0.5 covers every body.
+const PICK_RADIUS := maxf(LookCatalog.RADIUS_MAX, 0.5)
 
 var game: Game
 var alpha := 0.0  ## render interpolation between the last two ticks
@@ -125,12 +130,38 @@ func _unhandled_input(event: InputEvent) -> void:
 	if mb == null or not mb.pressed or mb.button_index != MOUSE_BUTTON_LEFT:
 		return
 	sync_map()
-	var cell := view.cell_at_screen((game.make_input_local(mb) as InputEventMouseButton).position)
+	var p := (game.make_input_local(mb) as InputEventMouseButton).position
+	var enemy := enemy_at_screen(p)  # LT-66 §4: a monster wins inside its pick radius
+	if enemy != 0:
+		get_viewport().set_input_as_handled()
+		enemy_clicked.emit(enemy)
+		return
+	var cell := view.cell_at_screen(p)
 	if cell != BoardView.OFF_BOARD:
 		get_viewport().set_input_as_handled()
 		cell_clicked.emit(cell)
 	else:
 		outside_clicked.emit()
+
+
+## LT-66 §4: the id of the enemy drawn this frame (`last_pos`, still in the snapshot) whose
+## centre is nearest to screen point `p` within PICK_RADIUS cells; ties go to the lower id.
+## 0 when none. Uses only drawn positions, never the sim.
+func enemy_at_screen(p: Vector2) -> int:
+	if game == null or game.snapshot == null:
+		return 0
+	var at := view.screen_to_cells(p)
+	var best := 0
+	var best_d := PICK_RADIUS * PICK_RADIUS
+	for id: int in last_pos:
+		var d := at.distance_squared_to(last_pos[id])
+		if d > best_d or (d == best_d and best != 0 and id > best):
+			continue
+		if game.snapshot.enemy(id) == null:  # drawn last frame, gone since
+			continue
+		best = id
+		best_d = d
+	return best
 
 
 ## Sim events for the effects (SHOT, BLAST, DIED, FAKE_DISSOLVED, LEAKED): FxLayer.

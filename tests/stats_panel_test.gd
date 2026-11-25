@@ -199,7 +199,7 @@ func test_head_row_is_hidden_only_when_every_head_is_empty() -> void:
 
 ## §1 "every tower shows the same 10 rows": the panel table (Special under it as lines)
 ## lists the ROWS in order, for every tower at L1, L2 and each branch. LT-61 §2: a build
-## list row is Name, Cost, DPS and Trait for every tower.
+## list row is Name, Cost, DPS, (LT-66) Rng and Trait for every tower.
 func test_picker_and_panel_show_the_same_rows_in_the_same_order() -> void:
 	await _start_game()
 	var labels := []
@@ -210,7 +210,7 @@ func test_picker_and_panel_show_the_same_rows_in_the_same_order() -> void:
 		var names := []
 		for c in _game.picker.buttons[id].find_child("Cells", true, false).get_children():
 			names.append(String(c.name))
-		assert_array(names).override_failure_message(id).is_equal(["Name", "Cost", "Gap", "Dps", "Trait"])
+		assert_array(names).override_failure_message(id).is_equal(["Name", "Cost", "Gap", "Dps", "DpsGap", "Rng", "Trait"])
 	_game.picker.close()
 	# Panel: every tower, L1, L2 and both branches.
 	var panel_names := ["Head"]
@@ -491,7 +491,7 @@ func test_the_flare_lights_a_tower_and_the_panel_marks_it() -> void:
 	assert_int(_game.commands.call_wave()).is_equal(SimCommand.CommandResult.OK)
 	_game.sim.step()
 	assert_bool(t.lit).is_false()
-	_game.tower_panel.refresh()
+	_game.tower_panel.open_for(t.id)  # LT-66 §2: dusk closed the view
 	assert_str(_table().text_at("every", 0)).not_contains(STAR)
 	_game.sim.state.flare_cooldown_ticks = 0
 	_game.sim.state.oil = _config.economy.flare.cost_oil

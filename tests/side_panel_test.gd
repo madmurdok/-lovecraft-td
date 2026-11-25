@@ -51,7 +51,7 @@ func _click_control(c: Control) -> void:
 		# Long views scroll: bring the control into the panel before clicking it.
 		_game.side_panel.scroll.ensure_control_visible(c)
 		await get_tree().process_frame
-		assert_bool(SidePanel.panel_rect(_game.sim.state.map).encloses(c.get_global_rect())) \
+		assert_bool(SidePanel.panel_rect().encloses(c.get_global_rect())) \
 			.override_failure_message("%s outside the panel" % c.name).is_true()
 	await _click(c.get_global_rect().get_center())
 
@@ -108,26 +108,22 @@ func _run_into_wave() -> void:
 
 # --- 21: rect and scrolling ------------------------------------------------------------------
 
-func test_panel_rect_is_right_of_the_board_below_the_hud() -> void:
+## LT-66 §1: a 304 px overlay at the window's right edge, below the HUD bar, whatever the map.
+func test_panel_rect_is_the_overlay_at_the_right_edge_below_the_hud() -> void:
 	await _start_game()
-	var map := _game.sim.state.map
-	var r := SidePanel.panel_rect(map)
+	var r := SidePanel.panel_rect()
 	var board := _game.board.view.world_rect()
-	assert_float(r.position.x).is_equal(board.end.x)
 	assert_float(r.position.y).is_equal(board.position.y)
 	assert_float(r.end.x).is_equal(1200.0)
 	assert_float(r.end.y).is_equal(675.0)
-	assert_bool(r.intersects(board)).is_false()
-	assert_float(r.size.x).is_equal(1200.0 - board.size.x)
-	if board.size.x == 960:
-		assert_that(r).is_equal(Rect2(960, 48, 240, 627))
-		assert_float(_game.side_panel.size.x).is_equal(240.0)
+	assert_that(r).is_equal(Rect2(896, 48, 304, 627))
+	assert_float(_game.side_panel.size.x).is_equal(304.0)
 	assert_that(_game.side_panel.get_global_rect()).is_equal(r)
 
 
 func test_long_content_scrolls_vertically_and_never_grows_the_panel() -> void:
 	await _start_game()
-	var r := SidePanel.panel_rect(_game.sim.state.map)
+	var r := SidePanel.panel_rect()
 	var scroll := _game.side_panel.scroll
 	assert_int(scroll.horizontal_scroll_mode).is_equal(ScrollContainer.SCROLL_MODE_DISABLED)
 	await _click_cell(_buildable_cell())
@@ -194,7 +190,7 @@ func test_cancel_water_sell_and_a_vanished_tower_return_to_idle() -> void:
 func test_a_click_on_empty_panel_space_does_not_reach_the_board() -> void:
 	await _start_game()
 	await _open_tower(RIFLE, ["", "a"])  # short L3 view
-	var r := SidePanel.panel_rect(_game.sim.state.map)
+	var r := SidePanel.panel_rect()
 	await _click(r.end - Vector2(12, 12))
 	_assert_view(false, false, true)
 
@@ -349,7 +345,7 @@ func test_upgrade_is_disabled_mid_wave_and_enabled_again_after_it() -> void:
 	await _start_game()
 	await _open_tower(RIFLE)
 	_run_into_wave()
-	_game.tower_panel.refresh()
+	_game.tower_panel.open_for(_game.tower_panel.tower_id)  # LT-66 §2: dusk closed the view
 	assert_bool(_ups()[""].disabled).is_true()
 	assert_str(_ups()[""].text).ends_with(" (only by day)")
 	for i in 20000:

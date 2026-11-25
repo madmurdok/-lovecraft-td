@@ -1,16 +1,19 @@
 class_name SidePanel
 extends PanelContainer
-## Fixed info panel on the right of the board (LT-24 §4, Decision 2): the free strip from
-## the board's right edge to the base viewport's right edge, from below the HUD bar to the
-## bottom. Laid out in base viewport units, so canvas_items stretch scales it with the
-## window and it never covers the board. One view at a time inside a vertical scroll:
-## idle text, the tower view (TowerPanel), the lighthouse view, the crew view (LT-32), or
-## (LT-61 §1) while the
-## build list (TowerPicker, above the scroll) is open the hovered tower's L1 card (LT-32: or
-## the hovered reserve post's card), or "Pick a tower to build" with no hover.
+## Info panel at the right edge of the window (LT-24 §4, Decision 2). LT-66: an overlay over
+## the board, PANEL_W wide from below the HUD bar to the bottom, laid out in base viewport
+## units (canvas_items stretch scales it with the window); a click on it never reaches the
+## board. One view at a time inside a vertical scroll: idle text, the tower view
+## (TowerPanel), the lighthouse view, the crew view (LT-32), the monster card (LT-66 §5), or
+## (LT-61 §1) while the build list (TowerPicker, above the scroll) is open the hovered
+## tower's L1 card (LT-32: or the hovered reserve post's card), or "Pick a tower to build"
+## with no hover. LT-66 §2 (sync_visible): by day it always shows (idle text when no view is
+## open); by night exactly while a view is open; never after the outcome. Esc closes the
+## open view (_input).
 
 const FONT_SIZE := 14  ## panel text (tunable; LT-28 owns the polish)
 const MARGIN := 8
+const PANEL_W := 304  ## LT-66 §1 (owner Q1): the overlay's width; inner PANEL_W - 2 * MARGIN
 const COLOR_BG := UiStyle.COLOR_BG  ## opaque, same as the HUD bar
 const COLOR_ROLE := Color(0.85, 0.8, 0.6)
 const COLOR_INFO := Color(0.75, 0.75, 0.78)
@@ -33,6 +36,7 @@ var card_path: Label
 var card_id := ""  ## def id the card shows, "" while hidden
 var lighthouse_panel: LighthousePanel  ## LT-30
 var crew_panel: CrewPanel  ## LT-32 §4
+var monster_card: MonsterCard  ## LT-66 §5
 var card_upgrades: Label  ## the card's "Upgrades" head (hidden for a reserve post)
 
 
@@ -60,17 +64,18 @@ static func make_button(node_name: String, on_pressed: Callable, text := "") -> 
 	return b
 
 
-## The panel rect in base viewport units: right of the board, below the HUD bar.
-static func panel_rect(map: MapDef) -> Rect2:
+## LT-66 §1: the overlay rect in base viewport units: PANEL_W at the right edge, below
+## the HUD bar to the bottom; it does not depend on the map.
+static func panel_rect() -> Rect2:
 	var base := Vector2(ProjectSettings.get_setting("display/window/size/viewport_width"),
 		ProjectSettings.get_setting("display/window/size/viewport_height"))
-	var board := BoardView.world_rect_for(map.grid)
-	var left := board.end.x
-	return Rect2(left, board.position.y, base.x - left, base.y - board.position.y)
+	var top := BoardView.HUD_H
+	return Rect2(base.x - PANEL_W, top, PANEL_W, base.y - top)
 
 
 func _ready() -> void:
-	var r := panel_rect(game.snapshot.map)
+	var r := panel_rect()
+	mouse_filter = Control.MOUSE_FILTER_STOP  # LT-66 §2: a click on the overlay stays here
 	position = r.position
 	size = r.size
 	custom_minimum_size = r.size
@@ -114,9 +119,14 @@ func _ready() -> void:
 	crew_panel.name = "CrewPanel"
 	crew_panel.game = game
 	views.add_child(crew_panel)
+	monster_card = MonsterCard.new()
+	monster_card.name = "MonsterCard"
+	monster_card.game = game
+	views.add_child(monster_card)
 	lighthouse_panel.visibility_changed.connect(_update_idle)
 	crew_panel.visibility_changed.connect(_update_idle)
 	tower_panel.visibility_changed.connect(_update_idle)
+	monster_card.visibility_changed.connect(_update_idle)
 	picker.visibility_changed.connect(_update_idle)
 	picker.hovered_changed.connect(show_card)
 	_update_idle()
@@ -188,5 +198,28 @@ func _update_idle() -> void:
 	card.visible = picking and not card_id.is_empty()
 	idle_label.text = PICK_TEXT if picking else IDLE_TEXT
 	idle_label.visible = not card.visible and not tower_panel.visible \
-		and not lighthouse_panel.visible and not crew_panel.visible
+		and not lighthouse_panel.visible and not crew_panel.visible and not monster_card.visible
 	scroll.scroll_vertical = 0
+	sync_visible()
+
+
+## True while a view is open: the build list, tower, lighthouse, crew or monster view.
+func any_view_open() -> bool:
+	return picker.visible or tower_panel.visible or lighthouse_panel.visible \
+		or crew_panel.visible or monster_card.visible
+
+
+## LT-66 §2: the one place the overlay's visibility is decided: shown by day, by night only
+## while a view is open, never after the outcome. Phase and outcome from game.snapshot.
+func sync_visible() -> void:
+	var s := game.snapshot
+	visible = s != null and s.outcome == SimState.Outcome.NONE \
+		and (s.phase == SimState.Phase.BUILD or any_view_open())
+
+
+## LT-66 §2 (owner Q3): Esc closes the open view (by day the idle text shows, by night the
+## overlay hides).
+func _input(event: InputEvent) -> void:
+	if event.is_action_pressed("ui_cancel") and any_view_open():
+		get_viewport().set_input_as_handled()
+		game.close_panels()

@@ -149,8 +149,7 @@ func test_world_rect_of_the_configured_map_and_its_layout_anchors() -> void:
 	var m := _config.map
 	var want := Rect2(0, TOP, m.width * TILE, m.height * TILE)
 	assert_object(BoardView.world_rect_for(m.grid)).is_equal(want)
-	assert_float(SidePanel.panel_rect(m).position.x).is_equal(want.end.x)
-	assert_float(SidePanel.panel_rect(m).position.y).is_equal(TOP)
+	assert_float(SidePanel.panel_rect().position.y).is_equal(TOP)  # LT-66: below the HUD bar
 
 
 func test_world_rect_is_the_same_in_a_1200x675_and_a_1920x1080_viewport() -> void:
@@ -163,7 +162,7 @@ func test_world_rect_is_the_same_in_a_1200x675_and_a_1920x1080_viewport() -> voi
 		assert_object(_game.hud.board_rect()).is_equal(want)
 		var bg: Control = _game.hud.get_node("Background")
 		assert_float(bg.size.y).is_equal(TOP)  # the HUD bar is the strip above the board
-		assert_float(_game.side_panel.position.x).is_equal(want.end.x)
+		assert_float(_game.side_panel.position.x).is_equal(SidePanel.panel_rect().position.x)
 		_vp.queue_free()
 		_vp = null
 		await get_tree().process_frame
@@ -410,7 +409,9 @@ func test_board_signals_follow_the_view_cell_and_off_board() -> void:
 	_game.board.cell_clicked.connect(func(c: Vector2i) -> void: cells.append(c))
 	_game.board.outside_clicked.connect(func() -> void: outside[0] += 1)
 	var m := _game.sim.state.map
-	var last := Vector2i(m.width - 1, m.height - 1)
+	# LT-66 §1: the day overlay lies over the right columns; the last cell left of it.
+	var last := Vector2i(mini(m.width, int(SidePanel.panel_rect().position.x / TILE)) - 1,
+		m.height - 1)
 	await _click(_screen_of(Vector2i(0, 0)))
 	await _click(_screen_of(last))
 	assert_array(cells).is_equal([Vector2i(0, 0), last])

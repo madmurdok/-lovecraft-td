@@ -13,7 +13,8 @@ extends RefCounted
 ## fill_cell / outline_cell and anchor text and marks to cell_centre (LT-108 F2, guard G15).
 
 const CELL := 40.0  ## pixels per cell unit
-const ORIGIN := Vector2(0, 48)  ## the board's top-left on screen: below the HUD bar
+const HUD_H := 48.0  ## the HUD bar's height on screen; LT-66: the side overlay starts below it
+const ORIGIN := Vector2(0, HUD_H)  ## the board's top-left on screen: below the HUD bar
 const OFF_BOARD := Vector2i(-1, -1)
 
 var grid: GridTopology  ## the current map's topology; Board.sync_map keeps it current
@@ -41,6 +42,11 @@ func cell_at_screen(screen_pos: Vector2) -> Vector2i:
 		return OFF_BOARD
 	var c := grid.cell_at((screen_pos - ORIGIN) / CELL)
 	return c if grid.contains(c) else OFF_BOARD
+
+
+## LT-66 §4: a screen point -> cell units (the inverse of cell_to_screen for points).
+func screen_to_cells(screen_pos: Vector2) -> Vector2:
+	return (screen_pos - ORIGIN) / CELL
 
 
 ## Cell units (a point or an offset; the caller applies GridTopology.centre) -> world.

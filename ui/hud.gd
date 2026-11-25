@@ -200,7 +200,7 @@ func _ready() -> void:
 		sandbox_label.add_theme_color_override("font_color", Color(1.0, 0.75, 0.2))
 		add_child(sandbox_label)  # first, so the minimum size sees the HUD theme
 		sandbox_label.size = sandbox_label.get_minimum_size()
-		sandbox_label.position = Vector2(board_rect().end.x - sandbox_label.size.x - 6,
+		sandbox_label.position = Vector2(overlay_left() - sandbox_label.size.x - 6,
 			board_rect().position.y + 2)
 	# LT-78 Q3: the wall-clock readouts on a Timer instead of every frame.
 	readout_timer = Timer.new()
@@ -343,7 +343,7 @@ func _refresh_sanity() -> void:
 func _place_hostile() -> void:
 	if hostile_label == null or not hostile_label.visible:
 		return
-	var board_right := board_rect().end.x
+	var board_right := overlay_left()
 	var w := hostile_label.get_combined_minimum_size().x
 	var x := minf(sanity_bar.get_global_rect().position.x - get_global_rect().position.x,
 		board_right - w - 4.0)
@@ -387,7 +387,7 @@ func _refresh_flare() -> void:
 		flare_button.text = "Flare (%d oil)" % sim.flare_cost_oil()
 	_flare_shown = _flare_key()
 	_flare_active = s.flare_ticks_left > 0 or s.flare_cooldown_ticks > 0
-	var right := board_rect().end.x - MARGIN
+	var right := overlay_left() - MARGIN
 	var y := board_rect().end.y + 4.0
 	var w := flare_button.get_combined_minimum_size().x
 	var lw := oil_label.get_combined_minimum_size().x
@@ -563,6 +563,12 @@ static func relics_tooltip(sim: Simulation, snap: SimSnapshot) -> String:
 		lines.append("%s: %d × %s" % [k.name, snap.relics.get(k.id, 0),
 			TowerText.money(sim.relic_price(k.id))])
 	return "\n".join(lines)
+
+
+## LT-66 §2: the side overlay's left edge; right-anchored HUD labels end left of it, so
+## none of them ever sits under the overlay.
+static func overlay_left() -> float:
+	return SidePanel.panel_rect().position.x
 
 
 ## The board in this layer's base pixels (BoardView.world_rect).

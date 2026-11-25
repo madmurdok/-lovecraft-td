@@ -2,7 +2,8 @@ class_name OverlayLayer
 extends BoardLayer
 ## LT-84 (LT-65 §3.4): the selection overlay, drawn last of the board layers: the selected
 ## cell's outline, the hovered build-list tower's ghost letter (LT-61 §7), the range ring
-## and the dead-zone ring (LT-48). Reads `board.selection` (SelectionModel, owned by the
+## and the dead-zone ring (LT-48); LT-66 §4: a ring round the monster card's enemy.
+## Reads `board.selection` (SelectionModel, owned by the
 ## Game; the panels write it) and the sim; writes nothing.
 
 const COLOR_SELECT := Color(1, 1, 1, 0.8)
@@ -14,6 +15,9 @@ func _draw() -> void:
 	if not has_sim():
 		return
 	var sel := board.selection
+	if sel.enemy_id != 0 and board.last_pos.has(sel.enemy_id):  # LT-66 §4: the shown monster
+		draw_arc(view.cell_to_world(board.last_pos[sel.enemy_id]),
+			view.cells_to_px(Board.PICK_RADIUS), 0, TAU, 32, COLOR_SELECT, 2.0)
 	if game.snapshot.map.grid.contains(sel.cell):
 		view.outline_cell(self, sel.cell, COLOR_SELECT, 2.0)
 		if not sel.glyph.is_empty():  # LT-61 §7: placed like EntityLayer._draw_tower's letter
