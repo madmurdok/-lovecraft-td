@@ -168,8 +168,9 @@ TowerDef.Level` (= `t.stats()`), `post`, `crew`, `crew_kind`, `lit`, `shadowed`,
 
 Entities: `enemies: Array[EnemyRecord]`, `towers: Array[TowerRecord]` and `allies:
 Array[AllyRecord]`, each live only and in id order. Lookups: `enemy(id)`, `tower(id)` and
-`tower_at(cell)`, which return null when absent. They are backed by dictionaries built once per
-snapshot. `tower_at(cell)` replaces `state.tower_at.has / [cell]`.
+`tower_at(cell)`, which return null when absent. `tower` and `tower_at` are backed by
+dictionaries built once per snapshot; `enemy(id)` bisects the id-ordered `enemies` array
+(a dictionary only if the array is ever out of order). `tower_at(cell)` replaces `state.tower_at.has / [cell]`.
 
 Scalars, copied from `SimState` (owner Q1 = B; this is the full list of what §2.2 reads):
 
@@ -195,6 +196,12 @@ query), the beam fields (it reads the `beam_directions(alpha)` query), `command_
 shape test (§5.1).
 
 ## 4. Build and cost
+
+`snapshot(prev: SimSnapshot = null)`: `prev`, an earlier snapshot of the same sim (Game passes its
+current one), only saves work. A `TowerRecord` of `prev` whose fields all still equal its tower
+is shared into the new snapshot instead of rebuilt (`TowerRecord.copies`; records are read-only,
+so sharing is unobservable and held snapshots never change). The result equals `snapshot()`.
+`SimRoute.position_at` bisects the cumulative lengths instead of walking them.
 
 Options considered:
 
