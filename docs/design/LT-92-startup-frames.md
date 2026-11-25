@@ -354,6 +354,58 @@ the game starts (log it from the probe).
 Controls 1-5 are in one test binary (`lighting_test.gd`) and 7-8 in the boot/scene tests, so
 group them by file in the tests slice's single control script.
 
+## Before/after (S9)
+
+Measured with the S5 probe (appendix) plus a `ctl=` field in each `F` line (`L<n>` = `Loading`
+node present, `W<n>` = `Lighting.warm_light` present). Arms: BEFORE = `0c6f17b` (release-0.13.0, throwaway
+detached worktree), AFTER = `bf67f2a`. Command per run: `--probe-secs=9 --wave --seed=4242 --frame-stats --mute`,
+5 runs per arm, interleaved before/after. Columns are ms of the frame interval (`F` line `ms`):
+A = first game frame (BEFORE F1, AFTER F2), loading = AFTER F1, B = the frame right after the wave call,
+C = the worst frame at beam rotation -2.74..-2.64, post = worst frame after B, iter5 = F5 (the first frame
+after the warm light is freed in AFTER; a plain frame in BEFORE). Every run reached the C rotation.
+
+| arm | run | load at start (waited s) | A | loading | B | C window | post-wave max | iter5 | real / user / sys s |
+|---|---|---|---|---|---|---|---|---|---|
+| before | 1 | 5.3 (20) | 432 | - | 707 | 178 | 178 | 36 | 11.78 / 4.18 / 1.36 |
+| after | 1 | 8.6 (310) | 3116 | 163 | 50 | 138 | 288 | 223 | 15.15 / 7.98 / 2.64 |
+| before | 2 | 14.4 (310) | 424 | - | 677 | 191 | 191 | 24 | 12.10 / 6.33 / 2.82 |
+| after | 2 | 5.9 (90) | 1029 | 75 | 23 | 27 | 33 | 95 | 11.36 / 5.48 / 2.70 |
+| before | 3 | 10.1 (310) | 563 | - | 1130 | 301 | 301 | 50 | 13.92 / 8.11 / 3.04 |
+| after | 3 | 9.9 (310) | 1420 | 83 | 22 | 30 | 90 | 174 | 12.34 / 6.31 / 2.80 |
+| before | 4 | 5.9 (170) | 346 | - | 526 | 181 | 181 | 20 | 11.56 / 5.79 / 2.87 |
+| after | 4 | 30.0 (310) | 2399 | 114 | 118 | 90 | 164 | 118 | 15.90 / 7.84 / 2.49 |
+| before | 5 | 52.9 (310) | 2176 | - | 2117 | 871 | 871 | 2117 | 26.81 / 9.77 / 2.39 |
+| after | 5 | 6.0 (310) | 4022 | 75 | 288 | 81 | 181 | 288 | 13.59 / 6.79 / 2.34 |
+
+Medians (min-max):
+
+| arm | A | loading | B | C window | post-wave max | iter5 |
+|---|---|---|---|---|---|---|
+| before | 432 (346-2176) | - | 707 (526-2117) | 191 (178-871) | 191 (178-871) | 36 (20-2117) |
+| after | 2399 (1029-4022) | 83 (75-163) | 50 (22-288) | 81 (27-138) | 164 (33-288) | 174 (95-288) |
+
+**Controls.** The loading frame exists only in AFTER (`L1` at F1, 75-163 ms, 5/5; BEFORE `L0` throughout).
+`W1` (warm light) shows at F2-F4 in AFTER 5/5 and never in BEFORE; it is gone at F5 (5/5).
+
+**Verdict.**
+- B (wave-call frame): BEFORE 526-2117 ms (median 707), AFTER 22-288 ms (median 50). B is gone in 3 of 5 AFTER runs
+  (22-50 ms; run 1's call came at F3, still under the warm light). In runs 4 and 5 (118, 288 ms) the machine was slow enough that the wave was called before the warm
+  light was freed, so the frame after the call is iteration 5, the unlit stall below, not frame B.
+- C (beam at the warm-up corner): BEFORE a single spike in 5/5 (178-871 ms, median 191). AFTER no spike at -2.69 in 5/5;
+  the window max is 27-138 ms, and where it is over 100 ms (run 1) the frames around it are all 60-140 ms under load
+  (load 8.6-30 at start), not a one-frame spike.
+- A: moves, as designed. The heavy first game frame is 1029-4022 ms (median 2399) in AFTER against 346-2176 (median 432)
+  in BEFORE, after a 44-163 ms loading frame. It grew by about B+C, but these runs were mostly at load 6-30, so the sizes are noisy;
+  one run (AFTER 2) had load 5.9: A 1029 ms.
+- New finding: iteration 5 (the first frame after the light is freed) is a 95-288 ms frame in AFTER 5/5 (median 174), 20-50 ms in
+  BEFORE in 4/5 (the fifth, 2117 ms, is B at load 53). This is the unlit-variant stall that the Lighting comment says is
+  compiled in frame A; it is not, at least not for all kinds. It is less than B (707) but over the 150 ms pass bar in 3/5.
+  Not run: a `--warmlight` style fix, and the first-shot window (no `--bot`).
+- Machine state: the load gate (< 6, 1-min) was met in only 3 of 10 runs (before 1, after 2, before 4); the others waited the 310 s cap and ran at load 8.6-53
+  (another agent's headless runs). `real` 11.4-26.8 s with user+sys 0.5-0.8 of real in all but the load-53 run. Compare with care: BEFORE 5 is
+  a 2.1 s B at load 53. The presence of B/C in BEFORE and their absence in AFTER hold in every run, in both
+  speed classes. Scratchpad: `lt92s9/run.sh`, `summarize.py`, `runs/`.
+
 ## Appendix: probe92c.gd (throwaway, removed)
 
 Copy it into the worktree root. Run:
