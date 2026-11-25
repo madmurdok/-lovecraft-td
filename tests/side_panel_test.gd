@@ -185,6 +185,7 @@ func test_cancel_water_sell_and_a_vanished_tower_return_to_idle() -> void:
 	_assert_view(true, false, false)
 	var t2 := await _open_tower(RIFLE)
 	assert_int(_game.sim.sell_tower(t2.id)).is_equal(SimCommand.CommandResult.OK)
+	GameFixture.sync(_game)  # LT-85: poked on the sim directly
 	_game.advance(0.0)
 	_game.tower_panel.refresh()
 	_assert_view(true, false, false)

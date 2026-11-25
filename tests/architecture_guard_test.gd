@@ -976,6 +976,12 @@ const G12_FIELDS := "\\b(power_mult|interval_mult|miss_add|ignore_miss)" + G12_W
 ## `disabled` is also Button.disabled: under res://sim every write counts; elsewhere only
 ## a write through a tower (a SimTower alias of the file, or a tower lookup chain).
 const G12_DISABLED := "\\bdisabled" + G12_WRITE_OP
+## LT-85: TowerRecord copies `disabled` into its own field (a read-only snapshot for
+## presentation, never a SimTower). Only that one statement is exempt in that file: any other
+## `disabled` write there (`t.disabled = false` in from_tower) still fires, and the four
+## channel names stay banned there too.
+const G12_DISABLED_COPY := "res://sim/view/tower_record.gd"
+const G12_DISABLED_COPY_STMT := "^\\s*r\\.disabled\\s*=\\s*t\\.disabled\\s*$"
 const G12_TOWER_CHAIN := "(?:\\b(?:tower_by_id|tower_at_cell)\\([^()]*\\)|\\btowers\\[[^\\]]*\\])" \
 	+ "\\.disabled" + G12_WRITE_OP
 ## Names that hold a SimTower: typed `: SimTower`, `var x := ...tower_by_id(..)` /
@@ -993,7 +999,13 @@ const G12_WRITERS := ["sim/core/systems/light_system.gd", "sim/core/traits/trait
 func _g12_hits(scan: SimBoundaryTest, file: String, text: String) -> Array[String]:
 	var hits := _find_joined(scan, file, text, G12_FIELDS)
 	if file.begins_with("res://sim/"):
-		hits.append_array(_find_joined(scan, file, text, G12_DISABLED))
+		if file != G12_DISABLED_COPY:
+			hits.append_array(_find_joined(scan, file, text, G12_DISABLED))
+		else:
+			var copy_re := RegEx.create_from_string(G12_DISABLED_COPY_STMT)
+			var rest := _statements(scan, text).filter(
+				func(st: Array) -> bool: return copy_re.search(st[1]) == null)
+			hits.append_array(scan._find(file, rest, G12_DISABLED))
 		return hits
 	hits.append_array(_find_joined(scan, file, text, G12_TOWER_CHAIN))
 	var alias_re := RegEx.create_from_string(G12_ALIAS)
@@ -1084,6 +1096,69 @@ func test_g12_catches_planted_writes_and_passes_reads_and_buttons() -> void:
 		"G12 fired on a read: " + ", ".join(false_hits)).is_empty()
 
 
+## LT-85 S12: the record's `r.disabled = t.disabled` copy is the only exemption: any other
+## `disabled` write in that file still fires, the copy fires in every other sim file, and the
+## four channel names stay banned in the record's file.
+func test_g12_exempts_only_the_record_copy_line_in_only_the_record_file() -> void:
+	var scan := SimBoundaryTest.new()
+	var rec := G12_DISABLED_COPY
+	var fires := {
+		"r.disabled = true in the record file": [rec, "r.disabled = true"],
+		"t.disabled = false in the record file": [rec, "t.disabled = false"],
+		"copy plus another write": [rec, "r.disabled = t.disabled\nr.disabled = false"],
+		"copy with a mutation": [rec, "r.disabled = t.disabled or x"],
+		"channel in the record file": [rec, "r.power_mult = t.power_mult"],
+		"the copy in another sim file": ["res://sim/core/systems/probe.gd", "r.disabled = t.disabled"],
+		"the copy in the view dir other file": ["res://sim/view/enemy_record.gd",
+			"r.disabled = t.disabled"],
+	}
+	var missed: Array[String] = []
+	for k: String in fires:
+		if _g12_hits(scan, fires[k][0], fires[k][1]).is_empty():
+			missed.append(k)
+	var quiet := _g12_hits(scan, rec, "r.disabled = t.disabled")
+	var real_file := _g12_hits(scan, rec, FileAccess.get_file_as_string(rec))
+	scan.free()
+	assert_array(missed).override_failure_message("G12 did not fire on: " + ", ".join(missed)) \
+		.is_empty()
+	assert_array(quiet).is_empty()
+	assert_array(real_file).is_empty()
+
+
+## LT-85 S12 (review N1): G16 also fires on the same names reached by name, and only on them.
+func test_g16_catches_by_name_access_and_passes_near_misses() -> void:
+	var scan := SimBoundaryTest.new()
+	var planted := {
+		"get": "x = sim.get(\"state\")",
+		"get StringName": "x = sim.get(&\"state\")",
+		"index": "x = sim[\"state\"]",
+		"call": "x = sim.call(\"enemy_by_id\", 3)",
+		"Callable": "var c := Callable(sim, \"tower_by_id\")",
+		"get_indexed": "x = sim.get_indexed(\"state:gold\")",
+		"member": "x = game.sanity_fx.state",
+	}
+	var missed: Array[String] = []
+	for k: String in planted:
+		if _g16_hits(scan, "ui/probe.gd", planted[k]).is_empty():
+			missed.append(k)
+	var allowed := {
+		"plural key": "x = d.get(\"states\")",
+		"other key": "x = d[\"status\"]",
+		"allowed name": "x = sim.get(\"phase\")",
+		"comment": "# sim.get(\"state\")",
+		"shown_state": "x = sanity_fx.shown_state",
+	}
+	var false_hits: Array[String] = []
+	for k: String in allowed:
+		if not _g16_hits(scan, "ui/probe.gd", allowed[k]).is_empty():
+			false_hits.append(k)
+	scan.free()
+	assert_array(missed).override_failure_message("G16 did not fire on: " + ", ".join(missed)) \
+		.is_empty()
+	assert_array(false_hits).override_failure_message(
+		"G16 fired on an allowed form: " + ", ".join(false_hits)).is_empty()
+
+
 # --- G14 (LT-106 T8): presentation reads enemy statuses only through SimEnemy.markers -------
 
 const G14_DIRS := ["res://scenes", "res://ui"]
@@ -1109,3 +1184,83 @@ func test_g14_no_enemy_status_read_in_presentation() -> void:
 	assert_array(near).is_empty()
 	assert_array(hits).override_failure_message(
 		"enemy status read in presentation (use SimEnemy.markers): " + ", ".join(hits)).is_empty()
+
+
+# --- G16 (LT-85 §5.3): presentation reads the snapshot, never the sim's state or entities ---
+
+## Under scenes/ and ui/ (code only: comments and strings blanked) nothing reaches SimState
+## or a live sim entity: no `.state` member access (so no alias of `sim.state` either), no
+## SimState type except its enums, no entity class, and none of the entity-returning or
+## SimTower-taking queries. Presentation reads `game.snapshot` (records) and the `*_of(id)`
+## queries. tools/ is out of scope: bots are players with full rules access.
+const G16_DIRS := ["res://scenes", "res://ui"]
+const G16_DENY := "\\.state\\b" \
+	+ "|\\bSimState\\b(?!\\.(Phase|Outcome|SanityState)\\b)" \
+	+ "|\\b(SimEnemy|SimAlly|SimTower|SimBlast|RelicToken)\\b" \
+	+ "|\\b(enemy_by_id|enemy_position|ally_by_id|ally_position|allies_of|tower_by_id" \
+	+ "|tower_at_cell|enemies_in_range|enemies_near|debug_is_fake)\\s*\\(" \
+	+ "|\\b(upgrade_branches|upgrade_target|has_targeting|sell_refund)\\s*\\("
+## The same names reached by name (review N1): `get("state")`, `get(&"state")`,
+## `x["state"]`, `call("enemy_by_id", id)`, `Callable(sim, "tower_by_id")`,
+## `get_indexed("state:gold")`. Scanned with strings kept (comments blanked).
+const G16_NAMES := "(?:state|enemy_by_id|enemy_position|ally_by_id|ally_position|allies_of" \
+	+ "|tower_by_id|tower_at_cell|enemies_in_range|enemies_near|debug_is_fake|upgrade_branches" \
+	+ "|upgrade_target|has_targeting|sell_refund)"
+const G16_DENY_BY_NAME := "\\b(?:get|get_indexed|call|callv|call_deferred|Callable)\\s*\\(" \
+	+ "[^()]*?&?[\"']" + G16_NAMES + "[\"':]" \
+	+ "|\\[\\s*&?[\"']" + G16_NAMES + "[\"']\\s*\\]"
+
+
+func _g16_hits(scan: SimBoundaryTest, file: String, text: String) -> Array[String]:
+	var hits := scan._find(file, scan._code_lines(text), G16_DENY)
+	hits.append_array(scan._find(file, scan._code_lines(text, true), G16_DENY_BY_NAME))
+	return hits
+
+
+func test_g16_presentation_reads_only_the_snapshot() -> void:
+	var scan := SimBoundaryTest.new()
+	var hits: Array[String] = []
+	var scanned := 0
+	for dir: String in G16_DIRS:
+		for f in scan._gd_files(dir):
+			scanned += 1
+			hits.append_array(_g16_hits(scan, f, FileAccess.get_file_as_string(f)))
+	scan.free()
+	assert_int(scanned).is_greater(20)
+	assert_array(hits).override_failure_message(
+		"sim state or a live entity read in presentation (use game.snapshot): "
+		+ ", ".join(hits)).is_empty()
+
+
+## The guard fires on one planted probe per rule and not on the allowed near misses.
+func test_g16_catches_planted_reads_and_passes_the_snapshot_forms() -> void:
+	var scan := SimBoundaryTest.new()
+	var planted := {
+		"state member": "x = game.sim.state.gold",
+		"state alias": "var s := game.sim.state",
+		"SimState type": "func f(s: SimState) -> void:",
+		"entity class": "for e: SimEnemy in x:",
+		"entity query": "var e = sim.enemy_by_id(3)",
+		"SimTower query": "var g = sim.sell_refund(t)",
+	}
+	var missed: Array[String] = []
+	for k: String in planted:
+		if _g16_hits(scan, "ui/probe.gd", planted[k]).is_empty():
+			missed.append(k)
+	var allowed := {
+		"enum": "if p == SimState.Phase.BUILD:",
+		"sanity_state": "x = sanity_fx.sanity_state",
+		"id query": "var g = sim.sell_refund_of(id)",
+		"debug id query": "if sim.debug_is_fake_id(id):",
+		"comment": "# game.sim.state.gold",
+		"string": "x = \"SimTower\"",
+	}
+	var false_hits: Array[String] = []
+	for k: String in allowed:
+		if not _g16_hits(scan, "ui/probe.gd", allowed[k]).is_empty():
+			false_hits.append(k)
+	scan.free()
+	assert_array(missed).override_failure_message(
+		"G16 did not fire on: " + ", ".join(missed)).is_empty()
+	assert_array(false_hits).override_failure_message(
+		"G16 fired on an allowed form: " + ", ".join(false_hits)).is_empty()

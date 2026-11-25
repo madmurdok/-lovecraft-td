@@ -591,6 +591,7 @@ func test_the_list_follows_the_phase_through_refresh() -> void:
 	assert_int(pinned.get_child_count()).is_equal(heads_n + 1)  # the scrollbar spacer
 	# Dawn (the picker reads the phase).
 	_game.sim.state.phase = SimState.Phase.BUILD
+	GameFixture.sync(_game)  # LT-85: poked on the sim directly
 	pk.refresh()
 	await get_tree().process_frame
 	assert_bool(pk.post_box.visible).is_false()

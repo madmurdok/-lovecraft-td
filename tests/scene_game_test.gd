@@ -257,6 +257,7 @@ func test_hud_labels_track_sim_state() -> void:
 	await _build_via_ui(_buildable_cell())
 	s.lighthouse_hp -= 3
 	_game.sim.call_wave()
+	GameFixture.sync(_game)  # LT-85: poked on the sim directly
 	_game.advance(0.0)
 	assert_str(hud.gold_label.text).is_equal("Money: $%d" % s.gold)
 	# LT-78 (review F1): the phase follows WAVE_STARTED through advance alone, no refresh().
@@ -272,11 +273,13 @@ func test_day_timer_shows_floored_seconds_matching_the_luck() -> void:
 	var rate := _config.economy.early_night_luck_per_second
 	# One tick short of 25 whole seconds must read 24, never 25.
 	s.build_ticks_left = SimTime.ticks(25.0) - 1
+	GameFixture.sync(_game)  # LT-85: poked on the sim directly
 	_game.hud.on_stepped()  # LT-78 §1.1: a stepped frame re-reads the day timer
 	assert_str(_game.hud.phase_label.text).is_equal("Day 1 — night falls in 24 s")
 	assert_float(_game.sim.early_night_luck()).is_equal_approx(1.0 + rate * 24, 1e-9)
 	assert_str(_game.hud.call_wave_button.text).contains(Hud.luck_text(1.0 + rate * 24))
 	s.build_ticks_left = SimTime.ticks(25.0)
+	GameFixture.sync(_game)
 	_game.hud.on_stepped()
 	assert_str(_game.hud.phase_label.text).contains("in 25 s")
 	assert_float(_game.sim.early_night_luck()).is_equal_approx(1.0 + rate * 25, 1e-9)
@@ -304,6 +307,7 @@ func test_end_screen_appears_on_outcome_and_closes_panels() -> void:
 	assert_bool(_game.end_screen.visible).is_false()
 	_game.sim.state.lighthouse_hp = 0
 	_game.sim.step()
+	GameFixture.sync(_game)
 	_game.advance(0.0)
 	assert_bool(_game.end_screen.visible).is_true()
 	assert_str(_game.end_screen.result_label.text).contains("fallen")
@@ -317,8 +321,11 @@ func test_end_screen_appears_on_outcome_and_closes_panels() -> void:
 func test_restart_button_creates_a_fresh_game() -> void:
 	_main = load("res://scenes/main.tscn").instantiate()
 	_vp.add_child(_main)
-	await get_tree().process_frame
+	# LT-92: the first run starts after the "Loading..." frame, two frames after _ready.
+	for i in 3:
+		await get_tree().process_frame
 	var old: Game = _main.game
+	assert_object(old).is_not_null()
 	old.set_process(false)
 	await _click_cell_of(old, Vector2i(2, 3))
 	old.sim.state.gold = 1

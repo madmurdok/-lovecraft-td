@@ -64,6 +64,7 @@ func _set_lit(t: SimTower, lit: bool) -> void:
 	t.reset_modifiers()
 	var fx := TowerRules.light_effect(t.def, _game.sim.config, lit, t.shadowed)
 	t.add_modifiers(fx["power_mult"], fx["interval_mult"], fx["miss_add"], fx["ignore_miss"])
+	GameFixture.sync(_game)  # LT-85: poked on the sim directly
 
 
 func _table() -> StatsTable:

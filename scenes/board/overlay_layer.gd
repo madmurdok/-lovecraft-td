@@ -14,14 +14,14 @@ func _draw() -> void:
 	if not has_sim():
 		return
 	var sel := board.selection
-	if game.sim.state.map.grid.contains(sel.cell):
+	if game.snapshot.map.grid.contains(sel.cell):
 		view.outline_cell(self, sel.cell, COLOR_SELECT, 2.0)
 		if not sel.glyph.is_empty():  # LT-61 §7: placed like EntityLayer._draw_tower's letter
 			draw_string(ThemeDB.fallback_font,
 				view.cell_centre(sel.cell) + EntityLayer.GLYPH_OFFSET, sel.glyph,
 				HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(COLOR_SELECT, GHOST_GLYPH_ALPHA))
 		if sel.range_cells > 0.0:
-			var sc := view.cell_to_world(game.sim.state.map.grid.centre(sel.cell))
+			var sc := view.cell_to_world(game.snapshot.map.grid.centre(sel.cell))
 			draw_arc(sc, view.cells_to_px(sel.range_cells), 0, TAU, 48, COLOR_SELECT, 1.0)
 			var dz := selected_dead_zone()
 			if dz > 0.0:  # LT-48: the dead zone, a dashed ring over a faint fill
@@ -35,8 +35,8 @@ func selected_dead_zone() -> float:
 	var sel := board.selection
 	if sel.range_cells <= 0.0 or not has_sim():
 		return 0.0
-	var t := game.sim.tower_at_cell(sel.cell)  # LT-76
-	return TowerRules.dead_zone(t.stats()) if t != null else 0.0
+	var t := game.snapshot.tower_at(sel.cell)  # LT-76, LT-85
+	return TowerRules.dead_zone(t.stats) if t != null else 0.0
 
 
 func _draw_dashed_circle(c: Vector2, r: float, color: Color) -> void:
@@ -50,13 +50,13 @@ func _draw_dashed_circle(c: Vector2, r: float, color: Color) -> void:
 ## caster is selected (cast, range_cells) and `t` is another tower whose centre is in that
 ## radius (LightRules.covers, the sim's own test); "" otherwise, and always at night, where
 ## the real tint shows. EntityLayer tints the tower plate with it.
-func preview_cast(t: SimTower) -> String:
+func preview_cast(t: TowerRecord) -> String:
 	var sel := board.selection
 	if sel.cast.is_empty() or sel.range_cells <= 0.0 or not has_sim():
 		return ""
-	var s := game.sim.state
+	var s := game.snapshot
 	if s.phase != SimState.Phase.BUILD or not s.map.grid.contains(sel.cell) \
 			or t.cell == sel.cell:
 		return ""
-	var covered := LightRules.covers(s.map.grid, sel.cell, sel.range_cells, t.centre())
+	var covered := LightRules.covers(s.map.grid, sel.cell, sel.range_cells, t.centre)
 	return sel.cast if covered else ""

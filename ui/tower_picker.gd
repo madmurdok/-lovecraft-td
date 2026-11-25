@@ -182,7 +182,7 @@ func _ready() -> void:
 func _layout_rows() -> void:
 	var posts := post_box.get_child_count() if post_box != null and post_box.visible else 0
 	var cap := maxi(LIST_MAX_ROWS - posts, LIST_MIN_ROWS)
-	var marks := game.sim.state.phase != SimState.Phase.WAVE  # as refresh() shows them
+	var marks := game.snapshot.phase != SimState.Phase.WAVE  # as refresh() shows them
 	if cap == list_rows and marks == _marks_shown:
 		return
 	list_rows = cap
@@ -396,7 +396,7 @@ func refresh() -> void:
 			var from_reserve := _from_reserve(id)
 			var hired := game.sim.crew_need(id) - from_reserve
 			crew_marks[id].text = crew_mark_text(from_reserve, hired)
-			crew_marks[id].visible = game.sim.state.phase != SimState.Phase.WAVE
+			crew_marks[id].visible = game.snapshot.phase != SimState.Phase.WAVE
 		var trait_tip := _trait_tip(base)
 		if not trait_tip.is_empty():
 			tip += "\n" + trait_tip
@@ -407,7 +407,7 @@ func refresh() -> void:
 	# itself, or by day that nothing is affordable.
 	if shared == SimCommand.CommandResult.OK and not any_ok and not buttons.is_empty():
 		shared = SimCommand.CommandResult.NOT_BUILD_PHASE \
-			if game.sim.state.phase == SimState.Phase.WAVE \
+			if game.snapshot.phase == SimState.Phase.WAVE \
 			else SimCommand.CommandResult.NOT_ENOUGH_GOLD
 	# LT-32: once some post can be deployed the title invites it; otherwise it keeps the
 	# towers' refusal ("Only by day") and each dimmed post row says its own in the tooltip.
@@ -466,7 +466,7 @@ func _from_reserve(def_id: String) -> int:
 ## Simulation.can_deploy; returns OK when some post can be deployed, else the first row's
 ## refusal, or -1 when the section is hidden (by day, crew off).
 func _refresh_posts() -> int:
-	var night := post_box != null and game.sim.state.phase == SimState.Phase.WAVE
+	var night := post_box != null and game.snapshot.phase == SimState.Phase.WAVE
 	if post_box != null:
 		post_box.visible = night
 	if not night:
