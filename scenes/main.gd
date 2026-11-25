@@ -10,6 +10,9 @@ extends Node2D
 ## 1200x675 in project.godot). At boot a desktop window is sized to fill WINDOW_FILL of
 ## the screen's usable area: window sizes are in physical pixels, so a fixed size is
 ## half as large on a 2x (Retina) screen.
+## LT-92: the first run starts one frame after a plain "Loading..." frame is presented, so the
+## heavy first game frame (GL shader compiles, 0.3-1 s) reads as loading. A refusal never
+## shows it, and a restart (start_game) skips it: the shaders are compiled by then.
 
 const CONFIG_DIR_ARG := "--config-dir="
 const SEED_ARG := "--seed="
@@ -17,8 +20,11 @@ const WINDOW_FILL := 0.85  ## share of the usable screen area the boot window ma
 ## LT-28: engine flags that place or size the window; either one turns the boot fit off.
 const WINDOW_FLAGS: PackedStringArray = ["--resolution", "--position"]
 
+const LOADING_TEXT := "Loading..."
+
 var config: GameConfig
 var game: Game
+var loading: CanvasLayer  ## LT-92: the boot "Loading..." layer, null once the game started
 
 
 func _ready() -> void:
@@ -45,7 +51,40 @@ func _ready() -> void:
 	config = result.config
 	print("Config loaded from %s: %d towers, %d enemies, %d waves"
 		% [dir, config.towers.size(), config.enemies.size(), config.waves.waves.size()])
+	_show_loading()
+	# The first process_frame fires before frame 1 draws, the second after it: the label is
+	# drawn and presented once. Not frame_post_draw: headless runs must not wait on a draw.
+	var tree := get_tree()
+	await tree.process_frame
+	await tree.process_frame
+	if not is_inside_tree():
+		return
 	start_game()
+	_hide_loading()
+
+
+## LT-92: a CanvasLayer above the game's UI with a centred plain Label (theme font, no
+## material), so its own first frame costs only tens of ms.
+func _show_loading() -> void:
+	loading = CanvasLayer.new()
+	loading.name = "Loading"
+	loading.layer = Game.UI_LAYER + 1
+	var label := Label.new()
+	label.text = LOADING_TEXT
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	loading.add_child(label)
+	add_child(loading)
+
+
+## Removes the loading layer at once (the frame after it draws the game in its place).
+func _hide_loading() -> void:
+	if loading == null:
+		return
+	remove_child(loading)
+	loading.queue_free()
+	loading = null
 
 
 ## Replaces the current run (if any) with a new one on the same config.

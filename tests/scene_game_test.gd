@@ -317,8 +317,11 @@ func test_end_screen_appears_on_outcome_and_closes_panels() -> void:
 func test_restart_button_creates_a_fresh_game() -> void:
 	_main = load("res://scenes/main.tscn").instantiate()
 	_vp.add_child(_main)
-	await get_tree().process_frame
+	# LT-92: the first run starts after the "Loading..." frame, two frames after _ready.
+	for i in 3:
+		await get_tree().process_frame
 	var old: Game = _main.game
+	assert_object(old).is_not_null()
 	old.set_process(false)
 	await _click_cell_of(old, Vector2i(2, 3))
 	old.sim.state.gold = 1

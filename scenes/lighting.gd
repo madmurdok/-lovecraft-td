@@ -44,6 +44,14 @@ const FLARE_TEX_SIZE := 256
 ## The flare texture's near-flat bright core ends at this fraction of its radius
 ## (_flare_texture); flare_cover_cells() puts every board corner inside it.
 const FLARE_CORE := 0.7
+## LT-92: a tiny light over FxLayer.WARMUP_RECT in the first WARM_FRAMES frames, so the
+## warm-up draws lit once while the first game frame is loading anyway. It compiles the lit
+## shader variants that the first night otherwise compiled on the wave-call frame (frame B)
+## and when the beam's rect first reached the warm-up corner (frame C). It must stay small:
+## a board-covering one leaves the unlit variants to the first frame after it (a new stall).
+const WARM_FRAMES := 3
+const WARM_ENERGY := 0.0  ## invisible; a light at 0 still selects the lit variants (LT-92 S6, 2/2 runs)
+const WARM_COVER := 2.5  ## the light's texture spans this many times the rect's longer side
 
 static var _beam_texs: Dictionary[int, ImageTexture] = {}  ## half angle (milli-rad) -> cone
 static var _glow_tex: GradientTexture2D
@@ -58,6 +66,8 @@ var flare_light: PointLight2D  ## LT-69: the whole-board flare, visible only whi
 var fog: Node2D
 var _tower_lights: Dictionary[int, PointLight2D] = {}  ## tower id -> light
 var night := 0.0  ## LT-27 §4: 0 = day, 1 = night; eases toward night_target()
+var warm_light: PointLight2D  ## LT-92: null once WARM_FRAMES frames have drawn it
+var _warm_left := WARM_FRAMES
 
 
 ## `world` is the node whose canvas gets darkened (the Game); the lights live here.
@@ -102,13 +112,39 @@ func _ready() -> void:
 	_sync_beams()
 	beam = beams[0]
 	_apply_night()
+	_add_warm_light()
 
 
 func _process(delta: float) -> void:
+	_tick_warm_light()
 	_sync_beams()
 	_sync_tower_lights()
 	ease_night(delta)
 	_sync_flare()
+
+
+## LT-92: the WarmLight over FxLayer.WARMUP_RECT (board-local; this node is the Board's child
+## at its origin). Visible from the first frame and independent of `night`: _apply_night
+## never touches it, so every day/night rule stays as it is.
+func _add_warm_light() -> void:
+	var r := FxLayer.WARMUP_RECT
+	warm_light = _light("WarmLight", _glow_texture(), BEAM_COLOR, WARM_ENERGY,
+		maxf(r.size.x, r.size.y) * WARM_COVER / _glow_texture().get_width())
+	warm_light.position = r.get_center()
+	_warm_left = WARM_FRAMES
+
+
+## Frees the WarmLight in the first _process after WARM_FRAMES frames: it is drawn in the
+## frames whose _process left it in place, WARM_FRAMES of them.
+func _tick_warm_light() -> void:
+	if warm_light == null:
+		return
+	if _warm_left > 0:
+		_warm_left -= 1
+		return
+	remove_child(warm_light)
+	warm_light.queue_free()
+	warm_light = null
 
 
 ## Moves `night` toward the phase's target by 1 - exp(-delta / NIGHT_EASE_SECONDS) of the
