@@ -4,7 +4,7 @@ extends GridTopology
 ## The map text's rows are odd-r offset rows: text (x, y) <-> axial (x - (y - (y & 1)) / 2, y).
 ## Neighbour centres are 1 apart (flat-to-flat width 1, apothem 0.5), so range, speed and
 ## reach keep their LT-77 meaning. Pure and immutable; no trig: sqrt(3) is computed once.
-## Not registered in GridFactory.MAKERS yet (owner, LT-108 Q6): only tests build it.
+## Registered in GridFactory.MAKERS as "hex" (LT-129).
 
 ## E, NE, NW, W, SW, SE: screen counter-clockwise from east.
 const NEIGHBOUR_OFFSETS: Array[Vector2i] = [Vector2i(1, 0), Vector2i(1, -1), Vector2i(0, -1),

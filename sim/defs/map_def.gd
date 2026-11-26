@@ -16,7 +16,7 @@ var height: int  ## >= 1
 var spawn: Vector2i  ## the S cell (path start, docks)
 var lighthouse: Vector2i  ## the L cell (path end)
 var path: Array[Vector2i] = []  ## S ... L inclusive, in walking order
-var grid: GridTopology  ## cell geometry (LT-77); built by GridFactory; "square" today
+var grid: GridTopology  ## cell geometry (LT-77); built by GridFactory; "square" or "hex"
 var _kinds: PackedByteArray = []  ## Kind per cell, indexed by grid.index
 
 

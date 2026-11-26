@@ -147,8 +147,8 @@ func test_grid_key_square_loads() -> void:
 	assert_str(r.config.map.grid.kind()).is_equal("square")
 
 
-func test_grid_key_hex_is_rejected_as_unknown() -> void:
-	assert_rejected(load_json_edit(MAP, func(root: Dictionary) -> void: root["grid"] = "hex"),
+func test_grid_key_unregistered_kind_is_rejected_as_unknown() -> void:
+	assert_rejected(load_json_edit(MAP, func(root: Dictionary) -> void: root["grid"] = "tri"),
 		MAP, "grid", "unknown grid")
 
 
@@ -157,14 +157,14 @@ func test_other_unknown_map_keys_are_still_rejected() -> void:
 		MAP, "gridd", "unknown field")
 
 
-# --- a hand-set hex topology (LT-108 §6 item 5b, F6) -------------------------------------
+# --- a hex topology (LT-108 §6 item 5b, F6) -------------------------------------
 
-## A MapDef on a hand-set HexGrid(4, 3) (hex is not in GridFactory yet), rows read in.
+## A MapDef on a factory-built HexGrid(4, 3), rows read in.
 func _hex_map(rows: Array, r: ConfigReader) -> MapDef:
 	var m := MapDef.new()
 	m.width = 4
 	m.height = 3
-	m.grid = HexGrid.new(4, 3)
+	m.grid = GridFactory.make("hex", 4, 3)
 	m._read_rows(r, rows)
 	return m
 
