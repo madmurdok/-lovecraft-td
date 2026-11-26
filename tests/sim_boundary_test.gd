@@ -51,7 +51,7 @@ const SIM_FORBIDDEN_WITH_STRINGS := [
 ## homes no code line may reach a generator (`.rng(` / `.stream(`, the inspection accessors)
 ## or name RandomNumberGenerator. Matched on code with comments and strings blanked.
 const SIM_RNG_HOMES := ["res://sim/core/sim_rng.gd", "res://sim/core/systems/sim_context.gd",
-	"res://sim/core/simulation.gd"]
+	"res://sim/core/simulation.gd", "res://sim/rules/map_rng.gd"]
 const SIM_DRAW_BYPASS := ["\\.(?:rng|stream)\\s*\\(", "\\bRandomNumberGenerator\\b"]
 ## A member or index step of an access chain: `.x` or `[...]`.
 const CHAIN := "(?:\\.\\w+|\\[[^\\]]*\\])"
