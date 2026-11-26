@@ -170,7 +170,7 @@ func _unhandled_input(event: InputEvent) -> void:
 func enemy_at_screen(p: Vector2) -> int:
 	if game == null or game.snapshot == null:
 		return 0
-	var at := view.screen_to_cells(p)
+	var at := view.unproject(p)
 	var best := 0
 	var best_d := PICK_RADIUS * PICK_RADIUS
 	for id: int in last_pos:
@@ -299,8 +299,7 @@ class MapLayer extends Node2D:
 		# spans the map grown by the play rect on every side: any clamped pan stays inside.
 		var play := BoardView.play_rect()
 		var bounds := m.grid.bounds()
-		var sea := Rect2(view.cell_to_world(bounds.position), view.cell_to_world(bounds.size)) \
-			.grow_individual(
+		var sea := view.project_rect(bounds).grow_individual(
 			play.size.x, play.size.y, play.size.x, play.size.y)
 		draw_rect(sea, Board.COLOR_WATER)
 		for c in m.grid.cells():

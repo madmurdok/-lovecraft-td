@@ -359,10 +359,9 @@ func _draw_effects() -> void:
 			"blast":
 				_draw_blast(fx)
 			"death":
-				draw_circle(view.cell_to_world(fx["from"]), view.cells_to_px(0.35), COLOR_DEATH)
+				draw_circle(view.project(fx["from"]), view.cells_to_px(0.35), COLOR_DEATH)
 			"dissolve":
-				draw_arc(view.cell_to_world(fx["from"]), view.cells_to_px(0.35), 0, TAU, 24,
-					COLOR_DISSOLVE, 2.0)
+				view.ring(self, fx["from"], 0.35, COLOR_DISSOLVE, 2.0, 24)
 			"leak":
 				view.outline_cell(self, fx["cell"], Board.COLOR_LEAK, 4.0)  # LT-108 F4
 			"lift":
@@ -372,15 +371,15 @@ func _draw_effects() -> void:
 ## A wavering bolt from the tower to an empty spot, ending in a small fading ring; from a
 ## wave tower the ring is a fizzle growing to `radius` (LT-25 §3).
 func _draw_astray(fx: Dictionary) -> void:
-	var b: Vector2 = view.cell_to_world(fx["to"])
+	var b: Vector2 = view.project(fx["to"])
 	var fade := clampf(fx["ttl"] / ASTRAY_SECONDS, 0.0, 1.0)
 	var c := Color(COLOR_ASTRAY, fade)
-	draw_polyline(_waver_points(view.cell_to_world(fx["from"]), b, fx["seed"]), c, 3.0)
+	draw_polyline(_waver_points(view.project(fx["from"]), b, fx["seed"]), c, 3.0)
 	_polyline_drawn = true
 	if fx.has("radius"):
-		draw_arc(b, view.cells_to_px(fx["radius"]) * (0.3 + 0.7 * (1.0 - fade)), 0, TAU, 20, c, 2.0)
+		view.ring(self, fx["to"], float(fx["radius"]) * (0.3 + 0.7 * (1.0 - fade)), c, 2.0, 20)
 	else:
-		draw_arc(b, view.cells_to_px(0.4 - 0.2 * fade), 0, TAU, 20, c, 3.0)
+		view.ring(self, fx["to"], 0.4 - 0.2 * fade, c, 3.0, 20)
 
 
 ## The LT-14 astray waver (5 px, 3 half-waves) from a to b (pixels), phase from `key`.
@@ -409,8 +408,8 @@ func _elapsed(fx: Dictionary) -> float:
 func _draw_tracer(fx: Dictionary) -> void:
 	var col: Color = fx.get("color", Board.TRACER_COLOR)
 	var el := _elapsed(fx)
-	var a: Vector2 = view.cell_to_world(fx["from"])
-	var b: Vector2 = view.cell_to_world(fx["end"])
+	var a: Vector2 = view.project(fx["from"])
+	var b: Vector2 = view.project(fx["end"])
 	var dir := (b - a).normalized()
 	if el < TRACER_MUZZLE:
 		draw_circle(a, view.cells_to_px(0.12), col)
@@ -426,8 +425,7 @@ func _draw_tracer(fx: Dictionary) -> void:
 		for p: Vector2 in fx["hit_pos"]:
 			for i in 4:
 				var v := Vector2.from_angle(PI * 0.25 + i * PI * 0.5)
-				draw_line(view.cell_to_world(p) + view.cell_to_world(v) * 0.05,
-					view.cell_to_world(p) + view.cell_to_world(v) * 0.2 * ray,
+				draw_line(view.project(p + v * 0.05), view.project(p + v * 0.2 * ray),
 					Color(col, fade), 2.0)
 
 
@@ -436,8 +434,8 @@ func _draw_tracer(fx: Dictionary) -> void:
 func _draw_harpoon(fx: Dictionary) -> void:
 	var col: Color = fx.get("color", Board.HARPOON_COLOR)
 	var el := _elapsed(fx)
-	var a: Vector2 = view.cell_to_world(fx["from"])
-	var b: Vector2 = view.cell_to_world(fx["to"])
+	var a: Vector2 = view.project(fx["from"])
+	var b: Vector2 = view.project(fx["to"])
 	var dir := (b - a).normalized()
 	var fade := clampf(1.0 - (el - (HARPOON_SECONDS - HARPOON_FADE)) / HARPOON_FADE, 0.0, 1.0)
 	if fade > 0.0:
@@ -455,14 +453,14 @@ func _draw_harpoon(fx: Dictionary) -> void:
 		var chain: Dictionary = fx.get("chain", {})
 		for id: int in chain:
 			var p: Vector2 = board.last_pos.get(id, chain[id])
-			draw_dashed_line(view.cell_to_world(p), a, cc, 2.0, CHAIN_DASH)
+			draw_dashed_line(view.project(p), a, cc, 2.0, CHAIN_DASH)
 	var pos: Array = fx["hit_pos"]
 	var passes: Array = fx.get("pass_t", [])
 	for i in mini(pos.size(), passes.size()):
 		var since: float = el - passes[i]
 		if since < 0.0 or since >= HARPOON_TICK_SECONDS:
 			continue
-		var p: Vector2 = view.cell_to_world(pos[i])
+		var p: Vector2 = view.project(pos[i])
 		var c := Color(col, 1.0 - since / HARPOON_TICK_SECONDS * 0.6)
 		var h := view.cells_to_px(0.125)
 		draw_line(p + Vector2(-h, -h), p + Vector2(h, h), c, 3.0)
@@ -475,8 +473,8 @@ func _draw_harpoon(fx: Dictionary) -> void:
 func _draw_wave(fx: Dictionary) -> void:
 	var col: Color = fx.get("color", Board.WAVE_RIM)
 	var el := _elapsed(fx)
-	var a: Vector2 = view.cell_to_world(fx["from"])
-	var b: Vector2 = view.cell_to_world(fx["to"])
+	var a: Vector2 = view.project(fx["from"])
+	var b: Vector2 = view.project(fx["to"])
 	var rim := COLOR_ASTRAY if fx["astray"] else col
 	if el < WAVE_TENDRIL + 0.05:
 		var pts := _waver_points(a, b, fx["seed"]) if fx["astray"] \
@@ -488,26 +486,25 @@ func _draw_wave(fx: Dictionary) -> void:
 	if be < 0.0:
 		return
 	var k := clampf(be / WAVE_BLAST, 0.0, 1.0)
-	var r := view.cells_to_px(lerpf(WAVE_START_CELLS, fx["radius"], k))
-	draw_circle(b, r, Color(WAVE_FILL, WAVE_FILL.a * (1.0 - k)))
-	draw_arc(b, r, 0, TAU, 48, Color(rim, 1.0 - k * k), 3.0)
+	var rc := lerpf(WAVE_START_CELLS, fx["radius"], k)
+	draw_circle(b, view.cells_to_px(rc), Color(WAVE_FILL, WAVE_FILL.a * (1.0 - k)))
+	view.ring(self, fx["to"], rc, Color(rim, 1.0 - k * k), 3.0, 48)
 	if be < WAVE_FLASH:
 		for p: Vector2 in fx["hit_pos"]:
-			draw_arc(view.cell_to_world(p), view.cells_to_px(0.3), 0, TAU, 20,
-				Color(rim, 1.0 - be / WAVE_FLASH), 2.0)
+			view.ring(self, p, 0.3, Color(rim, 1.0 - be / WAVE_FLASH), 2.0, 20)
 
 
 ## LT-50 Resonator: the held beam. Its end follows the target's drawn position while that
 ## enemy is live (else the shot's `to`); width and glow grow with `factor` (sanity_factor).
 func _draw_beam(fx: Dictionary) -> void:
 	var col: Color = fx.get("color", Board.BEAM_COLOR)
-	var a: Vector2 = view.cell_to_world(fx["from"])
+	var a: Vector2 = view.project(fx["from"])
 	var end: Vector2 = fx["to"]
 	var e := game.snapshot.enemy(fx["target"]) if game != null and game.snapshot != null \
 		else null
 	if e != null:  # the snapshot holds live enemies only
 		end = e.position(alpha)
-	var b := view.cell_to_world(end)
+	var b := view.project(end)
 	# From the tile's rim, not its centre, so the glyph stays readable under the beam.
 	a += (b - a).normalized() * minf(view.cells_to_px(BEAM_RIM_CELLS), a.distance_to(b))
 	var fade := clampf(fx["ttl"] / BEAM_FADE, 0.0, 1.0)
@@ -522,10 +519,10 @@ func _draw_beam(fx: Dictionary) -> void:
 	_polyline_drawn = true
 	var pulse := 0.5 + 0.5 * sin(ph * 0.5)
 	draw_circle(a, view.cells_to_px(0.06 + 0.03 * pulse), Color(BEAM_CORE, fade))
-	draw_arc(b, view.cells_to_px(0.18 + 0.08 * pulse), 0, TAU, 16, Color(col, fade), 2.0)
+	view.ring(self, end, 0.18 + 0.08 * pulse, Color(col, fade), 2.0, 16)
 	for i in 3:
 		var v := Vector2.from_angle(ph * 0.3 + i * TAU / 3.0)
-		draw_line(b + view.cell_to_world(v) * 0.1, b + view.cell_to_world(v) * (0.22 + 0.06 * pulse),
+		draw_line(view.project(end + v * 0.1), view.project(end + v * (0.22 + 0.06 * pulse)),
 			Color(BEAM_CORE, fade), 1.5)
 
 
@@ -538,9 +535,9 @@ func _draw_banish(fx: Dictionary) -> void:
 	var el := _elapsed(fx)
 	var dur: float = fx["dur"]
 	var k := clampf(el / dur, 0.0, 1.0)
-	var o: Vector2 = view.cell_to_world(fx["origin"])
-	var a: Vector2 = view.cell_to_world(fx["from"])
-	var b: Vector2 = view.cell_to_world(fx["to"])
+	var o: Vector2 = view.project(fx["origin"])
+	var a: Vector2 = view.project(fx["from"])
+	var b: Vector2 = view.project(fx["to"])
 	if el < BANISH_REACH:
 		var rf := 1.0 - el / BANISH_REACH
 		o += (a - o).normalized() * minf(view.cells_to_px(BEAM_RIM_CELLS), o.distance_to(a))
@@ -552,10 +549,10 @@ func _draw_banish(fx: Dictionary) -> void:
 	if fold < 1.0:
 		var left := 1.0 - fold
 		draw_circle(a, view.cells_to_px(0.3) * left, Color(BANISH_GHOST, 0.6 * left))
-		var r := view.cells_to_px(0.22 + 0.4 * left)
 		for i in 4:
 			var st := i * TAU / 4.0 + fold * PI
-			draw_arc(a, r, st, st + TAU / 7.0, 6, Color(col, 0.4 + 0.6 * left), 3.0)
+			view.ring(self, fx["from"], 0.22 + 0.4 * left, Color(col, 0.4 + 0.6 * left), 3.0, 6,
+				st, st + TAU / 7.0)
 	# The keyhole outlasts the fold: the gate's mark on the old spot.
 	var kc := Color(col, 1.0 - k)
 	var hole := view.cells_to_px(0.14)
@@ -566,8 +563,7 @@ func _draw_banish(fx: Dictionary) -> void:
 	_polygon_drawn = true
 	if el >= BANISH_FOLD * 0.5:
 		var open := clampf((el - BANISH_FOLD * 0.5) / (dur - BANISH_FOLD * 0.5), 0.0, 1.0)
-		draw_arc(b, view.cells_to_px(0.25 + 0.35 * open), 0, TAU, 24,
-			Color(col, 1.0 - open), 3.0)
+		view.ring(self, fx["to"], 0.25 + 0.35 * open, Color(col, 1.0 - open), 3.0, 24)
 
 
 ## LT-48 Coast battery: a muzzle flash and a smoke puff drifting off the gun, the shell (a
@@ -577,8 +573,8 @@ func _draw_banish(fx: Dictionary) -> void:
 func _draw_shell(fx: Dictionary) -> void:
 	var col: Color = fx.get("color", Board.SHELL_COLOR)
 	var el := _elapsed(fx)
-	var a: Vector2 = view.cell_to_world(fx["from"])
-	var b: Vector2 = view.cell_to_world(fx["end"])
+	var a: Vector2 = view.project(fx["from"])
+	var b: Vector2 = view.project(fx["end"])
 	var dir := (b - a).normalized()
 	var k_all := clampf(el / SHELL_SECONDS, 0.0, 1.0)
 	# Smoke puff at the gun, rising and fading over the whole effect.
@@ -605,11 +601,12 @@ func _draw_shell(fx: Dictionary) -> void:
 			Color(SHELL_SMOKE, 0.6 * (1.0 - k)))
 		return
 	var radius: float = fx.get("radius", 0.0)
-	var r := view.cells_to_px(radius if radius > 0.0 else SHELL_IMPACT_CELLS)
+	var rc := radius if radius > 0.0 else SHELL_IMPACT_CELLS
+	var r := view.cells_to_px(rc)
 	draw_circle(b, r * (0.5 + 0.5 * grow), Color(SHELL_SMOKE, 0.4 * (1.0 - k)))
 	if ie < BLAST_FLASH:
 		draw_circle(b, r * 0.5, Color(3.0, 2.6, 1.6, 1.0 - ie / BLAST_FLASH))
-	draw_arc(b, r * (0.3 + 0.7 * grow), 0, TAU, 40, Color(col, 1.0 - k * k), 3.0)
+	view.ring(self, fx["end"], rc * (0.3 + 0.7 * grow), Color(col, 1.0 - k * k), 3.0, 40)
 	var sd: int = fx["seed"]
 	for i in 6:
 		var ang := float((sd >> i) % 628) * 0.01 + i * TAU / 6.0
@@ -618,8 +615,7 @@ func _draw_shell(fx: Dictionary) -> void:
 	if ie < WAVE_FLASH:
 		var ray := CRIT_SPARK_SCALE if fx.get("crit", false) else 1.0
 		for p: Vector2 in fx["hit_pos"]:
-			draw_arc(view.cell_to_world(p), view.cells_to_px(0.3) * ray, 0, TAU, 20,
-				Color(col, 1.0 - ie / WAVE_FLASH), 2.0)
+			view.ring(self, p, 0.3 * ray, Color(col, 1.0 - ie / WAVE_FLASH), 2.0, 20)
 
 
 ## LT-47 Dynamite crew: the stick flies on an arc to `to` (a dotted trail behind it, its
@@ -630,8 +626,8 @@ func _draw_charge(fx: Dictionary) -> void:
 	var el := float(game.snapshot.tick - int(fx["throw_tick"])) + alpha  # ticks
 	var fuse := maxf(1.0, float(int(fx["detonate_tick"]) - int(fx["throw_tick"])))
 	var flight := minf(float(DYN_FLIGHT_TICKS), fuse)
-	var a: Vector2 = view.cell_to_world(fx["from"])
-	var b: Vector2 = view.cell_to_world(fx["to"])
+	var a: Vector2 = view.project(fx["from"])
+	var b: Vector2 = view.project(fx["to"])
 	var h := view.cell_to_world(_arc_lift(a, b)) \
 		* (DYN_ARC_BASE + view.px_to_cells(DYN_ARC_PER_CELL * a.distance_to(b)))
 	var k := clampf(el / flight, 0.0, 1.0)
@@ -652,9 +648,9 @@ func _draw_charge(fx: Dictionary) -> void:
 	if left > 0.0:
 		var urgency := 1.0 - clampf(left / maxf(1.0, fuse - flight), 0.0, 1.0)
 		var pulse := 0.5 + 0.5 * sin(board.time * TAU * (2.0 + 6.0 * urgency))
-		var r := view.cells_to_px(float(fx["radius"]))
-		draw_circle(b, r, Color(col, 0.04 + 0.06 * urgency))
-		draw_arc(b, r, 0, TAU, 40, Color(col, 0.25 + 0.35 * pulse * urgency + 0.1), 1.5)
+		draw_circle(b, view.cells_to_px(float(fx["radius"])), Color(col, 0.04 + 0.06 * urgency))
+		view.ring(self, fx["to"], float(fx["radius"]),
+			Color(col, 0.25 + 0.35 * pulse * urgency + 0.1), 1.5, 40)
 		_draw_stick(b, Vector2.RIGHT.rotated(0.35), not fx["miss"] or left > fuse * 0.3, lying, col)
 	else:
 		# A dud: the stick lies dead and a grey puff rises.
@@ -668,8 +664,8 @@ func _draw_charge(fx: Dictionary) -> void:
 ## and a ring where it lands; a lift onto its own cell (no free cell) is a ring only.
 func _draw_lift(fx: Dictionary) -> void:
 	var k := clampf(_elapsed(fx) / float(fx["dur"]), 0.0, 1.0)
-	var a: Vector2 = view.cell_to_world(fx["from"])
-	var b: Vector2 = view.cell_to_world(fx["to"])
+	var a: Vector2 = view.project(fx["from"])
+	var b: Vector2 = view.project(fx["to"])
 	var fade := Color(LIFT_COLOR, 1.0 - k)
 	if a.distance_to(b) > 1.0:
 		var h := _arc_lift(a, b) * view.cells_to_px(LIFT_ARC_CELLS)
@@ -679,7 +675,7 @@ func _draw_lift(fx: Dictionary) -> void:
 			pts.append(_arc_point(a, b, h, k * float(i) / n))
 		draw_polyline(pts, fade, 2.0)
 		_polyline_drawn = true
-	draw_arc(b, view.cells_to_px(0.2 + 0.3 * k), 0, TAU, 24, fade, 2.0)
+	view.ring(self, fx["to"], 0.2 + 0.3 * k, fade, 2.0, 24)
 
 
 ## A point of the throw arc at k in [0, 1]: the chord a -> b lifted by a parabola whose
@@ -721,14 +717,15 @@ func _draw_stick(p: Vector2, dir: Vector2, burning: bool, el: float, col: Color)
 func _draw_blast(fx: Dictionary) -> void:
 	var col: Color = fx.get("color", Board.DYNAMITE_COLOR)
 	var el := _elapsed(fx)
-	var c: Vector2 = view.cell_to_world(fx["from"])
-	var r := view.cells_to_px(float(fx["radius"]))
+	var c: Vector2 = view.project(fx["from"])
+	var rc := float(fx["radius"])
+	var r := view.cells_to_px(rc)
 	var k := clampf(el / BLAST_SECONDS, 0.0, 1.0)
 	var grow := 1.0 - (1.0 - k) * (1.0 - k) * (1.0 - k)  # fast out, slow end
 	draw_circle(c, r * (0.6 + 0.4 * grow), Color(DYN_SMOKE, 0.45 * (1.0 - k)))
 	if el < BLAST_FLASH:
 		draw_circle(c, r * 0.7, Color(3.0, 2.6, 1.6, 1.0 - el / BLAST_FLASH))
-	draw_arc(c, r * (0.2 + 0.8 * grow), 0, TAU, 48, Color(col, 1.0 - k * k), 4.0)
+	view.ring(self, fx["from"], rc * (0.2 + 0.8 * grow), Color(col, 1.0 - k * k), 4.0, 48)
 	var sd: int = fx["seed"]
 	for i in BLAST_DEBRIS:
 		var ang := float((sd >> i) % 628) * 0.01 + i * TAU / BLAST_DEBRIS
@@ -736,5 +733,4 @@ func _draw_blast(fx: Dictionary) -> void:
 		draw_circle(c + Vector2.from_angle(ang) * d, 2.0, Color(col, 1.0 - k))
 	if el < WAVE_FLASH:
 		for p: Vector2 in fx["hit_pos"]:
-			draw_arc(view.cell_to_world(p), view.cells_to_px(0.3), 0, TAU, 20,
-				Color(col, 1.0 - el / WAVE_FLASH), 2.0)
+			view.ring(self, p, 0.3, Color(col, 1.0 - el / WAVE_FLASH), 2.0, 20)

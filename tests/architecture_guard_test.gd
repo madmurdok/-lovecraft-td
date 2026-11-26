@@ -69,7 +69,8 @@ func test_g1_no_rule_copies_outside_the_sim() -> void:
 ## `BOARD_ORIGIN`, `ORIGIN`; `/ CELL` picking included) are named only in
 ## scenes/board/board_view.gd (BoardView). sim/, tools/, scenes/ (the board layers too),
 ## ui/ and tests/ (but tests/support/) ask the view: cell_at_screen, cell_to_world,
-## cells_to_px, world_rect, play_rect, screen_to_cells (LT-66: and origin(), which holds the pan).
+## cells_to_px, world_rect, play_rect, unproject (LT-66: and origin(), which holds the pan;
+## LT-126: and project, depth, ring).
 const G2_DIRS := ["res://sim", "res://tools", "res://scenes", "res://ui", "res://tests"]
 const G2_HOME := "res://scenes/board/board_view.gd"
 const G2_DENY := "\\b(CELL|BOARD_ORIGIN|ORIGIN)\\b"

@@ -25,12 +25,12 @@ func _draw() -> void:
 				view.cell_centre(sel.cell) + EntityLayer.GLYPH_OFFSET, sel.glyph,
 				HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(COLOR_SELECT, GHOST_GLYPH_ALPHA))
 		if sel.range_cells > 0.0:
-			var sc := view.cell_to_world(game.snapshot.map.grid.centre(sel.cell))
-			draw_arc(sc, view.cells_to_px(sel.range_cells), 0, TAU, 48, COLOR_SELECT, 1.0)
+			var sc := game.snapshot.map.grid.centre(sel.cell)
+			view.ring(self, sc, sel.range_cells, COLOR_SELECT, 1.0, 48)
 			var dz := selected_dead_zone()
 			if dz > 0.0:  # LT-48: the dead zone, a dashed ring over a faint fill
-				draw_circle(sc, view.cells_to_px(dz), Color(Board.COLOR_LEAK, 0.08))
-				_draw_dashed_circle(sc, view.cells_to_px(dz), Color(Board.COLOR_LEAK, 0.7))
+				draw_circle(view.project(sc), view.cells_to_px(dz), Color(Board.COLOR_LEAK, 0.08))
+				_draw_dashed_circle(sc, dz, Color(Board.COLOR_LEAK, 0.7))
 
 
 ## LT-48: the min_range (cells) of the tower on the selected cell while its range ring
@@ -43,11 +43,12 @@ func selected_dead_zone() -> float:
 	return TowerRules.dead_zone(t.stats) if t != null else 0.0
 
 
-func _draw_dashed_circle(c: Vector2, r: float, color: Color) -> void:
-	var n := maxi(8, int(TAU * r / (DEAD_ZONE_DASH * 2.0)))
+## A dashed ground ring (centre and radius in cells), dashes DEAD_ZONE_DASH px long.
+func _draw_dashed_circle(c_cells: Vector2, r_cells: float, color: Color) -> void:
+	var n := maxi(8, int(TAU * view.cells_to_px(r_cells) / (DEAD_ZONE_DASH * 2.0)))
 	for i in n:
 		var a0 := TAU * float(i) / n
-		draw_arc(c, r, a0, a0 + TAU / n * 0.5, 3, color, 1.5)
+		view.ring(self, c_cells, r_cells, color, 1.5, 3, a0, a0 + TAU / n * 0.5)
 
 
 ## LT-70 §5: the BUILD preview for tower `t`: the selection's cast when it is day (BUILD), a

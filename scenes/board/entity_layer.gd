@@ -245,35 +245,34 @@ func _draw_auras(s: SimSnapshot) -> void:
 		if area != "ward":
 			continue
 		var wc: Color = look["color"]
-		var c := view.cell_to_world(t.centre)
-		var r := view.cells_to_px(t.stats.range_cells)
+		var rc := t.stats.range_cells
 		var a := ward_alpha(t)
 		var bright := a > WARD_IDLE_ALPHA
 		if t.stats.casts_shadow():
-			draw_circle(c, r, WARD_SHADOW_FILL)
-		draw_arc(c, r, 0, TAU, 64, Color(wc, a), 4.0 if bright else 2.0)
+			draw_circle(view.project(t.centre), view.cells_to_px(rc), WARD_SHADOW_FILL)
+		view.ring(self, t.centre, rc, Color(wc, a), 4.0 if bright else 2.0, 64)
 		var rot := board.time * TAU / WARD_TURN_SECONDS
 		for i in 5:
 			var st := rot + i * TAU / 5.0
-			draw_arc(c, r, st, st + 0.22, 6, Color(wc, minf(1.0, a + 0.15)), 4.0)
+			view.ring(self, t.centre, rc, Color(wc, minf(1.0, a + 0.15)), 4.0, 6, st, st + 0.22)
 
 
 ## LT-49: the Searchlight's aura: a faint disc and rim at the radius, and a beam wedge
 ## from the tower to the rim turning once per SEARCH_SWEEP_SECONDS (decoration: what is
 ## revealed is the whole disc, sim state). `sc`: the look's colour (LT-104).
 func _draw_searchlight(t: TowerRecord, sc: Color) -> void:
-	var c := view.cell_to_world(t.centre)
+	var c := view.project(t.centre)
 	var r := view.cells_to_px(t.stats.range_cells)
 	var a := ward_alpha(t)
 	draw_circle(c, r, Color(sc, SEARCH_DISC_ALPHA * (1.0 + a)))
-	draw_arc(c, r, 0, TAU, 64, Color(sc, a * 0.8), 2.0)
+	view.ring(self, t.centre, t.stats.range_cells, Color(sc, a * 0.8), 2.0, 64)
 	var dir := board.time * TAU / SEARCH_SWEEP_SECONDS
 	var pts := PackedVector2Array([c])
 	var cols := PackedColorArray([Color(sc, 0.35 + 0.25 * a)])
 	var steps := 8
 	for i in steps + 1:
 		var ang := dir - SEARCH_CONE + 2.0 * SEARCH_CONE * i / steps
-		pts.append(c + Vector2(cos(ang), sin(ang)) * r)
+		pts.append(view.project(t.centre + Vector2(cos(ang), sin(ang)) * t.stats.range_cells))
 		cols.append(Color(sc, 0.04))
 	draw_polygon(pts, cols)
 
@@ -349,13 +348,12 @@ func _draw_allies(s: SimSnapshot) -> void:
 		var look := LookCatalog.row(Board.shot_kind(t))
 		if look["area"] == "summon_ring":
 			var rc: Color = look["color"]
-			draw_arc(view.cell_to_world(t.centre), view.cells_to_px(t.stats.summon_leash()), 0,
-				TAU, 64, Color(rc, SUMMON_RING_ALPHA), 1.0)
+			view.ring(self, t.centre, t.stats.summon_leash(), Color(rc, SUMMON_RING_ALPHA), 1.0, 64)
 	for a in s.allies:
 		var px := view.cell_to_world(a.position(alpha))
 		var ac := LookCatalog.ally_color(a.source)
 		if a.held_id >= 0 and board.last_pos.has(a.held_id):
-			draw_line(px, view.cell_to_world(board.last_pos[a.held_id]), Color(ac, 0.9), 2.0)
+			draw_line(px, view.project(board.last_pos[a.held_id]), Color(ac, 0.9), 2.0)
 		var r := view.cells_to_px(ALLY_RADIUS_CELLS)
 		if a.flying:
 			for side: float in [-1.0, 1.0]:

@@ -7,12 +7,18 @@ extends RefCounted
 ## - cell units: the sim's world frame (GridTopology.centre, SimRoute.position_at, ranges);
 ## - world: the board node's local canvas, where the board layers draw (cell_to_world);
 ## - screen: the Game's canvas in base viewport units (1200x675 before stretch), where the
-##   UI lays out and input arrives (cell_at_screen, cell_to_screen, world_rect).
+##   UI lays out and input arrives (cell_at_screen, unproject, cell_to_screen, world_rect).
 ## The cell -> world map is linear (no offset), so it also scales offsets and directions.
 ## Tiles come from GridTopology.polygon (cell_polygon, LT-77 Q4); layers draw them through
 ## fill_cell / outline_cell and anchor text and marks to cell_centre (LT-108 F2, guard G15).
 ## LT-66 §6.1: the map scrolls by `pan` (a screen offset): origin() = ORIGIN + pan, and every
 ## screen conversion (picking and drawing) goes through origin(), so they cannot disagree.
+## LT-126 (LT-64 §1.3): the board-plane roles have names, at an identity projection today:
+## project (a ground point, optionally lifted screen-up -> world px), unproject (screen ->
+## cells on the ground plane), depth (the draw-order key) and ring (a ground ring). Ground
+## sites draw through them, so a later angled view (LT-64 §8.1, b2) changes only these
+## bodies: project = the camera's projection of a ground point, unproject = a ray-plane hit,
+## depth = the camera distance, ring = a polygon through project.
 
 signal panned  ## the pan changed; Board moves its node to origin()
 
@@ -41,9 +47,11 @@ static func world_rect_for(g: GridTopology) -> Rect2:
 	return Rect2(ORIGIN + b.position * CELL, b.size * CELL)
 
 
-## The map's rect on screen at the current pan (world_rect_for at pan 0).
+## The map's rect on screen at the current pan: the bbox of the projected map (LT-126),
+## equal to world_rect_for at pan 0 under today's identity projection.
 func world_rect() -> Rect2:
-	var r := world_rect_for(grid)
+	var r := project_rect(grid.bounds())
+	r.position = ORIGIN + r.position
 	r.position += pan
 	return r
 
@@ -59,7 +67,8 @@ func origin() -> Vector2:
 func clamp_pan(p: Vector2, visible: Rect2) -> Vector2:
 	if grid == null:
 		return Vector2.ZERO
-	var b := world_rect_for(grid)
+	var b := project_rect(grid.bounds())
+	b.position += ORIGIN
 	var m := b.grow(PAN_MARGIN)
 	var out := Vector2.ZERO
 	for axis in 2:
@@ -83,13 +92,51 @@ func set_pan(p: Vector2) -> void:
 func cell_at_screen(screen_pos: Vector2) -> Vector2i:
 	if grid == null:
 		return OFF_BOARD
-	var c := grid.cell_at(screen_to_cells(screen_pos))
+	var c := grid.cell_at(unproject(screen_pos))
 	return c if grid.contains(c) else OFF_BOARD
 
 
-## LT-66 §4: a screen point -> cell units (the inverse of cell_to_screen for points).
-func screen_to_cells(screen_pos: Vector2) -> Vector2:
+## LT-126 (LT-64 §1.3): a ground point in cell units, lifted `h_cells` screen-up -> world px.
+## The one forward map for points: ground sites call it with h 0, height sites with h. At
+## identity a point maps like cell_to_world; the lift is a pure screen-up offset.
+func project(p_cells: Vector2, h_cells := 0.0) -> Vector2:
+	if h_cells == 0.0:
+		return p_cells * CELL
+	return p_cells * CELL + Vector2(0, -h_cells * CELL)
+
+
+## LT-126 (LT-64 §1.3, LT-66 §4): a screen point -> cell units on the ground plane, the one
+## inverse of project (+ origin) for points. Picking: cell_at_screen = grid.cell_at(this).
+func unproject(screen_pos: Vector2) -> Vector2:
 	return (screen_pos - origin()) / CELL
+
+
+## LT-126 (LT-64 §1.3): the draw-order key of a ground point: the projected ground y, larger
+## is nearer the viewer and drawn later (callers break ties by id). Visual only.
+func depth(p_cells: Vector2) -> float:
+	return project(p_cells).y
+
+
+## LT-126 (LT-64 §1.3): the bbox of a ground rect (cell units) in world px: the min/max of
+## its four projected corners (a quad under an angled view).
+func project_rect(r_cells: Rect2) -> Rect2:
+	var lo := project(r_cells.position)
+	var hi := lo
+	for q: Vector2 in [Vector2(r_cells.end.x, r_cells.position.y), r_cells.end,
+			Vector2(r_cells.position.x, r_cells.end.y)]:
+		var w := project(q)
+		lo = lo.min(w)
+		hi = hi.max(w)
+	return Rect2(lo, hi - lo)
+
+
+## LT-126 (LT-64 §1.3): a ring on the ground (a range, aura or blast rim) of radius `r_cells`
+## around `centre_cells`, a `width` px line of `points` segments on `ci`; `start`/`end`
+## (radians) draw an arc of it. At identity it is draw_arc; under an angled view it becomes
+## a polygon through project (an ellipse).
+func ring(ci: CanvasItem, centre_cells: Vector2, r_cells: float, color: Color, width: float,
+		points := 48, start := 0.0, end := TAU) -> void:
+	ci.draw_arc(project(centre_cells), cells_to_px(r_cells), start, end, points, color, width)
 
 
 ## Cell units (a point or an offset; the caller applies GridTopology.centre) -> world.
@@ -97,9 +144,9 @@ func cell_to_world(p_cells: Vector2) -> Vector2:
 	return p_cells * CELL
 
 
-## Cell units -> screen (for UI overlays that point at the board).
+## A ground point in cell units -> screen (for UI overlays that point at the board).
 func cell_to_screen(p_cells: Vector2) -> Vector2:
-	return origin() + cell_to_world(p_cells)
+	return origin() + project(p_cells)
 
 
 ## A length in cell units (radius, ring, mark size) -> pixels.
@@ -121,13 +168,13 @@ func cell_polygon(cell: Vector2i, inset_px := 0.0) -> PackedVector2Array:
 	var c := cell_centre(cell)
 	var a := cells_to_px(0.5)
 	for i in poly.size():
-		poly[i] = c + (cell_to_world(poly[i]) - c) * (a - inset_px) / a
+		poly[i] = c + (project(poly[i]) - c) * (a - inset_px) / a
 	return poly
 
 
 ## The centre of `cell` in world coordinates: the anchor of text and marks on a tile.
 func cell_centre(cell: Vector2i) -> Vector2:
-	return cell_to_world(grid.centre(cell))
+	return project(grid.centre(cell))
 
 
 ## A centred outline of width `width_px` along the tile inset by `inset_px`, as n
