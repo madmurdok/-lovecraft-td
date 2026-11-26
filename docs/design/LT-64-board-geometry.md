@@ -1,6 +1,6 @@
 # LT-64: board geometry (coordinate layer, angled view, hex)
 
-Status: final draft for owner review. Branch `docs/LT-64-board-geometry` from `release-0.14.0`
+Status: approved by the owner 2026-11-26 (decisions in §6.1 and §9.1). Branch `docs/LT-64-board-geometry` from `release-0.14.0`
 (7201d97). §0-§6 are the pre-prototype design (S1); §7 holds the prototype results (S2/S3),
 §8 the recommendation, §9 the questions still open.
 
@@ -478,3 +478,13 @@ tiles are drawn in the SubViewport and foreshorten with the plane).
 3. Hex only together with the full Map v2. Benefit: one switch, one retune. Risk: the
    largest single change; hex picking, plate marks and the view meet for the first time at
    the end.
+
+### 9.1 Owner decisions (2026-11-26)
+
+- Q4: "Эллипс на земле (Recommended)": the range ring is a ground ellipse under the (b2) camera.
+- Q5: "Логика гексов первым шагом LT-18 (Recommended)": hex logic is registered as LT-18's
+  first step (LT-108); the harbour map stays square until Map v2.
+- Note: "Утвердить, завести 4 задачи в бэклог (Recommended)": the §8.3 follow-ups go to the
+  backlog as LT-126 (coordinate roles), LT-127 (focused FPS re-measure + web smoke),
+  LT-128 (b2 view, depends on LT-126 and LT-127); LT-110 is reworded as the (a) fallback,
+  gated on LT-127.
