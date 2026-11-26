@@ -1,8 +1,8 @@
 # LT-64: board geometry (coordinate layer, angled view, hex)
 
-Status: design S1, for owner review. Branch `docs/LT-64-board-geometry` from `release-0.14.0`
-(7201d97). No FPS numbers here: every option below ends in a prototype spec for a later
-measure slice.
+Status: final draft for owner review. Branch `docs/LT-64-board-geometry` from `release-0.14.0`
+(7201d97). §0-§6 are the pre-prototype design (S1); §7 holds the prototype results (S2/S3),
+§8 the recommendation, §9 the questions still open.
 
 Owner's idea (verbatim): "В финальной версии графики мне хочется чтобы вид был не 100% сверху,
 а как бы под углом, в перспективе. Нужно заложить это наверное заранее? + мы же хотим сетку на
@@ -31,9 +31,9 @@ LT-110 (view transform), LT-62 (frame-rate method and machine).
 - **Hex logic** is ~70 % done: `HexGrid` exists and is tested; path walk, route length,
   ranges, bot placement and the balance lab are topology-agnostic. What is left is mostly
   look (tower plate marks), map data, balance retune and test fixtures (§3).
-- **Recommended order (provisional, pending the prototype measurements):**
-  coordinate-layer split -> view prototypes (a) and (c) [(b) only if the owner wants a real
-  perspective] -> pick a view -> LT-110 for the picked view -> hex registered with LT-18.
+- **Recommended order:** superseded by §8 (after the prototypes): coordinate-layer split ->
+  view (b2, the owner's pick; a focused FPS re-measure is a check) -> hex look and tile art with
+  LT-18; hex logic registration runs in parallel as LT-18's first step.
 
 ## 1. One presentation coordinate layer
 
@@ -165,8 +165,8 @@ drawing at `project(p, h)`, depth-sorted. Picking uses the affine inverse.
   batching unchanged; web-safe; matches LT-110 directly; hex and Voronoi tiles work as is.
 - Risk: no true perspective (far rows are not smaller). Thick `draw_line`s under the tilt
   get thinner when horizontal (width is in local space); text under the tilt is squashed
-  (hence the U layer). Light2D under a non-uniform parent transform is assumed to
-  foreshorten its texture; unverified. Vertical tap targets shrink by cos(tilt): at 40 px
+  (hence the U layer). Light2D under a non-uniform parent transform foreshortens its
+  texture (verified in the prototype, §7.1). Vertical tap targets shrink by cos(tilt): at 40 px
   cells and 45° a row is ~28 px.
 
 Prototype spec (throwaway worktree, never merged):
@@ -223,8 +223,8 @@ the art: a painted background or tile sprites with a visible front face, towers 
 drawn in 3/4 view, taller than a cell and anchored at their foot. Code needs only the §1.3
 split: depth sort, foot anchors, upright picking, H offsets.
 
-- Benefit: the cheapest code; the common 2D TD look (3/4 sprites on a painted map); zero
-  frame-rate risk beyond the sort; fits every GDD §9a style; works with Skeleton2D cutout.
+- Benefit: the cheapest code; the common 2D TD look (3/4 sprites on a painted map); little
+  frame-rate risk beyond the sort (procedural front strips cost +8 % draw calls, §7.2); fits every GDD §9a style; works with Skeleton2D cutout.
 - Risk: range rings and tiles stay circles and regular hexes, so they contradict angled
   art unless tiles are hidden under painting; Map v2's generated islands rule out one
   hand-painted background (GDD open issue), so hexes need per-tile angled sprites, which
@@ -244,8 +244,8 @@ Prototype spec:
 |---|---|---|---|---|
 | True perspective | no | yes | yes | no |
 | Code beyond §1.3 | LT-110 (G sites, ~60) + U layer | SubViewport + camera + billboards | presentation rewrite | none |
-| 2D lights / fog / SanityFx | kept (Light2D under tilt: verify) | kept | rebuilt | kept |
-| Frame-rate risk on Iris Plus | low | medium (extra full-res pass) | high | lowest |
+| 2D lights / fog / SanityFx | kept (Light2D under tilt: verified, §7.1) | kept | rebuilt | kept |
+| Frame-rate risk on Iris Plus | low | medium (extra full-res pass; §7.2 shows no gap, unfocused) | high | low (+8 % draws with procedural front strips, §7.2) |
 | Art cost | upright sprites only | upright sprites only | models | most (angled tiles) |
 
 Provisional lean: (a), possibly combined with (c)-style 3/4 sprites in the U layer;
@@ -312,6 +312,8 @@ islands) belongs to LT-18/LT-109, not to the grid.
 
 ## 5. Recommended order (provisional, pending measurements)
 
+Superseded by §8.2; kept as the pre-prototype reasoning.
+
 1. **Coordinate-layer split** (§1.3): `project`/`unproject`/`depth`/`ring`, U/G/H roles,
    depth-sorted entity draw, upright picking; identity projection, pixel-identical at tilt
    0; guard extension. Benefit: every later option plugs in. Risk: ~100 sites for no
@@ -347,4 +349,132 @@ islands) belongs to LT-18/LT-109, not to the grid.
   the chosen view.
 - Q2 coordinate-layer split: "После прототипов (Recommended)": prototypes use throwaway hacks;
   the split is a separate task after a view is picked.
-- Q4 (range ring) and Q5 (hex before Map v2) are answered at the final review.
+- Q4 (range ring) and Q5 (hex before Map v2) are answered at the final review (§9).
+
+After the prototypes (2026-11-26):
+- View: "в общем лучше всего b2": (b2), the 2D board on a tilted 3D plane, is the chosen
+  view; (a) and (c) are not pursued (§8).
+
+## 7. Prototype results
+
+Prototypes (S2) live on the throwaway branch `proto/LT-64-views` @3577952 (never merged):
+`--view=a|b2|c`, `--tilt` (default 45°), `--fov` (default 50°, b2), `--zoom`. Screenshots (S3)
+are in `docs/design/LT-64/`: `baseline`, `a`, `b2`, `c` (zoom 1) and `*-zoom` (zoom 2), all
+at t = 15 s, 5 towers, 10 live enemies, night 1, sanity 100, 2390x1344 window scaled to
+1400 px. Square map only.
+
+### 7.1 What the screenshots show
+
+| Option | Look | Seen in the shots | Prototype caveats (S2) |
+|---|---|---|---|
+| baseline | top-down | reference | - |
+| (a) oblique, tilt 45° | the board squashed to ~0.7 height; upright tower cards and enemy discs; reads as "the same map, shorter", not as an angle | ground layers foreshorten for free: the beam cone, tower glow and fog shrink vertically (Light2D under the tilt works; was "unverified" in §2a). Range rings, shots and fx stay flat on the ground; tracers hit enemy feet | clicking an upright tower picks the ground cell under the cursor (the cell behind), i.e. the §1.3 upright-first picking is needed |
+| (b2) 2D board on a 3D plane, tilt 45°, fov 50° | the only option that reads as a perspective view: a trapezoid board, far rows smaller, grid converging | at zoom 2 the beam, glow and tile lines stay sharp on the plane (no blur visible at 45°); 2D lights and fog render unchanged inside the SubViewport | figures are drawn on the root canvas at `unproject_position`, so they are **not darkened by night or lit by Light2D** (brighter than in a/c); auras and allies omitted; pan disabled; at zoom 1 the map is cut at the bottom and sides (camera fit by depth) |
+| (c) flat logic, `CELL_Y = 0.75`, procedural angled art | 3/4 boxes and tall ellipses; depth reads well | the tile front strips turn the whole board into horizontal bands (visually noisy); 1.5-cell tower boxes hide the glyph of the tower behind (H is hidden in both shots) | no status markers on enemies; the angle is only implied by the art |
+
+All three: picking round-trip (cell centre -> screen -> cell) 0 mismatches over 336 cells at
+zoom 1. Not done vs the §2 specs: hex map, hover outline / debug dot, tilt sweep (30/45/60),
+b2 supersampling study, interactive zoom keys (only the `--zoom` start value was exercised).
+
+### 7.2 Frame rate and draw calls (relative, unfocused)
+
+The FPS below is **not** an LT-62 measurement: the screen was locked, the window was never
+focused (focused share 0.00 in every arm), and macOS throttles unfocused windows. The numbers
+compare the arms with each other only roughly; they are not comparable with LT-62's
+37-43 fps. Probe: bot build (rifleman x2, harpooner x6 per build phase), seed 4242,
+2390x1344, 10 s warm-up + 90 s, two rounds (the second in reverse order), load1 < 25 before
+each arm, same wave span in all arms.
+
+| Arm | fps median (r1 / r2) | p10 (r1 / r2) | draw calls median |
+|---|---|---|---|
+| baseline | 18.5 / 18.0 | 16.7 / 16.0 | ~1950 |
+| (a) | 19.3 / 18.8 | 16.8 / 17.0 | ~1950 |
+| (b2) | 20.8 / 21.7 | 19.0 / 19.7 | ~1950 |
+| (c) | 18.4 / 18.0 | 15.7 / 16.2 | ~2100 (+8 %) |
+
+Reading: no option shows a cost against the baseline that clears this noise. Draw calls do
+not depend on focus and are the one firm number: the 3D plane adds none, (c)'s front strips
+add 8 %. (b2)'s higher fps must not be read as "faster": its figures skip lighting and it
+draws no auras or allies. A focused re-measure by LT-62's method is a follow-up (§8.3) and
+gates the view implementation.
+
+## 8. Recommendation: view (b2)
+
+Owner's pick after the screenshots: (b2) (§6.1). This section says what (b2) needs to ship.
+
+### 8.1 What (b2) needs to become shippable
+
+| Gap seen in the prototype | Work | Cost |
+|---|---|---|
+| Figures not darkened by night, not lit by Light2D (brighter than the board) | draw the U layer (towers, enemies, crew, labels) inside the board SubViewport as a depth-sorted upright pass under the same `CanvasModulate` and lights, or give the root-canvas U layer the darkness colour and a light sample per figure; the first keeps one lighting model | medium |
+| Auras and allies omitted | auras are G: draw them in the SubViewport (they then foreshorten with the plane); allies and leash: U figure + G ring/line, as in §1.2 | low |
+| Pan disabled; map cut at the bottom and sides at zoom 1 | camera fit to the projected map bbox (near row sets the width), pan as a camera move along the ground plane clamped to that bbox (replaces `clamp_pan` over `world_rect_for`); zoom = camera distance with min/max; wheel/keys as today | medium |
+| Upright click picks the cell behind | the §1.3 order: hit the drawn body first (screen rect), then ray-plane -> cell | low (in the coordinate-layer task) |
+| Fx endpoints at feet, H lifts (shell, arc, LT-117 lift) | endpoints at `project(p, h)`; ground fx stay in the SubViewport | low-medium |
+| Unmeasured: focused FPS, web export, SanityFx over 3D | focused re-measure (§8.3), one web-export smoke, `BackBufferCopy` check at sanity 0 | low (measure) |
+| Far rows smaller | far-row tap target sets the minimum `CELL` and the tilt/fov; settle tilt (30-60°) and fov with a sweep | low |
+| Text and thin lines on the plane at grazing angles | sharp at 45° zoom 2; if a lower tilt blurs, oversample the SubViewport or move text to the U layer | low, only if seen |
+
+Benefit: the only option that reads as perspective; every G site keeps drawing in 2D inside
+the SubViewport, so LT-110's ~60-site canvas transform is not needed; 2D lights, fog and the
+light/shader layer of GDD §9a survive; zoom is natural (camera distance); no extra draw calls.
+Risk: one full-resolution render target per frame (fill rate on Iris Plus and WebGL 2,
+unmeasured focused); the lit U pass is the one new rendering piece; camera fit/pan is new
+code with input edge cases; if the focused re-measure shows a real cost, the fallback is (a)
+with the same coordinate layer.
+
+Considered, not chosen:
+- (a) oblique 2.5D: cheapest and Light2D verified, but reads as a squashed top-down map.
+  Stays the fallback if (b2) fails the FPS or web check.
+- (c) angle only in art: banded board, tall boxes hide the tower behind, most tile art, +8 %
+  draws. Its 3/4 upright sprites remain a style option for (b2)'s U layer.
+
+### 8.2 Order (coordinate layer -> view -> hex)
+
+1. **Coordinate-layer split** (§1.3) first: pixel-identical at identity, so it lands without
+   the view. Under (b2) `project` = `camera.unproject_position` of a ground point, `unproject` = the
+   ray-plane hit, `depth` = camera distance; the G/U/H roles are the same.
+2. **View (b2)**: the §8.1 work, after the focused re-measure shows no blocking cost.
+3. **Hex look** after the view: per GDD §9a the style test runs in the running game, and tile
+   art (per-hex terrain, Voronoi edges) must be drawn for the chosen view; Map v2's generated
+   islands rule out the single painted harbour of §9a's MVP list, so the view precedes any
+   tile art. Hex **logic** is not blocked by the view: LT-18's approved order (§11, decisions
+   §13) starts with LT-108 hex registration and grey prototypes P1-P4 that are flat and
+   exclude the angled view, so that track runs in parallel. The two meet at the Voronoi look
+   (LT-18 §10 assigns "Voronoi look and angled view" to LT-64).
+
+### 8.3 Follow-up tasks to create (not created by this slice)
+
+| Proposed title | Scope |
+|---|---|
+| BoardView coordinate roles: project/unproject/depth/ring | §1.3: identity projection, G/U/H/S/P roles at every site of §1.2, one depth-sorted entity draw, upright-first picking, `ring` replacing ground `draw_arc`, guard extending G2; pixel-identical check as in LT-108 |
+| Focused FPS re-measure of the LT-64 view prototypes | LT-62 method on `proto/LT-64-views` @3577952 with an unlocked, awake screen: baseline, b2 (and a as the fallback) at boot-fit, two rounds, load gate, `uptime` and `time -p`; plus one web-export smoke of b2; gate for the view task |
+| Angled view (b2): board SubViewport on a zoom-only 3D camera | §8.1: plane + Camera3D, lit upright pass with auras and allies, camera fit, zoom and pan bounds, upright-first and ray-plane picking, fx endpoints and lifts, SanityFx check, tilt/fov sweep vs far-row tap target, hex tile check |
+| LT-110 rewording | "Ground layers stay in 2D inside the (b2) board SubViewport": no canvas transform; close as superseded unless the (a) fallback is taken, then re-scope to "G sites under one transform, U/H through `project`" |
+
+## 9. Open questions for the owner
+
+**Q4. Range-ring look under the (b2) camera.**
+1. **Ellipse on the ground (Recommended).** Benefit: shows exactly which tiles are in range
+   (the sim measures on the ground); free under (b2), where rings are drawn on the plane.
+   Risk: a flatter, less familiar shape; far-row rings are smaller on screen.
+2. Screen circle around the tower's foot. Benefit: the familiar TD look, easy to read at a
+   glance. Risk: lies about range: at 45° it overstates depth reach by ~40 %, so towers
+   look able to hit cells they cannot; under (b2) it must move out of the SubViewport into
+   a screen-space layer.
+3. Ellipse plus highlighted in-range tiles. Benefit: unambiguous even on hex/Voronoi tiles.
+   Risk: one more overlay to draw and tune; busier board during build.
+
+**Q5. Hex before Map v2 or only with it** (the (b2) view is independent of the grid: hex
+tiles are drawn in the SubViewport and foreshorten with the plane).
+1. **Hex logic registered as LT-18's first step; the shipped harbour stays square until the
+   Map v2 generator replaces it (Recommended).** Benefit: follows LT-18's approved order
+   (LT-108 registration -> P1), no balance retune of a map that will be replaced, tests stay
+   on the square fixture. Risk: no player-facing hex until Map v2 ships; plate marks and hex
+   look get tested only in grey prototypes.
+2. A hex version of today's harbour first. Benefit: hex range and balance tested early in
+   the real game and lab. Risk: a balance pass and test-fixture work on a map Map v2 throws
+   away; the tile look would be redone after the view.
+3. Hex only together with the full Map v2. Benefit: one switch, one retune. Risk: the
+   largest single change; hex picking, plate marks and the view meet for the first time at
+   the end.
