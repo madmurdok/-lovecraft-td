@@ -435,8 +435,9 @@ board (`docs/design/LT-64/b2-web.png`) and the picking round-trip is 0 mismatche
 The HTML `args` config did not select the view; a throwaway proto patch (not committed) reads
 `?view=b2` from `window.location.search` via `JavaScriptBridge` on web. Blocker for web play:
 the in-game FPS label reads 1-3 for b2 against 7 for the flat game (same page, same session;
-rAF ~3/s with the tab visible and focused), so b2 is about 3x heavier than flat on this GPU in
-the browser, and both are far below desktop. Web is not a target of the view decision; if it
+rAF ~3/s with the tab visible and focused), so b2 looks about 3x heavier than flat in the browser,
+and both are far below desktop; the machine was busy (load1 48 at the end), so treat it as
+indicative only. Web is not a target of the view decision; if it
 becomes one, b2 needs a render-cost pass first (SubViewport size / `--ss`, plane resolution).
 
 ## 8. Recommendation: view (b2)
