@@ -406,6 +406,36 @@ Medians (min-max):
   a 2.1 s B at load 53. The presence of B/C in BEFORE and their absence in AFTER hold in every run, in both
   speed classes. Scratchpad: `lt92s9/run.sh`, `summarize.py`, `runs/`.
 
+## Quiet re-measure (LT-123/S1)
+
+Same probe (appendix, `probe92c.gd`, untracked) and command as S9 on release-0.15.0 `d735f00`:
+`--seed=4242 --frame-stats --mute --probe-secs=9 --wave`, `--audio-driver Dummy`, under `caffeinate -d -i`.
+Before each run the script waited for 1-min load < 6 (cap 45 min; longest wait 260 s, never timed out). Frame A = F2,
+loading = F1, iter5 = F5, in ms. 10 valid runs: runs 1-8 and 10 of the batch, plus one extra run in place of run 9.
+Run 9 is excluded: an outside process pushed load to 21.9 during it (A 9610 ms, 3 frames, load before 5.6).
+
+| run | load before | A | loading | iter5 | real / user / sys s | load after |
+|---|---|---|---|---|---|---|
+| 1 | 5.65 | 2441 | 73 | 252 | 15.78 / 10.03 / 3.55 | 5.82 |
+| 2 | 5.82 | 1475 | 52 | 117 | 13.05 / 7.88 / 3.42 | 5.73 |
+| 3 | 5.73 | 2042 | 63 | 130 | 14.57 / 9.00 / 3.56 | 6.36 |
+| 4 | 5.80 | 1596 | 52 | 124 | 13.10 / 7.38 / 3.09 | 6.06 |
+| 5 | 5.66 | 1166 | 39 | 101 | 12.18 / 6.05 / 2.70 | 5.40 |
+| 6 | 5.40 | 1655 | 54 | 129 | 12.23 / 7.61 / 3.39 | 6.80 |
+| 7 | 5.99 | 1110 | 38 | 128 | 12.46 / 6.59 / 3.03 | 6.15 |
+| 8 | 5.70 | 852 | 29 | 80 | 11.08 / 5.68 / 2.85 | 5.60 |
+| 10 | 5.60 | 1140 | 35 | 113 | 11.80 / 6.56 / 3.23 | 5.54 |
+| extra | 5.23 | 1082 | 38 | 96 | 11.80 / 5.94 / 2.65 | 5.11 |
+
+Medians (min-max): **A 1321 (852-2441)**, **loading 46 (29-73)**, **iter5 120 (80-252)**.
+Gate (load1 < 6 at start): held 10/10 (S9: 3/10). Load rose above 6 during 3 runs (to 6.1-6.8), so the
+machine was quiet but not idle. user+sys is 0.8-0.9 of real, the process was busy.
+
+Compared with S9 AFTER (A 2399, loading 83, iter5 174): the loading frame and the iteration-5
+stall are still there on a quiet machine (iter5 80-252 ms, over the 100 ms mark in 8/10 and over
+150 ms in 1/10); A is about 1.3 s, not 2.4 s, so S9's A was inflated by load. No cause analysis here (S2).
+Scratchpad: `LT-123/run.sh`, `runs_full/`, `runs_extra/`.
+
 ## Appendix: probe92c.gd (throwaway, removed)
 
 Copy it into the worktree root. Run:
