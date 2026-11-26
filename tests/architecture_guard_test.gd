@@ -110,6 +110,54 @@ func test_g2_pixels_only_in_the_view() -> void:
 		.is_empty()
 
 
+## G2, board-plane roles (LT-126, LT-64 §1.3): under scenes/ and ui/ outside BoardView, no
+## raw cell -> px point map and no ground ring drawn by hand. Points go through
+## view.project(p, h) (ground, upright anchor, height), lengths and upright shapes through
+## view.cells_to_px; so `cell_to_world(` (a point, or a direction times a scalar: the old
+## U/H forms) is denied, and so is a `draw_arc(` centred straight on a view call (a ground
+## ring: use view.ring). A ring round an already projected body (`draw_arc(px, ...)`) is an
+## upright shape and passes; text cannot tell it from a ground ring at a projected point.
+const G2_ROLE_DIRS := ["res://scenes", "res://ui"]
+const G2_ROLE_DENY := "\\bcell_to_world\\(|\\bdraw_arc\\(\\s*[\\w.]*\\bview\\."
+
+
+func test_g2_board_plane_roles_named_in_the_view() -> void:
+	var scan := SimBoundaryTest.new()
+	var hits: Array[String] = []
+	var scanned := 0
+	var home_hits := 0
+	for dir: String in G2_ROLE_DIRS:
+		for f in scan._gd_files(dir):
+			var found := _find_joined(scan, f, FileAccess.get_file_as_string(f), G2_ROLE_DENY)
+			if f == G2_HOME:
+				home_hits = found.size()
+				continue
+			scanned += 1
+			hits.append_array(found)
+	var probes := ["var d := view.cell_to_world(Vector2(1, -1).normalized()) * 0.3",
+		"var base := head - view.cell_to_world(dir) * 0.3",
+		"draw_circle(a + view.cell_to_world(dir) * 0.3, r, c)",
+		"var h := view.cell_to_world(_arc_lift(a, b)) \\\n\t* 2.0",
+		"var px := view.cell_to_world(p)",
+		"draw_arc(view.project(c), r, 0, TAU, 32, col, 2.0)",
+		"draw_arc(\n\tgame.board.view.cell_centre(c), r, 0, TAU, 32, col, 2.0)"]
+	var probe_hits := 0
+	for p: String in probes:
+		probe_hits += _find_joined(scan, "probe.gd", p, G2_ROLE_DENY).size()
+	var clean := _find_joined(scan, "near.gd",
+		"view.ring(self, c, r, col, 2.0, 32)\ndraw_arc(px, r, 0, TAU, 24, col, 2.0)\n"
+		+ "h = view.project(p, 0.4)\nd = dir * view.cells_to_px(0.3)\nq = view.cell_to_screen(p)",
+		G2_ROLE_DENY)
+	scan.free()
+	assert_int(scanned).is_greater(20)  # scenes/ and ui/ were walked
+	assert_int(home_hits).is_greater(0)  # the view itself holds cell_to_world and draw_arc
+	assert_int(probe_hits).is_equal(probes.size())  # each raw form is caught
+	assert_array(clean).is_empty()  # the role calls are not
+	assert_array(hits).override_failure_message(
+		"raw cell -> px or a hand-drawn ground ring outside BoardView (use view.project / "
+		+ "view.ring / view.cells_to_px): " + ", ".join(hits)).is_empty()
+
+
 ## G3 (LT-76, LT-77, LT-35): one cell centre. Under sim/, tools/, scenes/ and ui/ a
 ## hand-written centre (`.x + 0.5`, `0.5 + .y`, `Vector2(c) + Vector2(0.5, 0.5)`,
 ## continuation lines joined) appears only in the topologies' centre(): sim/rules/square_grid.gd

@@ -111,10 +111,13 @@ func unproject(screen_pos: Vector2) -> Vector2:
 	return (screen_pos - origin()) / CELL
 
 
-## LT-126 (LT-64 §1.3): the draw-order key of a ground point: the projected ground y, larger
-## is nearer the viewer and drawn later (callers break ties by id). Visual only.
-func depth(p_cells: Vector2) -> float:
-	return project(p_cells).y
+## LT-126 (LT-64 §1.3): the draw-order key of a ground point: its nearness to the viewer
+## along the view axis, larger is nearer and drawn later (EntityLayer.figure_before breaks
+## ties by figure kind, then snapshot order). Visual only. The identity view looks straight
+## down (orthographic), so every ground point is equally near: 0, and the tie order alone
+## keeps today's draw order. Under b2 (§8.1) it is minus the camera distance.
+func depth(_p_cells: Vector2) -> float:
+	return 0.0
 
 
 ## LT-126 (LT-64 §1.3): the bbox of a ground rect (cell units) in world px: the min/max of

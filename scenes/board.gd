@@ -167,14 +167,18 @@ func _unhandled_input(event: InputEvent) -> void:
 ## LT-66 §4: the id of the enemy drawn this frame (`last_pos`, still in the snapshot) whose
 ## centre is nearest to screen point `p` within PICK_RADIUS cells; ties go to the lower id.
 ## 0 when none. Uses only drawn positions, never the sim.
+## LT-126 (LT-64 §1.3): an upright hit, tried before the ground cell (cell_at_screen, via
+## unproject): the screen distance in px from `p` to the drawn body (the projected foot,
+## view.cell_to_screen), within PICK_RADIUS cells as px. At the identity view it equals the
+## old ground-point distance in cells times the cell size.
 func enemy_at_screen(p: Vector2) -> int:
 	if game == null or game.snapshot == null:
 		return 0
-	var at := view.unproject(p)
+	var reach := view.cells_to_px(PICK_RADIUS)
 	var best := 0
-	var best_d := PICK_RADIUS * PICK_RADIUS
+	var best_d := reach * reach
 	for id: int in last_pos:
-		var d := at.distance_squared_to(last_pos[id])
+		var d := p.distance_squared_to(view.cell_to_screen(last_pos[id]))
 		if d > best_d or (d == best_d and best != 0 and id > best):
 			continue
 		if game.snapshot.enemy(id) == null:  # drawn last frame, gone since

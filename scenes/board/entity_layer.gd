@@ -86,15 +86,71 @@ const SUMMON_RING_ALPHA := 0.18
 const BANISH_LID_CELLS := 0.33
 
 
+## LT-126 (LT-64 §1.3): the kinds of the one depth-sorted figure pass, in their tie order:
+## at equal depth towers are drawn first, then enemies, then the summon leash rings, then
+## allies (the top-down order, so the identity view draws exactly what it drew before).
+enum Fig { TOWER, ENEMY, LEASH, ALLY }
+
+var _flicker := 0.0  ## board.flicker_strength() for this draw's enemies (_draw_figures)
+var _madness := 0.0  ## the sanity madness grade for this draw's enemies (_draw_figures)
+
+
 func _draw() -> void:
 	if not has_sim():
 		return
 	var s := game.snapshot
-	_draw_auras(s)
-	for t in s.towers:
-		_draw_tower(t)
-	_draw_enemies(s)
-	_draw_allies(s)
+	_draw_auras(s)  # ground, under every figure; reads last frame's last_pos (ward pulse)
+	_draw_figures(s)
+
+
+## LT-126 (LT-64 §1.3): towers (and posts), enemies, summon leash rings and allies in ONE
+## list sorted by figure_before (BoardView.depth, then Fig, then snapshot index), so under
+## an angled view a figure in front covers one behind. Refreshes `board.last_pos` for every
+## enemy before any figure is drawn (an ally's claw line reads it). Visual only.
+## The leash ring is ground (G) kept in this pass only for today's order (it covers the
+## enemies); under b2 the ground draws move into the board plane.
+func _draw_figures(s: SimSnapshot) -> void:
+	board.last_pos.clear()
+	_flicker = board.flicker_strength()
+	# LT-23 Q10: the smoothed madness grade tints and outlines every enemy alike.
+	_madness = game.sanity_fx.madness if game.sanity_fx != null else 0.0
+	var figs: Array[Array] = []
+	for i in s.towers.size():
+		var t := s.towers[i]
+		figs.append([view.depth(t.centre), Fig.TOWER, i, t])
+		if LookCatalog.row(Board.shot_kind(t))["area"] == "summon_ring":
+			figs.append([view.depth(t.centre), Fig.LEASH, i, t])
+	for i in s.enemies.size():
+		var e := s.enemies[i]
+		var p := e.position(alpha)
+		board.last_pos[e.id] = p
+		figs.append([view.depth(p), Fig.ENEMY, i, e, p])
+	for i in s.allies.size():
+		var a := s.allies[i]
+		var p := a.position(alpha)
+		figs.append([view.depth(p), Fig.ALLY, i, a, p])
+	figs.sort_custom(figure_before)
+	for f in figs:
+		match f[1]:
+			Fig.TOWER:
+				_draw_tower(f[3])
+			Fig.ENEMY:
+				_draw_enemy(f[3], f[4])
+			Fig.LEASH:
+				_draw_leash(f[3])
+			Fig.ALLY:
+				_draw_ally(f[3], f[4])
+
+
+## LT-126: the figure order, a strict total order on [depth, Fig, snapshot index, ...]:
+## smaller depth first (farther from the viewer), then the Fig tie order, then the order in
+## the snapshot array. sort_custom is not stable, so the index makes every key distinct.
+static func figure_before(a: Array, b: Array) -> bool:
+	if a[0] != b[0]:
+		return a[0] < b[0]
+	if a[1] != b[1]:
+		return a[1] < b[1]
+	return a[2] < b[2]
 
 
 ## LT-25 §1.3: the ward ring's alpha: idle while no drawn enemy (`board.last_pos`, real or fake
@@ -279,90 +335,90 @@ func _draw_searchlight(t: TowerRecord, sc: Color) -> void:
 
 ## LT-104: body colour, radius and rim from the enemy's look row (LookCatalog.enemy_look);
 ## every marker radius and the HP bar move out by the radius above the built-in 0.25 cell.
-func _draw_enemies(s: SimSnapshot) -> void:
-	board.last_pos.clear()
-	var fl := board.flicker_strength()
-	# LT-23 Q10: the smoothed madness grade tints and outlines every enemy alike.
-	var mad := game.sanity_fx.madness if game.sanity_fx != null else 0.0
-	for e in s.enemies:
-		var p := e.position(alpha)
-		board.last_pos[e.id] = p
-		var px := view.cell_to_world(p)
-		var look := LookCatalog.enemy_row(LookCatalog.enemy_look(e))
-		var body: float = look["radius"]
-		var dr := body - LookCatalog.ENEMY_RADIUS  # 0 for the built-in look
-		var base_color: Color = look["color"]
-		var color := base_color.lerp(COLOR_ENEMY_MAD, mad)
-		if e.revealed:
-			color = Color(REVEALED_BODY, REVEALED_ALPHA)
-		var dip := fl * board.flicker_dip(e.id) if fl > 0.0 else 0.0
-		color.a *= 1.0 - dip
-		if dip > 0.5:  # a torn frame: a faint double a few pixels off
-			var ghost := color
-			# LT-40: fade the double in over dip 0.5..0.7 instead of popping in at full alpha.
-			ghost.a = 0.35 * clampf((dip - 0.5) / 0.2, 0.0, 1.0)
-			draw_circle(px + Vector2(view.cells_to_px(0.15), 0), view.cells_to_px(body), ghost)
-		var marks := e.markers
-		if marks.has("slow"):  # ground ring under the body
-			var sc := Color(WARD_COLOR, color.a)
-			for i in 6:
-				var st := i * TAU / 6.0
-				draw_arc(px, view.cells_to_px(MARK_SLOW_CELLS + dr), st, st + TAU / 12.0, 4, sc, 2.0)
-		draw_circle(px, view.cells_to_px(body), color)
-		if look["ring"]:  # LT-104: a dark rim (an enemy look's `ring`)
-			draw_arc(px, view.cells_to_px(body), 0, TAU, 24, Color(COLOR_ENEMY_OUTLINE, color.a), 2.0)
-		if marks.has("bleed"):  # two red drops dripping below the body
-			for i in 2:
-				var ph := fposmod(board.time / BLEED_DROP_SECONDS + i * 0.5, 1.0)
-				var dc := Color(MARK_BLEED, color.a * (1.0 - ph * 0.7))
-				draw_circle(px + Vector2(view.cells_to_px(i - 0.5) * 0.22, view.cells_to_px(0.3 + dr + 0.2 * ph)),
-					view.cells_to_px(0.09), dc)
-		if mad > 0.0:
-			draw_arc(px, view.cells_to_px(body), 0, TAU, 24, Color(COLOR_ENEMY_OUTLINE, color.a * mad), 3.0)
-		if marks.has("sealed"):  # LT-51: a silver lid over the body while banish-immune
-			draw_arc(px, view.cells_to_px(BANISH_LID_CELLS + dr), PI * 1.15, PI * 1.85, 10,
-				Color(Board.BANISH_COLOR, 0.85 * color.a), 2.0)
-		if marks.has("vuln"):  # body outline
-			draw_arc(px, view.cells_to_px(body), 0, TAU, 24, Color(MARK_VULN, color.a), 2.0)
-		if e.revealed:  # LT-49: amber ring outside the dashed slow mark, slash across the body
-			var mc := Color(REVEALED_MARK, 1.0 - dip)
-			draw_arc(px, view.cells_to_px(REVEALED_RING_CELLS + dr), 0, TAU, 24, mc, 3.0)
-			var d := view.cell_to_world(Vector2(1, -1).normalized()) * REVEALED_SLASH_CELLS
-			draw_line(px - d, px + d, mc, 3.0)
-		if game.sim.debug_is_fake_id(e.id):
-			draw_arc(px, view.cells_to_px(0.3 + dr), 0, TAU, 24, COLOR_DEBUG_FAKE, 2.0)
-		var w := view.cells_to_px(0.6)
-		var bar := Rect2(px + Vector2(-w * 0.5, -view.cells_to_px(0.4 + dr)), Vector2(w, 4))
-		draw_rect(bar, Color(COLOR_HP_BACK, 1.0 - dip))
-		bar.size.x = w * clampf(e.hp / e.max_hp, 0.0, 1.0)
-		draw_rect(bar, Color(COLOR_HP, 1.0 - dip))
+## LT-126 roles: the body and its markers are upright (U: drawn in screen px round the
+## projected foot `view.project(p)`), the slow mark is a ground ring (G, view.ring) and the
+## HP bar sits at a height (H, view.project(p, h)). `p`: the drawn position (cells).
+func _draw_enemy(e: EnemyRecord, p: Vector2) -> void:
+	var fl := _flicker
+	var mad := _madness
+	var px := view.project(p)
+	var look := LookCatalog.enemy_row(LookCatalog.enemy_look(e))
+	var body: float = look["radius"]
+	var dr := body - LookCatalog.ENEMY_RADIUS  # 0 for the built-in look
+	var base_color: Color = look["color"]
+	var color := base_color.lerp(COLOR_ENEMY_MAD, mad)
+	if e.revealed:
+		color = Color(REVEALED_BODY, REVEALED_ALPHA)
+	var dip := fl * board.flicker_dip(e.id) if fl > 0.0 else 0.0
+	color.a *= 1.0 - dip
+	if dip > 0.5:  # a torn frame: a faint double a few pixels off
+		var ghost := color
+		# LT-40: fade the double in over dip 0.5..0.7 instead of popping in at full alpha.
+		ghost.a = 0.35 * clampf((dip - 0.5) / 0.2, 0.0, 1.0)
+		draw_circle(px + Vector2(view.cells_to_px(0.15), 0), view.cells_to_px(body), ghost)
+	var marks := e.markers
+	if marks.has("slow"):  # ground ring under the body
+		var sc := Color(WARD_COLOR, color.a)
+		for i in 6:
+			var st := i * TAU / 6.0
+			view.ring(self, p, MARK_SLOW_CELLS + dr, sc, 2.0, 4, st, st + TAU / 12.0)
+	draw_circle(px, view.cells_to_px(body), color)
+	if look["ring"]:  # LT-104: a dark rim (an enemy look's `ring`)
+		draw_arc(px, view.cells_to_px(body), 0, TAU, 24, Color(COLOR_ENEMY_OUTLINE, color.a), 2.0)
+	if marks.has("bleed"):  # two red drops dripping below the body
+		for i in 2:
+			var ph := fposmod(board.time / BLEED_DROP_SECONDS + i * 0.5, 1.0)
+			var dc := Color(MARK_BLEED, color.a * (1.0 - ph * 0.7))
+			draw_circle(px + Vector2(view.cells_to_px(i - 0.5) * 0.22, view.cells_to_px(0.3 + dr + 0.2 * ph)),
+				view.cells_to_px(0.09), dc)
+	if mad > 0.0:
+		draw_arc(px, view.cells_to_px(body), 0, TAU, 24, Color(COLOR_ENEMY_OUTLINE, color.a * mad), 3.0)
+	if marks.has("sealed"):  # LT-51: a silver lid over the body while banish-immune
+		draw_arc(px, view.cells_to_px(BANISH_LID_CELLS + dr), PI * 1.15, PI * 1.85, 10,
+			Color(Board.BANISH_COLOR, 0.85 * color.a), 2.0)
+	if marks.has("vuln"):  # body outline
+		draw_arc(px, view.cells_to_px(body), 0, TAU, 24, Color(MARK_VULN, color.a), 2.0)
+	if e.revealed:  # LT-49: amber ring outside the dashed slow mark, slash across the body
+		var mc := Color(REVEALED_MARK, 1.0 - dip)
+		draw_arc(px, view.cells_to_px(REVEALED_RING_CELLS + dr), 0, TAU, 24, mc, 3.0)
+		# U: the slash is a shape in screen px across the body
+		var d := Vector2(1, -1).normalized() * view.cells_to_px(REVEALED_SLASH_CELLS)
+		draw_line(px - d, px + d, mc, 3.0)
+	if game.sim.debug_is_fake_id(e.id):
+		draw_arc(px, view.cells_to_px(0.3 + dr), 0, TAU, 24, COLOR_DEBUG_FAKE, 2.0)
+	var w := view.cells_to_px(0.6)
+	var bar := Rect2(view.project(p, 0.4 + dr) + Vector2(-w * 0.5, 0), Vector2(w, 4))
+	draw_rect(bar, Color(COLOR_HP_BACK, 1.0 - dip))
+	bar.size.x = w * clampf(e.hp / e.max_hp, 0.0, 1.0)
+	draw_rect(bar, Color(COLOR_HP, 1.0 - dip))
 
 
-## LT-52 (P10): each circle's leash ring (faint), then every live ally at its interpolated
-## position over the enemies: a claw line to its held enemy, the body (wing strokes when it
-## flies) and its HP bar below the body.
-## LT-104: the ring where the tower's look row has area "summon_ring", in that row's colour;
-## a unit's colour is its tower def's SUMMON look (LookCatalog.ally_color, survives a sale).
-func _draw_allies(s: SimSnapshot) -> void:
-	for t in s.towers:
-		var look := LookCatalog.row(Board.shot_kind(t))
-		if look["area"] == "summon_ring":
-			var rc: Color = look["color"]
-			view.ring(self, t.centre, t.stats.summon_leash(), Color(rc, SUMMON_RING_ALPHA), 1.0, 64)
-	for a in s.allies:
-		var px := view.cell_to_world(a.position(alpha))
-		var ac := LookCatalog.ally_color(a.source)
-		if a.held_id >= 0 and board.last_pos.has(a.held_id):
-			draw_line(px, view.project(board.last_pos[a.held_id]), Color(ac, 0.9), 2.0)
-		var r := view.cells_to_px(ALLY_RADIUS_CELLS)
-		if a.flying:
-			for side: float in [-1.0, 1.0]:
-				draw_line(px + Vector2(side * r * 0.6, 0), px + Vector2(side * r * 1.9, -r * 0.9),
-					ac, 2.0)
-		draw_circle(px, r, ALLY_BODY)
-		draw_arc(px, r, 0, TAU, 20, ac, 2.0)
-		var w := view.cells_to_px(0.5)
-		var bar := Rect2(px + Vector2(-w * 0.5, r + 3.0), Vector2(w, 3))
-		draw_rect(bar, COLOR_HP_BACK)
-		bar.size.x = w * clampf(a.hp / a.max_hp, 0.0, 1.0) if a.max_hp > 0.0 else 0.0
-		draw_rect(bar, ALLY_HP)
+## LT-52 (P10): a Summoning Circle's leash ring (faint, ground: view.ring), drawn over the
+## enemies and under the allies. LT-104: for a tower whose look row has area "summon_ring",
+## in that row's colour.
+func _draw_leash(t: TowerRecord) -> void:
+	var rc: Color = LookCatalog.row(Board.shot_kind(t))["color"]
+	view.ring(self, t.centre, t.stats.summon_leash(), Color(rc, SUMMON_RING_ALPHA), 1.0, 64)
+
+
+## LT-52 (P10): a live ally at its interpolated position `p` (cells), upright (U) round the
+## projected foot: a claw line to its held enemy, the body (wing strokes when it flies) and
+## its HP bar below the body. LT-104: its colour is its tower def's SUMMON look
+## (LookCatalog.ally_color, survives a sale).
+func _draw_ally(a: AllyRecord, p: Vector2) -> void:
+	var px := view.project(p)
+	var ac := LookCatalog.ally_color(a.source)
+	if a.held_id >= 0 and board.last_pos.has(a.held_id):
+		draw_line(px, view.project(board.last_pos[a.held_id]), Color(ac, 0.9), 2.0)
+	var r := view.cells_to_px(ALLY_RADIUS_CELLS)
+	if a.flying:
+		for side: float in [-1.0, 1.0]:
+			draw_line(px + Vector2(side * r * 0.6, 0), px + Vector2(side * r * 1.9, -r * 0.9),
+				ac, 2.0)
+	draw_circle(px, r, ALLY_BODY)
+	draw_arc(px, r, 0, TAU, 20, ac, 2.0)
+	var w := view.cells_to_px(0.5)
+	var bar := Rect2(px + Vector2(-w * 0.5, r + 3.0), Vector2(w, 3))
+	draw_rect(bar, COLOR_HP_BACK)
+	bar.size.x = w * clampf(a.hp / a.max_hp, 0.0, 1.0) if a.max_hp > 0.0 else 0.0
+	draw_rect(bar, ALLY_HP)

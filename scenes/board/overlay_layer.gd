@@ -16,8 +16,8 @@ func _draw() -> void:
 		return
 	var sel := board.selection
 	if sel.enemy_id != 0 and board.last_pos.has(sel.enemy_id):  # LT-66 §4: the shown monster
-		draw_arc(view.cell_to_world(board.last_pos[sel.enemy_id]),
-			view.cells_to_px(Board.PICK_RADIUS), 0, TAU, 32, COLOR_SELECT, 2.0)
+		# LT-126: a ground ring at the foot (G; §1.2 leaves foot ellipse vs body ring to the owner)
+		view.ring(self, board.last_pos[sel.enemy_id], Board.PICK_RADIUS, COLOR_SELECT, 2.0, 32)
 	if game.snapshot.map.grid.contains(sel.cell):
 		view.outline_cell(self, sel.cell, COLOR_SELECT, 2.0)
 		if not sel.glyph.is_empty():  # LT-61 §7: placed like EntityLayer._draw_tower's letter

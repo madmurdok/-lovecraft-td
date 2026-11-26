@@ -440,11 +440,11 @@ func _draw_harpoon(fx: Dictionary) -> void:
 	var fade := clampf(1.0 - (el - (HARPOON_SECONDS - HARPOON_FADE)) / HARPOON_FADE, 0.0, 1.0)
 	if fade > 0.0:
 		var head := a.lerp(b, clampf(el / HARPOON_TRAVEL, 0.0, 1.0))
-		if fx["miss"] and el > HARPOON_TRAVEL:
-			head += Vector2(0, view.cells_to_px(0.3) * (1.0 - fade))
-		var base := head - view.cell_to_world(dir) * 0.3
+		if fx["miss"] and el > HARPOON_TRAVEL:  # H: the spent head drops below its end point
+			head = view.project(fx["to"], -0.3 * (1.0 - fade))
+		var base := head - dir * view.cells_to_px(0.3)  # U: the head's shape in screen px
 		draw_line(a, base, Color(col, 0.6 * fade), 1.0)
-		var w := view.cell_to_world(dir.orthogonal()) * 0.09
+		var w := dir.orthogonal() * view.cells_to_px(0.09)
 		draw_colored_polygon(PackedVector2Array([head, base + w, base - w]),
 			Color(col, fade))
 		_polygon_drawn = true
@@ -576,20 +576,23 @@ func _draw_shell(fx: Dictionary) -> void:
 	var a: Vector2 = view.project(fx["from"])
 	var b: Vector2 = view.project(fx["end"])
 	var dir := (b - a).normalized()
+	var gun: Vector2 = fx["from"]  # cells; the muzzle sits on the ground towards the aim
+	var end_cells: Vector2 = fx["end"]
+	var aim := (end_cells - gun).normalized()
 	var k_all := clampf(el / SHELL_SECONDS, 0.0, 1.0)
-	# Smoke puff at the gun, rising and fading over the whole effect.
-	draw_circle(a + view.cell_to_world(dir) * 0.35 + Vector2(0, -view.cells_to_px(0.25) * k_all),
+	# Smoke puff at the gun, rising (H) and fading over the whole effect.
+	draw_circle(view.project(gun + aim * 0.35, 0.25 * k_all),
 		view.cells_to_px(0.18 + 0.22 * k_all), Color(SHELL_SMOKE, 0.5 * (1.0 - k_all)))
 	if el < SHELL_MUZZLE:
 		var mk := 1.0 - el / SHELL_MUZZLE
-		draw_circle(a + view.cell_to_world(dir) * 0.3, view.cells_to_px(0.2) * (0.6 + 0.4 * mk),
+		draw_circle(view.project(gun + aim * 0.3), view.cells_to_px(0.2) * (0.6 + 0.4 * mk),
 			Color(3.0, 2.4, 1.4, mk))
 	if el < SHELL_TRAVEL:
 		var kk := clampf(el / SHELL_TRAVEL, 0.0, 1.0)
 		var head := a.lerp(b, kk)
 		var tail := head - dir * minf(view.cells_to_px(1.2), head.distance_to(a))
 		draw_line(tail, head, Color(SHELL_SMOKE, 0.45), 4.0)
-		draw_line(head - view.cell_to_world(dir) * 0.3, head, col, 4.0)
+		draw_line(head - dir * view.cells_to_px(0.3), head, col, 4.0)  # U: the slug in screen px
 		_line_drawn = true
 		draw_circle(head, 3.5, Color(3.0, 2.6, 2.0))
 		return
@@ -597,7 +600,7 @@ func _draw_shell(fx: Dictionary) -> void:
 	var k := clampf(ie / (SHELL_SECONDS - SHELL_TRAVEL), 0.0, 1.0)
 	var grow := 1.0 - (1.0 - k) * (1.0 - k)
 	if fx["miss"]:
-		draw_circle(b + Vector2(0, -view.cells_to_px(0.2) * k), view.cells_to_px(0.15 + 0.25 * grow),
+		draw_circle(view.project(fx["end"], 0.2 * k), view.cells_to_px(0.15 + 0.25 * grow),
 			Color(SHELL_SMOKE, 0.6 * (1.0 - k)))
 		return
 	var radius: float = fx.get("radius", 0.0)
@@ -628,8 +631,9 @@ func _draw_charge(fx: Dictionary) -> void:
 	var flight := minf(float(DYN_FLIGHT_TICKS), fuse)
 	var a: Vector2 = view.project(fx["from"])
 	var b: Vector2 = view.project(fx["to"])
-	var h := view.cell_to_world(_arc_lift(a, b)) \
-		* (DYN_ARC_BASE + view.px_to_cells(DYN_ARC_PER_CELL * a.distance_to(b)))
+	# H: the arc's top, a screen-px bulge (see _arc_lift; b2 makes it project(p, h)).
+	var h := _arc_lift(a, b) \
+		* view.cells_to_px(DYN_ARC_BASE + view.px_to_cells(DYN_ARC_PER_CELL * a.distance_to(b)))
 	var k := clampf(el / flight, 0.0, 1.0)
 	var pos := _arc_point(a, b, h, k)
 	if k < 1.0:
@@ -656,7 +660,7 @@ func _draw_charge(fx: Dictionary) -> void:
 		# A dud: the stick lies dead and a grey puff rises.
 		var dk := clampf(-left / DYN_DUD_TICKS, 0.0, 1.0)
 		_draw_stick(b, Vector2.RIGHT.rotated(0.35), false, lying, col)
-		draw_circle(b + Vector2(0, -view.cells_to_px(0.3) * dk), view.cells_to_px(0.15 + 0.2 * dk),
+		draw_circle(view.project(fx["to"], 0.3 * dk), view.cells_to_px(0.15 + 0.2 * dk),
 			Color(DYN_SMOKE, 0.6 * (1.0 - dk)))
 
 
@@ -668,7 +672,7 @@ func _draw_lift(fx: Dictionary) -> void:
 	var b: Vector2 = view.project(fx["to"])
 	var fade := Color(LIFT_COLOR, 1.0 - k)
 	if a.distance_to(b) > 1.0:
-		var h := _arc_lift(a, b) * view.cells_to_px(LIFT_ARC_CELLS)
+		var h := _arc_lift(a, b) * view.cells_to_px(LIFT_ARC_CELLS)  # H: a screen-px bulge
 		var pts := PackedVector2Array()
 		var n := 12
 		for i in n + 1:
@@ -686,6 +690,9 @@ func _arc_point(a: Vector2, b: Vector2, h: Vector2, k: float) -> Vector2:
 
 ## The unit direction the arc bulges: the chord's normal on the screen-up side, so a throw
 ## straight up or down the screen still reads as a curve (it bends to the left).
+## LT-126 (LT-64 §1.2 H): the bulge is a height drawn as a screen vector; it is not pure
+## screen-up (a throw down the screen bends sideways), so it cannot be project(p, h) without
+## a look change: kept as is at the identity view, left to b2.
 static func _arc_lift(a: Vector2, b: Vector2) -> Vector2:
 	var d := b - a
 	if d.length_squared() < 0.0001:
