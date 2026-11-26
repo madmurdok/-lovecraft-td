@@ -2,11 +2,11 @@ class_name GridFactory
 extends RefCounted
 ## LT-108 F1: the one place that builds a GridTopology from map data's "grid" kind (guard G15).
 ## Registering a topology is one MAKERS line; the config error text and G10 follow the table.
-## HexGrid ships but is not registered yet (owner, LT-108 Q6): "grid": "hex" stays an error.
+## HexGrid is registered since LT-129 (LT-18 §11 step 1).
 
 ## kind -> topology class. A static var, not a const: a global class name is not a constant
 ## expression, and sim/ may not preload (sim_boundary_test). Never written after load.
-static var MAKERS := {"square": SquareGrid}
+static var MAKERS := {"square": SquareGrid, "hex": HexGrid}
 
 
 ## The registered kinds, sorted (config error text).
