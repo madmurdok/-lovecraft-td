@@ -429,9 +429,15 @@ Verdict: **b2 goes.** Mean of two rounds: baseline 17.2, b2 17.6, a 15.2 fps; p1
 noise) so there is no case for falling back to (a). Caveat unchanged: b2's figures skip lighting
 and draw no auras or allies, so its fps is not a claim that it is faster.
 
-Web export of b2: see the LT-127 task record (templates 4.7.2 installed; the build exports and
-renders in Chrome, but `--view=b2` passed via the HTML `args` config did not visibly switch the
-view, so b2 itself is not confirmed on web; follow-up slice).
+Web (LT-127/S3): the b2 view works in the web export (Godot 4.7.2 web template, gl_compatibility,
+Chrome on ANGLE/Metal, Intel Iris Plus): the 3D plane in the SubViewport draws the trapezoid
+board (`docs/design/LT-64/b2-web.png`) and the picking round-trip is 0 mismatches of 336 cells.
+The HTML `args` config did not select the view; a throwaway proto patch (not committed) reads
+`?view=b2` from `window.location.search` via `JavaScriptBridge` on web. Blocker for web play:
+the in-game FPS label reads 1-3 for b2 against 7 for the flat game (same page, same session;
+rAF ~3/s with the tab visible and focused), so b2 is about 3x heavier than flat on this GPU in
+the browser, and both are far below desktop. Web is not a target of the view decision; if it
+becomes one, b2 needs a render-cost pass first (SubViewport size / `--ss`, plane resolution).
 
 ## 8. Recommendation: view (b2)
 
