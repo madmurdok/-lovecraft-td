@@ -400,39 +400,38 @@ gates the view implementation.
 
 ### 7.3 Focused re-measure (LT-127)
 
-Replaces §7.2's unfocused numbers. Method as §7.2 / LT-62 ("How it was measured"): bot build
-(rifleman x2, harpooner x6 per phase), seed 4242, boot-fit window 2390x1344, 10 s warm-up +
-90 s, `-- --mute`, two rounds (second reversed), load1 < 25 before each arm, `caffeinate -d -i`.
-The probe calls `window_move_to_foreground()` at start and every 5 s while unfocused and records
-per-frame focus. Wave span is 1-3 in every arm. **Focus was lost in three arms** (something
-took it back: b2 r1, a r2, b2 r2), and unfocused frames run at ~7 ms (throttled, not real), so
-the columns "fps / p10" use **focused frames only**; the all-frames median is meaningless where
-the share is < 1.
+Replaces §7.2's unfocused numbers. (An earlier run on a busy machine, load1 up to 68, lost
+focus in three arms and is discarded; this is the re-run on a quiet machine.) Method as §7.2 /
+LT-62 ("How it was measured"): bot build (rifleman x2, harpooner x6 per phase), seed 4242,
+boot-fit window 2390x1344, 10 s warm-up + 90 s, `-- --mute`, two rounds (second reversed),
+`caffeinate -d -i`, load1 < 10 before each arm (waits up to 30 min). The probe calls
+`window_move_to_foreground()` at start and every 5 s while unfocused and records per-frame
+focus. Wave span 1-3 in every arm. Focused share was 1.00 in every arm, so no retries.
 
-| Arm | Round | Focused share | fps median (focused) | p10 (focused) | Draw calls median | Load1 before / after | time -p real / user / sys |
+| Arm | Round | Focused share | fps median | p10 | Draw calls median | Load1 before / after | time -p real / user / sys |
 |---|---|---|---|---|---|---|---|
-| baseline | 1 | 1.00 | 14.3 | 10.0 | 1946 | 18.2 / 9.1 | 111.2 / 39.1 / 22.7 |
-| b2 | 1 | 0.37 | 15.3 | 8.2 | 1938 | 9.1 / 48.2 | 119.6 / 51.2 / 24.1 |
-| a | 1 | 1.00 | 12.8 | 6.1 | 1947 | 23.4 / 55.0 | 120.1 / 47.5 / 26.8 |
-| a | 2 | 0.50 | 16.9 | 10.2 | 1955 | 22.3 / 68.1 | 129.4 / 54.3 / 26.0 |
-| b2 | 2 | 0.65 | 15.2 | 9.8 | 1946 | 22.7 / 23.3 | 113.2 / 53.4 / 29.7 |
-| baseline | 2 | 1.00 | 12.4 | 7.8 | 1949 | 23.3 / 46.5 | 120.8 / 54.2 / 30.6 |
+| baseline | 1 | 1.00 | 16.7 | 11.4 | 1951 | 9.2 / 8.8 | 110.0 / 43.5 / 26.4 |
+| b2 | 1 | 1.00 | 16.4 | 11.9 | 1952 | 8.8 / 17.7 | 110.1 / 53.1 / 32.1 |
+| a | 1 | 1.00 | 14.6 | 10.8 | 1948 | 9.8 / 16.1 | 108.4 / 52.6 / 31.4 |
+| a | 2 | 1.00 | 15.7 | 10.7 | 1948 | 9.7 / 13.3 | 107.2 / 46.6 / 28.0 |
+| b2 | 2 | 1.00 | 18.8 | 11.0 | 1947 | 8.4 / 20.7 | 107.0 / 45.1 / 28.3 |
+| baseline | 2 | 1.00 | 17.7 | 12.2 | 1950 | 9.0 / 13.3 | 107.9 / 41.5 / 25.4 |
 
-Machine state: the box was busy during the run (load1 18-23 at the start of most arms, 40-68
-after several; `user` ~40-54 s against `real` ~111-129 s), so these figures are noisy; the
-baseline pair alone differs by 2 fps (14.3 vs 12.4) and draw calls are the only firm number
-(~1940-1955 in all arms; the 3D plane adds none). The focused fps here (12-17) is below LT-62's
-37-43 because the bot builds more towers by wave 3 and the machine was loaded.
+Machine state: load1 was gated below 10 at each start (waits 0-635 s) but climbed to 13-21
+during several arms (other processes; the 5/15-min averages stayed high, 15-122 at the
+starts). `user+sys` is ~70-85 s of ~108 s real, so the run is CPU-bound, not waiting. Noise is
+about +-1.5 fps (baseline 16.7 / 17.7; b2 16.4 / 18.8). The focused fps (15-19) is still below
+LT-62's 37-43 because the bot builds more towers by wave 3. Draw calls are the firm number:
+~1950 in all arms, the 3D plane adds none.
 
-Verdict: **b2 goes.** Focused, b2 (15.3 / 15.2) is not below baseline (14.3 / 12.4) by more than
-the noise; (a) is no better (12.8 / 16.9). No fallback to (a) is needed on frame rate.
-Caveat unchanged: b2's figures skip lighting and draw no auras or allies, so its fps is not a
-claim that it is faster.
+Verdict: **b2 goes.** Mean of two rounds: baseline 17.2, b2 17.6, a 15.2 fps; p10 11.8 / 11.5 /
+10.8. b2 costs nothing measurable against baseline; (a) is slightly lower (about 2 fps, near the
+noise) so there is no case for falling back to (a). Caveat unchanged: b2's figures skip lighting
+and draw no auras or allies, so its fps is not a claim that it is faster.
 
-Web export of b2: see the LT-127 task record (export templates 4.7.2 are installed; the build
-exports at 40 MB wasm / 0.5 MB pck, loads and renders in Chrome at ~12 fps; the `--view=b2` arg
-passed through the HTML `args` config did not visibly switch the view, so b2 itself was not
-confirmed on web).
+Web export of b2: see the LT-127 task record (templates 4.7.2 installed; the build exports and
+renders in Chrome, but `--view=b2` passed via the HTML `args` config did not visibly switch the
+view, so b2 itself is not confirmed on web; follow-up slice).
 
 ## 8. Recommendation: view (b2)
 
