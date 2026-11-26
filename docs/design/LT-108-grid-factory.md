@@ -8,6 +8,10 @@ square grid looks unchanged (at most a 1 px line shift, documented); adding hex 
 shipped unregistered). Later: LT-109 (route source), LT-110 (view transform, layers in
 cell units) build on this; nothing here decides them.
 
+**Status (LT-129, release 0.15.0).** `HexGrid` is now registered in `MAKERS`: `"grid": "hex"`
+builds a `HexGrid`. Statements below that hex "stays a config error" or ships unregistered
+describe LT-108's own state and are kept as the record.
+
 **LT-91 reconciliation.** LT-91 is already cancelled, folded into LT-108 by the owner ("Слить в
 LT-108, LT-91 отменить (Recommended)"). LT-108 absorbs all of it: tiles, sea fog, selection,
 the leak frame, the guard, the square tolerance and the hex check (now a real HexGrid, §2 F5). Nothing stays in LT-91.
