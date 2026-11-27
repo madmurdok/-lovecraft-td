@@ -29,7 +29,7 @@ func _draw() -> void:
 			view.ring(self, sc, sel.range_cells, COLOR_SELECT, 1.0, 48)
 			var dz := selected_dead_zone()
 			if dz > 0.0:  # LT-48: the dead zone, a dashed ring over a faint fill
-				draw_circle(view.project(sc), view.cells_to_px(dz), Color(Board.COLOR_LEAK, 0.08))
+				draw_circle(view.ground(sc), view.cells_to_px(dz), Color(Board.COLOR_LEAK, 0.08))
 				_draw_dashed_circle(sc, dz, Color(Board.COLOR_LEAK, 0.7))
 
 

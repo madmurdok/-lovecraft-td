@@ -303,7 +303,7 @@ class MapLayer extends Node2D:
 		# spans the map grown by the play rect on every side: any clamped pan stays inside.
 		var play := BoardView.play_rect()
 		var bounds := m.grid.bounds()
-		var sea := view.project_rect(bounds).grow_individual(
+		var sea := view.ground_rect(bounds).grow_individual(
 			play.size.x, play.size.y, play.size.x, play.size.y)
 		draw_rect(sea, Board.COLOR_WATER)
 		for c in m.grid.cells():

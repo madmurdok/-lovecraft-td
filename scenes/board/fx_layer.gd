@@ -337,6 +337,10 @@ func _draw_warmup() -> void:
 		draw_colored_polygon(PackedVector2Array([Vector2(2, 6), Vector2(6, 6), Vector2(4, 8)]), c)
 
 
+## LT-126 (LT-64 §1.2) roles: shots between figures (astray, tracer, harpoon, the shell's
+## flight, smoke and muzzle, the charge arc and stick, the LT-117 lift arc) are U/H and take
+## view.project; ground fx (death mark, wave, beam, banish, shell impact, charge radius,
+## blast, every view.ring) are G and take view.ground. b2 changes project only.
 func _draw_effects() -> void:
 	for fx in effects:
 		match fx["kind"]:
@@ -359,7 +363,7 @@ func _draw_effects() -> void:
 			"blast":
 				_draw_blast(fx)
 			"death":
-				draw_circle(view.project(fx["from"]), view.cells_to_px(0.35), COLOR_DEATH)
+				draw_circle(view.ground(fx["from"]), view.cells_to_px(0.35), COLOR_DEATH)
 			"dissolve":
 				view.ring(self, fx["from"], 0.35, COLOR_DISSOLVE, 2.0, 24)
 			"leak":
@@ -473,8 +477,8 @@ func _draw_harpoon(fx: Dictionary) -> void:
 func _draw_wave(fx: Dictionary) -> void:
 	var col: Color = fx.get("color", Board.WAVE_RIM)
 	var el := _elapsed(fx)
-	var a: Vector2 = view.project(fx["from"])
-	var b: Vector2 = view.project(fx["to"])
+	var a: Vector2 = view.ground(fx["from"])  # G: the tendril and disc lie on the ground
+	var b: Vector2 = view.ground(fx["to"])
 	var rim := COLOR_ASTRAY if fx["astray"] else col
 	if el < WAVE_TENDRIL + 0.05:
 		var pts := _waver_points(a, b, fx["seed"]) if fx["astray"] \
@@ -498,13 +502,13 @@ func _draw_wave(fx: Dictionary) -> void:
 ## enemy is live (else the shot's `to`); width and glow grow with `factor` (sanity_factor).
 func _draw_beam(fx: Dictionary) -> void:
 	var col: Color = fx.get("color", Board.BEAM_COLOR)
-	var a: Vector2 = view.project(fx["from"])
+	var a: Vector2 = view.ground(fx["from"])  # G: the beam lies on the ground
 	var end: Vector2 = fx["to"]
 	var e := game.snapshot.enemy(fx["target"]) if game != null and game.snapshot != null \
 		else null
 	if e != null:  # the snapshot holds live enemies only
 		end = e.position(alpha)
-	var b := view.project(end)
+	var b := view.ground(end)
 	# From the tile's rim, not its centre, so the glyph stays readable under the beam.
 	a += (b - a).normalized() * minf(view.cells_to_px(BEAM_RIM_CELLS), a.distance_to(b))
 	var fade := clampf(fx["ttl"] / BEAM_FADE, 0.0, 1.0)
@@ -522,7 +526,7 @@ func _draw_beam(fx: Dictionary) -> void:
 	view.ring(self, end, 0.18 + 0.08 * pulse, Color(col, fade), 2.0, 16)
 	for i in 3:
 		var v := Vector2.from_angle(ph * 0.3 + i * TAU / 3.0)
-		draw_line(view.project(end + v * 0.1), view.project(end + v * (0.22 + 0.06 * pulse)),
+		draw_line(view.ground(end + v * 0.1), view.ground(end + v * (0.22 + 0.06 * pulse)),
 			Color(BEAM_CORE, fade), 1.5)
 
 
@@ -535,9 +539,9 @@ func _draw_banish(fx: Dictionary) -> void:
 	var el := _elapsed(fx)
 	var dur: float = fx["dur"]
 	var k := clampf(el / dur, 0.0, 1.0)
-	var o: Vector2 = view.project(fx["origin"])
-	var a: Vector2 = view.project(fx["from"])
-	var b: Vector2 = view.project(fx["to"])
+	var o: Vector2 = view.ground(fx["origin"])  # G: thread, fold and trail lie on the ground
+	var a: Vector2 = view.ground(fx["from"])
+	var b: Vector2 = view.ground(fx["to"])
 	if el < BANISH_REACH:
 		var rf := 1.0 - el / BANISH_REACH
 		o += (a - o).normalized() * minf(view.cells_to_px(BEAM_RIM_CELLS), o.distance_to(a))
@@ -606,14 +610,15 @@ func _draw_shell(fx: Dictionary) -> void:
 	var radius: float = fx.get("radius", 0.0)
 	var rc := radius if radius > 0.0 else SHELL_IMPACT_CELLS
 	var r := view.cells_to_px(rc)
-	draw_circle(b, r * (0.5 + 0.5 * grow), Color(SHELL_SMOKE, 0.4 * (1.0 - k)))
+	var g := view.ground(fx["end"])  # G: the impact lies on the ground (the flight is U)
+	draw_circle(g, r * (0.5 + 0.5 * grow), Color(SHELL_SMOKE, 0.4 * (1.0 - k)))
 	if ie < BLAST_FLASH:
-		draw_circle(b, r * 0.5, Color(3.0, 2.6, 1.6, 1.0 - ie / BLAST_FLASH))
+		draw_circle(g, r * 0.5, Color(3.0, 2.6, 1.6, 1.0 - ie / BLAST_FLASH))
 	view.ring(self, fx["end"], rc * (0.3 + 0.7 * grow), Color(col, 1.0 - k * k), 3.0, 40)
 	var sd: int = fx["seed"]
 	for i in 6:
 		var ang := float((sd >> i) % 628) * 0.01 + i * TAU / 6.0
-		draw_circle(b + Vector2.from_angle(ang) * r * (0.3 + 0.8 * grow), 2.0,
+		draw_circle(g + Vector2.from_angle(ang) * r * (0.3 + 0.8 * grow), 2.0,
 			Color(col, 1.0 - k))
 	if ie < WAVE_FLASH:
 		var ray := CRIT_SPARK_SCALE if fx.get("crit", false) else 1.0
@@ -652,7 +657,8 @@ func _draw_charge(fx: Dictionary) -> void:
 	if left > 0.0:
 		var urgency := 1.0 - clampf(left / maxf(1.0, fuse - flight), 0.0, 1.0)
 		var pulse := 0.5 + 0.5 * sin(board.time * TAU * (2.0 + 6.0 * urgency))
-		draw_circle(b, view.cells_to_px(float(fx["radius"])), Color(col, 0.04 + 0.06 * urgency))
+		draw_circle(view.ground(fx["to"]), view.cells_to_px(float(fx["radius"])),
+			Color(col, 0.04 + 0.06 * urgency))  # G: the blast radius on the ground
 		view.ring(self, fx["to"], float(fx["radius"]),
 			Color(col, 0.25 + 0.35 * pulse * urgency + 0.1), 1.5, 40)
 		_draw_stick(b, Vector2.RIGHT.rotated(0.35), not fx["miss"] or left > fuse * 0.3, lying, col)
@@ -724,7 +730,7 @@ func _draw_stick(p: Vector2, dir: Vector2, burning: bool, el: float, col: Color)
 func _draw_blast(fx: Dictionary) -> void:
 	var col: Color = fx.get("color", Board.DYNAMITE_COLOR)
 	var el := _elapsed(fx)
-	var c: Vector2 = view.project(fx["from"])
+	var c: Vector2 = view.ground(fx["from"])  # G: the whole blast lies on the ground
 	var rc := float(fx["radius"])
 	var r := view.cells_to_px(rc)
 	var k := clampf(el / BLAST_SECONDS, 0.0, 1.0)

@@ -305,7 +305,7 @@ func _draw_auras(s: SimSnapshot) -> void:
 		var a := ward_alpha(t)
 		var bright := a > WARD_IDLE_ALPHA
 		if t.stats.casts_shadow():
-			draw_circle(view.project(t.centre), view.cells_to_px(rc), WARD_SHADOW_FILL)
+			draw_circle(view.ground(t.centre), view.cells_to_px(rc), WARD_SHADOW_FILL)
 		view.ring(self, t.centre, rc, Color(wc, a), 4.0 if bright else 2.0, 64)
 		var rot := board.time * TAU / WARD_TURN_SECONDS
 		for i in 5:
@@ -317,7 +317,7 @@ func _draw_auras(s: SimSnapshot) -> void:
 ## from the tower to the rim turning once per SEARCH_SWEEP_SECONDS (decoration: what is
 ## revealed is the whole disc, sim state). `sc`: the look's colour (LT-104).
 func _draw_searchlight(t: TowerRecord, sc: Color) -> void:
-	var c := view.project(t.centre)
+	var c := view.ground(t.centre)
 	var r := view.cells_to_px(t.stats.range_cells)
 	var a := ward_alpha(t)
 	draw_circle(c, r, Color(sc, SEARCH_DISC_ALPHA * (1.0 + a)))
@@ -328,7 +328,7 @@ func _draw_searchlight(t: TowerRecord, sc: Color) -> void:
 	var steps := 8
 	for i in steps + 1:
 		var ang := dir - SEARCH_CONE + 2.0 * SEARCH_CONE * i / steps
-		pts.append(view.project(t.centre + Vector2(cos(ang), sin(ang)) * t.stats.range_cells))
+		pts.append(view.ground(t.centre + Vector2(cos(ang), sin(ang)) * t.stats.range_cells))
 		cols.append(Color(sc, 0.04))
 	draw_polygon(pts, cols)
 

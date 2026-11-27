@@ -116,9 +116,16 @@ func test_g2_pixels_only_in_the_view() -> void:
 ## view.cells_to_px; so `cell_to_world(` (a point, or a direction times a scalar: the old
 ## U/H forms) is denied, and so is a `draw_arc(` centred straight on a view call (a ground
 ## ring: use view.ring). A ring round an already projected body (`draw_arc(px, ...)`) is an
-## upright shape and passes; text cannot tell it from a ground ring at a projected point.
+## upright shape and passes; text cannot tell it from a ground ring at a projected point,
+## so (LT-126/S3 L2) the two layers with no upright ring left, fx and overlay, deny
+## `draw_arc(` outright (G2_ROLE_NO_ARC). `cells_to_px(1)` / `cells_to_px(1.0)` is a point
+## scale in disguise (`p * view.cells_to_px(1.0)`, the old cell_to_world) and is denied too.
 const G2_ROLE_DIRS := ["res://scenes", "res://ui"]
-const G2_ROLE_DENY := "\\bcell_to_world\\(|\\bdraw_arc\\(\\s*[\\w.]*\\bview\\."
+const G2_ROLE_DENY := "\\bcell_to_world\\(|\\bdraw_arc\\(\\s*[\\w.]*\\bview\\." \
+	+ "|\\bcells_to_px\\(\\s*1(\\.0*)?\\s*\\)"
+const G2_ROLE_NO_ARC_FILES := ["res://scenes/board/fx_layer.gd",
+	"res://scenes/board/overlay_layer.gd"]
+const G2_ROLE_NO_ARC := "\\bdraw_arc\\("
 
 
 func test_g2_board_plane_roles_named_in_the_view() -> void:
@@ -126,36 +133,52 @@ func test_g2_board_plane_roles_named_in_the_view() -> void:
 	var hits: Array[String] = []
 	var scanned := 0
 	var home_hits := 0
+	var no_arc_scanned := 0
 	for dir: String in G2_ROLE_DIRS:
 		for f in scan._gd_files(dir):
-			var found := _find_joined(scan, f, FileAccess.get_file_as_string(f), G2_ROLE_DENY)
+			var text := FileAccess.get_file_as_string(f)
+			var found := _find_joined(scan, f, text, G2_ROLE_DENY)
 			if f == G2_HOME:
 				home_hits = found.size()
 				continue
 			scanned += 1
 			hits.append_array(found)
+			if f in G2_ROLE_NO_ARC_FILES:
+				no_arc_scanned += 1
+				hits.append_array(_find_joined(scan, f, text, G2_ROLE_NO_ARC))
 	var probes := ["var d := view.cell_to_world(Vector2(1, -1).normalized()) * 0.3",
 		"var base := head - view.cell_to_world(dir) * 0.3",
 		"draw_circle(a + view.cell_to_world(dir) * 0.3, r, c)",
 		"var h := view.cell_to_world(_arc_lift(a, b)) \\\n\t* 2.0",
 		"var px := view.cell_to_world(p)",
 		"draw_arc(view.project(c), r, 0, TAU, 32, col, 2.0)",
-		"draw_arc(\n\tgame.board.view.cell_centre(c), r, 0, TAU, 32, col, 2.0)"]
+		"draw_arc(\n\tgame.board.view.cell_centre(c), r, 0, TAU, 32, col, 2.0)",
+		"draw_circle(fx[\"from\"] * view.cells_to_px(1.0), r, c)",
+		"var b := p * view.cells_to_px(1)"]
 	var probe_hits := 0
 	for p: String in probes:
 		probe_hits += _find_joined(scan, "probe.gd", p, G2_ROLE_DENY).size()
+	# In fx/overlay a ring round a pre-projected point is caught as well (the S3 probe form).
+	var arc_probes := ["draw_arc(b, view.cells_to_px(0.2 + 0.3 * k), 0, TAU, 24, c, 2.0)",
+		"draw_arc(\n\tpx, r, 0, TAU, 24, c, 2.0)"]
+	var arc_hits := 0
+	for p: String in arc_probes:
+		arc_hits += _find_joined(scan, "probe.gd", p, G2_ROLE_NO_ARC).size()
 	var clean := _find_joined(scan, "near.gd",
 		"view.ring(self, c, r, col, 2.0, 32)\ndraw_arc(px, r, 0, TAU, 24, col, 2.0)\n"
-		+ "h = view.project(p, 0.4)\nd = dir * view.cells_to_px(0.3)\nq = view.cell_to_screen(p)",
+		+ "h = view.project(p, 0.4)\nd = dir * view.cells_to_px(0.3)\nq = view.cell_to_screen(p)"
+		+ "\nt = view.cells_to_px(1.2)\ng = view.ground(p)\nw = view.cells_to_px(10.0)",
 		G2_ROLE_DENY)
 	scan.free()
 	assert_int(scanned).is_greater(20)  # scenes/ and ui/ were walked
 	assert_int(home_hits).is_greater(0)  # the view itself holds cell_to_world and draw_arc
+	assert_int(no_arc_scanned).is_equal(G2_ROLE_NO_ARC_FILES.size())  # both files exist
 	assert_int(probe_hits).is_equal(probes.size())  # each raw form is caught
+	assert_int(arc_hits).is_equal(arc_probes.size())
 	assert_array(clean).is_empty()  # the role calls are not
 	assert_array(hits).override_failure_message(
-		"raw cell -> px or a hand-drawn ground ring outside BoardView (use view.project / "
-		+ "view.ring / view.cells_to_px): " + ", ".join(hits)).is_empty()
+		"raw cell -> px or a hand-drawn ground ring outside BoardView (use view.ground / "
+		+ "view.project / view.ring / view.cells_to_px): " + ", ".join(hits)).is_empty()
 
 
 ## G3 (LT-76, LT-77, LT-35): one cell centre. Under sim/, tools/, scenes/ and ui/ a
