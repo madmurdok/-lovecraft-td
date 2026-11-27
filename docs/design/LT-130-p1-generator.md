@@ -380,3 +380,17 @@ Findings against the bar:
   per route, early exit) or a looser definition is an owner decision, not a tuning one.
 - The viewer's `--screenshot` waited 4 frames and saved a blank image for the small preset; now 20.
 - Screenshots: `docs/design/LT-130/p1-small.png`, `p1-large.png` (seeds 1-20, defaults above).
+
+### Verify re-time (S26)
+
+Tip cde8334, `scripts/mapgen-report.sh --preset <p> --seeds 1000`, run alone after the suite on a
+quiet machine (load1 2.4 at the start, 5.2 at the end of the large run).
+
+| preset | reject | 1st pass | cap failures | ms mean / p95 / max | real / user / sys s | reasons |
+|---|---|---|---|---|---|---|
+| p1_small | 23.0 % (299 / 1299) | 76.5 % | 0 | 65.7 / 136.5 / 448.7 (seed 596) | 66.97 / 65.64 / 0.42 | S2 27, C3 272 |
+| p1_large | 21.9 % (281 / 1281) | 79.1 % | 0 | 114.0 / 241.6 / 745.7 (seed 421) | 115.77 / 113.52 / 0.62 | S2 56, C3 225, C5 1 |
+
+Bars: reject < 30 % met on both presets; p1_small p95 136.5 ms < 200 ms met. p1_large p95 241.6 ms
+is over 200 ms: the accepted deviation of §10 item 16 (LT-141), not a regression. Reject counts are
+identical to S24 (same code and seeds); `user` is close to `real`, so the times are CPU, not waiting.
