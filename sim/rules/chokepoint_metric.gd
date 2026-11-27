@@ -8,6 +8,8 @@ extends RefCounted
 
 ## detour_deltas value of a chokepoint whose barricade leaves no way around (a cut cell).
 const CUT := -1
+## detour_deltas value of a chokepoint C5 did not measure (it stopped at a qualifying one).
+const SKIPPED := -2
 
 
 ## Per map: what the report tool prints (LT-18 §8 "report per map"). Per-route arrays are in
@@ -21,7 +23,7 @@ class MetricReport extends RefCounted:
 	var chokepoints: Array = []  ## Array[Vector2i] per route, in route order
 	var spaced: Array[int] = []  ## C1: chokepoints spaced >= S apart, greedy from the entry
 	var max_blind: Array[int] = []  ## C2
-	var detour_deltas: Array = []  ## C5: Array[int] per route, aligned with chokepoints; CUT
+	var detour_deltas: Array = []  ## C5: Array[int] per route, aligned with chokepoints; CUT, SKIPPED
 	var shared_share_pct := -1  ## C3: -1 = n/a (one entry)
 	var last_shared := GenMap.NO_CELL  ## C3: the common last chokepoint before the floor
 
@@ -60,7 +62,7 @@ static func evaluate(m: GenMap, p: MapGenParams, field: RouteField = null) -> Me
 		rep.chokepoints.append(cells)
 		rep.spaced.append(c1_spaced(pos, p.c1_s))
 		rep.max_blind.append(c2_max_blind(m, r, discs))
-		rep.detour_deltas.append(c5_detours(m, field, r, pos, c5_cache))
+		rep.detour_deltas.append(c5_detours(m, field, r, pos, c5_cache, p.c5_d))
 	# C1 .. C7 in code order, so reasons come out sorted
 	for ri in rep.routes.size():
 		if rep.spaced[ri] < p.c1_m:
@@ -79,8 +81,8 @@ static func evaluate(m: GenMap, p: MapGenParams, field: RouteField = null) -> Me
 			% [rep.lengths, p.c4_lmin, p.c4_lmax, p.c4_ratio_pct])
 	for ri in rep.routes.size():
 		if not c5_passes(rep.detour_deltas[ri], p.c5_d):
-			rep.fail("C5", "route %d detours %s (each cut or >= %d, one >= %d)"
-				% [ri, rep.detour_deltas[ri], p.c5_d, p.c5_d])
+			rep.fail("C5", "route %d detours %s (need one cut or >= %d)"
+				% [ri, rep.detour_deltas[ri], p.c5_d])
 	for ri in rep.routes.size():
 		if not c6_floor_room(rep.routes[ri], field, p):
 			rep.fail("C6", "route %d has no cell at cost >= %d cells"
@@ -242,36 +244,40 @@ static func c4_lengths(lengths: Array[int], p: MapGenParams) -> bool:
 
 ## C5: per chokepoint of `route`, the extra cells the route's entry walks when a barricade
 ## (a wall in P1) stands there: (cost with it blocked - cost) in cells, CUT when the entry no
-## longer reaches L. `cache` maps a blocked grid index to its field (lookup only), shared by
-## the routes of one map.
+## longer reaches L. Aligned with `positions`. With `stop_at_d` >= 0 it stops at the first
+## qualifying chokepoint (CUT or >= stop_at_d), walking from the L end (cuts sit on the shared
+## trunk), and leaves the others SKIPPED; with -1 it measures all. `cache` maps a blocked grid
+## index to its field (lookup only), shared by the routes of one map.
 @warning_ignore("integer_division")
 static func c5_detours(m: GenMap, field: RouteField, route: Array[Vector2i],
-		positions: PackedInt64Array, cache: Dictionary) -> Array[int]:
+		positions: PackedInt64Array, cache: Dictionary, stop_at_d := -1) -> Array[int]:
 	var out: Array[int] = []
+	out.resize(positions.size())
+	out.fill(SKIPPED)
 	var entry := route[0]
 	var base := field.cost_at(entry)
-	for i in positions:
-		var key := m.grid.index(route[i])
+	for k in range(positions.size() - 1, -1, -1):
+		var cell := route[positions[k]]
+		var key := m.grid.index(cell)
 		if not cache.has(key):
-			var wall: Array[Vector2i] = [route[i]]
+			var wall: Array[Vector2i] = [cell]
 			cache[key] = RouteField.build(m, wall)
 		var blocked: RouteField = cache[key]
 		var c := blocked.cost_at(entry)
-		out.append(CUT if c == RouteField.UNREACHED else (c - base) / SimTime.UNITS_PER_CELL)
+		out[k] = CUT if c == RouteField.UNREACHED else (c - base) / SimTime.UNITS_PER_CELL
+		if stop_at_d >= 0 and (out[k] == CUT or out[k] >= stop_at_d):
+			break
 	return out
 
 
-## C5 with owner Q2 (a): every chokepoint is CUT or has a detour >= D, and at least one has
-## a detour >= D (a barricade is a real choice somewhere on the route).
+## C5, owner decision on LT-130 Q2 ("Хотя бы одно узкое место на маршрут"): the route has at
+## least one chokepoint where a one-cell barricade cuts it or forces a detour >= D. The other
+## chokepoints are unconstrained.
 static func c5_passes(deltas: Array[int], d: int) -> bool:
-	var some := false
 	for v in deltas:
-		if v == CUT:
-			continue
-		if v < d:
-			return false
-		some = true
-	return some
+		if v == CUT or v >= d:
+			return true
+	return false
 
 
 ## C6: some cell of `route` is at field cost >= floor_cells + c6_extra cells.

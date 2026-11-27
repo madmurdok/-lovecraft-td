@@ -144,7 +144,7 @@ cells within `R` of route cell `p` (O(route cells x cells), ~15k range tests per
 | C2 | `c2_max_blind(route, discs) -> int` | discs | G 8 |
 | C3 | `c3_convergence(routes, chokes, field, p) -> {last_shared, share_pct}` | routes, field costs | floor 6, share <= 50 % |
 | C4 | `c4_lengths(routes, p)` | route lengths | Lmin 20, Lmax 40, ratio `max*100 <= min*140` |
-| C5 | `c5_detours(m, field, routes, chokes, p) -> Array[int]` | a re-run `RouteField.build(..., blocked = p)` per chokepoint | D 4 |
+| C5 | `c5_detours(m, field, route, positions, cache, stop_at_d) -> Array[int]`, `c5_passes(deltas, D)` | a re-run `RouteField.build(m, [p])` per chokepoint, from the L end, stopping at the first qualifying one | D 4; per route at least one chokepoint is `cut` or `>= D` (Q2) |
 | C6 | `c6_floor_room(routes, field, p)` | field costs | some route cell at cost `>= (floor + 3)` cells |
 | C7 | `c7_clickable(m, p)` | grid, `L` | P1 proxy: no ISLAND in the top `hud_rows` text rows (0) or within `l_cover` steps of `L` (1); LT-64 replaces it |
 
@@ -154,7 +154,9 @@ Definitions the code must keep:
   every route / the shortest route's length. **With one entry C3 is not applicable** (always
   passes, reported "n/a"): a single route is 100 % shared by definition.
 - C5: delta = (entry cost with `p` blocked) - (entry cost) in cells; a chokepoint with no detour
-  at all (a cut cell) reports `cut`. Whether `cut` passes is Q2.
+  at all (a cut cell) reports `cut` (-1); chokepoints left unmeasured after the early exit
+  report `skipped` (-2). Q2 decided: a route passes when at least one chokepoint is `cut` or
+  `>= D`; the others are unconstrained.
 - C4 integer ratio, no float division. C2 counts consecutive route cells whose disc is empty.
 
 `MetricReport` (per map): `passed`, `reasons: PackedStringArray`, and per route: `length`,
@@ -259,6 +261,12 @@ tests (the tool measures it).
   cost; slower maps.
 
 **Q2. C5 at a cut chokepoint (no detour exists).**
+
+**Decided (owner):** "Хотя бы одно узкое место на маршрут": every route needs at least one
+chokepoint where a one-cell barricade either cuts the route or forces a detour `>= D`; all other
+chokepoints are unconstrained (no per-chokepoint `>= D` requirement). This replaces the options
+below, which are kept for the record.
+
 - (a) Cut passes, but every route needs at least one chokepoint with a detour `>= D`
   **(recommended)**: forced breaches are fine (§3), and loops still give the barricade a real
   choice somewhere. Risk: one more rule to tune.
@@ -274,3 +282,26 @@ tests (the tool measures it).
   dropped.
 - (b) `data/mapgen.json` through ConfigLoader now. Benefit: lab-ready immediately. Risk: config
   schema and tests for knobs that may still change shape in P2/P3.
+
+## 10. Deviations from this note (S8)
+
+Found while coding the rules (LT-130/S8); the code is the reference.
+
+1. Chokepoint candidates are CHANNEL route cells only: ENTRY and L take no barricade.
+2. Route length = steps (route cells - 1). C3 share = cells common to every route * 100 / the
+   shortest route's cell count. C1 spacing is counted greedily from the entry end.
+3. The trunk L -> F is carved once and shared; corridors run entry -> waypoint -> F.
+4. Added after step 9: ISLAND cells in the C7 zone (top `c7_hud_rows` rows, within `c7_l_cover`
+   steps of L) become ROCK before the small-island pass; otherwise C7 rejects almost every map.
+   C7 still bites on fixtures.
+5. A drawn entry next to an already placed entry is not placed (-> S2).
+6. `chokepoints(m, route, discs, expo, p)` returns route positions as `PackedInt64Array`
+   (`PackedInt32Array` is not on the sim engine allowlist); discs are precomputed once per map
+   (`disc_table`), `exposures` derives every exposure from them.
+7. Island split: `max(2, ceil(size / island_seed_div))` seeds, repeated until no component is
+   larger than `island_max`; the boundary is the cells next to a lower-numbered region.
+8. `GenMap.from_rows(kind, rows)` returns null on an unknown kind, ragged rows, a character
+   outside the legend or not exactly one L. `MapGenParams.from_dict(d, base)` returns
+   `{params, errors}` (unknown key, wrong type, range errors).
+9. §8 T1 / T8: with the defaults at the time of S8 `generate` hit the cap, so pin digests of
+   `attempt` (or of accepted maps once tuned), and T8 asserts every reject *contains* `C1`.
