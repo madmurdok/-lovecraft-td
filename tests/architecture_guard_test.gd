@@ -121,11 +121,11 @@ func test_g2_pixels_only_in_the_view() -> void:
 ## `draw_arc(` outright (G2_ROLE_NO_ARC). `cells_to_px(1)` / `cells_to_px(1.0)` is a point
 ## scale in disguise (`p * view.cells_to_px(1.0)`, the old cell_to_world) and is denied too.
 const G2_ROLE_DIRS := ["res://scenes", "res://ui"]
-const G2_ROLE_DENY := "\\bcell_to_world\\(|\\bdraw_arc\\(\\s*[\\w.]*\\bview\\." \
+const G2_ROLE_DENY := "\\bcell_to_world\\(|\\bdraw_arc\\s*\\(\\s*[\\w.]*\\bview\\." \
 	+ "|\\bcells_to_px\\(\\s*1(\\.0*)?\\s*\\)"
 const G2_ROLE_NO_ARC_FILES := ["res://scenes/board/fx_layer.gd",
 	"res://scenes/board/overlay_layer.gd"]
-const G2_ROLE_NO_ARC := "\\bdraw_arc\\("
+const G2_ROLE_NO_ARC := "\\bdraw_arc\\s*\\("
 
 
 func test_g2_board_plane_roles_named_in_the_view() -> void:
@@ -160,7 +160,7 @@ func test_g2_board_plane_roles_named_in_the_view() -> void:
 		probe_hits += _find_joined(scan, "probe.gd", p, G2_ROLE_DENY).size()
 	# In fx/overlay a ring round a pre-projected point is caught as well (the S3 probe form).
 	var arc_probes := ["draw_arc(b, view.cells_to_px(0.2 + 0.3 * k), 0, TAU, 24, c, 2.0)",
-		"draw_arc(\n\tpx, r, 0, TAU, 24, c, 2.0)"]
+		"draw_arc(\n\tpx, r, 0, TAU, 24, c, 2.0)", "draw_arc (px, r, 0, TAU, 24, c, 2.0)"]
 	var arc_hits := 0
 	for p: String in arc_probes:
 		arc_hits += _find_joined(scan, "probe.gd", p, G2_ROLE_NO_ARC).size()
