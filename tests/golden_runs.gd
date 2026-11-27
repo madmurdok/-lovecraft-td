@@ -26,6 +26,10 @@ const TRACE_VERSION := 1
 ## Runs whose trace text is pinned in full (no_tree_loop/NO_TREE_SEED, frame_path/FRAME_SEED);
 ## the others are pinned by line count and sha256 only (owner decision Q1 on LT-102).
 const TRACE_FULL_RUNS := ["no_tree_loop/5", "frame_path/1234"]
+## LT-109 (owner decision Q2): the RNG stream count the pinned files were made with. Streams
+## 0 .. PINNED_STREAMS - 1 are dumped always; a later (appended) stream only once drawn, so
+## appending a stream moves no digest until a run draws it.
+const PINNED_STREAMS: int = SimRng.Stream.ROUTE
 const MAX_EXACT_INT := 9007199254740992  ## 2^53: larger ints do not survive a binary64 reader
 const BOT_PATH := "res://tools/bot_runs.gd"
 ## Bot seed -> tick cap of its runs (0: the bot's own cap, 6 minutes per wave, i.e. the whole game).
@@ -240,13 +244,29 @@ static func trace_event_line(ev: SimEvent, errors: Array[String]) -> String:
 		"type": SimEvent.Type.keys()[ev.type]}, errors)
 
 
-## The SimNoTreeLoop digest scalars plus every stream state (Godot's signed int64 as a decimal
-## string, SimRng.Stream order).
+## The streams a final state dumps, SimRng.Stream order: 0 .. PINNED_STREAMS - 1 always, a
+## later stream only when its state differs from a fresh generator with its seed (drawn).
+static func dumped_streams(sim: Simulation) -> Array[int]:
+	var out: Array[int] = []
+	for stream: int in SimRng.Stream.values():
+		var g := sim.rng(stream as SimRng.Stream)
+		if stream < PINNED_STREAMS:
+			out.append(stream)
+			continue
+		var fresh := RandomNumberGenerator.new()
+		fresh.seed = g.seed
+		if g.state != fresh.state:
+			out.append(stream)
+	return out
+
+
+## The SimNoTreeLoop digest scalars plus the dumped stream states (dumped_streams; Godot's
+## signed int64 as a decimal string, SimRng.Stream order).
 static func trace_final(sim: Simulation, errors: Array[String]) -> String:
 	var s := sim.state
 	var rng: Array[String] = []
-	for stream in SimRng.Stream.values():
-		rng.append(str(sim.rng(stream).state))
+	for stream in dumped_streams(sim):
+		rng.append(str(sim.rng(stream as SimRng.Stream).state))
 	return trace_json({"final": {"command_log": s.command_log.size(), "gold": s.gold,
 		"lighthouse_hp": s.lighthouse_hp, "next_id": s.next_id, "outcome": s.outcome,
 		"rng": rng, "sanity": s.sanity, "tick": s.tick, "towers": s.towers.size(),
@@ -258,7 +278,8 @@ static func trace_file_name(run_name: String) -> String:
 	return run_name.replace("/", "_") + ".jsonl"
 
 
-## The final state as text: the SimNoTreeLoop digest plus every entity and RNG stream.
+## The final state as text: the SimNoTreeLoop digest plus every entity and the dumped RNG
+## streams (dumped_streams).
 static func state_text(sim: Simulation) -> String:
 	var s := sim.state
 	var parts: Array[String] = [SimNoTreeLoop.digest(sim), "cap=%s st=%d phase=%d luck=%s" % [
@@ -268,8 +289,8 @@ static func state_text(sim: Simulation) -> String:
 		s.build_ticks_left, s.next_token_id, s.next_blast_id],
 		"beam=%s" % canon([s.beam_dx, s.beam_dy, s.prev_beam_dx, s.prev_beam_dy, s.beam_sign]),
 		"relics=%s" % canon(s.relics), "log=%s" % canon(s.command_log)]
-	for stream in SimRng.Stream.values():
-		parts.append("rng%d=%d" % [stream, sim.rng(stream).state])
+	for stream in dumped_streams(sim):
+		parts.append("rng%d=%d" % [stream, sim.rng(stream as SimRng.Stream).state])
 	for e in s.enemies:
 		parts.append("e%d:%s:%s:%d:%s:%s" % [e.id, e.def.id, canon(e.hp), e.distance,
 			canon([e.dead, e.leaked, e.dissolved, e.revealed, e.lit, e.speed_mult]),

@@ -5,13 +5,21 @@ extends RefCounted
 
 ## LT-70 §6: path cells one lit/shadowed tower is worth in `best_cell` (tunable).
 const CAST_WEIGHT := 3
+## LT-109: the score cache entry holding the route cells its scores were made for; a new
+## route plan with other cells empties the cache (def ids are never this key).
+const ROUTE_CELLS_KEY := "@route_cells"
 
 
 ## The free buildable cell with the most path cells within the tower's L1 range (and not
 ## inside its L1 min_range, LT-48), plus CAST_WEIGHT * cast_term; ties go to the lowest
-## row-major cell. (-1, -1) when none is free.
+## row-major cell. (-1, -1) when none is free. LT-109: the path cells are the next wave's
+## planned routes (Simulation.planned_route_cells; map.path on a v1 map).
 static func best_cell(cfg: GameConfig, sim: Simulation, id: String, score_cache: Dictionary) \
 		-> Vector2i:
+	var route_cells := sim.planned_route_cells()
+	if not score_cache.has(ROUTE_CELLS_KEY) or score_cache[ROUTE_CELLS_KEY] != route_cells:
+		score_cache.clear()
+		score_cache[ROUTE_CELLS_KEY] = route_cells
 	if not score_cache.has(id):
 		var rng_cells: float = cfg.towers[id].levels[0].range_cells
 		var min_cells: float = cfg.towers[id].levels[0].min_range
@@ -21,7 +29,7 @@ static func best_cell(cfg: GameConfig, sim: Simulation, id: String, score_cache:
 			if not m.is_buildable(c):
 				continue
 			var score := 0
-			for p in m.path:
+			for p in route_cells:
 				var d := m.grid.distance(c, p)
 				if d <= rng_cells and d >= min_cells:
 					score += 1

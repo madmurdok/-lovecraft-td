@@ -60,9 +60,11 @@ func randf(e: SimEnemy, real_stream: SimRng.Stream) -> float:
 	return _ctx.randf(SimRng.Stream.SANITY if e.is_fake else real_stream)
 
 
-## LT-63: one pack member enters at `due_tick` (SpawnSystem.queue_pack_member).
-func queue_pack_member(due_tick: int, def: EnemyDef, is_fake: bool, pack_of: int) -> void:
-	_queue_pack_member.call(due_tick, def, is_fake, pack_of)
+## LT-63: one pack member enters at `due_tick` (SpawnSystem.queue_pack_member), on route
+## `route_id` (LT-109: the leader's; "" = the default route).
+func queue_pack_member(due_tick: int, def: EnemyDef, is_fake: bool, pack_of: int,
+		route_id := "") -> void:
+	_queue_pack_member.call(due_tick, def, is_fake, pack_of, route_id)
 
 
 ## LT-105: composes into `t`'s modifier channel this tick (slot 2, near_tower only).

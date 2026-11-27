@@ -57,16 +57,19 @@ class Wave:
 
 ## `count` spawn events of `enemy_id`, `interval` s apart, starting `delay` s
 ## after the wave starts. An enemy with a "pack" trait spawns a pack per event
-## (members one by one, pack.spacing_s apart; LT-63).
+## (members one by one, pack.spacing_s apart; LT-63). LT-109: optional "route", a route id of
+## the map (= an entry name with Map v2, LT-18); absent = "" = the map's default route.
+## GameConfig._check_routes checks it against map.route_ids.
 class SpawnGroup:
 	extends RefCounted
 
-	const GROUP_FIELDS := ["type", "count", "interval", "delay"]
+	const GROUP_FIELDS := ["type", "count", "interval", "delay", "route"]
 
 	var enemy_id: String
 	var count: int  ## >= 1
 	var interval: float  ## >= 0
 	var delay: float  ## >= 0
+	var route := ""  ## LT-109: route id; "" = the map's default route
 
 	static func parse(r: ConfigReader, obj: Dictionary, path: String,
 			enemy_ids: Variant) -> SpawnGroup:
@@ -78,4 +81,5 @@ class SpawnGroup:
 		g.count = r.req_int(obj, "count", path, 1)
 		g.interval = r.req_number(obj, "interval", path, 0.0)
 		g.delay = r.opt_number(obj, "delay", path, 0.0, 0.0)
+		g.route = r.opt_string(obj, "route", path)
 		return g

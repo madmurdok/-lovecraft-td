@@ -10,6 +10,9 @@ var max_hp: float
 ## pull/banish HP caps compare, so a wave multiplier never switches tower roles.
 var base_max_hp: float
 var route: SimRoute
+## LT-109: the route id it walks (RoutePlan / MapDef.routes key); pack members take their
+## leader's.
+var route_id := ""
 var distance: int = 0  ## along `route`, in SimTime.UNITS_PER_CELL units
 var prev_distance: int = 0  ## distance before this tick's movement (render interpolation)
 var base_units_per_tick: int

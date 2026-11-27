@@ -20,7 +20,7 @@ class SpySpawn:
 	extends SpawnSystem
 	var calls: Array = []
 
-	func spawn_enemy(def_id: String, is_fake := false) -> int:
+	func spawn_enemy(def_id: String, is_fake := false, _route_id := "") -> int:
 		calls.append(["spawn_enemy", def_id, is_fake])
 		return 4242
 
