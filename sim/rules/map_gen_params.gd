@@ -14,6 +14,13 @@ const KEYS: PackedStringArray = [
 	"c4_ratio_pct", "c5_d", "c6_extra", "c7_hud_rows", "c7_l_cover",
 ]
 
+## Knobs that are counts, distances or thresholds: a negative value has no meaning (and a
+## negative waypoint_jitter would draw randi_range(j, -j)).
+const NON_NEGATIVE: PackedStringArray = [
+	"waypoint_jitter", "pocket_sea_steps", "choke_k", "choke_e", "c1_m", "c1_s", "c2_g",
+	"floor_cells", "c5_d", "c6_extra", "c7_hud_rows", "c7_l_cover",
+]
+
 # --- board --------------------------------------------------------------------------------
 var grid_kind := "hex"  ## a GridFactory kind; "square" works too (everything is GridTopology)
 var width := 24
@@ -120,7 +127,8 @@ func to_dict() -> Dictionary:
 	return out
 
 
-## Range errors that would make the generator meaningless (empty when fine).
+## Range errors that would crash the generator or make it meaningless (empty when fine);
+## MapGenerator.generate refuses params with any.
 func check() -> PackedStringArray:
 	var out := PackedStringArray()
 	if GridFactory.make(grid_kind, 1, 1) == null:
@@ -135,8 +143,20 @@ func check() -> PackedStringArray:
 	_check_range(out, "island", island_min, island_max, 1)
 	if entries_max > height:
 		out.append("entries_max: at most height (one band per entry)")
+	if sea_max > width - 6:
+		out.append("sea_max: at most width - 6 (entries and the funnel east of L)")
 	if funnel_steps < 1 or island_seed_div < 1 or attempt_cap < 1:
 		out.append("funnel_steps, island_seed_div, attempt_cap: at least 1")
+	if attempt_cap > MapRng.ATTEMPT_STRIDE:
+		out.append("attempt_cap: at most %d (attempt seeds of two map seeds would collide)"
+			% MapRng.ATTEMPT_STRIDE)
+	if c4_lmin < 0 or c4_lmax < c4_lmin:
+		out.append("c4_lmin / c4_lmax: need 0 <= c4_lmin <= c4_lmax")
+	if c7_hud_rows >= height:
+		out.append("c7_hud_rows: below height")
+	for key in NON_NEGATIVE:
+		if int(get(key)) < 0:
+			out.append("%s: at least 0" % key)
 	if wide_pct < 0 or wide_pct > 100 or c3_share_pct < 0 or c4_ratio_pct < 100:
 		out.append("wide_pct, c3_share_pct in 0..100; c4_ratio_pct at least 100")
 	if tower_range <= 0.0:

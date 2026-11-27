@@ -3,8 +3,8 @@ extends RefCounted
 ## LT-18 §8 chokepoint metric (LT-130 §4), pure static. Inputs: a GenMap, its route field
 ## with no barricades, MapGenParams thresholds. `routes` = one Array[Vector2i] per entry
 ## (entry ... L, from RouteField.route); "buildable" = ISLAND. Route positions are indexes
-## into a route; lengths are in steps (route cells - 1). The only float is the range test,
-## LightRules.in_cast_radius(centre(b), R, centre(p)).
+## into a route; lengths are in steps (route cells - 1). The only float is R in the range
+## test within(): centre distance <= R, computed from integer cell deltas.
 
 ## detour_deltas value of a chokepoint whose barricade leaves no way around (a cut cell).
 const CUT := -1
@@ -98,9 +98,9 @@ static func evaluate(m: GenMap, p: MapGenParams, field: RouteField = null) -> Me
 ## exposure(b, r): route cells of `route` whose centre lies within `r` of b's centre.
 static func exposure(grid: GridTopology, b: Vector2i, route: Array[Vector2i], r: float) -> int:
 	var n := 0
-	var cb := grid.centre(b)
+	var hex := grid.kind() == "hex"
 	for c in route:
-		if LightRules.in_cast_radius(cb, r, grid.centre(c)):
+		if _within(hex, c - b, r):
 			n += 1
 	return n
 
@@ -108,11 +108,26 @@ static func exposure(grid: GridTopology, b: Vector2i, route: Array[Vector2i], r:
 ## The buildable cells within `r` of `cell`, as grid indexes ascending.
 static func disc(m: GenMap, cell: Vector2i, r: float) -> PackedInt64Array:
 	var out := PackedInt64Array()
-	var cp := m.grid.centre(cell)
+	var hex := m.grid.kind() == "hex"
 	for b in m.grid.cells():
-		if m.is_buildable(b) and LightRules.in_cast_radius(m.grid.centre(b), r, cp):
+		if m.is_buildable(b) and _within(hex, cell - b, r):
 			out.append(m.grid.index(b))
 	return out
+
+
+## Whether b's centre lies within `r` of a's centre, from integer cell deltas (LT-130/S20):
+## absolute float32 centres rounded differently per row and dropped ring-3 hex corners on some
+## rows. Hex centres are (q + r/2, r * sqrt(3)/2) with neighbours 1 apart, so
+## 4 * d^2 = (2 dq + dr)^2 + 3 dr^2, an exact integer; square centres are (x, y), d^2 = dx^2 + dy^2.
+static func within(grid: GridTopology, a: Vector2i, b: Vector2i, r: float) -> bool:
+	return _within(grid.kind() == "hex", b - a, r)
+
+
+static func _within(hex: bool, d: Vector2i, r: float) -> bool:
+	if hex:
+		var u := 2 * d.x + d.y
+		return u * u + 3 * d.y * d.y <= 4.0 * r * r
+	return d.x * d.x + d.y * d.y <= r * r
 
 
 ## disc() of every route cell, by grid index (null for cells on no route); once per map.

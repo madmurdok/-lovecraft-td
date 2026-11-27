@@ -19,9 +19,14 @@ class GenResult extends RefCounted:
 	var error := ""  ## "" or "attempt cap 50 reached (seed 17): C1 x41, C5 x9"
 
 
-## Attempts 0, 1, ... of `map_seed` until one passes the metric or attempt_cap ran.
+## Attempts 0, 1, ... of `map_seed` until one passes the metric or attempt_cap ran. Params
+## failing MapGenParams.check() give map null, attempts 0 and error "params: ...".
 static func generate(map_seed: int, p: MapGenParams) -> GenResult:
 	var res := GenResult.new()
+	var bad := p.check()
+	if not bad.is_empty():
+		res.error = "params: " + "; ".join(bad)
+		return res
 	for a in p.attempt_cap:
 		var m := attempt(MapRng.attempt_seed(map_seed, a), p)
 		var rep := check(m, p)
@@ -250,15 +255,20 @@ static func _pockets(m: GenMap, rng: MapRng, p: MapGenParams) -> void:
 
 
 ## A spur may grow into `n` from `cur` when no walkable or spur cell touches `n` except `cur`
-## (the first cell may also touch the mouth's own neighbours: it opens from a corridor).
+## (the first cell may also touch one of the mouth's own neighbours: it opens from a corridor).
+## The first cell touching two of them would join two network cells that are not adjacent
+## (the cells flanking an edge are 2 apart): a through cell and a barricade bypass (S20).
 static func _spur_cell_ok(m: GenMap, n: Vector2i, cur: Vector2i, start: Vector2i, first: bool,
 		in_spur: Dictionary) -> bool:
 	var g := m.grid
+	var flanks := 0
 	for nn in g.neighbours(n):
 		if nn == cur or not (m.is_walkable(nn) or in_spur.has(nn)):
 			continue
 		if first and g.steps(nn, start) == 1:
-			continue
+			flanks += 1
+			if flanks == 1:
+				continue
 		return false
 	return true
 

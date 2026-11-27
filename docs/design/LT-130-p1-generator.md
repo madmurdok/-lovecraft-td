@@ -305,3 +305,16 @@ Found while coding the rules (LT-130/S8); the code is the reference.
    `{params, errors}` (unknown key, wrong type, range errors).
 9. §8 T1 / T8: with the defaults at the time of S8 `generate` hit the cap, so pin digests of
    `attempt` (or of accepted maps once tuned), and T8 asserts every reject *contains* `C1`.
+10. C6 cannot fail while C4 holds: the route includes its entry, its highest-cost cell, so C6 ==
+    `length >= floor_cells + c6_extra` (9) <= `c4_lmin` (20). Kept as written for when the
+    floor or flood rules change (S15 F3).
+11. (S20) "within R" is tested on integer cell deltas (`ChokepointMetric.within`: hex
+    `(2dq + dr)^2 + 3dr^2 <= 4R^2`, square `dx^2 + dy^2 <= R^2`), not on float32 centres, which
+    dropped ring-3 corners on some rows. `LightRules.in_cast_radius` in the game has the same
+    row dependence on hex; not changed here.
+12. (S20) A pocket's first cell may touch at most one of the two cells flanking its mouth;
+    touching both made it a through cell and a barricade bypass.
+13. (S20) `MapGenParams.check()` also bounds `attempt_cap <= MapRng.ATTEMPT_STRIDE` (1000; the
+    seed formula is unchanged), `sea_max <= width - 6`, `c4_lmin <= c4_lmax`,
+    `c7_hud_rows < height` and the counts in `NON_NEGATIVE`; `generate` refuses params failing
+    `check()` (map null, attempts 0, error "params: ...").
