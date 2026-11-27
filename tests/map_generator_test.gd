@@ -14,16 +14,18 @@ extends GdUnitTestSuite
 ##  S20 pocket mouth: _spur_cell_ok never counts flanks (`continue` for every flank)
 ##      -> test_structure_of_attempts fails (a pocket's first cell bridges two network cells).
 
-## sha256 of canonical(), p1_small, computed by the code at commit 92a3ff5.
+## sha256 of canonical(), p1_small, computed by the code at commit ecd437b (re-pinned after the
+## LT-130/S24 tuning of funnel_steps and choke_e). GENERATE seeds 5 and 12 need 3 and 2 attempts,
+## so the retry path stays pinned; seed 1 passes on attempt 0.
 const ATTEMPT0_DIGESTS := {
-	1: "6fb04083179f2309de0e523bd9a32d39d194ebd4f5c3613c66c5fd93fc861c68",
-	2: "caab0228194f1eaa74b880d1c483eece447f84e534e2af45ddbb924342d79a0b",
-	3: "dc884a323eba3208d8c1fc395f3aa8c662c0b41e9b6079e0833566413acfcc12",
+	1: "3ee2de453cdc8af008c1f9e64543141882e381a58375d5fa00ea779112235006",
+	2: "7e7818dca0af51884712229aa90fbdd341148349291a78fc41d526f38ce41759",
+	3: "73ef98e232120ad0bd8b9bac8459565ba9fa922410452c0ae5effe71457efdb4",
 }
 const GENERATE_DIGESTS := {
-	1: "6fb04083179f2309de0e523bd9a32d39d194ebd4f5c3613c66c5fd93fc861c68",
-	2: "9949c06c35705753ea7993086314ea59c71aa774d664f4f3658c7eb8fb4c9743",
-	3: "dc884a323eba3208d8c1fc395f3aa8c662c0b41e9b6079e0833566413acfcc12",
+	1: "3ee2de453cdc8af008c1f9e64543141882e381a58375d5fa00ea779112235006",
+	5: "5fa51acdc5f48096bd8802a507430efaa72ec1c9b895e5af4db8e36ed65ddf18",
+	12: "f6928481df120cd76500141b804362b039ab09358b7ea4acf09fec117a31a167",
 }
 const T := GenMap.Terrain
 ## Structure test: attempt 0 of seeds 1..STRUCT_SEEDS, for p1_small and p1_large each.
