@@ -2,7 +2,7 @@
 
 Design note for LT-18 §11 step P1. Builds on LT-18 §2 (cell model), §3 (route field), §7
 (pockets), §8 (metric), §9 option (a) skeleton graph; §13's owner decisions are fixed. HexGrid is
-registered in `GridFactory` since LT-129. No production code changes outside new `sim/rules/`
+registered in `GridFactory` since LT-129. No production code changes outside new `sim/mapgen/`
 files, one guard allowlist line and one export filter.
 
 Acceptance (LT-18 §11 P1): maps read at a glance (owner reviews a 20-seed screenshot); reject
@@ -12,22 +12,22 @@ rate < 30 %; < 200 ms per map; same seed -> same map digest (test).
 
 | File | Slice | Role |
 |---|---|---|
-| `sim/rules/map_rng.gd` (`MapRng`) | code | the map's own PCG32 (one `RandomNumberGenerator`); `randi_range` only |
-| `sim/rules/map_gen_params.gd` (`MapGenParams`) | code | generator knobs + §8 thresholds, code defaults, `from_dict` for the tool |
-| `sim/rules/gen_map.gd` (`GenMap`) | code | the output struct: grid, terrain per cell, entries, `L`, pockets, links; `rows()`, `to_map_dict()`, `digest()`, `from_rows()` (fixtures) |
-| `sim/rules/route_field.gd` (`RouteField`) | code | §3 reverse Dijkstra from `L`, integer, no barricades yet; LT-109 adds the breach weight here |
-| `sim/rules/chokepoint_metric.gd` (`ChokepointMetric`, `MetricReport`) | code | §8 C1-C7, pure static |
-| `sim/rules/map_generator.gd` (`MapGenerator`, `GenResult`) | code | §9(a) skeleton -> rasterize -> islands -> metric -> retry |
+| `sim/mapgen/map_rng.gd` (`MapRng`) | code | the map's own PCG32 (one `RandomNumberGenerator`); `randi_range` only |
+| `sim/mapgen/map_gen_params.gd` (`MapGenParams`) | code | generator knobs + §8 thresholds, code defaults, `from_dict` for the tool |
+| `sim/mapgen/gen_map.gd` (`GenMap`) | code | the output struct: grid, terrain per cell, entries, `L`, pockets, links; `rows()`, `to_map_dict()`, `digest()`, `from_rows()` (fixtures) |
+| `sim/mapgen/route_field.gd` (`RouteField`) | code | §3 reverse Dijkstra from `L`, integer, no barricades yet; LT-109 adds the breach weight here |
+| `sim/mapgen/chokepoint_metric.gd` (`ChokepointMetric`, `MetricReport`) | code | §8 C1-C7, pure static |
+| `sim/mapgen/map_generator.gd` (`MapGenerator`, `GenResult`) | code | §9(a) skeleton -> rasterize -> islands -> metric -> retry |
 | `tools/mapgen/mapgen_report.gd` + `scripts/mapgen-report.sh` | tool | headless report, kept (balance lab uses it later) |
 | `tools/proto/map_viewer.gd` + `.tscn` | tool | throwaway grey viewer, excluded from export |
 
 Architecture guards, how each new file obeys:
 
-- **Sim boundary** (`tests/sim_boundary_test.gd`): `sim/rules/` files are `RefCounted`, static or
+- **Sim boundary** (`tests/sim_boundary_test.gd`): `sim/mapgen/` files are `RefCounted`, static or
   plain data; engine types only from `ENGINE_ALLOWLIST` (`String.sha256_text()` for the digest);
   no `preload`, `signal`, `await`, `Time`, `OS`. Draws only as `_rng.randi_range(...)` (a dotted
   call, allowed). `RandomNumberGenerator` may be named only in `SIM_RNG_HOMES`, so
-  `res://sim/rules/map_rng.gd` is **appended to `SIM_RNG_HOMES`** (one guard line). `SimRng` is
+  `res://sim/mapgen/map_rng.gd` is **appended to `SIM_RNG_HOMES`** (one guard line). `SimRng` is
   not reused: its streams are seeded from the run seed and the map must not shift combat
   rolls (§9).
 - **G10** (one topology): the new files have no "grid" in their names, so they get no topology
@@ -37,7 +37,7 @@ Architecture guards, how each new file obeys:
 - **G3 / G2**: centres only from `grid.centre()`; the viewer has its own scale names (no `CELL`,
   `BOARD_ORIGIN`, `ORIGIN`). **G11**: no trig in `sim/`; the viewer (tools/) may use it, but
   the jitter needs none (§6).
-- **G1 / G7 / boundary #2**: the tools read only `sim/rules/` classes, no Simulation, no
+- **G1 / G7 / boundary #2**: the tools read only `sim/mapgen/` and `sim/rules/` classes, no Simulation, no
   selection, no rule copies.
 
 ## 2. Public APIs
@@ -144,7 +144,7 @@ cells within `R` of route cell `p` (O(route cells x cells), ~15k range tests per
 | C2 | `c2_max_blind(route, discs) -> int` | discs | G 8 |
 | C3 | `c3_convergence(routes, chokes, field, p) -> {last_shared, share_pct}` | routes, field costs | floor 6, share <= 50 % |
 | C4 | `c4_lengths(routes, p)` | route lengths | Lmin 20, Lmax 40, ratio `max*100 <= min*140` |
-| C5 | `c5_detours(m, field, routes, chokes, p) -> Array[int]` | a re-run `RouteField.build(..., blocked = p)` per chokepoint | D 4 |
+| C5 | `c5_detours(m, field, route, positions, cache, stop_at_d) -> Array[int]`, `c5_passes(deltas, D)` | a re-run `RouteField.build(m, [p])` per chokepoint, from the L end, stopping at the first qualifying one | D 4; per route at least one chokepoint is `cut` or `>= D` (Q2) |
 | C6 | `c6_floor_room(routes, field, p)` | field costs | some route cell at cost `>= (floor + 3)` cells |
 | C7 | `c7_clickable(m, p)` | grid, `L` | P1 proxy: no ISLAND in the top `hud_rows` text rows (0) or within `l_cover` steps of `L` (1); LT-64 replaces it |
 
@@ -154,7 +154,9 @@ Definitions the code must keep:
   every route / the shortest route's length. **With one entry C3 is not applicable** (always
   passes, reported "n/a"): a single route is 100 % shared by definition.
 - C5: delta = (entry cost with `p` blocked) - (entry cost) in cells; a chokepoint with no detour
-  at all (a cut cell) reports `cut`. Whether `cut` passes is Q2.
+  at all (a cut cell) reports `cut` (-1); chokepoints left unmeasured after the early exit
+  report `skipped` (-2). Q2 decided: a route passes when at least one chokepoint is `cut` or
+  `>= D`; the others are unconstrained.
 - C4 integer ratio, no float division. C2 counts consecutive route cells whose disc is empty.
 
 `MetricReport` (per map): `passed`, `reasons: PackedStringArray`, and per route: `length`,
@@ -205,9 +207,9 @@ step); the report tool stays.
 ## 7. Edit map
 
 **Code slice (pure rules + tests):**
-- New: the six `sim/rules/` files of §1, and `tests/map_generator_test.gd`,
+- New: the six `sim/mapgen/` files of §1, and `tests/map_generator_test.gd`,
   `tests/chokepoint_metric_test.gd`, `tests/route_field_test.gd`.
-- Change `tests/sim_boundary_test.gd` lines 53-54: append `"res://sim/rules/map_rng.gd"` to
+- Change `tests/sim_boundary_test.gd` lines 53-54: append `"res://sim/mapgen/map_rng.gd"` to
   `SIM_RNG_HOMES`.
 - Read for context: `GridTopology` (all abstract signatures), `HexGrid.neighbours / steps /
   text_of / cell_of_text`, `GridFactory.make`, `LightRules.in_cast_radius`,
@@ -250,7 +252,7 @@ tests (the tool measures it).
 
 ## 9. Open questions for the owner
 
-**Q1. P1 map size and entry count.**
+**Q1. P1 map size and entry count.** Decided (S25): "p1_large 32x18", option (c) is the default preset.
 - (a) 24 x 16 hex, 1-3 entries **(recommended)**: today's 24-wide board, routes of 20-30 cells fit
   C4; 3 entries keep the 20-seed screen readable. Risk: 4-entry maps untested until later.
 - (b) 24 x 14 (today's exact size), 1-3 entries. Benefit: same screen as now. Risk: less room for
@@ -259,6 +261,12 @@ tests (the tool measures it).
   cost; slower maps.
 
 **Q2. C5 at a cut chokepoint (no detour exists).**
+
+**Decided (owner):** "Хотя бы одно узкое место на маршрут": every route needs at least one
+chokepoint where a one-cell barricade either cuts the route or forces a detour `>= D`; all other
+chokepoints are unconstrained (no per-chokepoint `>= D` requirement). This replaces the options
+below, which are kept for the record.
+
 - (a) Cut passes, but every route needs at least one chokepoint with a detour `>= D`
   **(recommended)**: forced breaches are fine (§3), and loops still give the barricade a real
   choice somewhere. Risk: one more rule to tune.
@@ -274,3 +282,115 @@ tests (the tool measures it).
   dropped.
 - (b) `data/mapgen.json` through ConfigLoader now. Benefit: lab-ready immediately. Risk: config
   schema and tests for knobs that may still change shape in P2/P3.
+
+## 10. Deviations from this note (S8)
+
+Found while coding the rules (LT-130/S8); the code is the reference.
+
+1. Chokepoint candidates are CHANNEL route cells only: ENTRY and L take no barricade.
+2. Route length = steps (route cells - 1). C3 share = cells common to every route * 100 / the
+   shortest route's cell count. C1 spacing is counted greedily from the entry end.
+3. The trunk L -> F is carved once and shared; corridors run entry -> waypoint -> F.
+4. Added after step 9: ISLAND cells in the C7 zone (top `c7_hud_rows` rows, within `c7_l_cover`
+   steps of L) become ROCK before the small-island pass; otherwise C7 rejects almost every map.
+   C7 still bites on fixtures.
+5. A drawn entry next to an already placed entry is not placed (-> S2).
+6. `chokepoints(m, route, discs, expo, p)` returns route positions as `PackedInt64Array`
+   (`PackedInt32Array` is not on the sim engine allowlist); discs are precomputed once per map
+   (`disc_table`), `exposures` derives every exposure from them.
+7. Island split: `max(2, ceil(size / island_seed_div))` seeds, repeated until no component is
+   larger than `island_max`; the boundary is the cells next to a lower-numbered region.
+8. `GenMap.from_rows(kind, rows)` returns null on an unknown kind, ragged rows, a character
+   outside the legend or not exactly one L. `MapGenParams.from_dict(d, base)` returns
+   `{params, errors}` (unknown key, wrong type, range errors).
+9. §8 T1 / T8: with the defaults at the time of S8 `generate` hit the cap, so pin digests of
+   `attempt` (or of accepted maps once tuned), and T8 asserts every reject *contains* `C1`.
+10. C6 cannot fail while C4 holds: the route includes its entry, its highest-cost cell, so C6 ==
+    `length >= floor_cells + c6_extra` (9) <= `c4_lmin` (20). Kept as written for when the
+    floor or flood rules change (S15 F3).
+11. (S20) "within R" is tested on integer cell deltas (`ChokepointMetric.within`: hex
+    `(2dq + dr)^2 + 3dr^2 <= 4R^2`, square `dx^2 + dy^2 <= R^2`), not on float32 centres, which
+    dropped ring-3 corners on some rows. `LightRules.in_cast_radius` in the game has the same
+    row dependence on hex; not changed here.
+12. (S20) A pocket's first cell may touch at most one of the two cells flanking its mouth;
+    touching both made it a through cell and a barricade bypass.
+13. (S20) `MapGenParams.check()` also bounds `attempt_cap <= MapRng.ATTEMPT_STRIDE` (1000; the
+    seed formula is unchanged), `sea_max <= width - 6`, `c4_lmin <= c4_lmax`,
+    `c7_hud_rows < height` and the counts in `NON_NEGATIVE`; `generate` refuses params failing
+    `check()` (map null, attempts 0, error "params: ...").
+14. (S25) Owner decision "sim/mapgen/ до мерджа LT-130 (Recommended)": the generator lives in its
+    own block `sim/mapgen/`, not `sim/rules/`; the six files of §1 moved there with `git mv`
+    (`class_name` unchanged). The seam is the map dict read by `MapDef.parse`
+    (`GenMap.to_map_dict()`). `res://sim/mapgen/map_rng.gd` is in `SIM_RNG_HOMES`; the guards that
+    scan `res://sim` cover the new folder as it is.
+15. (S25) Owner decision "p1_large 32x18": `p1_large` is the default preset
+    (`MapGenParams.default_preset()`; `MapGenerator.generate` without params, `mapgen_report.gd`,
+    `scripts/mapgen-report.sh`, `tools/proto/map_viewer.gd`). The field initialisers stay the
+    p1_small values, and `from_dict` without a base starts from them (pinned tests).
+16. (S25) p1_large p95 is 373 ms per accepted map (rerun under load: 750 ms), above the 200 ms
+    budget. Owner decision "Решить в задаче про острова (Recommended)": accepted deviation,
+    deferred to LT-141 (segment-level chokepoints).
+
+## 11. Measurements (S24)
+
+Lab rules: only `MapGenParams` defaults and step parameters, never metric definitions; x2 and /2
+first, then bisect. Probes ran through `--params` JSON (no code edits); seeds 1..N, sample sizes
+below. Columns: reject = attempt-level reject %, 1st = first-attempt pass %, att = mean attempts,
+ms mean/p95/max per accepted map, chk = chokepoints per route (median).
+
+Baseline (small, 40 seeds, loaded): reject 31 %, 1st 65 %, chk 22 of ~23 route cells, every
+reject is C3 (+ S2).
+
+| knob (small, 200 seeds unless noted) | x2 / up | /2 / down | note |
+|---|---|---|---|
+| `choke_e` 4 | 8: reject 96 %, 22 attempts, 8 chk, 7 cap failures (40 seeds) | 2: reject 31 %, unchanged | bisect 6: 28.8 %, 5: 27.5 %, 7: 58 % |
+| `choke_k` 3 | 6: reject 32 %, chk 20 | 1: unchanged | no use alone |
+| `tower_range` 3.0 | 6.0: unchanged, slower (more cells in range) | 1.5: hits the cap (40 seeds); 2.0: reject 34 %, chk 15 | breaks C1/C5 once combined with E>=5 |
+| `funnel_steps` 9 | 18: reject 64 % (S1, C3) | 4: 37.5 % | bisect 7: 23.4 %, 8: 26.7 % |
+| `waypoint_jitter` 3 | 6: 26.7 % | 1: 28.8 % | noise-level |
+| `wide_pct` 30 | 60: 25.4 % | 15: 27.0 % | noise-level alone; with E6 + F7: 60 gives 39 % |
+| loops 1-2 | 2-4: 28.3 % (on F7+E6) | 0-1: 25.7 % | kept 1-2 (0-1 slower: 118 vs 78 ms at 1000 seeds) |
+
+Combinations (small, 200 seeds): F7+E6 29.1 %, F7+E5 23.7 %, F7+E6+K6 51.9 %, F7+R2 38.3 %,
+F7+E6+R2 and F6+E6+R2 hit the cap (100 %). Large (1000 seeds, F7): E3 21.5 %, E5 21.9 %, E6 26.0 %,
+E7 59.1 %, E8 99.4 % (750 cap failures), E5+K6 27.3 %, E5+R2 85.2 %.
+
+Chosen defaults: `funnel_steps` 9 -> 7, `choke_e` 4 -> 5 (both presets; large uses the same).
+
+Final, 1000 seeds each, no cap failure, reject = attempt-level:
+
+| preset | reject | 1st pass | att | ms mean / p95 / max | chk/route | reasons |
+|---|---|---|---|---|---|---|
+| p1_small | 23.0 % (< 30 ok) | 76.5 % | 1.30 | 77.8 / 139.6 / 8629 | 21 | S2 27, C3 272 |
+| p1_large | 21.9 % (< 30 ok) | 79.1 % | 1.28 | 149.4 / 373.2 / 1342 | 30 | S2 56, C3 225, C5 1 |
+
+Timing record: these are the lowest-load runs (load1 9.7 -> 34 -> 5.8; `user` 62 s small,
+~130 s large for 1000 seeds, i.e. about 62 / 130 ms of CPU per map). A repeat of the same
+defaults ran at load 25-46 (screenshots and another suite alongside): small 182 / 447 ms, large
+311 / 750 ms, so p95 is load-dominated; `user` shows the real cost.
+
+Findings against the bar:
+- Reject < 30 % met on both presets.
+- Small: p95 140 ms in the quiet run, mean 78 ms (small max 8.6 s is one seed with many retries).
+  Re-time at load < 10 in the verify slice.
+- Large: p95 373 ms and mean 149 ms; bar (< 200 ms) NOT met by tuning. Cause: ~30 chokepoints per
+  route and C5 runs one route field per chokepoint. K/E/R cannot lower the count without failing
+  C1/C5/C3 (E7: 59 % reject, E8: cap failures, R2: 85 %). The count is high because the metric
+  counts almost every CHANNEL cell on a 30-step route as a chokepoint; a faster C5 (cache fields
+  per route, early exit) or a looser definition is an owner decision, not a tuning one.
+- The viewer's `--screenshot` waited 4 frames and saved a blank image for the small preset; now 20.
+- Screenshots: `docs/design/LT-130/p1-small.png`, `p1-large.png` (seeds 1-20, defaults above).
+
+### Verify re-time (S26)
+
+Tip cde8334, `scripts/mapgen-report.sh --preset <p> --seeds 1000`, run alone after the suite on a
+quiet machine (load1 2.4 at the start, 5.2 at the end of the large run).
+
+| preset | reject | 1st pass | cap failures | ms mean / p95 / max | real / user / sys s | reasons |
+|---|---|---|---|---|---|---|
+| p1_small | 23.0 % (299 / 1299) | 76.5 % | 0 | 65.7 / 136.5 / 448.7 (seed 596) | 66.97 / 65.64 / 0.42 | S2 27, C3 272 |
+| p1_large | 21.9 % (281 / 1281) | 79.1 % | 0 | 114.0 / 241.6 / 745.7 (seed 421) | 115.77 / 113.52 / 0.62 | S2 56, C3 225, C5 1 |
+
+Bars: reject < 30 % met on both presets; p1_small p95 136.5 ms < 200 ms met. p1_large p95 241.6 ms
+is over 200 ms: the accepted deviation of §10 item 16 (LT-141), not a regression. Reject counts are
+identical to S24 (same code and seeds); `user` is close to `real`, so the times are CPU, not waiting.
