@@ -117,7 +117,7 @@ static func _sections() -> Array[Array]:
 ## `func(c: GameConfig) -> Array[String]` (formatted errors) and must cope with a section
 ## that is null (missing or broken).
 static func _cross_checks() -> Array[Callable]:
-	return [_check_drops]
+	return [_check_drops, _check_routes]
 
 
 static func _parse_enemies(r: ConfigReader, root: Dictionary, c: GameConfig,
@@ -230,6 +230,30 @@ static func _check_drops(c: GameConfig) -> Array[String]:
 				r.error(ConfigReader.join(ConfigReader.join(ConfigReader.join("enemies", id),
 					"drops"), kind), "unknown relic kind \"%s\"" % kind)
 		def.drops = ordered
+	return r.errors
+
+
+## LT-109 cross-file check: every non-empty group "route" of waves.json is a route id of the
+## map (reported in waves.json, path waves[i].groups[j].route). "any" is rejected until Map v2
+## (LT-18) enables its draw. Skipped when waves.json or map.json failed (no route ids).
+## Returns the errors.
+static func _check_routes(c: GameConfig) -> Array[String]:
+	var r := ConfigReader.new(WAVES_FILE)
+	if c.waves == null or c.map == null or c.map.route_ids.is_empty():
+		return r.errors
+	for i in c.waves.waves.size():
+		var groups := c.waves.waves[i].groups
+		for j in groups.size():
+			var route := groups[j].route
+			if route.is_empty():
+				continue
+			var path := ConfigReader.join(ConfigReader.index(ConfigReader.join(
+				ConfigReader.index("waves", i), "groups"), j), "route")
+			if route == "any":
+				r.error(path, "route \"any\" is not supported before Map v2 (LT-18)")
+			elif not c.map.route_ids.has(route):
+				r.error(path, "unknown route \"%s\" (map routes: %s)"
+					% [route, ", ".join(c.map.route_ids)])
 	return r.errors
 
 

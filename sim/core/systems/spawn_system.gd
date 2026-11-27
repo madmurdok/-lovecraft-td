@@ -11,10 +11,18 @@ extends RefCounted
 var _ctx: SimContext
 var _state: SimState
 var _config: GameConfig
-var _ground_route: SimRoute
+## LT-109 §2.3: route id -> the SimRoute its walkers / flyers get, and the cells each was built
+## from. A cached route is reused while the plan's cells of its id are equal (on a fixed map
+## one ground route serves the whole run); new cells build a new SimRoute and enemies already
+## on their way keep the old one (SimRoute is immutable; the view relies on it).
+var _ground_cache: Dictionary[String, SimRoute] = {}
+var _ground_cells: Dictionary[String, Array] = {}
+var _air_cache: Dictionary[String, SimRoute] = {}
+var _air_cells: Dictionary[String, Array] = {}
 ## AllySystem.compact, set by the facade after both systems exist.
 var _compact_allies: Callable
-## LT-63: pack members not entered yet, queue order: [due_tick, EnemyDef, is_fake, pack_of].
+## LT-63: pack members not entered yet, queue order: [due_tick, EnemyDef, is_fake, pack_of,
+## route_id] (LT-109: the leader's route id).
 ## Sim only (fakes are queued too, LT-12 §1); real members enter in slot 7, fake ones in
 ## slot 8 after the dawn check (release_pack_members).
 var _pack_queue: Array = []
@@ -26,7 +34,6 @@ func _init(ctx: SimContext) -> void:
 	_ctx = ctx
 	_state = ctx.state
 	_config = ctx.config
-	_ground_route = SimRoute.from_cells(_config.map.grid, _config.map.path)
 
 
 ## The facade wires the allied units' compaction once (AllySystem.compact).
@@ -39,25 +46,28 @@ func set_trait_host(host: TraitHost) -> void:
 	_host = host
 
 
-## Spawns `def_id` at the start of its route (one spawn event). LT-106: a `pack` enemy's
+## Spawns `def_id` at the start of route `route_id` ("" = the plan's default route; LT-109)
+## (one spawn event). LT-106: a `pack` enemy's
 ## PackTrait.on_spawn then rolls min..max members (on SPAWN, or SANITY for a fake, LT-12 §2)
 ## and queues members 1..count-1 (queue_pack_member; LT-63: a real one enters in slot 7
 ## before the spawner's spawns, a fake one in slot 8 after the dawn check). Returns the
 ## first new id, or 0 if `def_id` is unknown or the outcome is set (then nothing changes and
 ## no event is emitted).
-func spawn_enemy(def_id: String, is_fake := false) -> int:
+func spawn_enemy(def_id: String, is_fake := false, route_id := "") -> int:
 	if _state.outcome != SimState.Outcome.NONE:
 		return 0
 	if not _config.enemies.has(def_id):
 		push_error("Simulation.spawn_enemy: unknown enemy \"%s\"" % def_id)
 		return 0
-	return _enter(_config.enemies[def_id], is_fake, 0, true)
+	return _enter(_config.enemies[def_id], is_fake, 0, true, route_id)
 
 
 ## LT-63 / LT-106 (TraitHost.queue_pack_member): one pack member enters at `due_tick` with
-## pack_of `pack_of`, queue order (release_pack_members).
-func queue_pack_member(due_tick: int, def: EnemyDef, is_fake: bool, pack_of: int) -> void:
-	_pack_queue.append([due_tick, def, is_fake, pack_of])
+## pack_of `pack_of` on route `route_id` (LT-109: the leader's), queue order
+## (release_pack_members).
+func queue_pack_member(due_tick: int, def: EnemyDef, is_fake: bool, pack_of: int,
+		route_id := "") -> void:
+	_pack_queue.append([due_tick, def, is_fake, pack_of, route_id])
 
 
 ## LT-63: true while a real pack member is queued and not entered yet (a wave is not
@@ -83,7 +93,7 @@ func release_pack_members(fakes: bool) -> void:
 		if bool(q[2]) != fakes or int(q[0]) > _state.tick:
 			left.append(q)
 		else:
-			_enter(q[1], q[2], q[3], false)
+			_enter(q[1], q[2], q[3], false, q[4])
 	left.append_array(_pack_queue)
 	_pack_queue = left
 
@@ -93,13 +103,14 @@ func clear_pack_queue() -> void:
 	_pack_queue.clear()
 
 
-## One enemy of `def` enters at the start of its route on this tick, with a new id and
+## One enemy of `def` enters at the start of route `route_id` (_route_for) on this tick, with a new id and
 ## SPAWNED {def}, then its on_spawn trait hooks (LT-106; `from_event` false for a queued pack
 ## member); returns that id. LT-111: HP and base speed are scaled by the current
 ## wave's hp_mult / speed_mult (fakes and queued pack members alike); base_max_hp keeps
 ## def.hp for the HP caps. Unconditional multiply: x 1.0 is exact, so absent fields
 ## change nothing.
-func _enter(def: EnemyDef, is_fake: bool, pack_of: int, from_event: bool) -> int:
+func _enter(def: EnemyDef, is_fake: bool, pack_of: int, from_event: bool,
+		route_id: String) -> int:
 	var m := _wave_mults()
 	var e := SimEnemy.new()
 	e.id = _ctx.next_id()
@@ -116,10 +127,9 @@ func _enter(def: EnemyDef, is_fake: bool, pack_of: int, from_event: bool) -> int
 	# the floor changes nothing there.
 	var units := SimTime.units_per_tick(def.speed * m[1])
 	e.base_units_per_tick = maxi(units, mini(SimTime.units_per_tick(def.speed), 1))
-	# Flyers start at S too (owner decision, §7 Q3) and fly straight to L.
-	e.route = _ground_route
-	if def.flying:
-		e.route = SimRoute.straight(_state.map.grid, _state.map.spawn, _state.map.lighthouse)
+	# Flyers start at their route's start too (owner decision, §7 Q3) and fly straight to L.
+	e.route_id = _resolve_route_id(route_id)
+	e.route = _route_for(e.route_id, def.flying)
 	_state.enemies.append(e)
 	_ctx.emit(SimEvent.Type.SPAWNED, e.id, {"def": def.id})
 	if def.hooks & EnemyTrait.ON_SPAWN:
@@ -128,6 +138,48 @@ func _enter(def: EnemyDef, is_fake: bool, pack_of: int, from_event: bool) -> int
 			if tr.hooks() & EnemyTrait.ON_SPAWN:
 				tr.on_spawn(_host, e, def.hook_params[i], from_event)
 	return e.id
+
+
+## LT-109: `route_id`, or the default route ("" or unknown, the latter with an error) of the
+## plan in force (state.route_now; the map's route ids when no RouteSystem set one: tests that
+## build this system without the facade).
+func _resolve_route_id(route_id: String) -> String:
+	var ids := _config.map.route_ids
+	if route_id.is_empty():
+		return ids[0]
+	if not _route_cells(route_id).is_empty():
+		return route_id
+	push_error("SpawnSystem: unknown route \"%s\", using \"%s\"" % [route_id, ids[0]])
+	return ids[0]
+
+
+## LT-109: the cells of route `id` in the plan in force: state.route_now, or the map's routes
+## when route_now is null (no RouteSystem). Empty for an unknown id.
+func _route_cells(id: String) -> Array:
+	if _state.route_now != null:
+		return _state.route_now.cells.get(id, [])
+	return _config.map.routes.get(id, [])
+
+
+## LT-109 §2.3: the SimRoute of route `id` (a known id): its cells for a walker, the straight
+## line from its first to its last cell for a flyer. Cached per id while the cells are equal.
+func _route_for(id: String, flying: bool) -> SimRoute:
+	var cells := _route_cells(id)
+	var cache := _air_cache if flying else _ground_cache
+	var built := _air_cells if flying else _ground_cells
+	if cache.has(id) and built[id] == cells:
+		return cache[id]
+	var grid := _config.map.grid
+	var route: SimRoute
+	if flying:
+		route = SimRoute.straight(grid, cells[0], cells[-1])
+	else:
+		var typed: Array[Vector2i] = []
+		typed.assign(cells)
+		route = SimRoute.from_cells(grid, typed)
+	cache[id] = route
+	built[id] = cells
+	return route
 
 
 ## LT-111: [hp_mult, speed_mult] of the current (or last started) wave; [1.0, 1.0] before

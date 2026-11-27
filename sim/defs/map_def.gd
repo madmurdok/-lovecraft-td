@@ -4,10 +4,14 @@ extends RefCounted
 ## Legend: "." buildable, "#" path, "~" water, "S" path start, "L" lighthouse (path end).
 ## The path is derived by walking from S through neighbouring path cells to L (the grid's
 ## neighbours: 4 on square). The topology comes from GridFactory (LT-108).
+## LT-109: the walk is also route DEFAULT_ROUTE ("main"), the one route id of a v1 map;
+## route_provider() is the sim's route source (RouteSystem), so a later map version (LT-18)
+## only changes which provider it returns.
 
 enum Kind {BUILDABLE, PATH, WATER}
 
 const FIELDS := ["width", "height", "rows", "grid"]
+const DEFAULT_ROUTE := "main"  ## LT-109: the route id of a v1 map's single S ... L walk
 const KIND_OF := {".": Kind.BUILDABLE, "#": Kind.PATH, "~": Kind.WATER, "S": Kind.PATH,
 	"L": Kind.PATH}
 
@@ -16,7 +20,12 @@ var height: int  ## >= 1
 var spawn: Vector2i  ## the S cell (path start, docks)
 var lighthouse: Vector2i  ## the L cell (path end)
 var path: Array[Vector2i] = []  ## S ... L inclusive, in walking order
-var grid: GridTopology  ## cell geometry (LT-77); built by GridFactory; "square" today
+## LT-109: route id -> its cells (Array[Vector2i], start ... L). Lookup only, never iterated:
+## the order is route_ids. A v1 map holds {DEFAULT_ROUTE: path}.
+var routes: Dictionary[String, Array] = {}
+## LT-109: route ids in pinned order; [0] is the default route. [DEFAULT_ROUTE] on a v1 map.
+var route_ids: PackedStringArray = []
+var grid: GridTopology  ## cell geometry (LT-77); built by GridFactory; "square" or "hex"
 var _kinds: PackedByteArray = []  ## Kind per cell, indexed by grid.index
 
 
@@ -129,6 +138,13 @@ func _derive_path(r: ConfigReader) -> void:
 				"path cell at column %d is not on the walk from S to L" % t.x)
 	if r.errors.size() == n:
 		path = walk
+		routes = {DEFAULT_ROUTE: walk}
+		route_ids = PackedStringArray([DEFAULT_ROUTE])
+
+
+## LT-109: the route source of this map. A v1 map's routes are fixed (authored).
+func route_provider() -> RouteProvider:
+	return FixedRouteProvider.new(routes, route_ids)
 
 
 func _path_neighbours(cell: Vector2i) -> Array[Vector2i]:

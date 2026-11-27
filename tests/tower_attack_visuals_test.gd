@@ -541,7 +541,7 @@ func _func_body(src: String, name: String) -> String:
 ## constants it relies on.
 func test_a_revealed_enemy_is_drawn_grey_with_an_amber_ring_and_slash_on_revealed_only() -> void:
 	var body := _func_body(FileAccess.get_file_as_string("res://scenes/board/entity_layer.gd"),
-		"_draw_enemies")
+		"_draw_enemy")
 	assert_bool(RegEx.create_from_string("\\bis_fake\\b").search(body) == null).is_true()
 	var gated := RegEx.create_from_string("(?m)^(\\t+)if e\\.revealed:.*\\n((?:\\1\\t.*\\n)+)")
 	var blocks := ""

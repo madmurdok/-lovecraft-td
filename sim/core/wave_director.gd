@@ -14,6 +14,9 @@ extends SimSpawner
 ##
 ## Day = BUILD, night = WAVE (LT-27 §3). Dawn (clearing a wave) runs Simulation.on_dawn
 ## (fakes, relic tokens, wage, sanity; LT-99), then emits WAVE_CLEARED and resets the night luck.
+## LT-109: every build phase first calls Simulation.on_build_start(next wave) (route plan of
+## the next wave), and start_wave calls Simulation.on_wave_start after advancing wave_index,
+## before WAVE_STARTED (that plan becomes the one spawns read). Neither draws nor emits.
 ## A wave is cleared when every group has fired all its events, no real pack member is still
 ## queued (LT-63) and no real enemy is alive (fakes do not count). Clearing pays award_wave_bonus(n) (the dawn wage) before the outcome check, so the
 ## last wave's bonus is paid in the same tick WON is set; the between-waves sanity regen
@@ -90,6 +93,7 @@ func start_wave(sim: Simulation, early: bool) -> void:
 	var ticks_left := s.build_ticks_left
 	s.phase = SimState.Phase.WAVE
 	s.wave_index += 1
+	sim.on_wave_start()  # LT-109: the day's route plan is now the one spawns read
 	s.build_ticks_left = 0
 	_wave_tick = 0
 	_fired.clear()
@@ -111,21 +115,25 @@ func debug_fire_all(sim: Simulation) -> void:
 
 func _begin_build(sim: Simulation) -> void:
 	var s := sim.state
+	sim.on_build_start(s.wave_index + 1)  # LT-109: plan the next wave's routes first
 	s.phase = SimState.Phase.BUILD
 	s.build_ticks_left = _build_ticks
 	sim.emit_event(SimEvent.Type.BUILD_STARTED, 0,
 		{"next_wave": s.wave_index + 1, "ticks": _build_ticks})
 
 
+## LT-109: group gi spawns on its route of the frozen plan (state.route_now.group_routes[gi];
+## "" = the default route when the plan has no entry for it).
 func _spawn_due(sim: Simulation) -> void:
 	var groups := _current_wave(sim.state).groups
+	var routes := sim.state.route_now.group_routes
 	for gi in groups.size():
 		var g := groups[gi]
 		var delay := SimTime.ticks(g.delay)
 		var interval := SimTime.ticks(g.interval)
 		while _fired[gi] < g.count and delay + _fired[gi] * interval <= _wave_tick:
 			_fired[gi] += 1
-			sim.spawn_enemy(g.enemy_id)
+			sim.spawn_enemy(g.enemy_id, false, routes[gi] if gi < routes.size() else "")
 	_wave_tick += 1
 
 

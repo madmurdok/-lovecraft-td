@@ -1,9 +1,8 @@
 class_name GridFactoryTest
 extends GdUnitTestSuite
 ## LT-108 §6 item 1 and owner Q1/Q6 (docs/design/LT-108-grid-factory.md): GridFactory builds a
-## registered topology by kind, an unknown kind is null, hex ships unregistered, and
-## registering a topology is one MAKERS line: with HexGrid added (here, in the test only) a
-## "grid": "hex" map parses through MapDef with axial ids.
+## registered topology by kind, an unknown kind is null. LT-129: hex is registered (one MAKERS
+## line), so a "grid": "hex" map parses through MapDef with axial ids.
 
 var _saved: Dictionary
 
@@ -34,20 +33,24 @@ func test_each_call_builds_a_fresh_grid_of_its_size() -> void:
 	assert_object(b.bounds()).is_equal(Rect2(0, 0, 7, 5))
 
 
-func test_unknown_kinds_are_null_and_hex_is_not_registered() -> void:
-	assert_object(GridFactory.make("hex", 5, 4)).is_null()
+func test_unknown_kinds_are_null() -> void:
 	assert_object(GridFactory.make("squre", 5, 4)).is_null()
+	assert_object(GridFactory.make("tri", 5, 4)).is_null()
 	assert_object(GridFactory.make("", 5, 4)).is_null()
-	assert_array(Array(GridFactory.kinds())).is_equal(["square"])
 
 
-func test_registering_hex_is_one_makers_line() -> void:
-	GridFactory.MAKERS["hex"] = HexGrid
-	assert_array(Array(GridFactory.kinds())).is_equal(["hex", "square"])  # sorted
+func test_hex_is_registered_and_kinds_are_sorted() -> void:
+	assert_array(Array(GridFactory.kinds())).is_equal(["hex", "square"])
 	var g := GridFactory.make("hex", 4, 3)
 	assert_bool(g is HexGrid).override_failure_message(str(g)).is_true()
 	assert_int(g.cell_count()).is_equal(12)
-	# and a map with "grid": "hex" now parses, text read as odd-r rows into axial ids
+	# an interior cell has 6 neighbours
+	var interior := Vector2i(1, 1)
+	assert_bool(g.cells().has(interior)).is_true()
+	assert_int(g.neighbours(interior).size()).is_equal(6)
+
+
+func test_a_hex_map_parses_through_the_factory_into_axial_ids() -> void:
 	var r := ConfigReader.new("map.json")
 	var m := MapDef.parse(r, {"width": 4, "height": 3, "grid": "hex",
 		"rows": [".S..", "#...", "L..."]})
@@ -56,13 +59,18 @@ func test_registering_hex_is_one_makers_line() -> void:
 	assert_array(m.path).is_equal([Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 2)])
 
 
+func test_maps_without_grid_or_with_square_build_a_square_grid() -> void:
+	for extra in [{}, {"grid": "square"}]:
+		var d := {"width": 3, "height": 1, "rows": ["S#L"]}
+		d.merge(extra)
+		var r := ConfigReader.new("map.json")
+		var m := MapDef.parse(r, d)
+		assert_array(r.errors).is_empty()
+		assert_bool(m.grid is SquareGrid).is_true()
+
+
 func test_the_unknown_grid_error_lists_the_registered_kinds() -> void:
 	var r := ConfigReader.new("map.json")
-	MapDef.parse(r, {"width": 3, "height": 1, "grid": "hex", "rows": ["S#L"]})
-	assert_array(r.errors).is_equal(
-		["map.json: grid: unknown grid \"hex\" (expected \"square\")"])  # today's text
-	GridFactory.MAKERS["hex"] = HexGrid
-	r = ConfigReader.new("map.json")
 	MapDef.parse(r, {"width": 3, "height": 1, "grid": "tri", "rows": ["S#L"]})
 	assert_array(r.errors).is_equal(
 		["map.json: grid: unknown grid \"tri\" (expected \"hex\", \"square\")"])

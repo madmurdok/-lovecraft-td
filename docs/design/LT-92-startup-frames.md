@@ -406,6 +406,230 @@ Medians (min-max):
   a 2.1 s B at load 53. The presence of B/C in BEFORE and their absence in AFTER hold in every run, in both
   speed classes. Scratchpad: `lt92s9/run.sh`, `summarize.py`, `runs/`.
 
+## Quiet re-measure (LT-123/S1)
+
+Same probe (appendix, `probe92c.gd`, untracked) and command as S9 on release-0.15.0 `d735f00`:
+`--seed=4242 --frame-stats --mute --probe-secs=9 --wave`, `--audio-driver Dummy`, under `caffeinate -d -i`.
+Before each run the script waited for 1-min load < 6 (cap 45 min; longest wait 260 s, never timed out). Frame A = F2,
+loading = F1, iter5 = F5, in ms. 10 valid runs: runs 1-8 and 10 of the batch, plus one extra run in place of run 9.
+Run 9 is excluded: an outside process pushed load to 21.9 during it (A 9610 ms, 3 frames, load before 5.6).
+
+| run | load before | A | loading | iter5 | real / user / sys s | load after |
+|---|---|---|---|---|---|---|
+| 1 | 5.65 | 2441 | 73 | 252 | 15.78 / 10.03 / 3.55 | 5.82 |
+| 2 | 5.82 | 1475 | 52 | 117 | 13.05 / 7.88 / 3.42 | 5.73 |
+| 3 | 5.73 | 2042 | 63 | 130 | 14.57 / 9.00 / 3.56 | 6.36 |
+| 4 | 5.80 | 1596 | 52 | 124 | 13.10 / 7.38 / 3.09 | 6.06 |
+| 5 | 5.66 | 1166 | 39 | 101 | 12.18 / 6.05 / 2.70 | 5.40 |
+| 6 | 5.40 | 1655 | 54 | 129 | 12.23 / 7.61 / 3.39 | 6.80 |
+| 7 | 5.99 | 1110 | 38 | 128 | 12.46 / 6.59 / 3.03 | 6.15 |
+| 8 | 5.70 | 852 | 29 | 80 | 11.08 / 5.68 / 2.85 | 5.60 |
+| 10 | 5.60 | 1140 | 35 | 113 | 11.80 / 6.56 / 3.23 | 5.54 |
+| extra | 5.23 | 1082 | 38 | 96 | 11.80 / 5.94 / 2.65 | 5.11 |
+
+Medians (min-max): **A 1321 (852-2441)**, **loading 46 (29-73)**, **iter5 120 (80-252)**.
+Gate (load1 < 6 at start): held 10/10 (S9: 3/10). Load rose above 6 during 3 runs (to 6.1-6.8), so the
+machine was quiet but not idle. user+sys is 0.8-0.9 of real, the process was busy.
+
+Compared with S9 AFTER (A 2399, loading 83, iter5 174): the loading frame and the iteration-5
+stall are still there on a quiet machine (iter5 80-252 ms, over the 100 ms mark in 8/10 and over
+150 ms in 1/10); A is about 1.3 s, not 2.4 s, so S9's A was inflated by load. No cause analysis here (S2).
+Scratchpad: `LT-123/run.sh`, `runs_full/`, `runs_extra/`.
+
+## LT-123 diagnosis
+
+**Causes, in one line each.**
+- **Frame A (~1.3-1.6 s):** it now holds three things. (1) The main-scene setup: since the
+  loading frame, `start_game()` runs inside iteration 2, so 190-430 ms of `proc` counts in
+  frame A. Before LT-92 it ran before the first frame (`proc` 0.5 ms). (2) The unlit compile
+  (~350-490 ms, as before). (3) The lit variants that B and C used to compile, +700-900 ms of
+  `draw`. Nothing else is hidden in it. LT-92's "300 -> 700" estimate used fast-class B
+  (~430 ms) and left the setup out. On this machine at load 4-6, B + C alone is 0.8-1.3 s.
+- **Iteration 5 (~120-160 ms):** the unlit variants of the canvas items that the WarmLight
+  lit. Every item whose rect meets the corner draws **lit** in all three warm frames:
+  terrain, FxLayer, SeaFog and others. Their unlit variants are therefore first needed in the
+  frame after the light is freed. The comment in `scenes/lighting.gd` 47-54 and in
+  `fx_layer.gd` says unlit items compile them in frame A. That is wrong for the SeaFog
+  shader (only SeaFog uses it) and for part of the default-shader set. The stall follows the
+  free, whenever it happens.
+- **Why LT-92/S5 missed it:** the probe's `--cornerlight` arm was not a freed corner light.
+  `_setup_c` sets `warmlight = 3` for it, so the next `if warmlight > 0` block also adds a
+  board-covering `ProbeWarmLight` and reassigns `wl`. The probe then freed only the board
+  light; the corner light stayed on for the whole run. A corner light that is never freed
+  leaves no unlit transition (see `keep` below). That is why S5 saw no post-warm frame.
+
+### How it was measured
+
+The probe is `probe92c.gd` (appendix) in the throwaway worktree `../lovecraft-td-wt-LT-123-probe`
+(release-0.15.0 code). It adds one field to every `F` line, `wl=` (V = WarmLight visible,
+H = present but hidden, N = none), and `fog=` (SeaFog visible). The A/B switches were a throwaway
+patch to `scenes/lighting.gd` in that worktree, selected by the env var `LT123`. The patch was reverted
+after the batch (`git status` clean except the probe). Arms:
+
+| arm | switch | control (cheap observation) |
+|---|---|---|
+| base | none | `wl=V` F2-F4, `N` from F5 |
+| nowarm | no WarmLight | `wl=N` from F2; B and C come back |
+| keep | WarmLight never freed | `wl=V` to the end |
+| late | freed after 30 frames, no wave | `wl=V` to F31, `N` from F32 |
+| nofog | SeaFog hidden from the start | `fog=0` |
+| delay | WarmLight hidden in the first game frame, then lit 3 frames | `wl=H` F2, `V` F3-F5, `N` from F6 |
+| corner | nowarm + the probe's `--cornerlight=3` (the S5 arm as it really ran) | `wl=N`, `P92_LIGHTS wl=true` |
+
+All arms used `--seed=4242 --frame-stats --mute --audio-driver Dummy --wave --probe-secs=7`, except
+`late` (`--probe-secs=6`, no wave, so the night lights cannot hide the transition). One background
+script ran 4 rounds, round robin, 28 runs, under `caffeinate -d -i`. Before each run it waited for 1-min
+load < 6 (only the first run waited: 630 s). Load before the runs was 4.0-5.96. `uptime` was 12.17 at the
+start (before the gate) and 4.08 at the end. `/usr/bin/time -p` real 8.5-12.8 s, (user+sys)/real
+0.72-0.90 in every run, so the process was busy, not waiting. Scratchpad: `LT-123/diag/run.sh`,
+`summarize.py`, `summary.txt`, `ab_switches.patch`, `runs/`.
+
+### Results (ms, 4 runs per arm; frame A = F2, its `proc`/`draw` split in brackets)
+
+| arm | frame A | F3 | frame after the free | B (wave-call frame) | C window max | worst other frame |
+|---|---|---|---|---|---|---|
+| base | 1354, 1453, 1664, 1775 (proc 250-310, draw 1098-1457) | 22-30 | **F5: 153, 162, 155, 125** | 24-36 | 24-27 | = F5 |
+| nowarm | 815, 779, 598, 581 (proc 212-317, draw 356-489) | 18-23 | - | **1003, 848, 607, 658** | **330, 310, 204, 198** | = C |
+| keep | 2138, 1619, 1077, 1270 (draw 883-1818) | 19-25 | - (never freed) | 28-31 | 24-32 | 30-41 |
+| late | 1034, 1157, 1005, 1223 | 17-19 | **F32: 119, 100, 85, 95** (F31: 17-23) | - | - | = F32 |
+| nofog | 1354, 823, 827, 1069 | 15-25 | **F5: 90, 66, 57, 64** | 22-30 | 25-28 | = F5 |
+| delay | **F2: 1301, 505, 569, 585** (proc 189-579, draw 310-708) | **F3: 1425, 630, 840, 867** (draw only) | F6: 43, 37, 31, 29 | 29-51 | 24-33 | 29-51 |
+| corner | F2: 481, 672, 1103, 547 (unlit) | F3: 568, 1063, 1379, 802 (lit) | - | 37-44 | 25-32 | 22-42 |
+
+Medians: base A 1558, iter5 154. nowarm A 688, B 753, C 257. delay F2 577, F3 853, no
+frame over 51 ms after F3. keep A 1445, no frame over 41 ms after A. late post-free 98. nofog
+post-free 65.
+
+- **The stall is caused by freeing the light.** It is at F5 in `base` and moves to F32 in `late`
+  (F31 17-23 ms, F32 85-119 ms, 4/4 each). In `keep` it is gone (4/4; no frame over 41 ms in
+  7 s, wave and C included). `nowarm` has no such frame (F5 22-26 ms).
+- **SeaFog is about half of it.** With the fog hidden, the post-free frame drops from 125-162 to
+  57-90 ms (4/4). The rest comes from default-shader items lit in the corner (terrain,
+  FxLayer warm-up kinds) whose unlit variants no unlit item drew in frame A.
+- **Frame A's growth is the lit set, as designed, plus the setup.** Without the light, frame A
+  is 581-815 ms: setup `proc` 212-317 + unlit `draw` 356-489. That is the pre-LT-92 432 ms plus the
+  setup that now falls inside the frame. With the light, `draw` grows by ~700-900 ms. That is
+  about B + C of `nowarm` (607-1003 + 198-330), i.e. the cost moved, as S5 found. `proc` does not
+  change between arms.
+- **`delay` removes the stall and halves the peak.** One unlit game frame first (F2: setup +
+  unlit compile, 505-585 ms, 1301 in the slow first run), then three lit frames: the first of
+  them (F3, 630-867 ms, 1425 in the slow run) compiles the lit set. Freeing the light at F6 costs
+  nothing (29-43 ms), because every item drew unlit in F2. B and C stay gone (wave frame 29-51,
+  C window 24-33 ms). The total is about the same as `base` (F2 + F3 ≈ base A + iter5); the worst
+  single frame drops from a 1558 ms median to 853 ms.
+- `corner` behaves like `delay`: in today's code the probe adds its light one frame after the
+  game's first draw (F2 `draw` 303-663 unlit, F3 lit). This confirms that an unlit first frame
+  plus a light that is never freed leave no later stall.
+
+### Fix options
+
+| option | change | effect (measured) | benefit | risk |
+|---|---|---|---|---|
+| **D1: unlit first game frame (recommended)** | `Lighting`: create the WarmLight hidden, show it from the second processed frame, keep it `WARM_FRAMES` frames, then free it | `delay`: iter5 gone 4/4; worst frame 630-867 (median 853) against base A 1354-1775; B, C gone | removes the stall and lowers the peak, with no permanent node. Change is ~10 lines in one function pair; Main is untouched | the startup cost is now two long frames (F2 ~0.6 s, F3 ~0.85 s), and the board is visible and frozen during F3. The player cannot act in it, but it is a visible freeze of the game screen, not of "Loading...". Depends on Lighting's first `_process` running before the first game frame draws (true today: `wl=H` in F2 4/4); if that ever changes, the hidden frame simply lasts two frames (harmless) |
+| D2: never free the WarmLight | drop the free in `_tick_warm_light` | `keep`: iter5 gone 4/4; A unchanged (1077-2138) | smallest diff; the transition never happens | a zero-energy light lives for the whole run: every item touching the corner always draws lit (extra per-pixel light work for terrain/fog, not measured beyond 7 s of 22-35 ms frames) and takes one of the per-item light slots at night next to the beams, glow, flare and tower lights. Frame A stays at ~1.5 s |
+| D3: D1 + keep "Loading..." over F2 and F3 | D1, and `Main` removes its layer two frames after `start_game()` instead of in the same call | as D1; both long frames show "Loading..." over the board | no frame where the game screen is frozen without a hint | Main must know how many warm frames there are (coupling to `Lighting`), and the boot test changes. The label has no backdrop, so the board is still visible under it. Not measured |
+
+Recommended: **D1**. It meets the target (iteration-5 stall gone, frame A not worse: its worst
+frame is lower), touches one file of production code plus comments, and keeps the LT-92 shape
+(one small light, freed after the warm frames). D3 is a one-function add-on the owner can ask
+for if the frozen F3 reads badly; it is a judgement on looks, not on timing.
+
+### Edit map (code slice, D1)
+
+`scenes/lighting.gd`:
+- Constants block 47-57: add `const UNLIT_FRAMES := 1` (game frames drawn with the WarmLight
+  hidden first). Rewrite the doc comment: the first game frame draws every item unlit (unlit
+  set compiles), the next `WARM_FRAMES` frames draw corner items lit (lit set compiles), and the
+  light is then freed with both sets compiled. State that a light lit from the first frame
+  left the unlit variants of the lit items (SeaFog's shader among them) to the frame after
+  the free (LT-123: 125-162 ms).
+- Vars 72-73: add `var _unlit_left := UNLIT_FRAMES`.
+- `_add_warm_light()` (129-137): create the light with `visible = false` and reset
+  `_unlit_left`. Do not use `night`/`_apply_night()`.
+- `_tick_warm_light()` (140-151): while `_unlit_left > 0`, decrement it and return (still
+  hidden). On the next tick, set `visible = true` and run the existing `WARM_FRAMES` countdown.
+  Free as now. Update its doc comment: boot iteration 2 is unlit, 3-5 lit, the light is freed in iteration
+  6's `_process`.
+- Read for context only: `_ready()` (96-118), `_process()` (121-126), `_apply_night()` (164-),
+  `_light()` (265-276).
+
+`scenes/board/fx_layer.gd` (comments only): the header lines 10-17 and the `_draw_warmup()` doc
+(325-329) say this layer's unlit variants were compiled by other items in frame A. Replace with: the
+warm-up draws unlit in the first game frame and lit in the next `Lighting.WARM_FRAMES`.
+
+`scenes/main.gd`: no change for D1. Its doc at 13-15 still holds.
+
+**Behaviours the tests must pin** (`tests/lighting_test.gd`, 208-320; all controls in one
+binary):
+
+| # | behaviour | test change | control revert (code) |
+|---|---|---|---|
+| 1 | On creation the WarmLight exists, is hidden, has `WARM_ENERGY`; night 0, beam/glow hidden | `test_warm_light_exists_on_the_first_frame_and_gives_no_light`: `visible` false instead of true | create it visible (today's code) |
+| 2 | It stays hidden for exactly `UNLIT_FRAMES` processed frames, then is visible for exactly `WARM_FRAMES`, then is freed and leaves no node | `test_warm_light_is_freed_after_exactly_warm_frames_frames`: add the unlit leg and count both legs | show it on the first tick (skip the unlit leg) |
+| 3 | It is visible in at least one processed frame (the lit set is warmed at all) | same test, assert `visible` in each warm frame | never set `visible = true` |
+| 4 | Real frames free it: after `UNLIT_FRAMES + WARM_FRAMES + 2` `process_frame`s it is gone | `test_warm_light_is_freed_by_real_frames`: frame count | never free it (D2) |
+| 5 | Night never shows or hides it: `_apply_night()` leaves a hidden WarmLight hidden and a visible one visible | `test_night_does_not_touch_the_warm_light`: check both states | let `_apply_night()` set its `visible` like the other lights |
+| 6 | An early wave call does not change the schedule | `test_a_wave_called_in_the_first_frames_still_frees_the_warm_light`: frame count | (covered by 2) |
+
+Rect tests (222-235) and `test_the_game_freed_in_the_first_frames_takes_the_warm_light_with_it` stay
+as they are. `main_loading_test.gd` does not change for D1.
+
+**Measure slice pass bar (D1):** same command as LT-123/S1, 5+ runs at load < 6. Controls: `wl=H`
+in F2 and `V` in F3-F5 (the probe's `wl=` field), and `N` from F6. Pass: no frame over 100 ms from F4
+on, the wave-call frame and the C window included. max(F2, F3) at most S1's frame A (median 1321).
+
+## After (LT-123/S9)
+
+Same probe and command as "Quiet re-measure (LT-123/S1)" on the fix branch (code `422db98`, tests `c67f147`),
+in a throwaway detached worktree (`lovecraft-td-wt-LT-123-s9`, probe untracked, never committed):
+`--seed=4242 --frame-stats --mute --probe-secs=9 --wave`, `--audio-driver Dummy`, under `caffeinate -d -i`.
+The probe copy gained one field, `ld=` (1 = the `Main.loading` layer exists), and a `--shot=<png>` switch
+(run 1 only) that saves the viewport at the head of frame 3. Before each run the script waited for 1-min
+load < 6. Columns are ms of the frame interval: F1 = the loading frame, F2, F3 = the two warm frames,
+worst = the largest frame from F4 on. `wl` F2-F7 and `ld` F1-F7 are identical in every run (below).
+
+| run | load before | F1 (loading) | F2 | F3 | worst from F4 | F5 | real / user / sys s | note |
+|---|---|---|---|---|---|---|---|---|
+| 1 | 3.02 | 29.8 | 430 | 528 | 42.5 (F5) | 42.5 | 11.35 / 5.59 / 2.80 | screenshot run: F4 = 192.6 ms (`proc` 175) is the probe's own PNG save, excluded |
+| 2 | 5.64 | 30.4 | 379 | 514 | 32.5 (F133) | 22.3 | 11.07 / 5.40 / 2.71 | |
+| 3 | 5.33 | 29.9 | 423 | 539 | 25.7 (F8) | 23.0 | 11.09 / 5.29 / 2.63 | |
+| 5 | 5.99 | 35.8 | 425 | 574 | 29.5 (F6) | 29.4 | 11.52 / 5.89 / 2.95 | |
+| 6 | 5.63 | 44.9 | 594 | 767 | 43.9 (F93) | 27.9 | 11.98 / 7.25 / 3.45 | |
+| 7 (extra) | 5.00 | 30.4 | 416 | 580 | 33.6 (F6) | 29.6 | 11.21 / 5.40 / 2.69 | |
+| 8 (extra) | 4.61 | 42.2 | 552 | 788 | **116.4 (F194)** | 19.8 | 11.84 / 7.22 / 3.51 | one isolated frame, see below |
+
+Run 4 is excluded: load before 4.89 but 8.19 after, and 10 frames of 60-110 ms between F230 and F288
+(draw 57-108 ms, `proc` < 2 ms), i.e. an outside load spike, not the game. Runs 7 and 8 replace it and the
+extra one covers run 1's screenshot artifact; 7 valid runs. Gate held 7/7 (3.0-6.0 before). user+sys is
+0.74-0.93 of real in every run, the process was busy. `/usr/bin/time -p` and `uptime` per run:
+scratchpad `LT-123s9/runs*/`.
+
+Medians (min-max), ms:
+
+| | before (S1, release-0.15.0, 10 runs) | after (S9, 7 runs) |
+|---|---|---|
+| frame A (before) / F2 (after) | 1321 (852-2441) | **425 (379-594)** |
+| F3 | - | **574 (514-788)** |
+| max(F2, F3) | 1321 | 574 (514-788) |
+| loading frame | 46 (29-73) | **30.4 (29.8-44.9)** |
+| iter5 / F5 | 120 (80-252) | **29.4 (19.8-42.5)** |
+| worst frame from F4 on | iter5 above, 80-252 | **33.6 (25.7-116.4)**; 6/7 under 44 |
+
+**Pass bar.**
+- `wl` = H in F2, V in F3-F5, N from F6: holds 7/7 (`H,V,V,V,N,N` for F2-F7 in every run).
+- `ld` (Loading layer) = 1 over F1-F5, 0 from F6, 7/7: "Loading..." covers both warm frames and goes
+  away the frame after the light is freed.
+- max(F2, F3) <= 1321: holds 7/7 (max 788); medians 425 and 574. F2 + F3 is about 1.0 s against 1.3 s for the old frame A.
+- No frame > 100 ms from F4 on: holds 6/7. Run 8 has one 116 ms frame at F194 (t = 7.2 s, night 0.998, 3-4
+  enemies, beam at -1.5, not the -2.7 window; `proc` 0.5, all in `draw`, neighbours 19 ms; load before 4.61, after 4.22,
+  no other spike in the run). Not startup, not repeated in the other 6 runs; not diagnosed here (a one-off OS hiccup or a first-use
+  compile after wave start are both possible). Report it to the owner as an open item if it recurs.
+- Iteration-5 stall: gone (F5 19.8-42.5 ms against 80-252 before).
+
+Screenshot, "Loading..." over F3 (run 1, viewport at the head of frame 3, `ld=1`, `wl=V`):
+
+![Loading over F3](LT-92/lt123-loading-f3.png)
+
 ## Appendix: probe92c.gd (throwaway, removed)
 
 Copy it into the worktree root. Run:

@@ -138,7 +138,7 @@ func test_every_cell_is_picked_at_its_screen_centre_across_the_pan_range() -> vo
 				assert_vector(Vector2(_view.cell_at_screen(at))) \
 					.override_failure_message("pan %s cell %s" % [pan, c]).is_equal(Vector2(c))
 		var p := Vector2(3.25, 4.75)
-		assert_vector(_view.screen_to_cells(_view.cell_to_screen(p))).is_equal_approx(p,
+		assert_vector(_view.unproject(_view.cell_to_screen(p))).is_equal_approx(p,
 			Vector2(1e-4, 1e-4))
 
 

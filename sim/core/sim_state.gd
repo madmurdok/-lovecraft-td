@@ -64,3 +64,8 @@ var flare_ticks_left := 0
 var flare_cooldown_ticks := 0
 ## LT-30 §1.2: lamp oil in stock, 0..economy.oil.cap; 0 without an `oil` block.
 var oil := 0
+## LT-109: route plan of the wave in progress (frozen at WAVE_STARTED); spawns read it.
+## Written only by RouteSystem.
+var route_now: RoutePlan
+## LT-109: route plan of the next wave, made at the build start; the day telegraph reads it.
+var route_next: RoutePlan

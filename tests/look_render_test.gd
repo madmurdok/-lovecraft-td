@@ -222,13 +222,14 @@ func _func_body(src: String, name: String) -> String:
 
 func test_enemy_markers_and_hp_bar_move_out_by_the_body_radius_above_a_quarter_cell() -> void:
 	var body := _func_body(FileAccess.get_file_as_string("res://scenes/board/entity_layer.gd"),
-		"_draw_enemies")
+		"_draw_enemy")
 	assert_str(body).contains("LookCatalog.enemy_row(LookCatalog.enemy_look(e))")
 	assert_str(body).contains("var body: float = look[\"radius\"]")
 	assert_str(body).contains("var dr := body - LookCatalog.ENEMY_RADIUS")
-	for part: String in ["cells_to_px(MARK_SLOW_CELLS + dr)", "cells_to_px(0.3 + dr + 0.2 * ph)",
+	for part: String in ["view.ring(self, p, MARK_SLOW_CELLS + dr",
+			"cells_to_px(0.3 + dr + 0.2 * ph)",
 			"cells_to_px(BANISH_LID_CELLS + dr)", "cells_to_px(REVEALED_RING_CELLS + dr)",
-			"cells_to_px(0.3 + dr)", "cells_to_px(0.4 + dr)"]:
+			"cells_to_px(0.3 + dr)", "view.project(p, 0.4 + dr)"]:
 		assert_str(body).override_failure_message(part).contains(part)
 	# No marker or body is drawn at the built-in radius any more.
 	assert_str(body).not_contains("cells_to_px(0.25)")

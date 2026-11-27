@@ -398,6 +398,48 @@ add 8 %. (b2)'s higher fps must not be read as "faster": its figures skip lighti
 draws no auras or allies. A focused re-measure by LT-62's method is a follow-up (§8.3) and
 gates the view implementation.
 
+### 7.3 Focused re-measure (LT-127)
+
+Replaces §7.2's unfocused numbers. (An earlier run on a busy machine, load1 up to 68, lost
+focus in three arms and is discarded; this is the re-run on a quiet machine.) Method as §7.2 /
+LT-62 ("How it was measured"): bot build (rifleman x2, harpooner x6 per phase), seed 4242,
+boot-fit window 2390x1344, 10 s warm-up + 90 s, `-- --mute`, two rounds (second reversed),
+`caffeinate -d -i`, load1 < 10 before each arm (waits up to 30 min). The probe calls
+`window_move_to_foreground()` at start and every 5 s while unfocused and records per-frame
+focus. Wave span 1-3 in every arm. Focused share was 1.00 in every arm, so no retries.
+
+| Arm | Round | Focused share | fps median | p10 | Draw calls median | Load1 before / after | time -p real / user / sys |
+|---|---|---|---|---|---|---|---|
+| baseline | 1 | 1.00 | 16.7 | 11.4 | 1951 | 9.2 / 8.8 | 110.0 / 43.5 / 26.4 |
+| b2 | 1 | 1.00 | 16.4 | 11.9 | 1952 | 8.8 / 17.7 | 110.1 / 53.1 / 32.1 |
+| a | 1 | 1.00 | 14.6 | 10.8 | 1948 | 9.8 / 16.1 | 108.4 / 52.6 / 31.4 |
+| a | 2 | 1.00 | 15.7 | 10.7 | 1948 | 9.7 / 13.3 | 107.2 / 46.6 / 28.0 |
+| b2 | 2 | 1.00 | 18.8 | 11.0 | 1947 | 8.4 / 20.7 | 107.0 / 45.1 / 28.3 |
+| baseline | 2 | 1.00 | 17.7 | 12.2 | 1950 | 9.0 / 13.3 | 107.9 / 41.5 / 25.4 |
+
+Machine state: load1 was gated below 10 at each start (waits 0-635 s) but climbed to 13-21
+during several arms (other processes; the 5/15-min averages stayed high, 15-122 at the
+starts). `user+sys` is ~70-85 s of ~108 s real, so the run is CPU-bound, not waiting. Noise is
+about +-1.5 fps (baseline 16.7 / 17.7; b2 16.4 / 18.8). The focused fps (15-19) is still below
+LT-62's 37-43 because the bot builds more towers by wave 3. Draw calls are the firm number:
+~1950 in all arms, the 3D plane adds none.
+
+Verdict: **b2 goes.** Mean of two rounds: baseline 17.2, b2 17.6, a 15.2 fps; p10 11.8 / 11.5 /
+10.8. b2 costs nothing measurable against baseline; (a) is slightly lower (about 2 fps, near the
+noise) so there is no case for falling back to (a). Caveat unchanged: b2's figures skip lighting
+and draw no auras or allies, so its fps is not a claim that it is faster.
+
+Web (LT-127/S3): the b2 view works in the web export (Godot 4.7.2 web template, gl_compatibility,
+Chrome on ANGLE/Metal, Intel Iris Plus): the 3D plane in the SubViewport draws the trapezoid
+board (`docs/design/LT-64/b2-web.png`) and the picking round-trip is 0 mismatches of 336 cells.
+The HTML `args` config did not select the view; a throwaway proto patch (not committed) reads
+`?view=b2` from `window.location.search` via `JavaScriptBridge` on web. Blocker for web play:
+the in-game FPS label reads 1-3 for b2 against 7 for the flat game (same page, same session;
+rAF ~3/s with the tab visible and focused), so b2 looks about 3x heavier than flat in the browser,
+and both are far below desktop; the machine was busy (load1 48 at the end), so treat it as
+indicative only. Web is not a target of the view decision; if it
+becomes one, b2 needs a render-cost pass first (SubViewport size / `--ss`, plane resolution).
+
 ## 8. Recommendation: view (b2)
 
 Owner's pick after the screenshots: (b2) (§6.1). This section says what (b2) needs to ship.

@@ -426,3 +426,202 @@ func test_board_signals_follow_the_view_cell_and_off_board() -> void:
 	await _click(Vector2(100, TOP + 0.5))
 	assert_array(cells).has_size(3)
 	assert_vector(cells[2]).is_equal(Vector2i(2, 0))
+
+
+# --- 7. LT-126 (LT-64 §1.3): the named roles at identity -----------------------------------------
+# Spy views subclass BoardView: GDScript dispatches the view's own calls (ring -> ground,
+# cell_to_screen -> project) to the override, so a spy shows which role a function goes
+# through. Numbers are written out from the spec (40 px per cell, origin (0, 48)).
+
+const SHIFT := Vector2(1000, -300)  ## a non-identity project: the upright frame moved
+const PAN := Vector2(30, 10)
+
+
+## project moved by SHIFT (a camera body under b2 would change it; ground must not follow).
+class ShiftedView:
+	extends BoardView
+
+	func project(p_cells: Vector2, h_cells := 0.0) -> Vector2:
+		return super.project(p_cells, h_cells) + SHIFT
+
+
+## Records every ground / project / cells_to_px argument it is asked for.
+class RecordingView:
+	extends BoardView
+	var grounds: Array[Vector2] = []
+	var projects: Array[Vector2] = []
+	var lengths: Array[float] = []
+
+	func ground(p_cells: Vector2) -> Vector2:
+		grounds.append(p_cells)
+		return super.ground(p_cells)
+
+	func project(p_cells: Vector2, h_cells := 0.0) -> Vector2:
+		projects.append(p_cells)
+		return super.project(p_cells, h_cells)
+
+	func cells_to_px(len_cells: float) -> float:
+		lengths.append(len_cells)
+		return super.cells_to_px(len_cells)
+
+
+## Calls view.ring once inside its own _draw (drawing is only allowed there).
+class RingHost:
+	extends Node2D
+	var view: BoardView
+	var draws := 0
+
+	func _draw() -> void:
+		draws += 1
+		view.ring(self, Vector2(2.5, 1.5), 1.75, Color.RED, 2.0, 16, 0.25, 1.5)
+
+
+func _pan_screen(p_cells: Vector2, pan: Vector2) -> Vector2:
+	return Vector2(0, TOP) + pan + p_cells * TILE
+
+
+# 7.1 project / unproject / cell_to_screen: the pan is added once and removed once.
+
+func test_project_and_ground_are_the_cell_scale_at_identity_and_the_lift_is_screen_up() -> void:
+	for p: Vector2 in [Vector2.ZERO, Vector2(2.5, 1.5), Vector2(-1.25, 3.75), Vector2(6.9, -0.1)]:
+		assert_vector(_view.ground(p)).is_equal(p * TILE)
+		assert_vector(_view.project(p)).is_equal(p * TILE)
+		assert_vector(_view.project(p, 0.4)).is_equal_approx(
+			p * TILE + Vector2(0, -0.4 * TILE), Vector2(1e-4, 1e-4))
+		assert_vector(_view.project(p, -0.3)).is_equal_approx(
+			p * TILE + Vector2(0, 0.3 * TILE), Vector2(1e-4, 1e-4))
+		assert_float(_view.depth(p)).is_equal(0.0)
+
+
+func test_unproject_inverts_cell_to_screen_with_the_pan_added_once() -> void:
+	_view.set_pan(PAN)
+	for p: Vector2 in [Vector2(0.5, 0.5), Vector2(2.5, 1.5), Vector2(6.25, 4.75), Vector2(-1, 7)]:
+		var s := _view.cell_to_screen(p)
+		assert_vector(s).override_failure_message(str(p)).is_equal(_pan_screen(p, PAN))
+		assert_vector(_view.unproject(s)).is_equal_approx(p, Vector2(1e-5, 1e-5))
+		assert_vector(_view.unproject(_pan_screen(p, PAN))).is_equal_approx(p, Vector2(1e-5, 1e-5))
+
+
+func test_cell_picking_under_a_pan_follows_the_moved_board() -> void:
+	_view.set_pan(PAN)
+	for c in _view.grid.cells():
+		var s := _pan_screen(_view.grid.centre(c), PAN)
+		assert_vector(_view.cell_at_screen(s)).override_failure_message(str(c)).is_equal(c)
+	# The unpanned centre of (0, 0) now lies left of / above the moved board: off it.
+	assert_vector(_view.cell_at_screen(Vector2(20, TOP + 5))).is_equal(BoardView.OFF_BOARD)
+	assert_vector(_view.cell_at_screen(_pan_screen(Vector2(-0.01, 2.5), PAN))) \
+		.is_equal(BoardView.OFF_BOARD)
+	assert_vector(_view.cell_at_screen(_pan_screen(Vector2(W + 0.01, 2.5), PAN))) \
+		.is_equal(BoardView.OFF_BOARD)
+
+
+func test_a_non_identity_project_reaches_the_screen_through_one_origin_and_one_pan() -> void:
+	var v := ShiftedView.new()
+	v.grid = SquareGrid.new(W, H)
+	v.set_pan(PAN)
+	var p := Vector2(2.5, 1.5)
+	assert_vector(v.cell_to_screen(p)).is_equal(_pan_screen(p, PAN) + SHIFT)
+	assert_vector(v.cell_centre(Vector2i(2, 1))).is_equal(p * TILE + SHIFT)
+	# The pan bounds are the projected map's bbox, moved by the origin and the pan once.
+	assert_that(v.world_rect()).is_equal(Rect2(Vector2(0, TOP) + PAN + SHIFT, Vector2(W, H) * TILE))
+	assert_that(v.project_rect(Rect2(1, 2, 3, 4))).is_equal(
+		Rect2(Vector2(40, 80) + SHIFT, Vector2(120, 160)))
+
+
+# 7.2 ring: at identity the draw_arc of today (centre via ground, radius in px).
+
+func test_ring_at_identity_centres_on_ground_and_scales_the_radius_by_the_cell() -> void:
+	var v := RecordingView.new()
+	v.grid = SquareGrid.new(W, H)
+	var host := RingHost.new()
+	host.view = v
+	_vp = GameFixture.make_viewport(self)
+	_vp.add_child(host)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	assert_int(host.draws).is_greater(0)
+	var grounds := v.grounds.duplicate()
+	var lengths := v.lengths.duplicate()
+	assert_int(grounds.size()).is_equal(host.draws)  # one ground call per ring
+	assert_array(grounds.filter(func(g: Vector2) -> bool: return g != Vector2(2.5, 1.5))).is_empty()
+	assert_array(v.projects).is_empty()  # a ring is G: never through project
+	assert_int(lengths.size()).is_equal(host.draws)
+	assert_array(lengths.filter(func(r: float) -> bool: return r != 1.75)).is_empty()
+	assert_vector(v.ground(Vector2(2.5, 1.5))).is_equal(Vector2(100, 60))
+	assert_float(v.cells_to_px(1.75)).is_equal(70.0)
+
+
+## draw_arc's arguments cannot be read back headless (no renderer, and a script override of
+## the native draw_arc is not reached through a CanvasItem parameter), so the pass-through of
+## points / start / end / colour / width to the old draw_arc order is pinned on the source.
+func test_ring_passes_points_start_end_colour_and_width_through_to_draw_arc() -> void:
+	var src := FileAccess.get_file_as_string("res://scenes/board/board_view.gd")
+	var at := src.find("\nfunc ring(")
+	assert_int(at).is_greater_equal(0)
+	var body := src.substr(at, src.find("\nfunc ", at + 1) - at)
+	assert_str(body).contains("points := 48, start := 0.0, end := TAU)")
+	assert_str(body).contains(
+		"ci.draw_arc(ground(centre_cells), cells_to_px(r_cells), start, end, points, color, width)")
+
+
+# 7.3 ground: p * cell, never the pan, never project.
+
+func test_ground_and_ground_rect_are_the_plain_cell_scale_whatever_the_pan() -> void:
+	_view.set_pan(PAN)
+	for p: Vector2 in [Vector2(2.5, 1.5), Vector2(-1.25, 3.75), Vector2(0.1, -7.5)]:
+		assert_vector(_view.ground(p)).is_equal(p * _view.cells_to_px(1.0))
+		assert_vector(_view.ground(p)).is_equal(p * TILE)
+	assert_that(_view.ground_rect(Rect2(-2, -1, 9, 7))).is_equal(Rect2(-80, -40, 360, 280))
+	assert_that(_view.ground_rect(Rect2(0, 0, W, H))).is_equal(Rect2(0, 0, W * TILE, H * TILE))
+
+
+func test_ground_sites_do_not_follow_a_non_identity_project() -> void:
+	var v := ShiftedView.new()
+	v.grid = SquareGrid.new(W, H)
+	var c := Vector2i(3, 2)
+	assert_vector(v.ground(Vector2(3.5, 2.5))).is_equal(Vector2(140, 100))
+	assert_that(v.ground_rect(Rect2(0, 0, W, H))).is_equal(Rect2(0, 0, W * TILE, H * TILE))
+	assert_array(Array(v.cell_polygon(c))).is_equal(Array(_view.cell_polygon(c)))
+	assert_array(Array(v.cell_polygon(c, 4.0))).is_equal(Array(_view.cell_polygon(c, 4.0)))
+	assert_array(Array(_view.cell_polygon(c))).contains_exactly_in_any_order(
+		[Vector2(120, 80), Vector2(160, 80), Vector2(160, 120), Vector2(120, 120)])
+
+
+# 7.4 upright-first picking through the running Game, under a pan.
+
+func _night() -> void:
+	assert_int(_game.commands.call_wave()).is_equal(SimCommand.CommandResult.OK)
+	_game.sim.step()
+	_game.advance(0.0)
+
+
+func test_a_click_on_an_enemy_body_over_the_next_cell_picks_the_enemy_else_the_ground_cell() \
+		-> void:
+	await _start_game()
+	_night()
+	var board := _game.board
+	board.view.set_pan(PAN)
+	var picks: Array = []
+	board.enemy_clicked.connect(func(id: int) -> void: picks.append(["enemy", id]))
+	board.cell_clicked.connect(func(c: Vector2i) -> void: picks.append(["cell", c]))
+	board.outside_clicked.connect(func() -> void: picks.append(["outside"]))
+	var id := _game.sim.spawn_enemy("cultist")
+	GameFixture.sync(_game)
+	board.last_pos.clear()
+	var at := Vector2(4.9, 3.5)  # in cell (4, 3), its body reaches over into (5, 3)
+	board.last_pos[id] = at
+	var on_body := at + Vector2(0.35, 0)  # in (5, 3), 0.35 cells from the body's centre
+	assert_vector(board.view.cell_at_screen(_pan_screen(on_body, PAN))).is_equal(Vector2i(5, 3))
+	await _click(_pan_screen(on_body, PAN))
+	assert_vector(board.view.pan).is_equal(PAN)
+	board.last_pos.clear()  # the frame after the click redrew last_pos from the sim
+	board.last_pos[id] = at
+	var off_body := at + Vector2(0.7, 0)  # same cell (5, 3), outside every body
+	await _click(_pan_screen(off_body, PAN))
+	assert_vector(board.view.pan).is_equal(PAN)
+	board.last_pos.clear()
+	board.last_pos[id] = at
+	var outside := Vector2(-0.5, 3.5)  # left of the panned board's edge, on screen
+	assert_float(_pan_screen(outside, PAN).x).is_greater(0.0)
+	await _click(_pan_screen(outside, PAN))
+	assert_array(picks).is_equal([["enemy", id], ["cell", Vector2i(5, 3)], ["outside"]])
