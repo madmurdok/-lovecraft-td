@@ -27,6 +27,12 @@ const GENERATE_DIGESTS := {
 	5: "5fa51acdc5f48096bd8802a507430efaa72ec1c9b895e5af4db8e36ed65ddf18",
 	12: "f6928481df120cd76500141b804362b039ab09358b7ea4acf09fec117a31a167",
 }
+## Attempts generate needed for the GENERATE seeds (same probe run). A metric-only change (e.g.
+## choke_e) can keep the accepted map's digest but move the attempt count (LT-130/S26 F2).
+const GENERATE_ATTEMPTS := {1: 1, 5: 3, 12: 2}
+## Chokepoints per route of the accepted map (same probe run). The metric thresholds (choke_k,
+## choke_e) change these even when the map and the attempt count stay the same.
+const GENERATE_CHOKES := {1: [18, 20, 19], 5: [23], 12: [22, 21, 23]}
 const T := GenMap.Terrain
 ## Structure test: attempt 0 of seeds 1..STRUCT_SEEDS, for p1_small and p1_large each.
 const STRUCT_SEEDS := 25
@@ -55,6 +61,13 @@ func test_digests_are_pinned() -> void:
 		assert_str(res.map.digest()).override_failure_message("generate seed %d" % s) \
 			.is_equal(GENERATE_DIGESTS[s])
 		assert_bool(res.report.passed).is_true()
+		assert_int(res.attempts).override_failure_message("attempts of seed %d" % s) \
+			.is_equal(GENERATE_ATTEMPTS[s])
+		var chokes := []
+		for c in res.report.chokepoints:
+			chokes.append(c.size())
+		assert_array(chokes).override_failure_message("chokepoints of seed %d: %s" % [s, chokes]) \
+			.is_equal(GENERATE_CHOKES[s])
 		assert_int(res.rejects.size()).is_equal(res.attempts - 1)
 		# an accepted map: every entry reaches L (no S1)
 		var f := RouteField.build(res.map)
@@ -239,6 +252,19 @@ func test_presets() -> void:
 	assert_int(large.entries_min).is_equal(1)
 	assert_int(large.entries_max).is_equal(4)
 	assert_array(large.check()).is_empty()
+
+
+## Owner: "p1_large 32x18" is the default preset (LT-130 §10). generate() without params must
+## build the same map as generate() with p1_large (LT-130/S26 F1).
+func test_default_preset_is_p1_large() -> void:
+	var d := MapGenParams.default_preset()
+	assert_int(d.width).is_equal(32)
+	assert_int(d.height).is_equal(18)
+	assert_int(d.entries_max).is_equal(4)
+	var implicit := MapGenerator.generate(1)
+	var explicit := MapGenerator.generate(1, MapGenParams.p1_large())
+	assert_object(implicit.map).is_not_null()
+	assert_str(implicit.map.digest()).is_equal(explicit.map.digest())
 
 
 func test_from_dict_applies_keys_over_the_base() -> void:

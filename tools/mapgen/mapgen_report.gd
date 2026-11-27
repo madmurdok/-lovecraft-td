@@ -1,6 +1,6 @@
 extends SceneTree
 ## LT-130 §5: the P1 map generator report. Run through scripts/mapgen-report.sh. Args after `--`:
-##   --preset small|large  (default small: 24x16, 1-3 entries; large: 32x18, 1-4 entries)
+##   --preset small|large  (default large: 32x18, 1-4 entries; small: 24x16, 1-3 entries)
 ##   --seeds N (default 1000)  --from S (default 1)  --params f.json (MapGenParams.from_dict
 ##   overrides on the preset)  --maps (one line per map)  --out report.json
 ## Reject rates: attempt-level = rejected attempts / all attempts; seed-level = seeds that hit the
