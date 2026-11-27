@@ -211,7 +211,7 @@ func test_warm_light_exists_on_the_first_frame_and_gives_no_light() -> void:
 	assert_object(wl).is_not_null()
 	assert_str(wl.name).is_equal("WarmLight")
 	assert_object(wl.get_parent()).is_same(g.lighting)
-	assert_bool(wl.visible).is_true()  # drawn from frame 1, whatever `night` is
+	assert_bool(wl.visible).is_false()  # LT-123: hidden for the first UNLIT_FRAMES frames
 	assert_float(wl.energy).is_equal(Lighting.WARM_ENERGY)
 	assert_float(wl.energy).is_less_equal(0.01)  # never a visible light
 	assert_float(g.lighting.night).is_equal(0.0)
@@ -234,16 +234,29 @@ func test_warm_light_rect_is_far_smaller_than_the_board() -> void:
 	assert_float(rect.get_area() * 16.0).is_less(board.get_area())
 
 
-func test_warm_light_is_freed_after_exactly_warm_frames_frames() -> void:
+func test_warm_light_is_hidden_then_visible_then_freed_counting_both_legs() -> void:
 	var g := _fresh_game()
 	var l := g.lighting
 	var wl := l.warm_light
-	for i in Lighting.WARM_FRAMES:
+	assert_bool(l.is_warmed_up()).is_false()
+	var hidden_ticks := 0
+	var visible_ticks := 0
+	# Count what each tick leaves behind, until the light is gone (cap guards a never-freed bug).
+	for i in 3 * (Lighting.UNLIT_FRAMES + Lighting.WARM_FRAMES) + 3:
 		l._process(0.0)
-		assert_object(l.warm_light).is_same(wl)  # still drawn in each of the warm frames
+		if l.warm_light == null:
+			break
+		assert_object(l.warm_light).is_same(wl)
 		assert_bool(wl.is_inside_tree()).is_true()
-	l._process(0.0)
+		if wl.visible:
+			visible_ticks += 1
+		else:
+			assert_int(visible_ticks).is_equal(0)  # never hidden again after it showed
+			hidden_ticks += 1
+	assert_int(hidden_ticks).is_equal(Lighting.UNLIT_FRAMES)
+	assert_int(visible_ticks).is_equal(Lighting.WARM_FRAMES)
 	assert_object(l.warm_light).is_null()
+	assert_bool(l.is_warmed_up()).is_true()
 	assert_bool(is_instance_valid(wl) and wl.is_inside_tree()).is_false()
 	assert_object(l.get_node_or_null("WarmLight")).is_null()
 	assert_array(g.find_children("WarmLight", "", true, false)).is_empty()
@@ -252,13 +265,45 @@ func test_warm_light_is_freed_after_exactly_warm_frames_frames() -> void:
 	assert_array(g.find_children("WarmLight", "", true, false)).is_empty()
 
 
+func test_warm_light_is_visible_in_each_warm_frame() -> void:
+	var g := _fresh_game()
+	var l := g.lighting
+	for i in Lighting.UNLIT_FRAMES:
+		l._process(0.0)
+		assert_bool(l.warm_light.visible).is_false()
+	for i in Lighting.WARM_FRAMES:
+		l._process(0.0)
+		assert_object(l.warm_light).is_not_null()
+		assert_bool(l.warm_light.visible).override_failure_message("warm frame %d not lit" % i).is_true()
+	l._process(0.0)
+	assert_object(l.warm_light).is_null()
+
+
+func test_warm_up_done_is_emitted_once_when_the_light_is_freed() -> void:
+	var g := _fresh_game()
+	var l := g.lighting
+	var fired := [0]
+	l.warm_up_done.connect(func() -> void: fired[0] += 1)
+	for i in Lighting.UNLIT_FRAMES + Lighting.WARM_FRAMES:
+		l._process(0.0)
+		assert_int(fired[0]).is_equal(0)
+		assert_bool(l.is_warmed_up()).is_false()
+	l._process(0.0)
+	assert_int(fired[0]).is_equal(1)
+	assert_bool(l.is_warmed_up()).is_true()
+	for i in 4:
+		l._process(0.0)
+	assert_int(fired[0]).is_equal(1)
+
+
 func test_warm_light_is_freed_by_real_frames() -> void:
 	var g := _fresh_game()
 	var l := g.lighting
 	assert_object(l.warm_light).is_not_null()
-	for i in Lighting.WARM_FRAMES + 3:
+	for i in Lighting.UNLIT_FRAMES + Lighting.WARM_FRAMES + 2:
 		await get_tree().process_frame
 	assert_object(l.warm_light).is_null()
+	assert_bool(l.is_warmed_up()).is_true()
 	assert_array(g.find_children("WarmLight", "", true, false)).is_empty()
 
 
@@ -286,8 +331,14 @@ func test_night_does_not_touch_the_warm_light() -> void:
 		l.ease_night(10.0)
 	assert_float(l.night).is_greater(0.9)
 	assert_bool(l.beam.visible).is_true()
-	assert_bool(wl.visible).is_true()
+	assert_bool(wl.visible).is_false()  # a hidden warm light stays hidden at night
 	assert_float(wl.energy).is_equal(Lighting.WARM_ENERGY)  # _apply_night leaves it alone
+	for i in Lighting.UNLIT_FRAMES + 1:
+		l._process(0.0)
+	assert_bool(wl.visible).is_true()
+	for i in 3:
+		l.ease_night(10.0)
+	assert_bool(wl.visible).is_true()  # and a visible one stays visible
 
 
 func test_a_wave_called_in_the_first_frames_still_frees_the_warm_light() -> void:
@@ -296,7 +347,7 @@ func test_a_wave_called_in_the_first_frames_still_frees_the_warm_light() -> void
 	var wl := l.warm_light
 	l._process(0.0)
 	assert_int(g.commands.call_wave()).is_equal(SimCommand.CommandResult.OK)
-	for i in Lighting.WARM_FRAMES - 1:
+	for i in Lighting.UNLIT_FRAMES + Lighting.WARM_FRAMES - 1:
 		l._process(0.0)
 		assert_object(l.warm_light).is_same(wl)
 	l._process(0.0)

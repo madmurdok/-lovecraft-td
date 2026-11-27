@@ -11,8 +11,10 @@ extends Node2D
 ## the screen's usable area: window sizes are in physical pixels, so a fixed size is
 ## half as large on a 2x (Retina) screen.
 ## LT-92: the first run starts one frame after a plain "Loading..." frame is presented, so the
-## heavy first game frame (GL shader compiles, 0.3-1 s) reads as loading. A refusal never
-## shows it, and a restart (start_game) skips it: the shaders are compiled by then.
+## heavy first game frames (GL shader compiles, 0.3-1 s each) read as loading. LT-123: the
+## layer stays over the game until its Lighting reports the warm-up done (warm_up_done), or
+## until that game leaves the tree first. A refusal never shows it, and a restart
+## (start_game) skips it: the shaders are compiled by then.
 
 const CONFIG_DIR_ARG := "--config-dir="
 const SEED_ARG := "--seed="
@@ -60,7 +62,7 @@ func _ready() -> void:
 	if not is_inside_tree():
 		return
 	start_game()
-	_hide_loading()
+	_hide_loading_after_warm_up(game)
 
 
 ## LT-92: a CanvasLayer above the game's UI with a centred plain Label (theme font, no
@@ -76,6 +78,19 @@ func _show_loading() -> void:
 	label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	loading.add_child(label)
 	add_child(loading)
+
+
+## LT-123: removes the loading layer when `g`'s Lighting has freed its WarmLight (the long
+## warm-up frames drew under "Loading..."), or when `g` leaves the tree before that (a
+## restart or a freed game), so the layer never outlives the game it covers. Main does not
+## count the warm frames: Lighting owns that schedule. The exit hook is deferred: it also
+## fires while Main itself leaves the tree, when its children cannot be removed.
+func _hide_loading_after_warm_up(g: Game) -> void:
+	if g.lighting == null or g.lighting.is_warmed_up():
+		_hide_loading()
+		return
+	g.lighting.warm_up_done.connect(_hide_loading, CONNECT_ONE_SHOT)
+	g.tree_exiting.connect(_hide_loading, CONNECT_ONE_SHOT | CONNECT_DEFERRED)
 
 
 ## Removes the loading layer at once (the frame after it draws the game in its place).

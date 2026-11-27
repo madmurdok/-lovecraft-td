@@ -578,6 +578,58 @@ as they are. `main_loading_test.gd` does not change for D1.
 in F2 and `V` in F3-F5 (the probe's `wl=` field), and `N` from F6. Pass: no frame over 100 ms from F4
 on, the wave-call frame and the C window included. max(F2, F3) at most S1's frame A (median 1321).
 
+## After (LT-123/S9)
+
+Same probe and command as "Quiet re-measure (LT-123/S1)" on the fix branch (code `422db98`, tests `c67f147`),
+in a throwaway detached worktree (`lovecraft-td-wt-LT-123-s9`, probe untracked, never committed):
+`--seed=4242 --frame-stats --mute --probe-secs=9 --wave`, `--audio-driver Dummy`, under `caffeinate -d -i`.
+The probe copy gained one field, `ld=` (1 = the `Main.loading` layer exists), and a `--shot=<png>` switch
+(run 1 only) that saves the viewport at the head of frame 3. Before each run the script waited for 1-min
+load < 6. Columns are ms of the frame interval: F1 = the loading frame, F2, F3 = the two warm frames,
+worst = the largest frame from F4 on. `wl` F2-F7 and `ld` F1-F7 are identical in every run (below).
+
+| run | load before | F1 (loading) | F2 | F3 | worst from F4 | F5 | real / user / sys s | note |
+|---|---|---|---|---|---|---|---|---|
+| 1 | 3.02 | 29.8 | 430 | 528 | 42.5 (F5) | 42.5 | 11.35 / 5.59 / 2.80 | screenshot run: F4 = 192.6 ms (`proc` 175) is the probe's own PNG save, excluded |
+| 2 | 5.64 | 30.4 | 379 | 514 | 32.5 (F133) | 22.3 | 11.07 / 5.40 / 2.71 | |
+| 3 | 5.33 | 29.9 | 423 | 539 | 25.7 (F8) | 23.0 | 11.09 / 5.29 / 2.63 | |
+| 5 | 5.99 | 35.8 | 425 | 574 | 29.5 (F6) | 29.4 | 11.52 / 5.89 / 2.95 | |
+| 6 | 5.63 | 44.9 | 594 | 767 | 43.9 (F93) | 27.9 | 11.98 / 7.25 / 3.45 | |
+| 7 (extra) | 5.00 | 30.4 | 416 | 580 | 33.6 (F6) | 29.6 | 11.21 / 5.40 / 2.69 | |
+| 8 (extra) | 4.61 | 42.2 | 552 | 788 | **116.4 (F194)** | 19.8 | 11.84 / 7.22 / 3.51 | one isolated frame, see below |
+
+Run 4 is excluded: load before 4.89 but 8.19 after, and 10 frames of 60-110 ms between F230 and F288
+(draw 57-108 ms, `proc` < 2 ms), i.e. an outside load spike, not the game. Runs 7 and 8 replace it and the
+extra one covers run 1's screenshot artifact; 7 valid runs. Gate held 7/7 (3.0-6.0 before). user+sys is
+0.74-0.93 of real in every run, the process was busy. `/usr/bin/time -p` and `uptime` per run:
+scratchpad `LT-123s9/runs*/`.
+
+Medians (min-max), ms:
+
+| | before (S1, release-0.15.0, 10 runs) | after (S9, 7 runs) |
+|---|---|---|
+| frame A (before) / F2 (after) | 1321 (852-2441) | **425 (379-594)** |
+| F3 | - | **574 (514-788)** |
+| max(F2, F3) | 1321 | 574 (514-788) |
+| loading frame | 46 (29-73) | **30.4 (29.8-44.9)** |
+| iter5 / F5 | 120 (80-252) | **29.4 (19.8-42.5)** |
+| worst frame from F4 on | iter5 above, 80-252 | **33.6 (25.7-116.4)**; 6/7 under 44 |
+
+**Pass bar.**
+- `wl` = H in F2, V in F3-F5, N from F6: holds 7/7 (`H,V,V,V,N,N` for F2-F7 in every run).
+- `ld` (Loading layer) = 1 over F1-F5, 0 from F6, 7/7: "Loading..." covers both warm frames and goes
+  away the frame after the light is freed.
+- max(F2, F3) <= 1321: holds 7/7 (max 788); medians 425 and 574. F2 + F3 is about 1.0 s against 1.3 s for the old frame A.
+- No frame > 100 ms from F4 on: holds 6/7. Run 8 has one 116 ms frame at F194 (t = 7.2 s, night 0.998, 3-4
+  enemies, beam at -1.5, not the -2.7 window; `proc` 0.5, all in `draw`, neighbours 19 ms; load before 4.61, after 4.22,
+  no other spike in the run). Not startup, not repeated in the other 6 runs; not diagnosed here (a one-off OS hiccup or a first-use
+  compile after wave start are both possible). Report it to the owner as an open item if it recurs.
+- Iteration-5 stall: gone (F5 19.8-42.5 ms against 80-252 before).
+
+Screenshot, "Loading..." over F3 (run 1, viewport at the head of frame 3, `ld=1`, `wl=V`):
+
+![Loading over F3](LT-92/lt123-loading-f3.png)
+
 ## Appendix: probe92c.gd (throwaway, removed)
 
 Copy it into the worktree root. Run:
