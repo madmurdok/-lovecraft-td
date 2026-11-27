@@ -245,6 +245,23 @@ func test_plan_made_by_day_reaches_spawns_only_after_wave_started() -> void:
 	assert_bool(before.route != after.route).is_true()
 
 
+## §2.3: the cache holds while the cells are equal, so a new wave's plan with the same cells
+## reuses the SimRoute (LT-109/S9 G1). Control: compare cells by identity (`is_same(built[id],
+## cells)`) in SpawnSystem._route_for -> this test fails, the within-wave share test passes.
+func test_unchanged_route_is_reused_across_waves() -> void:
+	var sim := _sim_with_waves(_cfg2())
+	sim.call_wave()
+	var first := sim.enemy_by_id(sim.spawn_enemy("cultist", false, ALT))
+	var r1 := first.route
+	assert_int(sim.debug_end_night()).is_equal(SimCommand.CommandResult.OK)
+	run(sim, 3)
+	assert_int(sim.state.phase).is_equal(SimState.Phase.BUILD)
+	sim.call_wave()
+	assert_int(sim.state.route_now.wave).is_equal(2)
+	var second := sim.enemy_by_id(sim.spawn_enemy("cultist", false, ALT))
+	assert_bool(second.route == r1).is_true()
+
+
 func test_next_plan_follows_a_cleared_wave() -> void:
 	var sim := _sim_with_waves(_cfg2())
 	sim.call_wave()
