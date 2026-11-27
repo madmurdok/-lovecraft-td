@@ -62,7 +62,7 @@ func _ready() -> void:
 
 
 func _screenshot_and_quit(path: String) -> void:
-	for i in 4:
+	for i in 20:
 		await get_tree().process_frame
 	var err := get_viewport().get_texture().get_image().save_png(path)
 	if err != OK:

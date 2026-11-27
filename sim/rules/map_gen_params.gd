@@ -31,7 +31,7 @@ var entries_max := 3
 # --- generator steps (LT-130 §3) ----------------------------------------------------------
 var sea_min := 1  ## sea band depth per text row, drawn in [sea_min, sea_max]
 var sea_max := 2
-var funnel_steps := 9  ## L -> F trunk length in steps (floor_cells + 3)
+var funnel_steps := 7  ## L -> F trunk length in steps (floor_cells + 1; S24: 9 gave a trunk share near the C3 cap)
 var waypoint_jitter := 3  ## rows of jitter around the entry-to-F midpoint
 var wide_pct := 30  ## chance (percent) that a carve step is 2 cells wide
 var loops_min := 1
@@ -49,7 +49,7 @@ var attempt_cap := 50
 # --- metric (LT-18 §8) --------------------------------------------------------------------
 var tower_range := 3.0  ## R: the rifleman L1 range in cells
 var choke_k := 3  ## K: buildable cells near a chokepoint ...
-var choke_e := 4  ## E: ... each seeing at least this many route cells
+var choke_e := 5  ## E: ... each seeing at least this many route cells
 var c1_m := 2  ## M: spaced chokepoints per route
 var c1_s := 6  ## S: their spacing in route cells
 var c2_g := 8  ## G: longest blind stretch

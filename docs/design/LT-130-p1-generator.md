@@ -318,3 +318,53 @@ Found while coding the rules (LT-130/S8); the code is the reference.
     seed formula is unchanged), `sea_max <= width - 6`, `c4_lmin <= c4_lmax`,
     `c7_hud_rows < height` and the counts in `NON_NEGATIVE`; `generate` refuses params failing
     `check()` (map null, attempts 0, error "params: ...").
+
+## 11. Measurements (S24)
+
+Lab rules: only `MapGenParams` defaults and step parameters, never metric definitions; x2 and /2
+first, then bisect. Probes ran through `--params` JSON (no code edits); seeds 1..N, sample sizes
+below. Columns: reject = attempt-level reject %, 1st = first-attempt pass %, att = mean attempts,
+ms mean/p95/max per accepted map, chk = chokepoints per route (median).
+
+Baseline (small, 40 seeds, loaded): reject 31 %, 1st 65 %, chk 22 of ~23 route cells, every
+reject is C3 (+ S2).
+
+| knob (small, 200 seeds unless noted) | x2 / up | /2 / down | note |
+|---|---|---|---|
+| `choke_e` 4 | 8: reject 96 %, 22 attempts, 8 chk, 7 cap failures (40 seeds) | 2: reject 31 %, unchanged | bisect 6: 28.8 %, 5: 27.5 %, 7: 58 % |
+| `choke_k` 3 | 6: reject 32 %, chk 20 | 1: unchanged | no use alone |
+| `tower_range` 3.0 | 6.0: unchanged, slower (more cells in range) | 1.5: hits the cap (40 seeds); 2.0: reject 34 %, chk 15 | breaks C1/C5 once combined with E>=5 |
+| `funnel_steps` 9 | 18: reject 64 % (S1, C3) | 4: 37.5 % | bisect 7: 23.4 %, 8: 26.7 % |
+| `waypoint_jitter` 3 | 6: 26.7 % | 1: 28.8 % | noise-level |
+| `wide_pct` 30 | 60: 25.4 % | 15: 27.0 % | noise-level alone; with E6 + F7: 60 gives 39 % |
+| loops 1-2 | 2-4: 28.3 % (on F7+E6) | 0-1: 25.7 % | kept 1-2 (0-1 slower: 118 vs 78 ms at 1000 seeds) |
+
+Combinations (small, 200 seeds): F7+E6 29.1 %, F7+E5 23.7 %, F7+E6+K6 51.9 %, F7+R2 38.3 %,
+F7+E6+R2 and F6+E6+R2 hit the cap (100 %). Large (1000 seeds, F7): E3 21.5 %, E5 21.9 %, E6 26.0 %,
+E7 59.1 %, E8 99.4 % (750 cap failures), E5+K6 27.3 %, E5+R2 85.2 %.
+
+Chosen defaults: `funnel_steps` 9 -> 7, `choke_e` 4 -> 5 (both presets; large uses the same).
+
+Final, 1000 seeds each, no cap failure, reject = attempt-level:
+
+| preset | reject | 1st pass | att | ms mean / p95 / max | chk/route | reasons |
+|---|---|---|---|---|---|---|
+| p1_small | 23.0 % (< 30 ok) | 76.5 % | 1.30 | 77.8 / 139.6 / 8629 | 21 | S2 27, C3 272 |
+| p1_large | 21.9 % (< 30 ok) | 79.1 % | 1.28 | 149.4 / 373.2 / 1342 | 30 | S2 56, C3 225, C5 1 |
+
+Timing record: these are the lowest-load runs (load1 9.7 -> 34 -> 5.8; `user` 62 s small,
+~130 s large for 1000 seeds, i.e. about 62 / 130 ms of CPU per map). A repeat of the same
+defaults ran at load 25-46 (screenshots and another suite alongside): small 182 / 447 ms, large
+311 / 750 ms, so p95 is load-dominated; `user` shows the real cost.
+
+Findings against the bar:
+- Reject < 30 % met on both presets.
+- Small: p95 140 ms in the quiet run, mean 78 ms (small max 8.6 s is one seed with many retries).
+  Re-time at load < 10 in the verify slice.
+- Large: p95 373 ms and mean 149 ms; bar (< 200 ms) NOT met by tuning. Cause: ~30 chokepoints per
+  route and C5 runs one route field per chokepoint. K/E/R cannot lower the count without failing
+  C1/C5/C3 (E7: 59 % reject, E8: cap failures, R2: 85 %). The count is high because the metric
+  counts almost every CHANNEL cell on a 30-step route as a chokepoint; a faster C5 (cache fields
+  per route, early exit) or a looser definition is an owner decision, not a tuning one.
+- The viewer's `--screenshot` waited 4 frames and saved a blank image for the small preset; now 20.
+- Screenshots: `docs/design/LT-130/p1-small.png`, `p1-large.png` (seeds 1-20, defaults above).
