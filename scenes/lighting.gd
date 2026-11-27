@@ -96,7 +96,7 @@ static func ambient(p_night: float) -> Color:
 func _ready() -> void:
 	var m := game.snapshot.map
 	var view := game.board.view
-	var lh_center := view.cell_to_world(m.grid.centre(m.lighthouse))
+	var lh_center := view.ground(m.grid.centre(m.lighthouse))
 
 	fog = SeaFog.new()
 	fog.name = "SeaFog"
@@ -181,7 +181,7 @@ func _apply_night() -> void:
 func _sync_beams() -> void:
 	var sim := game.sim
 	var view := game.board.view
-	var lh_center := view.cell_to_world(game.snapshot.map.grid.centre(
+	var lh_center := view.ground(game.snapshot.map.grid.centre(
 		game.snapshot.map.lighthouse))
 	var cfg := sim.config.economy
 	var tex := _beam_texture(atan(cfg.beam.half_width_ratio))
@@ -255,7 +255,7 @@ func _sync_tower_lights() -> void:
 			_tower_lights[t.id] = l
 		# LT-117: placed on every sync, so a lifted tower's light follows it.
 		_tower_lights[t.id].position = \
-			game.board.view.cell_to_world(game.snapshot.map.grid.centre(t.cell))
+			game.board.view.ground(game.snapshot.map.grid.centre(t.cell))
 	for id in _tower_lights.keys():
 		if not seen.has(id):
 			_tower_lights[id].queue_free()

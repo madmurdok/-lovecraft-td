@@ -38,13 +38,9 @@ class SpyEntity:
 		log.append("tower")
 		super._draw_tower(t)
 
-	func _draw_enemies(s: SimSnapshot) -> void:
-		log.append("enemies")
-		super._draw_enemies(s)
-
-	func _draw_allies(s: SimSnapshot) -> void:
-		log.append("allies")
-		super._draw_allies(s)
+	func _draw_figures(s: SimSnapshot) -> void:  # LT-126: towers, enemies, allies in one pass
+		log.append("figures")
+		super._draw_figures(s)
 
 
 class SpyFx:
@@ -367,12 +363,12 @@ func test_a_board_redraw_draws_the_layers_in_spec_order() -> void:
 	assert_int(b.board_draws).is_greater(0)
 	# board (draws nothing itself) -> phantom -> entity parts -> fx (warm-up, then effects)
 	# -> overlay
-	assert_array(b.log).is_equal(["board", "phantom", "entity", "auras", "enemies", "allies",
+	assert_array(b.log).is_equal(["board", "phantom", "entity", "auras", "figures",
 		"fx", "warmup", "effects", "overlay"])
 
 
 func test_entity_layer_is_drawn_before_fx_and_fx_sees_this_frames_last_pos() -> void:
-	# F5: EntityLayer._draw_enemies rewrites board.last_pos; FxLayer reads it in the same
+	# F5: EntityLayer._draw_figures rewrites board.last_pos; FxLayer reads it in the same
 	# frame, so the entity layer must be queued (and drawn) first.
 	var b := await _spy_board()
 	b.last_pos[999] = Vector2(1, 1)  # a stale entry from "last frame"
@@ -388,7 +384,7 @@ func test_each_layer_draws_once_per_board_redraw() -> void:
 	var b := await _spy_board()
 	b.queue_redraw()
 	await _frames(2)
-	for key in ["board", "phantom", "entity", "fx", "overlay", "auras", "enemies", "allies"]:
+	for key in ["board", "phantom", "entity", "fx", "overlay", "auras", "figures"]:
 		assert_int(b.log.count(key)).override_failure_message(key).is_equal(1)
 
 
