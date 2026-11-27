@@ -181,6 +181,39 @@ func test_g2_board_plane_roles_named_in_the_view() -> void:
 		+ "view.project / view.ring / view.cells_to_px): " + ", ".join(hits)).is_empty()
 
 
+## LT-126/S7: the G2 role matcher on sample lines, one per raw form it must deny and the
+## near misses it must let through (the role calls, other lengths, look-alike names).
+func test_g2_role_matcher_denies_the_raw_forms_and_passes_the_named_roles() -> void:
+	var scan := SimBoundaryTest.new()
+	var raw := {
+		"cell_to_world point": "var px := game.board.view.cell_to_world(e.position(alpha))",
+		"cell_to_world split": "var px := view.cell_to_world(\n\tp + d)",
+		"ground ring by hand": "draw_arc(view.ground(c), view.cells_to_px(r), 0, TAU, 32, k, 2.0)",
+		"spaced unit scale": "var a := p * view.cells_to_px( 1.0 )",
+		"long unit scale": "var a := p * view.cells_to_px(1.00)",
+	}
+	for name: String in raw:
+		assert_array(_find_joined(scan, "probe.gd", raw[name], G2_ROLE_DENY)) \
+			.override_failure_message(name).has_size(1)
+	var arc_raw := {
+		"arc at a projected point": "draw_arc(px, view.cells_to_px(r), 0, TAU, 32, k, 2.0)",
+		"split arc": "draw_arc(\n\tpx,\n\tr, 0, TAU, 32, k, 2.0)",
+	}
+	for name: String in arc_raw:
+		assert_array(_find_joined(scan, "probe.gd", arc_raw[name], G2_ROLE_NO_ARC)) \
+			.override_failure_message(name).has_size(1)
+	var near := ["view.ring(self, c, r, col, 2.0, 32)", "var g := view.ground(p)",
+		"var u := view.project(p, 0.4 + dr)", "var w := view.cells_to_px(1.5)",
+		"var w := view.cells_to_px(0.1)", "var w := view.cells_to_px(10.0)",
+		"var w := view.cells_to_px(12)", "var s := view.cell_to_screen(p)",
+		"var my_cell_to_world := 1", "draw_arc_count += 1",
+		"# a comment may say cell_to_world(p) or draw_arc(view.ground(c))"]
+	for line: String in near:
+		assert_array(_find_joined(scan, "near.gd", line, G2_ROLE_DENY)) \
+			.override_failure_message(line).is_empty()
+	scan.free()
+
+
 ## G3 (LT-76, LT-77, LT-35): one cell centre. Under sim/, tools/, scenes/ and ui/ a
 ## hand-written centre (`.x + 0.5`, `0.5 + .y`, `Vector2(c) + Vector2(0.5, 0.5)`,
 ## continuation lines joined) appears only in the topologies' centre(): sim/rules/square_grid.gd
