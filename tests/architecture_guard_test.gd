@@ -702,6 +702,8 @@ const G4B_OWNERS := {
 	"towers": ["core/simulation.gd", "core/systems/crew_system.gd"],  # LT-32: posts
 	"tower_at": ["core/simulation.gd", "core/systems/crew_system.gd"],
 	"crew": ["core/systems/crew_system.gd"],
+	"route_now": ["core/systems/route_system.gd"],  # LT-109
+	"route_next": ["core/systems/route_system.gd"],
 }
 
 

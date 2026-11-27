@@ -48,4 +48,4 @@ func on_spawn(host: TraitHost, e: SimEnemy, p: Dictionary, from_event: bool) -> 
 	var spacing := SimTime.ticks(p["spacing_s"])
 	var now := host.tick()
 	for k in range(1, count):
-		host.queue_pack_member(now + k * spacing, e.def, e.is_fake, e.id)
+		host.queue_pack_member(now + k * spacing, e.def, e.is_fake, e.id, e.route_id)

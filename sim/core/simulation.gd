@@ -28,6 +28,7 @@ var _light: LightSystem
 var _combat: CombatSystem
 var _ally: AllySystem
 var _spawn: SpawnSystem
+var _routes: RouteSystem  ## LT-109: writes state.route_now / route_next
 var _traits: TraitSystem
 var _hallucinations := HallucinationSystem.new()
 
@@ -44,6 +45,7 @@ func _init(p_config: GameConfig, run_seed: int) -> void:
 	_crew = CrewSystem.new(_ctx, _economy)  # LT-32: the reserve (empty when crew is off)
 	_sanity = SanitySystem.new(_ctx, _economy)
 	_light = LightSystem.new(_ctx, _economy)
+	_routes = RouteSystem.new(_ctx)  # LT-109: the default plan, before any spawn
 	# LT-82: Ally holds Combat; Combat spawns through method Callables (object id, no ref).
 	# LT-83: Combat holds Spawn (push_back); Spawn compacts allies through a method Callable.
 	_spawn = SpawnSystem.new(_ctx)
@@ -139,9 +141,10 @@ func step() -> void:
 	_check_outcome()
 
 
-## LT-83: SpawnSystem.spawn_enemy (pack rolls, queue, ids).
-func spawn_enemy(def_id: String, is_fake := false) -> int:
-	return _spawn.spawn_enemy(def_id, is_fake)
+## LT-83: SpawnSystem.spawn_enemy (pack rolls, queue, ids). LT-109: `route_id` "" = the
+## default route of the plan in force.
+func spawn_enemy(def_id: String, is_fake := false, route_id := "") -> int:
+	return _spawn.spawn_enemy(def_id, is_fake, route_id)
 
 
 ## LT-63: true while a real pack member is queued and not entered yet.
@@ -661,6 +664,43 @@ func on_dawn(n: int) -> int:
 	auto_restore_sanity()  # LT-13: exit rule auto_restore; regen above is 0 in madness
 	_crew.on_dawn()  # LT-32 Q4: posts leave, their men return to the reserve
 	return bonus
+
+
+## LT-109 build-start hook: the wave director calls it first in every build phase (tick 0
+## before wave 1, and after each cleared wave that has a next one), before BUILD_STARTED.
+## Plans the routes of wave `next_wave` (state.route_next). Draws and emits nothing today.
+func on_build_start(next_wave: int) -> void:
+	_routes.plan_next(next_wave)
+
+
+## LT-109 wave-start hook: the wave director calls it when a wave starts (timer or call_wave),
+## after wave_index is advanced and before WAVE_STARTED: the plan made by day becomes the one
+## spawns read (state.route_now).
+func on_wave_start() -> void:
+	_routes.freeze()
+
+
+## LT-109 §2.8 (bot scoring): the cells of every route the next wave's groups use
+## (state.route_next; the default route when it names none), each cell once, in route_ids
+## order, then walking order. On a v1 map: map.path.
+func planned_route_cells() -> Array[Vector2i]:
+	var plan := state.route_next
+	var ids := config.map.route_ids
+	var used := {}
+	for id in plan.group_routes:
+		used[id] = true
+	if used.is_empty():
+		used[ids[0]] = true
+	var seen := {}
+	var out: Array[Vector2i] = []
+	for id in ids:
+		if not used.has(id):
+			continue
+		for c: Vector2i in plan.cells.get(id, []):
+			if not seen.has(c):
+				seen[c] = true
+				out.append(c)
+	return out
 
 
 # --- LT-32: crew (CrewSystem forwarders) ------------------------------------------------

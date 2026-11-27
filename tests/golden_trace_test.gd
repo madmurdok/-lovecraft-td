@@ -128,10 +128,13 @@ func test_trace_lines_are_engine_neutral() -> void:
 	assert_bool(final is Dictionary).is_true()
 	var rng: Variant = final.get("rng")
 	assert_bool(rng is Array).is_true()
-	assert_int(rng.size()).is_equal(SimRng.Stream.size())
-	for s: SimRng.Stream in SimRng.Stream.values():
-		assert_int(typeof(rng[s])).is_equal(TYPE_STRING)
-		assert_str(rng[s]).is_equal(str(sim.rng(s).state))
+	# LT-109 Q2: streams 0 .. PINNED_STREAMS - 1 always, a later one only once drawn
+	var dumped := GoldenRuns.dumped_streams(sim)
+	assert_int(dumped.size()).is_greater_equal(GoldenRuns.PINNED_STREAMS)
+	assert_int(rng.size()).is_equal(dumped.size())
+	for i in dumped.size():
+		assert_int(typeof(rng[i])).is_equal(TYPE_STRING)
+		assert_str(rng[i]).is_equal(str(sim.rng(dumped[i] as SimRng.Stream).state))
 	assert_float(final.get("tick")).is_equal(float(sim.state.tick))
 
 
