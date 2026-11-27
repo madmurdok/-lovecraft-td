@@ -50,7 +50,14 @@ func test_loading_layer_is_shown_before_the_game_exists() -> void:
 	assert_str((labels[0] as Label).text).is_equal(m.LOADING_TEXT)
 
 
-func test_the_game_starts_after_two_frames_and_the_loading_layer_is_removed() -> void:
+## Frames until the game exists (two awaited frames), without counting on more.
+func _await_game(m: Node) -> void:
+	for i in 2:
+		await get_tree().process_frame
+	assert_object(m.game).is_not_null()
+
+
+func test_the_game_starts_after_two_frames_and_the_loading_layer_stays_over_the_warm_up() -> void:
 	var m := _boot()
 	var loading: CanvasLayer = m.loading
 	await get_tree().process_frame
@@ -61,11 +68,87 @@ func test_the_game_starts_after_two_frames_and_the_loading_layer_is_removed() ->
 	await get_tree().process_frame
 	assert_object(m.game).is_not_null()
 	assert_bool(m.game.is_inside_tree()).is_true()
+	# LT-123: the layer is not removed with the game's start; the warm-up is still running.
+	assert_bool(m.game.lighting.is_warmed_up()).is_false()
+	assert_object(m.loading).is_same(loading)
+	assert_bool(loading.is_inside_tree()).is_true()
+
+
+func test_the_loading_layer_stays_through_the_warm_frames_and_goes_with_warm_up_done() -> void:
+	var m := _boot()
+	var loading: CanvasLayer = m.loading
+	await _await_game(m)
+	var l: Lighting = m.game.lighting
+	var cap := 4 * (Lighting.UNLIT_FRAMES + Lighting.WARM_FRAMES) + 8
+	var n := 0
+	while not l.is_warmed_up() and n < cap:
+		assert_object(m.loading).is_same(loading)
+		assert_bool(loading.is_inside_tree()).is_true()
+		await get_tree().process_frame
+		n += 1
+	assert_bool(l.is_warmed_up()).override_failure_message("warm-up never finished").is_true()
+	# warm_up_done emitted inside Lighting._process; the layer is gone right then, same frame.
 	assert_object(m.loading).is_null()
 	assert_array(_loading_nodes(m)).is_empty()
 	assert_bool(is_instance_valid(loading) and loading.is_inside_tree()).is_false()
 	await get_tree().process_frame
 	assert_array(_loading_nodes(m)).is_empty()  # and it stays gone
+
+
+func test_main_waits_for_the_signal_not_for_a_frame_count() -> void:
+	# A longer warm-up (as if WARM_FRAMES were bigger): the layer must follow warm_up_done only.
+	var m := _boot()
+	var loading: CanvasLayer = m.loading
+	await _await_game(m)
+	var l: Lighting = m.game.lighting
+	l.set_process(false)  # drive the ticks by hand
+	l._warm_left = 50
+	for i in Lighting.UNLIT_FRAMES + 50:
+		l._tick_warm_light()
+		await get_tree().process_frame
+		assert_object(m.loading).is_same(loading)
+		assert_bool(loading.is_inside_tree()).is_true()
+	l._tick_warm_light()  # the freeing tick
+	assert_bool(l.is_warmed_up()).is_true()
+	assert_object(m.loading).is_null()
+	assert_array(_loading_nodes(m)).is_empty()
+
+
+func test_the_loading_layer_goes_when_the_game_is_freed_during_the_warm_up() -> void:
+	var m := _boot()
+	var loading: CanvasLayer = m.loading
+	await _await_game(m)
+	var g: Game = m.game
+	assert_bool(g.lighting.is_warmed_up()).is_false()
+	g.free()  # leaves the tree before warm_up_done
+	await get_tree().process_frame  # the hook is deferred
+	assert_object(m.loading).is_null()
+	assert_array(_loading_nodes(m)).is_empty()
+	assert_bool(is_instance_valid(loading) and loading.is_inside_tree()).is_false()
+
+
+func test_a_restart_during_the_warm_up_removes_the_old_layer_and_the_fresh_game_has_none() -> void:
+	var m := _boot()
+	await _await_game(m)
+	var old: Game = m.game
+	assert_bool(old.lighting.is_warmed_up()).is_false()
+	old.restart_requested.emit()
+	await get_tree().process_frame  # the deferred start_game
+	await get_tree().process_frame
+	assert_bool(m.game != old).is_true()
+	assert_object(m.loading).is_null()
+	assert_array(_loading_nodes(m)).is_empty()
+
+
+func test_main_leaving_the_tree_during_the_warm_up_leaves_no_loading_layer_and_no_error() -> void:
+	var m := _boot()
+	await _await_game(m)
+	assert_bool(m.game.lighting.is_warmed_up()).is_false()
+	_vp.remove_child(m)  # tree_exiting of the game fires while Main exits
+	for i in 3:
+		await get_tree().process_frame
+	assert_object(m.loading).is_null()
+	m.free()
 
 
 func test_the_game_does_not_start_when_main_leaves_the_tree_during_loading() -> void:
