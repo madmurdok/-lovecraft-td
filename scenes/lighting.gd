@@ -44,17 +44,25 @@ const FLARE_TEX_SIZE := 256
 ## The flare texture's near-flat bright core ends at this fraction of its radius
 ## (_flare_texture); flare_cover_cells() puts every board corner inside it.
 const FLARE_CORE := 0.7
-## LT-92: a tiny light over FxLayer.WARMUP_RECT in the first WARM_FRAMES game frames (boot
-## iterations 2-4: Main shows its Loading frame in iteration 1 and adds the Game in
-## iteration 2). Every canvas item whose rect meets it, FxLayer with its warm-up among them,
-## draws lit there while the first game frame is loading anyway. It compiles the lit
-## shader variants that the first night otherwise compiled on the wave-call frame (frame B)
-## and when the beam's rect first reached the warm-up corner (frame C). It must stay small:
-## a board-covering one leaves the unlit variants to the first frame after it (iteration 5,
-## a new stall); a small one leaves enough unlit items to compile them in frame A.
+## LT-92 / LT-123: a tiny light over FxLayer.WARMUP_RECT (boot: Main shows its Loading frame
+## in iteration 1 and adds the Game in iteration 2). It is created hidden: the first
+## UNLIT_FRAMES game frames (iteration 2) draw every item unlit, so the unlit variants
+## compile there. The next WARM_FRAMES frames (iterations 3-5) show it: every canvas item
+## whose rect meets it, FxLayer with its warm-up among them, draws lit and compiles the lit
+## variants that the first night otherwise compiled on the wave-call frame (frame B) and
+## when the beam's rect first reached the warm-up corner (frame C). It is then freed with
+## both sets compiled, and warm_up_done fires (Main keeps "Loading..." up until then).
+## A light lit from the first frame left the unlit variants of every item it lit (terrain,
+## FxLayer, SeaFog, whose shader no other item uses) to the frame after the free: an
+## iteration-5 stall of 125-162 ms (LT-123). It must stay small: a board-covering one would
+## make most of the board draw lit in its frames.
+const UNLIT_FRAMES := 1
 const WARM_FRAMES := 3
 const WARM_ENERGY := 0.0  ## invisible; a light at 0 still selects the lit variants (LT-92 S6, 2/2 runs)
 const WARM_COVER := 2.5  ## the light's texture spans this many times the rect's longer side
+
+## LT-123: the WarmLight was freed (both shader variant sets compiled); fires once.
+signal warm_up_done
 
 static var _beam_texs: Dictionary[int, ImageTexture] = {}  ## half angle (milli-rad) -> cone
 static var _glow_tex: GradientTexture2D
@@ -69,7 +77,8 @@ var flare_light: PointLight2D  ## LT-69: the whole-board flare, visible only whi
 var fog: Node2D
 var _tower_lights: Dictionary[int, PointLight2D] = {}  ## tower id -> light
 var night := 0.0  ## LT-27 §4: 0 = day, 1 = night; eases toward night_target()
-var warm_light: PointLight2D  ## LT-92: null once WARM_FRAMES frames have drawn it
+var warm_light: PointLight2D  ## LT-92: null once WARM_FRAMES frames have drawn it lit
+var _unlit_left := UNLIT_FRAMES
 var _warm_left := WARM_FRAMES
 
 
@@ -127,28 +136,41 @@ func _process(delta: float) -> void:
 
 
 ## LT-92: the WarmLight over FxLayer.WARMUP_RECT (board-local; this node is the Board's child
-## at its origin). Visible from the first frame and independent of `night`: _apply_night
-## never touches it, so every day/night rule stays as it is.
+## at its origin). Created hidden (LT-123: the first game frame draws unlit); only
+## _tick_warm_light shows it, and it is independent of `night`: _apply_night never touches
+## it, so every day/night rule stays as it is.
 func _add_warm_light() -> void:
 	var r := FxLayer.WARMUP_RECT
 	warm_light = _light("WarmLight", _glow_texture(), BEAM_COLOR, WARM_ENERGY,
 		maxf(r.size.x, r.size.y) * WARM_COVER / _glow_texture().get_width())
 	warm_light.position = r.get_center()
+	warm_light.visible = false
+	_unlit_left = UNLIT_FRAMES
 	_warm_left = WARM_FRAMES
 
 
-## Frees the WarmLight in the first _process after WARM_FRAMES frames: it is drawn in the
-## frames whose _process left it in place, WARM_FRAMES of them (boot: iterations 2-4, freed
-## in iteration 5's _process, before that frame draws).
+## True once the WarmLight is gone (warm_up_done has fired).
+func is_warmed_up() -> bool:
+	return warm_light == null
+
+
+## One processed frame of the warm-up: the first UNLIT_FRAMES leave the light hidden, the
+## next WARM_FRAMES show it, and the _process after them frees it, before that frame draws,
+## and emits warm_up_done. Boot: iteration 2 is unlit, 3-5 lit, freed in iteration 6.
 func _tick_warm_light() -> void:
 	if warm_light == null:
 		return
+	if _unlit_left > 0:
+		_unlit_left -= 1
+		return
 	if _warm_left > 0:
+		warm_light.visible = true
 		_warm_left -= 1
 		return
 	remove_child(warm_light)
 	warm_light.queue_free()
 	warm_light = null
+	warm_up_done.emit()
 
 
 ## Moves `night` toward the phase's target by 1 - exp(-delta / NIGHT_EASE_SECONDS) of the

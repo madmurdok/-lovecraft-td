@@ -7,14 +7,14 @@ extends BoardLayer
 ## LT-62 P1 / LT-90 F1: the first-use warm-up draw lives here, on this same canvas item, as
 ## the effect draws whose first-use stall it pays; the effect draws set _line_drawn,
 ## _polyline_drawn and _polygon_drawn.
-## LT-92: the warm-up stays inside WARMUP_RECT. Lighting's WarmLight covers that rect in the
-## first Lighting.WARM_FRAMES game frames (boot iterations 2-4, after the Loading frame).
-## Lighting is chosen per canvas item: this layer's rect meets the light, so the whole layer
-## draws lit then, and its lit variants compile in the first game frame (frame A). It first
-## draws unlit in iteration 5, after the light is freed. By then the unlit variants of the
-## same kinds were already compiled by unlit items in frame A (e.g. the UI canvas, which no
-## board light reaches). Without the light, the beam's rect reaching this corner ~1 s into
-## the first night compiled the lit set then (LT-92 frame C,
+## LT-92 / LT-123: the warm-up stays inside WARMUP_RECT. Lighting chooses lit or unlit per
+## canvas item, and this layer's rect meets Lighting's WarmLight: hidden in the first
+## Lighting.UNLIT_FRAMES game frames (boot iteration 2, after the Loading frame), so this
+## layer draws unlit and its unlit variants compile there; shown in the next
+## Lighting.WARM_FRAMES (iterations 3-5), so it draws lit and the lit variants compile then;
+## freed before iteration 6. Without the light, the beam's rect reaching this corner ~1 s
+## into the first night compiled the lit set then (LT-92 frame C), and a light lit from the
+## first frame left the unlit set to the frame after its free (LT-123 iteration 5,
 ## docs/design/LT-92-startup-frames.md).
 
 const FLASH_SECONDS := 0.25
@@ -322,11 +322,10 @@ func astray_end(aim: Vector2) -> Vector2:
 ## (_line_drawn, _polyline_drawn, _polygon_drawn), and it draws only the kinds still cold.
 ## Not timed: the startup frames, before the window is up, do not pay the cost (LT-90), so
 ## the warm-up must still be running once the window is presented. Presentation only.
-## LT-92: every draw lies inside WARMUP_RECT. In the first Lighting.WARM_FRAMES game frames
-## (iterations 2-4) Lighting's WarmLight covers that rect, so this layer draws lit and the lit
-## variants compile in frame A, not when the beam's rect first reaches this corner at night
-## (frame C). From iteration 5 it draws unlit, with variants that unlit items compiled in
-## frame A.
+## LT-92 / LT-123: every draw lies inside WARMUP_RECT. It draws unlit in the first game frame
+## (Lighting's WarmLight still hidden) and lit in the next Lighting.WARM_FRAMES (the light
+## shown over that rect), so both variant sets compile at boot, not when the beam's rect
+## first reaches this corner at night (frame C) nor in the frame after the light is freed.
 func _draw_warmup() -> void:
 	var c := Color(Board.TRACER_COLOR, WARMUP_ALPHA)
 	if not _line_drawn:
