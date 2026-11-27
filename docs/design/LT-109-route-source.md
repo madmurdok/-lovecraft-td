@@ -391,3 +391,13 @@ C6 run `route_source_test.gd` + `golden_replay_test.gd`; group per the standing 
   same scores on the fixed map. Risk: one facade query added before a real second route exists.
 - Leave `m.path`; LT-18 changes the bot. Benefit: smaller LT-109. Risk: the bot scores a stale
   path on generated maps if LT-18 forgets it.
+
+## 6. Owner decisions (2026-11-27)
+
+Note approved: "Утвердить (Recommended)".
+
+- Q1: "Отложить (Recommended)": no buildable mask in `SimState` in LT-109.
+- Q2: "Дамп: потоки 0-7 всегда, новые — если тронуты (Recommended)".
+- Q3: "Поле \"route\" у группы (Recommended)": per-group `"route"`, values = route ids (= entry names).
+- Q4: "Новый хук on_build_start (Recommended)".
+- Q5: "Перевести сейчас (Recommended)": the bot scores `planned_route_cells()` in LT-109.
