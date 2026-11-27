@@ -17,7 +17,7 @@ func _initialize() -> void:
 
 func _main() -> int:
 	var args := OS.get_cmdline_user_args()
-	var preset := _opt(args, "--preset", "small")
+	var preset := _opt(args, "--preset", "large")
 	var seeds := int(_opt(args, "--seeds", str(DEFAULT_SEEDS)))
 	var first := int(_opt(args, "--from", "1"))
 	var params_file := _opt(args, "--params", "")

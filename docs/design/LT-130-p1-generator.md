@@ -2,7 +2,7 @@
 
 Design note for LT-18 §11 step P1. Builds on LT-18 §2 (cell model), §3 (route field), §7
 (pockets), §8 (metric), §9 option (a) skeleton graph; §13's owner decisions are fixed. HexGrid is
-registered in `GridFactory` since LT-129. No production code changes outside new `sim/rules/`
+registered in `GridFactory` since LT-129. No production code changes outside new `sim/mapgen/`
 files, one guard allowlist line and one export filter.
 
 Acceptance (LT-18 §11 P1): maps read at a glance (owner reviews a 20-seed screenshot); reject
@@ -12,22 +12,22 @@ rate < 30 %; < 200 ms per map; same seed -> same map digest (test).
 
 | File | Slice | Role |
 |---|---|---|
-| `sim/rules/map_rng.gd` (`MapRng`) | code | the map's own PCG32 (one `RandomNumberGenerator`); `randi_range` only |
-| `sim/rules/map_gen_params.gd` (`MapGenParams`) | code | generator knobs + §8 thresholds, code defaults, `from_dict` for the tool |
-| `sim/rules/gen_map.gd` (`GenMap`) | code | the output struct: grid, terrain per cell, entries, `L`, pockets, links; `rows()`, `to_map_dict()`, `digest()`, `from_rows()` (fixtures) |
-| `sim/rules/route_field.gd` (`RouteField`) | code | §3 reverse Dijkstra from `L`, integer, no barricades yet; LT-109 adds the breach weight here |
-| `sim/rules/chokepoint_metric.gd` (`ChokepointMetric`, `MetricReport`) | code | §8 C1-C7, pure static |
-| `sim/rules/map_generator.gd` (`MapGenerator`, `GenResult`) | code | §9(a) skeleton -> rasterize -> islands -> metric -> retry |
+| `sim/mapgen/map_rng.gd` (`MapRng`) | code | the map's own PCG32 (one `RandomNumberGenerator`); `randi_range` only |
+| `sim/mapgen/map_gen_params.gd` (`MapGenParams`) | code | generator knobs + §8 thresholds, code defaults, `from_dict` for the tool |
+| `sim/mapgen/gen_map.gd` (`GenMap`) | code | the output struct: grid, terrain per cell, entries, `L`, pockets, links; `rows()`, `to_map_dict()`, `digest()`, `from_rows()` (fixtures) |
+| `sim/mapgen/route_field.gd` (`RouteField`) | code | §3 reverse Dijkstra from `L`, integer, no barricades yet; LT-109 adds the breach weight here |
+| `sim/mapgen/chokepoint_metric.gd` (`ChokepointMetric`, `MetricReport`) | code | §8 C1-C7, pure static |
+| `sim/mapgen/map_generator.gd` (`MapGenerator`, `GenResult`) | code | §9(a) skeleton -> rasterize -> islands -> metric -> retry |
 | `tools/mapgen/mapgen_report.gd` + `scripts/mapgen-report.sh` | tool | headless report, kept (balance lab uses it later) |
 | `tools/proto/map_viewer.gd` + `.tscn` | tool | throwaway grey viewer, excluded from export |
 
 Architecture guards, how each new file obeys:
 
-- **Sim boundary** (`tests/sim_boundary_test.gd`): `sim/rules/` files are `RefCounted`, static or
+- **Sim boundary** (`tests/sim_boundary_test.gd`): `sim/mapgen/` files are `RefCounted`, static or
   plain data; engine types only from `ENGINE_ALLOWLIST` (`String.sha256_text()` for the digest);
   no `preload`, `signal`, `await`, `Time`, `OS`. Draws only as `_rng.randi_range(...)` (a dotted
   call, allowed). `RandomNumberGenerator` may be named only in `SIM_RNG_HOMES`, so
-  `res://sim/rules/map_rng.gd` is **appended to `SIM_RNG_HOMES`** (one guard line). `SimRng` is
+  `res://sim/mapgen/map_rng.gd` is **appended to `SIM_RNG_HOMES`** (one guard line). `SimRng` is
   not reused: its streams are seeded from the run seed and the map must not shift combat
   rolls (§9).
 - **G10** (one topology): the new files have no "grid" in their names, so they get no topology
@@ -37,7 +37,7 @@ Architecture guards, how each new file obeys:
 - **G3 / G2**: centres only from `grid.centre()`; the viewer has its own scale names (no `CELL`,
   `BOARD_ORIGIN`, `ORIGIN`). **G11**: no trig in `sim/`; the viewer (tools/) may use it, but
   the jitter needs none (§6).
-- **G1 / G7 / boundary #2**: the tools read only `sim/rules/` classes, no Simulation, no
+- **G1 / G7 / boundary #2**: the tools read only `sim/mapgen/` and `sim/rules/` classes, no Simulation, no
   selection, no rule copies.
 
 ## 2. Public APIs
@@ -207,9 +207,9 @@ step); the report tool stays.
 ## 7. Edit map
 
 **Code slice (pure rules + tests):**
-- New: the six `sim/rules/` files of §1, and `tests/map_generator_test.gd`,
+- New: the six `sim/mapgen/` files of §1, and `tests/map_generator_test.gd`,
   `tests/chokepoint_metric_test.gd`, `tests/route_field_test.gd`.
-- Change `tests/sim_boundary_test.gd` lines 53-54: append `"res://sim/rules/map_rng.gd"` to
+- Change `tests/sim_boundary_test.gd` lines 53-54: append `"res://sim/mapgen/map_rng.gd"` to
   `SIM_RNG_HOMES`.
 - Read for context: `GridTopology` (all abstract signatures), `HexGrid.neighbours / steps /
   text_of / cell_of_text`, `GridFactory.make`, `LightRules.in_cast_radius`,
@@ -252,7 +252,7 @@ tests (the tool measures it).
 
 ## 9. Open questions for the owner
 
-**Q1. P1 map size and entry count.**
+**Q1. P1 map size and entry count.** Decided (S25): "p1_large 32x18", option (c) is the default preset.
 - (a) 24 x 16 hex, 1-3 entries **(recommended)**: today's 24-wide board, routes of 20-30 cells fit
   C4; 3 entries keep the 20-seed screen readable. Risk: 4-entry maps untested until later.
 - (b) 24 x 14 (today's exact size), 1-3 entries. Benefit: same screen as now. Risk: less room for
@@ -318,6 +318,18 @@ Found while coding the rules (LT-130/S8); the code is the reference.
     seed formula is unchanged), `sea_max <= width - 6`, `c4_lmin <= c4_lmax`,
     `c7_hud_rows < height` and the counts in `NON_NEGATIVE`; `generate` refuses params failing
     `check()` (map null, attempts 0, error "params: ...").
+14. (S25) Owner decision "sim/mapgen/ до мерджа LT-130 (Recommended)": the generator lives in its
+    own block `sim/mapgen/`, not `sim/rules/`; the six files of §1 moved there with `git mv`
+    (`class_name` unchanged). The seam is the map dict read by `MapDef.parse`
+    (`GenMap.to_map_dict()`). `res://sim/mapgen/map_rng.gd` is in `SIM_RNG_HOMES`; the guards that
+    scan `res://sim` cover the new folder as it is.
+15. (S25) Owner decision "p1_large 32x18": `p1_large` is the default preset
+    (`MapGenParams.default_preset()`; `MapGenerator.generate` without params, `mapgen_report.gd`,
+    `scripts/mapgen-report.sh`, `tools/proto/map_viewer.gd`). The field initialisers stay the
+    p1_small values, and `from_dict` without a base starts from them (pinned tests).
+16. (S25) p1_large p95 is 373 ms per accepted map (rerun under load: 750 ms), above the 200 ms
+    budget. Owner decision "Решить в задаче про острова (Recommended)": accepted deviation,
+    deferred to LT-141 (segment-level chokepoints).
 
 ## 11. Measurements (S24)
 

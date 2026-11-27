@@ -21,7 +21,8 @@ class GenResult extends RefCounted:
 
 ## Attempts 0, 1, ... of `map_seed` until one passes the metric or attempt_cap ran. Params
 ## failing MapGenParams.check() give map null, attempts 0 and error "params: ...".
-static func generate(map_seed: int, p: MapGenParams) -> GenResult:
+static func generate(map_seed: int, params: MapGenParams = null) -> GenResult:
+	var p: MapGenParams = params if params != null else MapGenParams.default_preset()
 	var res := GenResult.new()
 	var bad := p.check()
 	if not bad.is_empty():

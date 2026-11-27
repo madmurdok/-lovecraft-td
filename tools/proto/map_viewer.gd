@@ -28,7 +28,7 @@ const CHOKE_COLOUR := Color(1.0, 1.0, 0.3)
 const POCKET_COLOUR := Color(0.18, 0.18, 0.16)
 
 var _params: MapGenParams
-var _preset := "small"
+var _preset := "large"
 var _first := 1
 var _jitter := true
 var _results: Array[MapGenerator.GenResult] = []
@@ -37,7 +37,7 @@ var _results: Array[MapGenerator.GenResult] = []
 func _ready() -> void:
 	var args := OS.get_cmdline_user_args()
 	DebugArgs.apply_mute(args)
-	_preset = _opt(args, "--preset", "small")
+	_preset = _opt(args, "--preset", "large")
 	_params = MapGenParams.p1_large() if _preset == "large" else MapGenParams.p1_small()
 	var pf := _opt(args, "--params", "")
 	if pf != "":

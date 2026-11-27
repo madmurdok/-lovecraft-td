@@ -3,7 +3,7 @@
 # summary of accepted maps, reject rates, rejects by reason and ms per map.
 #
 # Usage: scripts/mapgen-report.sh [--preset small|large] [--seeds N] [--from S] [--params f.json]
-#        [--maps] [--out report.json]      (defaults: small, 1000 seeds from 1)
+#        [--maps] [--out report.json]      (defaults: large, 1000 seeds from 1)
 # Env: GODOT  Godot binary, default /Applications/Godot.app/Contents/MacOS/Godot.
 set -euo pipefail
 GODOT="${GODOT:-/Applications/Godot.app/Contents/MacOS/Godot}"

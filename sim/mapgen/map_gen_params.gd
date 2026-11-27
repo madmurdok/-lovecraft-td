@@ -2,7 +2,8 @@ class_name MapGenParams
 extends RefCounted
 ## LT-130: the map generator's knobs and the LT-18 §8 metric thresholds. Code defaults (owner
 ## Q3: no data/ file in P1); the report tool overrides them with from_dict. All integers but
-## tower_range. Defaults = the p1_small preset (owner Q1); p1_large is the 32 x 18 variant.
+## tower_range. The default preset is p1_large 32 x 18 (owner: "p1_large 32x18"); the field initialisers
+## below are the p1_small values, which the pinned tests rely on.
 
 ## Every overridable field, in a fixed order (from_dict / to_dict never iterate a Dictionary).
 const KEYS: PackedStringArray = [
@@ -78,7 +79,12 @@ static func p1_large() -> MapGenParams:
 	return p
 
 
-## A copy of `base` (p1_small when null) with the keys of `d` applied; unknown keys and wrong
+## The default preset (owner: "p1_large 32x18").
+static func default_preset() -> MapGenParams:
+	return p1_large()
+
+
+## A copy of `base` (the field initialisers, = p1_small, when null) with the keys of `d` applied; unknown keys and wrong
 ## types are errors. Returns {"params": MapGenParams or null, "errors": PackedStringArray}.
 static func from_dict(d: Dictionary, base: MapGenParams = null) -> Dictionary:
 	var p := MapGenParams.new()
